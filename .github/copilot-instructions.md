@@ -1,0 +1,109 @@
+# Copilot Instructions
+
+Before working in any area of the codebase, list `.github/instructions/` and
+read `global.instructions.md` plus any files whose name matches the area you are
+working in.
+
+These instructions apply to all Copilot features, including inline tab
+completions.
+
+## Code Quality
+
+- This code will be used for teaching; document exported APIs well enough that
+  readers can understand them without external context.
+- This is a production codebase; only suggest code that is correct, complete,
+  and ready for production use.
+- Never emit placeholder code. Do not use `TODO`, `FIXME`, `...`,
+  `/* implementation */`, `throw new Error("Not implemented")`, or any other
+  stub pattern unless the user has explicitly written a stub and is asking to
+  fill it in.
+- Never produce non-production statements such as `console.log("test")`,
+  `console.log("here")`, hardcoded magic strings used only for debugging, or
+  temporary workarounds presented as real code.
+- Do not add comments that just restate what the code does. Only include
+  comments that explain non-obvious intent, invariants, or constraints.
+
+## Import Style
+
+- Never use inline `import()` type expressions in `.ts` or `.tsx` files. Always
+  use a top-level `import type` statement instead.
+  - Exception: `.d.ts` ambient declaration files, if this repo later adds them.
+
+## Naming and Layout Conventions
+
+- Match the naming and placement conventions already established in the area
+  you are editing when creating new files, directories, test files, generated
+  artifacts, or other repo entries.
+- Before creating a new file, inspect nearby siblings and follow the dominant
+  local pattern for separators, casing, prefixes, suffixes, and test file
+  naming.
+- Do not introduce a new naming pattern to an area of the repo unless the user
+  explicitly asks for it or an existing tool/framework requires it.
+- Much of this repo is still empty. Where an area has no sibling to match,
+  follow the corresponding area of `external/wendoo-lang` rather than inventing
+  a local convention.
+
+## Project-Specific Rules
+
+This repository brings Wendoo to MakeCode Arcade. Two toolchains meet here:
+`apps/` is the Wendoo side and `makecode/` the MakeCode side, but the toolchain
+split does not follow that line: `apps/` and `makecode/simx/` are ordinary
+npm/TypeScript web projects, while `makecode/extensions/` are MakeCode (pxt)
+projects written in the static TypeScript subset pxt compiles. Do not carry an
+idiom across that boundary without checking that it is legal on the other
+side.
+
+### MakeCode Extensions (`makecode/extensions/*`)
+
+- One MakeCode extension per subfolder, each with its own `pxt.json`.
+  Dependencies are declared there and resolved into `pxt_modules/` by the
+  MakeCode toolchain, never by npm.
+- Write the static TypeScript subset pxt supports. Closures over mutable
+  captures, dynamic property access, and most of the standard library are not
+  available; when unsure, check what pxt actually compiles rather than assuming
+  browser or Node semantics.
+- `makecode/extensions/core` implements the Wendoo bytecode VM for Arcade. It
+  is a conforming VM, not an approximation -- see the VM Contract section
+  below.
+
+### MakeCode simx Components (`makecode/simx/*`)
+
+- One simx component per subfolder, each a webapp. `makecode/simx/bridge`
+  connects to the bridge service and joins the editor webapp to the MakeCode
+  project.
+- A simx component is a messaging endpoint, not a place for product logic.
+  Brain authoring belongs in `apps/arcade`; execution belongs in the extension.
+
+### Editor Webapp (`apps/arcade`)
+
+- `apps/arcade` owns the Wendoo editor webapp: brain authoring, project
+  management, compiler integration, artifact loading, and diagnostics.
+- It reaches the MakeCode project through the bridge service and
+  `makecode/simx/bridge`. Do not add a second, direct path between the editor
+  and MakeCode.
+
+### Bridge Service (`apps/bridge`)
+
+- `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects to.
+- The bridge wire protocol is upstream (`packages/bridge-protocol`,
+  `packages/bridge-client`, `packages/bridge-app`). Consume it; do not fork
+  message shapes locally.
+
+### VM Contract
+
+- `makecode/extensions/core` is a third Wendoo VM implementation, alongside the
+  TypeScript reference VM upstream and the C++ VM in `wendoo-mcu`. Every
+  conforming VM decodes the same bytecode to the same semantics; the reference
+  VM in `external/wendoo-lang/packages/core/src/runtime/` is the executable
+  spec.
+- Decoded bytecode semantics follow
+  `external/wendoo-lang/docs/specs/contracts/vm-contract.md` until this repo
+  owns a local `docs/specs/contracts/vm-contract.md`.
+- Runtime feature flags must not create opcode subsets. Platform differences
+  are expressed through registered host functions and adapters. A pxt
+  limitation is a reason to implement an opcode differently, never a reason to
+  omit it.
+- All compilation and linking happen on the compiler side. Runtime code must
+  not introduce target-aware bytecode lowering.
+- Preserve the Wendoo host calling convention: positional arg buffers,
+  callsite ids, async handles, and single-entry host-loop execution.

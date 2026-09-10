@@ -1,0 +1,3 @@
+[submodule "external/wendoo-lang"]
+	path = external/wendoo-lang
+	url = https://github.com/wendoo-lang/wendoo-lang

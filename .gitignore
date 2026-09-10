@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.wireit/
+
+# MakeCode (pxt) build output and installed dependencies
+built/
+pxt_modules/
+.header.json
+.headers.json
+.simstate.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Python bytecode (hook scripts under .claude/)
+__pycache__/
+*.py[cod]
+
+# Generated docs
+generated-docs/*
+
+# Claude Code preview-server config (machine-local)
+.claude/launch.json
