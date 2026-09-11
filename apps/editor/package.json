@@ -1,6 +1,6 @@
 {
-  "name": "@wendoo/arcade",
-  "description": "Give your sprites a brain. Wendoo for MakeCode Arcade.",
+  "name": "@wendoo/editor",
+  "description": "Wendoo editor for Microsoft MakeCode",
   "version": "0.0.0",
   "private": true,
   "type": "module",

@@ -1,5 +1,5 @@
 ---
-applyTo: "{docs/specs/contracts/vm-contract.md,makecode/extensions/**,makecode/simx/**,apps/arcade/**}"
+applyTo: "{docs/specs/contracts/vm-contract.md,makecode/extensions/**,makecode/simx/**,apps/editor/**}"
 ---
 
 <!-- Adapted from external/wendoo-lang/.github/instructions/vm.instructions.md -->
@@ -97,7 +97,7 @@ unless noted otherwise.
   It owns fiber scheduling, the handle table, and the host loop on that side,
   and it must preserve the single-entry rule under pxt's own event model: a
   MakeCode event handler enqueues, and the host loop drains.
-- `apps/arcade` is an authoring surface. It may compile, inspect, and
+- `apps/editor` is an authoring surface. It may compile, inspect, and
   visualize, but the Arcade platform's execution semantics are the extension's.
 - `makecode/simx/*` components are messaging endpoints between the editor and
   the MakeCode project. They carry programs and state across the gap; they do

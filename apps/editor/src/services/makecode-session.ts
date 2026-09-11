@@ -4,30 +4,30 @@ import { createAppBridge } from "@wendoo/bridge-app";
 import { coreModule, createWendooEnvironment, type WendooEnvironment } from "@wendoo/core/app";
 
 /**
- * Address of the Arcade bridge service a session connects to when none is
+ * Address of the MakeCode bridge service a session connects to when none is
  * given: a host with an optional port. The scheme is not part of it -- the
  * bridge client selects `ws://` for a loopback host and `wss://` otherwise.
  */
-export const DEFAULT_ARCADE_BRIDGE_URL = "arcade-bridge.playwendoo.com";
+export const DEFAULT_MAKECODE_BRIDGE_URL = "makecode-bridge.playwendoo.com";
 
 /**
- * Lifecycle state of an {@link ArcadeSession}.
+ * Lifecycle state of an {@link MakeCodeSession}.
  *
  * - `idle` - not connected; no environment and no files exist.
  * - `connecting` - the bridge is open or opening, but the authoritative file
  *   set has not arrived yet.
  * - `ready` - files have synced and the Wendoo environment exists.
  */
-export type ArcadeSessionStatus = "idle" | "connecting" | "ready";
+export type MakeCodeSessionStatus = "idle" | "connecting" | "ready";
 
-/** Listener invoked whenever an {@link ArcadeSession} field changes. */
-export type ArcadeSessionListener = () => void;
+/** Listener invoked whenever an {@link MakeCodeSession} field changes. */
+export type MakeCodeSessionListener = () => void;
 
-/** Construction options for {@link ArcadeSession}. */
-export interface ArcadeSessionOptions {
+/** Construction options for {@link MakeCodeSession}. */
+export interface MakeCodeSessionOptions {
   /**
-   * Address of the Arcade bridge service as a host with an optional port.
-   * Defaults to {@link DEFAULT_ARCADE_BRIDGE_URL}.
+   * Address of the MakeCode bridge service as a host with an optional port.
+   * Defaults to {@link DEFAULT_MAKECODE_BRIDGE_URL}.
    */
   readonly bridgeUrl?: string;
 }
@@ -62,26 +62,26 @@ function firstSyncFeature(onFirstSync: () => void): AppBridgeFeature {
  * created only once that first sync completes; {@link env} and {@link files}
  * throw before then.
  */
-export class ArcadeSession {
+export class MakeCodeSession {
   private readonly _bridgeUrl: string;
-  private _status: ArcadeSessionStatus = "idle";
+  private _status: MakeCodeSessionStatus = "idle";
   private _bridge: AppBridge | undefined;
   private _files: ProjectFileSystem | undefined;
   private _env: WendooEnvironment | undefined;
   private _joinCode: string | undefined;
-  private readonly _listeners = new Set<ArcadeSessionListener>();
+  private readonly _listeners = new Set<MakeCodeSessionListener>();
 
-  constructor(options: ArcadeSessionOptions = {}) {
-    this._bridgeUrl = options.bridgeUrl ?? DEFAULT_ARCADE_BRIDGE_URL;
+  constructor(options: MakeCodeSessionOptions = {}) {
+    this._bridgeUrl = options.bridgeUrl ?? DEFAULT_MAKECODE_BRIDGE_URL;
   }
 
-  /** Address of the Arcade bridge service this session connects to. */
+  /** Address of the MakeCode bridge service this session connects to. */
   get bridgeUrl(): string {
     return this._bridgeUrl;
   }
 
   /** Current lifecycle state. */
-  get status(): ArcadeSessionStatus {
+  get status(): MakeCodeSessionStatus {
     return this._status;
   }
 
@@ -121,7 +121,7 @@ export class ArcadeSession {
    * @param listener - Called after any field changes.
    * @returns An unsubscribe function.
    */
-  subscribe(listener: ArcadeSessionListener): () => void {
+  subscribe(listener: MakeCodeSessionListener): () => void {
     this._listeners.add(listener);
     return () => this._listeners.delete(listener);
   }

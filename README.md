@@ -1,13 +1,16 @@
-# Wendoo Arcade
+# pxt-wendoo
 
-[Wendoo](https://wendoo.com) brains inside [MakeCode Arcade](https://arcade.makecode.com/).
+[Wendoo](https://wendoo.com) brains inside
+[Microsoft MakeCode](https://makecode.com/).
 
-Wendoo programs are built by
-arranging **tiles** -- typed, composable tokens -- into **rules**. Each rule has
-a WHEN side (condition) and a DO side (action). A collection of rules forms a
-**brain** that drives an autonomous actor. This repository brings those brains
-to Arcade: draw a sprite in Arcade's image editor, give it a brain of readable
-rules in the Wendoo editor, and spawn it from blocks.
+Wendoo programs are built by arranging **tiles** -- typed, composable tokens --
+into **rules**. Each rule has a WHEN side (condition) and a DO side (action). A
+collection of rules forms a **brain** that drives an autonomous actor. This
+repository brings those brains to MakeCode. The Wendoo VM and most of the
+machinery here are target-agnostic; the first target is
+[MakeCode Arcade](https://arcade.makecode.com/), where you draw a sprite in
+Arcade's image editor, give it a brain of readable rules in the Wendoo editor,
+and spawn it from blocks. Further MakeCode targets are expected to follow.
 
 The Wendoo language, compiler, and reference VM live in the upstream
 [wendoo-lang](https://github.com/wendoo-lang/wendoo-lang) repository, included
@@ -26,7 +29,7 @@ The top level splits by side of the integration.
 
 | Directory                                    | Contents                                                                                                         |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [apps/arcade](apps/arcade/)                  | The Wendoo editor webapp. Authors brains and talks to the MakeCode project through the bridge.                   |
+| [apps/editor](apps/editor/)                  | The Wendoo editor webapp. Authors brains and talks to the MakeCode project through the bridge.                   |
 | [apps/bridge](apps/bridge/)                  | The Arcade bridge service, relaying between the editor and the simx.                                             |
 | [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); vocabulary packs supply genre-specific tiles. |
 | [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `bridge` joins the editor webapp to the MakeCode project.               |
@@ -44,15 +47,15 @@ into its own `node_modules`; cross-package links use `file:` dependencies, and
 the Wendoo language lives in a submodule.
 
 ```bash
-git clone --recurse-submodules https://github.com/wendoo-lang/wendoo-arcade.git
-cd wendoo-arcade
+git clone --recurse-submodules https://github.com/wendoo-lang/pxt-wendoo.git
+cd pxt-wendoo
 npm install
 ```
 
 Run the editor webapp:
 
 ```bash
-npm --prefix apps/arcade run dev
+npm --prefix apps/editor run dev
 ```
 
 ## Related

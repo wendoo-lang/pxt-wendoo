@@ -130,11 +130,11 @@ Two hazards worth knowing:
 - A standalone wendoo-lang clone can lag the submodule checkouts. Prefer
   `external/wendoo-lang` as the current reference.
 
-The Arcade bridge address is the worked example: both apps store the service as
-a bare host with an optional port and let `bridge-client` choose `ws://` for a
-loopback host and `wss://` otherwise, and neither app uses a `VITE_` env var for
-configuration. A scheme baked into the value would have been silently stripped,
-and an env var would have been this repo's only one.
+The MakeCode bridge address is the worked example: both apps store the service
+as a bare host with an optional port and let `bridge-client` choose `ws://`
+for a loopback host and `wss://` otherwise, and neither app uses a `VITE_` env
+var for configuration. A scheme baked into the value would have been silently
+stripped, and an env var would have been this repo's only one.
 
 ## Build System
 
@@ -252,11 +252,13 @@ over a framework for implementations that do not exist.
 
 ## Repo-Specific Scope
 
-- This repository brings Wendoo to MakeCode Arcade. It owns the arcade target
-  platform -- the `wendoo-lang/trg-arcade` layer -- together with the MakeCode
-  extensions that run brains inside an Arcade game and the product surface that
-  authors them. The Wendoo language, compiler, and reference VM are upstream:
-  consume them; do not reimplement them here.
+- This repository (pxt-wendoo) brings Wendoo to MakeCode. The VM and most of
+  the machinery are MakeCode-target-agnostic; targets stratify at the leaf
+  (per-target extensions and packs), and Arcade is the first. It owns the
+  arcade target platform layer -- `wendoo-lang/trg-arcade` -- together with
+  the MakeCode extensions that run brains inside a MakeCode program and the
+  product surface that authors them. The Wendoo language, compiler, and
+  reference VM are upstream: consume them; do not reimplement them here.
 - `external/wendoo-lang` is the imported reference checkout. Read it for
   contracts, compiler behavior, and TypeScript VM semantics, but do not make
   product changes there unless the task explicitly targets the reference.
@@ -273,7 +275,7 @@ over a framework for implementations that do not exist.
   - `makecode/extensions/*` own the MakeCode extensions, and there are two
     kinds. They are nested pxt extensions: each is addressed by its GitHub
     coordinate at full depth, so the VM is
-    `github:wendoo-lang/wendoo-arcade/makecode/extensions/vm`, and pxt's
+    `github:wendoo-lang/pxt-wendoo/makecode/extensions/vm`, and pxt's
     monorepo support requires a top-level `pxt.json` at the repo root for any
     of them to resolve. That coordinate is public identity -- it lands in every
     consuming project and in every pack that depends on core -- so the
@@ -304,22 +306,35 @@ over a framework for implementations that do not exist.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in its
     own subfolder. `makecode/simx/bridge` connects to the bridge service,
     joining the editor webapp to the MakeCode project. A simx is a channel: not
-    a store, not a UI. It reloads on every sim restart, so no state may live
-    only there. A simx is bound to its extension by an `approvedRepoLib` entry
-    in the MakeCode target's own `targetconfig.json`, keyed `owner/repo` and
-    carrying a hosting URL -- not by its path here -- so this directory is ours
-    to arrange, and there is one registration for the whole repository.
-  - `apps/arcade` owns the Wendoo editor webapp: brain authoring, project
-    management, compiler integration, and diagnostics.
+    a store, not a UI, and TARGET-BLIND -- one built simx serves every
+    MakeCode target. It reloads on every sim restart, so no state may live
+    only there. A simx is bound by an `approvedRepoLib` entry in EACH MakeCode
+    target's own `targetconfig.json`, keyed `owner/repo` and carrying a
+    hosting URL -- per-target registration of one shared artifact.
+  - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
+    management, compiler integration, and diagnostics. The editor is
+    TARGET-BLIND: the entire tile vocabulary is injected from the MakeCode
+    side over the bridge (pack tiles surfaced via `apis.read`), so the tile
+    catalog is session data, never build configuration. The one target-aware
+    residue is theming, keyed by the target name carried in the session hello.
+    Tripwire: this holds because user-authored tiles live on the MakeCode
+    side; a Wendoo-TS user-tile flow in this editor would reintroduce
+    target-specific ambient typings (as in wendoo-mcu's editor) and must be
+    raised as a boundary change, not slipped in. (The directory name predates
+    the target-blind ruling; renaming it rides its own slice per F48.)
   - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects
-    to.
+    to. Also target-blind: one deployment serves every target.
+  - The complete per-target surface of this repo is: the game-facing
+    extension, vocabulary packs, the `approvedRepoLib` registration, the
+    upstream `trg-*` platform-stack layer, and a theme record in the editor.
+    Everything else is shared.
 - The editor webapp, the bridge service, the simx component, and the MakeCode
   project form one path. A change to any hop is not done until you have named
   the other three and said what it does to them.
 - The shared Wendoo packages (`packages/core`, `packages/ts-compiler`,
   `packages/app-host`, `packages/bridge-app`, `packages/ui`) have several
   first-class, co-equal product consumers. Two are visible from this checkout:
-  `apps/arcade` (this repo) and `external/wendoo-lang/apps/ecosim`. A change to
+  `apps/editor` (this repo) and `external/wendoo-lang/apps/ecosim`. A change to
   a shared package or shared model is not done until both are swept and gated
   (typecheck + biome + test each); this is the one standing reason to run suites
   in the reference checkout. A third consumer, `apps/microbit-sim` in the

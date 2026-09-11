@@ -1,4 +1,4 @@
-import { useArcadeSession, useArcadeSessionStatus } from "@/contexts/arcade-session";
+import { useMakeCodeSession, useMakeCodeSessionStatus } from "@/contexts/makecode-session";
 
 /**
  * Root view.
@@ -7,13 +7,13 @@ import { useArcadeSession, useArcadeSessionStatus } from "@/contexts/arcade-sess
  * serves its files, there is no environment to edit against.
  */
 export function App() {
-  const session = useArcadeSession();
-  const status = useArcadeSessionStatus();
+  const session = useMakeCodeSession();
+  const status = useMakeCodeSessionStatus();
 
   if (status !== "ready") {
     return (
       <main className="flex h-screen flex-col items-center justify-center gap-4">
-        <h1 className="text-xl font-semibold">Wendoo / Arcade</h1>
+        <h1 className="text-xl font-semibold">Wendoo</h1>
         <p className="text-muted-foreground text-sm">
           {status === "connecting" ? "Waiting for the MakeCode project..." : "Not connected."}
         </p>
@@ -29,7 +29,7 @@ export function App() {
 
   return (
     <main className="flex h-screen flex-col items-center justify-center gap-4">
-      <h1 className="text-xl font-semibold">Wendoo / Arcade</h1>
+      <h1 className="text-xl font-semibold">Wendoo</h1>
       <p className="text-muted-foreground text-sm">Connected. Editor surface goes here.</p>
     </main>
   );

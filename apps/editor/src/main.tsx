@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { ArcadeSessionProvider } from "./contexts/arcade-session";
-import { ArcadeSession } from "./services/arcade-session";
+import { MakeCodeSessionProvider } from "./contexts/makecode-session";
+import { MakeCodeSession } from "./services/makecode-session";
 import "./globals.css";
 
 // Backstop for otherwise-silent floated promise rejections.
@@ -15,14 +15,14 @@ if (!root) {
   throw new Error("Root element not found");
 }
 
-const session = new ArcadeSession();
+const session = new MakeCodeSession();
 session.connect();
 window.addEventListener("pagehide", () => session.disconnect(), { once: true });
 
 createRoot(root).render(
   <StrictMode>
-    <ArcadeSessionProvider value={session}>
+    <MakeCodeSessionProvider value={session}>
       <App />
-    </ArcadeSessionProvider>
+    </MakeCodeSessionProvider>
   </StrictMode>
 );

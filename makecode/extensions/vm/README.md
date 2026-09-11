@@ -20,7 +20,7 @@ automatically. If you are building on the VM itself:
 2. Click the gearwheel menu, then **Extensions**.
 3. Paste this into the search box and press Enter:
 
-   https://github.com/wendoo-lang/wendoo-arcade/makecode/extensions/vm
+   https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/vm
 
 _(placeholder: link to the game-facing Wendoo extension and vocabulary packs
 once they exist -- that is where sprites get brains and where most readers
@@ -29,7 +29,7 @@ should start.)_
 ---
 
 Developers: the source lives in the
-[wendoo-arcade](https://github.com/wendoo-lang/wendoo-arcade) repository. The
+[pxt-wendoo](https://github.com/wendoo-lang/pxt-wendoo) repository. The
 VM is a conforming Wendoo VM, held to the reference implementation's
 observable semantics; see the repository README for how the project fits
 together.

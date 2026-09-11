@@ -1,6 +1,6 @@
 {
-  "name": "wendoo-arcade",
-  "description": "Arcade target platform for the Wendoo bytecode VM.",
+  "name": "pxt-wendoo",
+  "description": "Wendoo for MakeCode: the Static TypeScript Wendoo VM and per-target integrations.",
   "private": true,
   "license": "MIT",
   "scripts": {

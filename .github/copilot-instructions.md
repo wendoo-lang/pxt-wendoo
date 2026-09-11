@@ -55,7 +55,8 @@ completions.
 
 ## Project-Specific Rules
 
-This repository brings Wendoo to MakeCode Arcade. Two toolchains meet here:
+This repository (pxt-wendoo) brings Wendoo to MakeCode; the VM is
+target-agnostic and Arcade is the first target. Two toolchains meet here:
 `apps/` is the Wendoo side and `makecode/` the MakeCode side, but the toolchain
 split does not follow that line: `apps/` and `makecode/simx/` are ordinary
 npm/TypeScript web projects, while `makecode/extensions/` are MakeCode (pxt)
@@ -82,11 +83,11 @@ side.
   connects to the bridge service and joins the editor webapp to the MakeCode
   project.
 - A simx component is a messaging endpoint, not a place for product logic.
-  Brain authoring belongs in `apps/arcade`; execution belongs in the extension.
+  Brain authoring belongs in `apps/editor`; execution belongs in the extension.
 
-### Editor Webapp (`apps/arcade`)
+### Editor Webapp (`apps/editor`)
 
-- `apps/arcade` owns the Wendoo editor webapp: brain authoring, project
+- `apps/editor` owns the Wendoo editor webapp: brain authoring, project
   management, compiler integration, artifact loading, and diagnostics.
 - It reaches the MakeCode project through the bridge service and
   `makecode/simx/bridge`. Do not add a second, direct path between the editor
