@@ -10,10 +10,10 @@ The Wendoo VM is a stack-based bytecode virtual machine with fiber-based
 concurrency and async handles. The TypeScript reference implementation lives in
 `external/wendoo-lang/packages/core/src/runtime/`.
 
-This repository adds a third implementation. `makecode/extensions/core`
+This repository adds a third implementation. `makecode/extensions/vm`
 implements the Wendoo VM as a MakeCode extension in the static TypeScript
 subset pxt compiles, so a brain executes inside the Arcade game itself. The
-reference VM is the executable spec; `makecode/extensions/core` must not
+reference VM is the executable spec; `makecode/extensions/vm` must not
 diverge from its observable semantics.
 
 ## Contract Source
@@ -65,12 +65,12 @@ unless noted otherwise.
 - Every conforming Wendoo VM decodes the same bytecode to the same semantics.
   The file format may differ; decoded semantics may not. There are three
   implementations: the TypeScript reference VM upstream, the C++ VM in the
-  companion `wendoo-mcu` repository, and `makecode/extensions/core` here.
+  companion `wendoo-mcu` repository, and `makecode/extensions/vm` here.
 - The compiler is target-unaware. It emits the same bytecode regardless of the
   eventual runtime target, arcade included.
 - Runtime feature flags must not create opcode subsets. Every conforming VM
   implements every opcode in the contract. A pxt language limitation is a
-  reason to implement an opcode differently in `makecode/extensions/core`,
+  reason to implement an opcode differently in `makecode/extensions/vm`,
   never a reason to omit it or to narrow its semantics; if an opcode genuinely
   cannot be expressed, that is a contract-level problem to escalate, not a
   local exception to take.
@@ -93,7 +93,7 @@ unless noted otherwise.
 
 ## Where the VM Runs
 
-- `makecode/extensions/core` is where brains execute, inside the Arcade game.
+- `makecode/extensions/vm` is where brains execute, inside the Arcade game.
   It owns fiber scheduling, the handle table, and the host loop on that side,
   and it must preserve the single-entry rule under pxt's own event model: a
   MakeCode event handler enqueues, and the host loop drains.

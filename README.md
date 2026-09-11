@@ -28,7 +28,7 @@ The top level splits by side of the integration.
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | [apps/arcade](apps/arcade/)                  | The Wendoo editor webapp. Authors brains and talks to the MakeCode project through the bridge.                   |
 | [apps/bridge](apps/bridge/)                  | The Arcade bridge service, relaying between the editor and the simx.                                             |
-| [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `core` holds the Static TypeScript Wendoo VM; vocabulary packs supply genre-specific tiles. |
+| [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); vocabulary packs supply genre-specific tiles. |
 | [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `bridge` joins the editor webapp to the MakeCode project.               |
 | [external/wendoo-lang](external/wendoo-lang) | The upstream language, compiler, and reference VM (submodule).                                                   |
 

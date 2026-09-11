@@ -72,9 +72,9 @@ side.
   captures, dynamic property access, and most of the standard library are not
   available; when unsure, check what pxt actually compiles rather than assuming
   browser or Node semantics.
-- `makecode/extensions/core` implements the Wendoo bytecode VM for Arcade. It
-  is a conforming VM, not an approximation -- see the VM Contract section
-  below.
+- `makecode/extensions/vm` implements the Wendoo bytecode VM: no blocks, no
+  target-specific dependencies, target-agnostic by construction. It is a
+  conforming VM, not an approximation -- see the VM Contract section below.
 
 ### MakeCode simx Components (`makecode/simx/*`)
 
@@ -101,7 +101,7 @@ side.
 
 ### VM Contract
 
-- `makecode/extensions/core` is a third Wendoo VM implementation, alongside the
+- `makecode/extensions/vm` is a third Wendoo VM implementation, alongside the
   TypeScript reference VM upstream and the C++ VM in `wendoo-mcu`. Every
   conforming VM decodes the same bytecode to the same semantics; the reference
   VM in `external/wendoo-lang/packages/core/src/runtime/` is the executable

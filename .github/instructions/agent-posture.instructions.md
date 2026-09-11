@@ -39,7 +39,7 @@ Avoid these failure modes:
 - Hiding missing contracts behind placeholder code.
 - Treating a simx component as a place for product logic.
 - Treating `apps/arcade` as the owner of Arcade execution semantics.
-- Letting `makecode/extensions/core` diverge from the reference VM's observable
+- Letting `makecode/extensions/vm` diverge from the reference VM's observable
   semantics because pxt made the faithful shape inconvenient.
 - Carrying a web-TypeScript idiom into a pxt project, or vice versa, without
   checking that it compiles there.
@@ -121,7 +121,7 @@ Be critical about where code belongs.
 `makecode/extensions/*` own:
 
 - The MakeCode extensions, one per subfolder, each with its own `pxt.json`.
-- Execution: `makecode/extensions/core` runs Wendoo bytecode inside the Arcade
+- Execution: `makecode/extensions/vm` runs Wendoo bytecode inside the Arcade
   game, owning fiber scheduling, the handle table, and the host loop on that
   side.
 - The Arcade capabilities exposed to brains as host functions.
@@ -252,6 +252,6 @@ small enough to review, but complete enough to be useful. Preserve the
 boundaries between the MakeCode extensions (makecode/extensions/), the simx
 components (makecode/simx/), the editor webapp (apps/arcade), the bridge
 service (apps/bridge), and the upstream Wendoo packages in
-external/wendoo-lang. makecode/extensions/core is a conforming Wendoo VM; it is
+external/wendoo-lang. makecode/extensions/vm is a conforming Wendoo VM; it is
 held to the reference VM's observable semantics.
 ```

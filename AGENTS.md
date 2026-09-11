@@ -272,19 +272,28 @@ over a framework for implementations that do not exist.
 - Planned first-cut ownership, one subfolder per unit:
   - `makecode/extensions/*` own the MakeCode extensions, and there are two
     kinds. They are nested pxt extensions: each is addressed by its GitHub
-    coordinate at full depth, so core is
-    `github:wendoo-lang/wendoo-arcade/makecode/extensions/core`, and pxt's
+    coordinate at full depth, so the VM is
+    `github:wendoo-lang/wendoo-arcade/makecode/extensions/vm`, and pxt's
     monorepo support requires a top-level `pxt.json` at the repo root for any
     of them to resolve. That coordinate is public identity -- it lands in every
     consuming project and in every pack that depends on core -- so the
     directory a shipped extension lives in is not free to rename.
-    `makecode/extensions/core` is primarily the STS VM and its support.
-    It implements the Wendoo bytecode VM in MakeCode static TypeScript, so a
-    brain executes inside the Arcade game itself; it is a conforming Wendoo VM,
-    held to the observable semantics of the reference VM under the contract in
-    `.github/instructions/vm.instructions.md`. It also owns the brain asset
-    class, the spawn block, and the tile bind API, and may ship a minimal tile
-    vocabulary.
+    `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
+    VM in MakeCode static TypeScript (a conforming Wendoo VM, held to the
+    observable semantics of the reference VM under the contract in
+    `.github/instructions/vm.instructions.md`), the trace emitter, the tile
+    bind API, and the language-level tiles. It carries NO block definitions
+    and ZERO target-specific pxt dependencies (`core: "*"` only) -- it is
+    MakeCode-target-agnostic by construction, incubating here, portable to
+    other MakeCode targets (micro:bit, Minecraft EDU) and extractable later
+    as a file move. The boundary is proven by compiling against a second
+    target, not by convention. Extraction, if it happens, changes the
+    extension's public coordinate, so the decision deadline is before
+    external projects pin it.
+    Arcade-bound pieces -- the spawn block, sprite pairing, the WendooBrain
+    asset blocks, the simx binding -- belong to a game-facing arcade
+    extension that does not exist yet; it is created when the spawn-block
+    slice needs it, not before, and it depends on the VM extension.
   - The other kind is a vocabulary pack: an extension supplying host-bound
     tiles for one genre of game. The majority of vocabulary comes from packs
     and from user code, not from core. A pack depends on core and never on
