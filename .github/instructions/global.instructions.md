@@ -136,6 +136,14 @@ The passing bar for format/lint checks is no warnings, infos, or fixable output.
 Any output beyond a clean success summary means the check has failed. Treat
 infos identically to errors.
 
+Zero noise is also a completion criterion, project-wide. Work -- including a
+subagent's slice -- may not be declared complete while the project carries any
+noise: build warnings, type errors anywhere, lint or format findings, failing
+checks. Before claiming completion, run the applicable builds and checks and
+report them clean. Pre-existing noise you did not cause is not background to
+ignore: fix it when the fix is behavior-preserving and within reach, otherwise
+raise it as a blocker; either way, do not declare the work complete over it.
+
 ## Tests Never Key on Display Prose
 
 Static display chrome -- placeholders, labels, button captions, tooltips,

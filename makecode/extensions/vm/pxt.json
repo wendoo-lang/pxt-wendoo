@@ -8,7 +8,17 @@
     },
     "files": [
         "README.md",
-        "main.ts"
+        "main.ts",
+        "value.ts",
+        "bytecode.ts",
+        "program.ts",
+        "decoder.ts",
+        "context.ts",
+        "core-host.ts",
+        "vm.ts",
+        "runtime.ts",
+        "trace.ts",
+        "conformance.ts"
     ],
     "supportedTargets": [
         "arcade"

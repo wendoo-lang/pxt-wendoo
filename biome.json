@@ -58,6 +58,18 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["makecode/extensions/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noUselessConstructor": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

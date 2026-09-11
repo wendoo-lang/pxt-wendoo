@@ -12,8 +12,7 @@
  * device-facing Wendoo extensions depend on this one and supply the actors,
  * the blocks, and the vocabulary.
  *
- * Everything lives in this one namespace. MakeCode Static TypeScript has no
- * modules, so the VM, the trace emitter, and the tile bind API are declared
- * here or in sibling files that reopen `wendoo`.
+ * Everything lives in this one namespace: the VM, the trace emitter, and the
+ * tile bind API are declared here or in sibling files that reopen `wendoo`.
  */
 namespace wendoo {}
