@@ -1,0 +1,14 @@
+{
+  "name": "wendoo-arcade",
+  "version": "0.0.0",
+  "description": "Monorepo root. pxt requires a top-level extension for the nested extensions under makecode/extensions/ to resolve; this one carries no code of its own.",
+  "license": "MIT",
+  "dependencies": {},
+  "files": [
+    "README.md"
+  ],
+  "supportedTargets": [
+    "arcade"
+  ],
+  "preferredEditor": "tsprj"
+}

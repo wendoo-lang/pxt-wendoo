@@ -197,6 +197,25 @@ They are built by the pxt toolchain and declare no `wendooBuild`.
 - Write type-only imports as a top-level `import type` statement in `.ts` and
   `.tsx` files; do not use inline `import()` type expressions.
 
+## User-Facing Copy
+
+In user-facing text -- READMEs, docs pages, UI strings -- describe Wendoo on
+its own terms, and hold contrast to an honesty test. Contrast with another
+approach is valid when it gives the reader true information about fit, and
+that runs in both directions: "Wendoo is built for reactive behavior; for an
+algorithm like a sort, write it in code" is honest contrast and welcome.
+
+What is never acceptable is contrast as a sales device: framing that makes
+another approach look lesser so Wendoo shines, however subtly. "Program with
+rules instead of long scripts" fails the test -- it casts scripts as the
+thing the reader is rescued from. "Give your sprites brains" passes -- it
+says what the product does and stops.
+
+The test is direction, not vocabulary. Do not pattern-match on "instead of"
+and call it done; ask whether the sentence diminishes something else or
+informs the reader. Wendoo is great for some things and not for others, and
+the copy may say both plainly.
+
 ## Minimalism (No Over-Build)
 
 Build the minimum that satisfies the task's acceptance criteria; speculative
@@ -277,7 +296,10 @@ over a framework for implementations that do not exist.
     own subfolder. `makecode/simx/bridge` connects to the bridge service,
     joining the editor webapp to the MakeCode project. A simx is a channel: not
     a store, not a UI. It reloads on every sim restart, so no state may live
-    only there.
+    only there. A simx is bound to its extension by an `approvedRepoLib` entry
+    in the MakeCode target's own `targetconfig.json`, keyed `owner/repo` and
+    carrying a hosting URL -- not by its path here -- so this directory is ours
+    to arrange, and there is one registration for the whole repository.
   - `apps/arcade` owns the Wendoo editor webapp: brain authoring, project
     management, compiler integration, and diagnostics.
   - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects

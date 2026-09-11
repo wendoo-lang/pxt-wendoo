@@ -1,0 +1,17 @@
+{
+  "name": "wendoo-core",
+  "version": "0.0.0",
+  "description": "Wendoo for MakeCode Arcade: the Static TypeScript Wendoo bytecode VM and the support a brain needs to run inside an Arcade game.",
+  "license": "MIT",
+  "dependencies": {
+    "device": "*"
+  },
+  "files": [
+    "README.md",
+    "main.ts"
+  ],
+  "supportedTargets": [
+    "arcade"
+  ],
+  "preferredEditor": "tsprj"
+}

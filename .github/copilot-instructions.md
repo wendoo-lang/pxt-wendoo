@@ -22,6 +22,12 @@ completions.
   temporary workarounds presented as real code.
 - Do not add comments that just restate what the code does. Only include
   comments that explain non-obvious intent, invariants, or constraints.
+- In user-facing copy (READMEs, docs, UI strings), describe Wendoo on its own
+  terms. Honest contrast about fit is fine, in both directions ("for an
+  algorithm like a sort, write it in code"). Contrast as a sales device is
+  not: never frame another approach as lesser so Wendoo shines ("instead of
+  long scripts"). The test is whether the sentence informs the reader about
+  fit or diminishes something else.
 
 ## Import Style
 
