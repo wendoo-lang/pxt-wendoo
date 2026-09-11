@@ -26,6 +26,15 @@ namespace wendoo {
   /** Operand-stack cap the corpus is minted under. */
   const CONFORMANCE_MAX_STACK_SIZE = 256;
 
+  /** Concurrent pending-handle cap the corpus is minted under. */
+  const CONFORMANCE_MAX_HANDLES = 8;
+
+  /** Ticks a deferred call waits when its `ticks` slot carries no number. */
+  const DEFAULT_DEFER_TICKS = 1;
+
+  /** Classifier `defer fail` rejects its handle with. */
+  const DEFER_FAIL_CODE = ErrorCode.HostError;
+
   /**
    * Stable action ids of the conformance host profile, allocated from the
    * target partition core reserves at id 1024. Serialized programs record
@@ -130,10 +139,59 @@ namespace wendoo {
     }
   }
 
+  /** Settles its handle as resolved, carrying the value its dispatch supplied. */
+  class ResolveSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+    private value: Value;
+
+    constructor(handle: AsyncHandle, value: Value) {
+      super(0);
+      this.handle = handle;
+      this.value = value;
+    }
+
+    settle(): void {
+      this.handle.resolve(this.value);
+    }
+  }
+
+  /** Settles its handle as rejected, carrying the classifier its dispatch supplied. */
+  class RejectSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+    private errorCode: ErrorCode;
+
+    constructor(handle: AsyncHandle, errorCode: ErrorCode) {
+      super(0);
+      this.handle = handle;
+      this.errorCode = errorCode;
+    }
+
+    settle(): void {
+      this.handle.reject(this.errorCode);
+    }
+  }
+
+  /**
+   * Whole-tick count carried by the argument in `slot`, or
+   * {@link DEFAULT_DEFER_TICKS} when the slot carries no number.
+   */
+  function ticksArg(args: Value[], slot: number): number {
+    if (slot >= args.length || args[slot].t !== ValueTag.Number) {
+      return DEFAULT_DEFER_TICKS;
+    }
+    return args[slot].num;
+  }
+
   /** `defer echo(value, ticks)`: resolves its handle to `value` after `ticks` ticks. */
   class DeferEchoActuator extends HostActionBinding {
     constructor() {
       super(ConformanceActionId.DeferEcho, "actuator.conformance.defer-echo", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const value = args.length > 0 ? args[0] : NIL_VALUE;
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, ticksArg(args, 1), new ResolveSettlement(handle, value));
     }
   }
 
@@ -141,6 +199,11 @@ namespace wendoo {
   class DeferFailActuator extends HostActionBinding {
     constructor() {
       super(ConformanceActionId.DeferFail, "actuator.conformance.defer-fail", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, ticksArg(args, 0), new RejectSettlement(handle, DEFER_FAIL_CODE));
     }
   }
 
@@ -207,7 +270,7 @@ namespace wendoo {
       hostFunctions,
       hostActions,
       new TraceTap(writer),
-      new VmCaps(CONFORMANCE_DEFAULT_BUDGET, CONFORMANCE_MAX_STACK_SIZE),
+      new VmCaps(CONFORMANCE_DEFAULT_BUDGET, CONFORMANCE_MAX_STACK_SIZE, CONFORMANCE_MAX_HANDLES),
       world
     );
     runtime.startup();

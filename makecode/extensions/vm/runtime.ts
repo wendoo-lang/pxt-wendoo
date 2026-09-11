@@ -10,17 +10,20 @@ namespace wendoo {
    * Cooperative fiber scheduler. Runnable fibers are dispatched in enqueue
    * order, and a tick is a round: every fiber in the queue at entry receives
    * exactly one budget slice, and anything enqueued while the round runs
-   * joins the next one.
+   * joins the next one. Child-rule fibers are the exception: they drain within
+   * the round that spawned them.
    */
-  export class FiberScheduler {
+  export class FiberScheduler extends ChildRuleSpawner {
     private vm: VM;
     private caps: VmCaps;
     private fiberIds: number[] = [];
     private fibers: Fiber[] = [];
     private runQueue: number[] = [];
+    private pendingSpawns: number[] = [];
     private nextFiberId: number = 1;
 
     constructor(vm: VM, caps: VmCaps) {
+      super();
       this.vm = vm;
       this.caps = caps;
     }
@@ -42,6 +45,16 @@ namespace wendoo {
       return fiberId;
     }
 
+    spawnChildRule(funcId: number, subtreeRootFuncId: number, ctx: ExecutionContext): void {
+      const fiberId = this.nextFiberId;
+      this.nextFiberId++;
+      const fiber = this.vm.spawnFiber(fiberId, funcId, ctx);
+      fiber.rootRuleFuncId = subtreeRootFuncId;
+      this.fiberIds.push(fiberId);
+      this.fibers.push(fiber);
+      this.pendingSpawns.push(fiberId);
+    }
+
     /**
      * The tracked fiber with `fiberId`, or `undefined` once it has been
      * collected.
@@ -57,19 +70,54 @@ namespace wendoo {
       return undefined;
     }
 
-    /** Execute one round: one budget slice for every fiber queued at entry. */
+    /**
+     * Resume the waiters of every handle settled since the last drain, then
+     * free each drained handle. A resumed fiber joins the run queue.
+     */
+    drainCompletedHandles(): void {
+      const handles = this.vm.handles;
+      let handle = handles.popCompleted();
+      while (handle) {
+        for (let i = 0; i < handle.waiters.length; i++) {
+          const fiber = this.getFiber(handle.waiters[i]);
+          if (fiber && this.vm.resumeFiberFromHandle(fiber, handle)) {
+            this.enqueue(fiber.id);
+          }
+        }
+        handles.deleteHandle(handle.id);
+        handle = handles.popCompleted();
+      }
+    }
+
+    /**
+     * Whether any runnable or waiting fiber belongs to the subtree of the root
+     * rule `rootRuleFuncId`.
+     *
+     * @param rootRuleFuncId - Funcid of a root rule.
+     */
+    hasLiveDescendantOfRoot(rootRuleFuncId: number): boolean {
+      for (let i = 0; i < this.fibers.length; i++) {
+        const fiber = this.fibers[i];
+        if (fiber.rootRuleFuncId !== rootRuleFuncId) {
+          continue;
+        }
+        if (fiber.state === FiberState.Runnable || fiber.state === FiberState.Waiting) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Execute one round: one budget slice for every fiber queued at entry,
+     * each followed by the depth-first drain of the child rules that slice
+     * spawned.
+     */
     tick(): void {
       const roundSize = this.runQueue.length;
       for (let i = 0; i < roundSize; i++) {
-        const fiberId = this.runQueue.shift();
-        const fiber = this.getFiber(fiberId);
-        if (!fiber || fiber.state !== FiberState.Runnable) {
-          continue;
-        }
-        fiber.instrBudget = this.caps.defaultBudget;
-        if (this.vm.runFiber(fiber) === VmStatus.Yielded) {
-          this.enqueue(fiberId);
-        }
+        this.runSlice(this.runQueue.shift());
+        this.drainSpawnedSubtrees();
       }
     }
 
@@ -86,6 +134,35 @@ namespace wendoo {
       }
       this.fiberIds = liveIds;
       this.fibers = live;
+    }
+
+    /**
+     * Runs the child rules the just-finished slice spawned, depth-first: each
+     * child receives a budget slice and the grandchildren it spawns drain
+     * before that child's next sibling.
+     */
+    private drainSpawnedSubtrees(): void {
+      if (this.pendingSpawns.length === 0) {
+        return;
+      }
+      const children = this.pendingSpawns;
+      this.pendingSpawns = [];
+      for (let i = 0; i < children.length; i++) {
+        this.runSlice(children[i]);
+        this.drainSpawnedSubtrees();
+      }
+    }
+
+    /** Grants one budget slice to `fiberId`, re-enqueueing it if it yielded. */
+    private runSlice(fiberId: number): void {
+      const fiber = this.getFiber(fiberId);
+      if (!fiber || fiber.state !== FiberState.Runnable) {
+        return;
+      }
+      fiber.instrBudget = this.caps.defaultBudget;
+      if (this.vm.runFiber(fiber, this) === VmStatus.Yielded) {
+        this.enqueue(fiberId);
+      }
     }
 
     private enqueue(fiberId: number): void {
@@ -165,8 +242,9 @@ namespace wendoo {
     }
 
     /**
-     * Advance the brain by one tick: respawn every root rule whose firing
-     * has ended, then run one scheduler round.
+     * Advance the brain by one tick: resume the fibers whose handles settled
+     * since the last think, respawn every root rule whose firing has ended and
+     * whose subtree has emptied, then run one scheduler round.
      *
      * @param currentTime - Cumulative scheduled time of this think.
      */
@@ -174,15 +252,21 @@ namespace wendoo {
       if (this.program.pages.length === 0) {
         return;
       }
+      this.scheduler.drainCompletedHandles();
+
       this.ctx.time = currentTime;
       this.ctx.dt = this.lastThinkTime === 0 ? 0 : currentTime - this.lastThinkTime;
       this.ctx.currentTick++;
 
       for (let i = 0; i < this.activeRules.length; i++) {
         const entry = this.activeRules[i];
-        if (this.isRuleFiringOver(entry.fiberId)) {
-          entry.fiberId = this.scheduler.spawn(entry.funcId, this.ctx);
+        if (!this.isRuleFiringOver(entry.fiberId)) {
+          continue;
         }
+        if (this.scheduler.hasLiveDescendantOfRoot(entry.funcId)) {
+          continue;
+        }
+        entry.fiberId = this.scheduler.spawn(entry.funcId, this.ctx);
       }
 
       this.scheduler.tick();

@@ -27,7 +27,7 @@ namespace wendoo {
       return false;
     }
     const v = args[slot];
-    return v.t === NativeType.Number && !isNotANumber(v.num);
+    return v.t === ValueTag.Number && !isNotANumber(v.num);
   }
 
   /** `+` over two number operands. Bad operands and a NaN result evaluate nil. */
@@ -46,12 +46,12 @@ namespace wendoo {
   }
 
   /**
-   * The `otherwise` sensor: true when the rule immediately above this one at
-   * its own nesting level evaluated its WHEN and did not fire. A subject that
-   * fired, one still evaluating, and a rule with no preceding sibling all
-   * read false.
+   * Arming read behind the ELSE (`otherwise`) rule trigger: true when the
+   * rule immediately above this one at its own nesting level evaluated its
+   * WHEN and did not fire. A subject that fired, one still evaluating, and
+   * a rule with no preceding sibling all read false.
    */
-  class OtherwiseSensor extends HostActionBinding {
+  class OtherwiseTrigger extends HostActionBinding {
     constructor() {
       super(CoreActionId.Otherwise, "otherwise", false);
     }
@@ -86,6 +86,6 @@ namespace wendoo {
    *   operands resolve against.
    */
   export function registerCoreHostActions(registry: HostActionRegistry): void {
-    registry.register(new OtherwiseSensor());
+    registry.register(new OtherwiseTrigger());
   }
 }

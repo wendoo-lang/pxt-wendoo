@@ -421,23 +421,23 @@ namespace wendoo {
 
   function readValue(r: ByteReader, strings: string[]): Value {
     const raw = r.u8();
-    const tag = raw === 255 ? NativeType.Unknown : raw;
-    if (tag === NativeType.Unknown) {
+    const tag = raw === 255 ? ValueTag.Unknown : raw;
+    if (tag === ValueTag.Unknown) {
       return UNKNOWN_VALUE;
     }
-    if (tag === NativeType.Void) {
+    if (tag === ValueTag.Void) {
       return VOID_VALUE;
     }
-    if (tag === NativeType.Nil) {
+    if (tag === ValueTag.Nil) {
       return NIL_VALUE;
     }
-    if (tag === NativeType.Boolean) {
+    if (tag === ValueTag.Boolean) {
       return mkBoolean(r.u8() !== 0);
     }
-    if (tag === NativeType.Number) {
+    if (tag === ValueTag.Number) {
       return mkNumber(readNumberEntry(r));
     }
-    if (tag === NativeType.String) {
+    if (tag === ValueTag.String) {
       return mkString(stringAt(r, strings, r.varUint()));
     }
     r.fail(DECODE_ERROR_INVALID_VALUE_TAG);

@@ -13,6 +13,7 @@
         "bytecode.ts",
         "program.ts",
         "decoder.ts",
+        "handle.ts",
         "context.ts",
         "core-host.ts",
         "vm.ts",

@@ -360,6 +360,20 @@ namespace wendoo {
       ctx.raise(ErrorCode.ScriptError, `host action ${this.key} is missing execSync`);
       return NIL_VALUE;
     }
+
+    /**
+     * Start the asynchronous action body over an owned copy of its positional
+     * argument buffer, and settle `handle` when the work completes. The base
+     * implementation raises `ScriptError`: the action carries no asynchronous
+     * body.
+     *
+     * @param ctx - Execution context of the dispatching fiber.
+     * @param args - Owned positional argument buffer, one entry per declared slot.
+     * @param handle - Settle handle of the pending operation the dispatch allocated.
+     */
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      ctx.raise(ErrorCode.ScriptError, `host action ${this.key} is missing execAsync`);
+    }
   }
 
   /** The host actions a program's `HOST_ACTION_CALL` operands resolve against. */
@@ -410,6 +424,16 @@ namespace wendoo {
      * @param result - Value the call returned.
      */
     onHostActionCall(actionId: number, callSiteId: number, args: Value[], result: Value): void {}
+
+    /**
+     * One asynchronous host-bound action dispatch, reported once its body has
+     * been started.
+     *
+     * @param actionId - Stable registry id of the dispatched action.
+     * @param callSiteId - Call-site id the dispatch was bound to.
+     * @param args - Positional argument buffer as the binding received it.
+     */
+    onHostActionCallAsync(actionId: number, callSiteId: number, args: Value[]): void {}
 
     /**
      * One fiber fault.

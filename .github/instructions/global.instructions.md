@@ -144,6 +144,12 @@ report them clean. Pre-existing noise you did not cause is not background to
 ignore: fix it when the fix is behavior-preserving and within reach, otherwise
 raise it as a blocker; either way, do not declare the work complete over it.
 
+A comment-only follow-up (applying comment-review findings, fixing a stale
+comment) does not require re-running builds or checks that passed immediately
+before it: the outcome cannot change, and the re-run only costs time. As with
+documentation-only changes above, `git diff --check` and the hook-enforced
+format gate suffice there.
+
 ## Tests Never Key on Display Prose
 
 Static display chrome -- placeholders, labels, button captions, tooltips,

@@ -154,6 +154,17 @@ namespace wendoo {
     }
 
     /**
+     * Record one asynchronous host-bound action dispatch.
+     *
+     * @param actionId - Stable registry id of the dispatched action.
+     * @param callSiteId - Call-site id the dispatch was bound to.
+     * @param args - Positional argument buffer as the binding received it.
+     */
+    hostActionCallAsync(actionId: number, callSiteId: number, args: Value[]): void {
+      this.sink.line(`${this.callPrefix("action", actionId, callSiteId, args)} async`);
+    }
+
+    /**
      * Record one fiber fault.
      *
      * @param fiberId - Id of the faulted fiber.
@@ -182,19 +193,19 @@ namespace wendoo {
     }
 
     private valueToken(v: Value): string {
-      if (v.t === NativeType.Void) {
+      if (v.t === ValueTag.Void) {
         return "void";
       }
-      if (v.t === NativeType.Nil) {
+      if (v.t === ValueTag.Nil) {
         return "nil";
       }
-      if (v.t === NativeType.Boolean) {
+      if (v.t === ValueTag.Boolean) {
         return `bool ${v.b ? "1" : "0"}`;
       }
-      if (v.t === NativeType.Number) {
+      if (v.t === ValueTag.Number) {
         return `number ${this.numberBits(v.num)}`;
       }
-      if (v.t === NativeType.String) {
+      if (v.t === ValueTag.String) {
         return `string ${quoted(v.str)}`;
       }
       return "opaque";
@@ -212,6 +223,10 @@ namespace wendoo {
 
     onHostActionCall(actionId: number, callSiteId: number, args: Value[], result: Value): void {
       this.writer.hostActionCall(actionId, callSiteId, args, result);
+    }
+
+    onHostActionCallAsync(actionId: number, callSiteId: number, args: Value[]): void {
+      this.writer.hostActionCallAsync(actionId, callSiteId, args);
     }
 
     onFiberFault(fiberId: number, code: number): void {

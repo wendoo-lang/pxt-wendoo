@@ -23,6 +23,55 @@ namespace wendoo {
     Yielded = 1,
     /** The fiber faulted. */
     Fault = 2,
+    /** The fiber parked on a pending handle. */
+    Waiting = 3,
+  }
+
+  /**
+   * Where a fiber parked at an `AWAIT` resumes, and the handle it waits on.
+   * The stack height is the height after the `AWAIT` popped its handle.
+   */
+  export class AwaitSite {
+    /** Program counter the resumed fiber continues at. */
+    resumePc: number;
+    /** Operand-stack height the resumed fiber is truncated to. */
+    stackHeight: number;
+    /** Frame-stack depth the resumed fiber is truncated to. */
+    frameDepth: number;
+    /** Handle the fiber waits on. */
+    handleId: number;
+
+    constructor(resumePc: number, stackHeight: number, frameDepth: number, handleId: number) {
+      this.resumePc = resumePc;
+      this.stackHeight = stackHeight;
+      this.frameDepth = frameDepth;
+      this.handleId = handleId;
+    }
+  }
+
+  /**
+   * Consecutive rounds one dispatch may find the handle table full before its
+   * fiber faults `StackOverflow`.
+   */
+  export const HANDLE_BACKPRESSURE_FAULT_ROUNDS = 8192;
+
+  /**
+   * The seam the dispatch loop reaches the fiber scheduler through for
+   * `SPAWN_RULE`. Subclass and override
+   * {@link ChildRuleSpawner.spawnChildRule}.
+   */
+  export class ChildRuleSpawner {
+    constructor() {}
+
+    /**
+     * Spawn a fire-and-forget child-rule fiber running `funcId` and hold it in
+     * the current round's spawn drain.
+     *
+     * @param funcId - Rule entry function id of the child.
+     * @param subtreeRootFuncId - Funcid of the root rule the child descends from.
+     * @param ctx - Context the child executes against.
+     */
+    spawnChildRule(funcId: number, subtreeRootFuncId: number, ctx: ExecutionContext): void {}
   }
 
   /** One call frame. */
@@ -57,6 +106,21 @@ namespace wendoo {
     ctx: ExecutionContext;
     /** Rule funcId of the fiber's entry function, or {@link NO_RULE}. */
     ruleFuncId: number;
+    /**
+     * Funcid of the root rule whose subtree this fiber belongs to, or
+     * {@link NO_RULE} on a fiber the scheduler spawned for a root rule itself.
+     */
+    rootRuleFuncId: number;
+    /** Where the fiber resumes while it is parked at an `AWAIT`, else `undefined`. */
+    awaitSite: AwaitSite;
+    /** Whether a settled rejection is queued to throw at the resume point. */
+    pendingInjectedThrow: boolean;
+    /** Classifier the queued rejection throws. */
+    injectedErrorCode: ErrorCode;
+    /** Program counter of the dispatch that last found the handle table full, or -1. */
+    handleBackpressurePc: number;
+    /** Consecutive rounds the dispatch at {@link Fiber.handleBackpressurePc} has found it full. */
+    handleBackpressureRounds: number;
 
     constructor(id: number, ctx: ExecutionContext, ruleFuncId: number) {
       this.id = id;
@@ -66,6 +130,12 @@ namespace wendoo {
       this.instrBudget = 0;
       this.ctx = ctx;
       this.ruleFuncId = ruleFuncId;
+      this.rootRuleFuncId = NO_RULE;
+      this.awaitSite = undefined;
+      this.pendingInjectedThrow = false;
+      this.injectedErrorCode = ErrorCode.HostError;
+      this.handleBackpressurePc = -1;
+      this.handleBackpressureRounds = 0;
     }
   }
 
@@ -75,10 +145,13 @@ namespace wendoo {
     defaultBudget: number;
     /** Values a single fiber's operand stack may hold. */
     maxStackSize: number;
+    /** Pending async handles one brain instance holds at once. */
+    maxHandles: number;
 
-    constructor(defaultBudget: number, maxStackSize: number) {
+    constructor(defaultBudget: number, maxStackSize: number, maxHandles: number) {
       this.defaultBudget = defaultBudget;
       this.maxStackSize = maxStackSize;
+      this.maxHandles = maxHandles;
     }
   }
 
@@ -117,6 +190,10 @@ namespace wendoo {
     Continue = 0,
     /** The fiber reached its root `RET`. */
     Done = 1,
+    /** The fiber parked on a pending handle. */
+    Waiting = 2,
+    /** The slice ended with the fiber still runnable at the same instruction. */
+    Yielded = 3,
   }
 
   /**
@@ -133,6 +210,8 @@ namespace wendoo {
     private faultMessage: string = "";
     /** Every fault this VM raised, in the order it raised them. */
     faults: VmFault[] = [];
+    /** Pending async operations this VM's fibers dispatched. */
+    handles: HandleTable;
 
     constructor(
       program: Program,
@@ -146,6 +225,7 @@ namespace wendoo {
       this.hostActions = hostActions;
       this.observer = observer;
       this.caps = caps;
+      this.handles = new HandleTable(caps.maxHandles);
     }
 
     /**
@@ -169,8 +249,9 @@ namespace wendoo {
      * transitioned the fiber and notified the observer.
      *
      * @param fiber - A runnable fiber with a positive budget.
+     * @param spawner - Scheduler seam a `SPAWN_RULE` in this slice spawns through.
      */
-    runFiber(fiber: Fiber): VmStatus {
+    runFiber(fiber: Fiber, spawner: ChildRuleSpawner): VmStatus {
       this.syncContextFromTopFrame(fiber);
 
       while (fiber.instrBudget > 0) {
@@ -178,17 +259,23 @@ namespace wendoo {
           return VmStatus.Done;
         }
         fiber.instrBudget--;
-
-        const frame = fiber.frames[fiber.frames.length - 1];
-        const fn = this.program.functions[frame.funcId];
         this.faultCode = NO_FAULT;
         this.faultMessage = "";
+
+        const frame = fiber.frames[fiber.frames.length - 1];
+        if (fiber.pendingInjectedThrow) {
+          fiber.pendingInjectedThrow = false;
+          this.raise(fiber.injectedErrorCode, "awaited handle rejected");
+          return this.consumeFault(fiber, frame);
+        }
+
+        const fn = this.program.functions[frame.funcId];
         if (frame.pc < 0 || frame.pc >= fn.code.length) {
           this.raise(ErrorCode.ScriptError, "pc out of bounds");
           return this.consumeFault(fiber, frame);
         }
 
-        const outcome = this.executeInstruction(fiber, fn.code[frame.pc], frame);
+        const outcome = this.executeInstruction(fiber, fn.code[frame.pc], frame, spawner);
         if (this.faultCode !== NO_FAULT) {
           return this.consumeFault(fiber, frame);
         }
@@ -196,9 +283,51 @@ namespace wendoo {
           fiber.state = FiberState.Done;
           return VmStatus.Done;
         }
+        if (outcome === StepOutcome.Waiting) {
+          return VmStatus.Waiting;
+        }
+        if (outcome === StepOutcome.Yielded) {
+          return VmStatus.Yielded;
+        }
       }
 
       return VmStatus.Yielded;
+    }
+
+    /**
+     * Resume `fiber` from the handle it parked on: truncate its operand and
+     * frame stacks to the await site, continue at the instruction past the
+     * `AWAIT`, and either push the settled value or queue the rejection to
+     * throw there. Returns whether the fiber was parked on `handle` and is now
+     * runnable.
+     *
+     * @param fiber - The fiber to resume.
+     * @param handle - The settled handle it parked on.
+     */
+    resumeFiberFromHandle(fiber: Fiber, handle: Handle): boolean {
+      if (fiber.state !== FiberState.Waiting || !fiber.awaitSite || fiber.awaitSite.handleId !== handle.id) {
+        return false;
+      }
+      const site = fiber.awaitSite;
+      while (fiber.frames.length > site.frameDepth) {
+        fiber.frames.pop();
+      }
+      while (fiber.vstack.length > site.stackHeight) {
+        fiber.vstack.pop();
+      }
+      if (fiber.frames.length > 0) {
+        fiber.frames[fiber.frames.length - 1].pc = site.resumePc;
+      }
+      fiber.awaitSite = undefined;
+      fiber.state = FiberState.Runnable;
+
+      if (handle.state === HandleState.Resolved) {
+        fiber.vstack.push(handle.result);
+      } else {
+        fiber.pendingInjectedThrow = true;
+        fiber.injectedErrorCode = handle.errorCode;
+      }
+      return true;
     }
 
     private consumeFault(fiber: Fiber, frame: Frame): VmStatus {
@@ -218,7 +347,7 @@ namespace wendoo {
       }
     }
 
-    private executeInstruction(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+    private executeInstruction(fiber: Fiber, ins: Instr, frame: Frame, spawner: ChildRuleSpawner): StepOutcome {
       switch (ins.op) {
         case Op.PUSH_CONST_VAL:
           return this.execPushConstVal(fiber, ins, frame);
@@ -234,10 +363,16 @@ namespace wendoo {
           return this.execStoreVarSlot(fiber, ins, frame);
         case Op.RET:
           return this.execRet(fiber);
+        case Op.SPAWN_RULE:
+          return this.execSpawnRule(fiber, ins, frame, spawner);
         case Op.HOST_CALL:
           return this.execHostCall(fiber, ins, frame);
         case Op.HOST_ACTION_CALL:
           return this.execHostActionCall(fiber, ins, frame);
+        case Op.HOST_ACTION_CALL_ASYNC:
+          return this.execHostActionCallAsync(fiber, ins, frame);
+        case Op.AWAIT:
+          return this.execAwait(fiber, frame);
         case Op.WHEN_START:
           return this.execWhenStart(fiber, frame);
         case Op.WHEN_END:
@@ -414,6 +549,122 @@ namespace wendoo {
       this.push(fiber, result);
       frame.pc++;
       this.syncContextFromTopFrame(fiber);
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Dispatches an asynchronous host-bound action: allocates a pending
+     * handle, hands the action an owned argument snapshot and that handle, and
+     * leaves the handle on the operand stack in place of the arguments. With
+     * the handle table full the fiber yields at this same instruction, having
+     * consumed nothing, and retries next round.
+     */
+    private execHostActionCallAsync(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const action = this.hostActions.getById(ins.a);
+      if (!action) {
+        this.raise(ErrorCode.ScriptError, `no action registered with id ${ins.a}`);
+        return StepOutcome.Continue;
+      }
+      if (!action.isAsync) {
+        this.raise(ErrorCode.ScriptError, `host action ${action.key} requires HOST_ACTION_CALL`);
+        return StepOutcome.Continue;
+      }
+      const argc = ins.b;
+      if (argc < 0 || argc > fiber.vstack.length) {
+        this.raise(ErrorCode.StackUnderflow, "HOST_ACTION_CALL_ASYNC argc exceeds stack size");
+        return StepOutcome.Continue;
+      }
+      if (!this.handles.hasCapacity()) {
+        return this.backpressureOnHandles(fiber, frame);
+      }
+      this.clearHandleBackpressure(fiber);
+
+      const callSiteId = ins.c;
+      this.bindContext(fiber, frame, callSiteId);
+      const args = this.readArgs(fiber, argc);
+      const handleId = this.handles.createPending();
+      action.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      if (fiber.ctx.hasFault()) {
+        this.handles.deleteHandle(handleId);
+        this.raise(fiber.ctx.faultCode, fiber.ctx.faultMessage);
+        fiber.ctx.clearFault();
+        return StepOutcome.Continue;
+      }
+      this.observer.onHostActionCallAsync(ins.a, callSiteId, args);
+
+      for (let i = 0; i < argc; i++) {
+        fiber.vstack.pop();
+      }
+      this.push(fiber, mkHandle(handleId));
+      frame.pc++;
+      this.syncContextFromTopFrame(fiber);
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Records that the dispatch at `frame.pc` found the handle table full and
+     * ends the slice with the program counter unchanged. Faults
+     * `StackOverflow` once that dispatch has found it full for
+     * {@link HANDLE_BACKPRESSURE_FAULT_ROUNDS} consecutive rounds.
+     */
+    private backpressureOnHandles(fiber: Fiber, frame: Frame): StepOutcome {
+      const rounds = fiber.handleBackpressurePc === frame.pc ? fiber.handleBackpressureRounds + 1 : 1;
+      fiber.handleBackpressurePc = frame.pc;
+      fiber.handleBackpressureRounds = rounds;
+      if (rounds >= HANDLE_BACKPRESSURE_FAULT_ROUNDS) {
+        this.raise(ErrorCode.StackOverflow, "no free async handle");
+        return StepOutcome.Continue;
+      }
+      return StepOutcome.Yielded;
+    }
+
+    /** Clears the run of starved rounds {@link VM.backpressureOnHandles} recorded. */
+    private clearHandleBackpressure(fiber: Fiber): void {
+      fiber.handleBackpressurePc = -1;
+      fiber.handleBackpressureRounds = 0;
+    }
+
+    /**
+     * Pops a handle. A resolved handle pushes its value and dispatch
+     * continues; a rejected one faults the fiber with the classifier it
+     * carries; a pending one parks the fiber until the handle settles.
+     */
+    private execAwait(fiber: Fiber, frame: Frame): StepOutcome {
+      const handleValue = this.pop(fiber);
+      if (handleValue.t !== ValueTag.Handle) {
+        this.raise(ErrorCode.ScriptError, "AWAIT expects a handle value");
+        return StepOutcome.Continue;
+      }
+      const handle = this.handles.get(handleValue.num);
+      if (!handle) {
+        this.raise(ErrorCode.ScriptError, `AWAIT on unknown handle ${handleValue.num}`);
+        return StepOutcome.Continue;
+      }
+      if (handle.state === HandleState.Resolved) {
+        this.push(fiber, handle.result);
+        frame.pc++;
+        return StepOutcome.Continue;
+      }
+      if (handle.state === HandleState.Rejected) {
+        this.raise(handle.errorCode, "awaited handle rejected");
+        return StepOutcome.Continue;
+      }
+
+      fiber.state = FiberState.Waiting;
+      fiber.awaitSite = new AwaitSite(frame.pc + 1, fiber.vstack.length, fiber.frames.length, handle.id);
+      this.handles.addWaiter(handle.id, fiber.id);
+      return StepOutcome.Waiting;
+    }
+
+    /**
+     * Spawns a fire-and-forget child-rule fiber tagged with this fiber's
+     * subtree root, and continues at the next instruction without pushing
+     * anything.
+     */
+    private execSpawnRule(fiber: Fiber, ins: Instr, frame: Frame, spawner: ChildRuleSpawner): StepOutcome {
+      const subtreeRootFuncId = fiber.rootRuleFuncId !== NO_RULE ? fiber.rootRuleFuncId : fiber.frames[0].funcId;
+      spawner.spawnChildRule(ins.a, subtreeRootFuncId, fiber.ctx);
+      frame.pc++;
       return StepOutcome.Continue;
     }
 
