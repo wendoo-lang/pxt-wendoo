@@ -40,8 +40,12 @@ completions.
 - Do not introduce a new naming pattern to an area of the repo unless the user
   explicitly asks for it or an existing tool/framework requires it.
 - Much of this repo is still empty. Where an area has no sibling to match,
-  follow the corresponding area of `external/wendoo-lang` rather than inventing
-  a local convention.
+  follow the corresponding area of the reference apps rather than inventing a
+  local convention: `external/wendoo-lang/apps/ecosim`, and `apps/microbit-sim`
+  in the companion `wendoo-mcu` repository when that checkout is available.
+  Check the shared packages too -- a convention is often implemented once in
+  `packages/*` and merely consumed by both apps. Departing from a pattern you
+  found requires a stated reason, not just a preference.
 
 ## Project-Specific Rules
 

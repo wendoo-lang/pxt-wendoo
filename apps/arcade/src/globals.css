@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@import "../../../external/wendoo-lang/packages/ui/src/ui.css";
+@source "../../../external/wendoo-lang/packages/ui/src";
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

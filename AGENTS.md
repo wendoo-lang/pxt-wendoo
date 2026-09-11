@@ -100,6 +100,42 @@ current session. This is an absolute rule.
 - Run scripts with npm from the relevant package directory, for example
   `npm test`, `npm run build`, `npm run typecheck`, `npm run check`.
 
+## Follow the Established Pattern
+
+Before building any new subsystem -- a service, a store, a settings surface, a
+connection lifecycle, a build script, a test harness -- find how the reference
+apps already do it and follow what you find. Check both:
+
+- `external/wendoo-lang/apps/ecosim`, always present through the submodule.
+- `apps/microbit-sim` in the companion `wendoo-mcu` repository. It is the
+  closest analogue to this repo's editor app, but it is NOT in this checkout;
+  read it when a wendoo-mcu checkout is available, and say plainly when it is
+  not rather than guessing at what it does.
+
+Check the shared packages too. A convention is often implemented once in
+`packages/*` and merely consumed by both apps, so an app that looks like it
+hand-rolls something may just be calling the shared implementation.
+
+Following the pattern is the default, not a preference. Departing from one is
+allowed and sometimes correct, but it costs an argument: name the pattern, say
+why it does not fit here, and record the decision where the next reader will
+meet it. An unexamined divergence is worse than a deliberate wrong choice --
+the deliberate one leaves a reason behind.
+
+Two hazards worth knowing:
+
+- The behavior you are looking for may live downstream of the app. Before
+  concluding an app implements something itself, check the package that owns
+  it.
+- A standalone wendoo-lang clone can lag the submodule checkouts. Prefer
+  `external/wendoo-lang` as the current reference.
+
+The Arcade bridge address is the worked example: both apps store the service as
+a bare host with an optional port and let `bridge-client` choose `ws://` for a
+loopback host and `wss://` otherwise, and neither app uses a `VITE_` env var for
+configuration. A scheme baked into the value would have been silently stripped,
+and an env var would have been this repo's only one.
+
 ## Build System
 
 Builds are driven by `wendooBuild` metadata plus wireit freshness tracking --
@@ -215,14 +251,33 @@ over a framework for implementations that do not exist.
   is idiomatic on one side is frequently illegal on the other; check before
   carrying one across.
 - Planned first-cut ownership, one subfolder per unit:
-  - `makecode/extensions/*` own the MakeCode extensions.
-    `makecode/extensions/core` implements the Wendoo bytecode VM in MakeCode
-    static TypeScript, so a brain executes inside the Arcade game itself. It is
-    a conforming Wendoo VM, held to the observable semantics of the reference
-    VM under the contract in `.github/instructions/vm.instructions.md`.
+  - `makecode/extensions/*` own the MakeCode extensions, and there are two
+    kinds. They are nested pxt extensions: each is addressed by its GitHub
+    coordinate at full depth, so core is
+    `github:wendoo-lang/wendoo-arcade/makecode/extensions/core`, and pxt's
+    monorepo support requires a top-level `pxt.json` at the repo root for any
+    of them to resolve. That coordinate is public identity -- it lands in every
+    consuming project and in every pack that depends on core -- so the
+    directory a shipped extension lives in is not free to rename.
+    `makecode/extensions/core` is primarily the STS VM and its support.
+    It implements the Wendoo bytecode VM in MakeCode static TypeScript, so a
+    brain executes inside the Arcade game itself; it is a conforming Wendoo VM,
+    held to the observable semantics of the reference VM under the contract in
+    `.github/instructions/vm.instructions.md`. It also owns the brain asset
+    class, the spawn block, and the tile bind API, and may ship a minimal tile
+    vocabulary.
+  - The other kind is a vocabulary pack: an extension supplying host-bound
+    tiles for one genre of game. The majority of vocabulary comes from packs
+    and from user code, not from core. A pack depends on core and never on
+    another pack; packs compose by keeping tile names disjoint. Exactly where
+    the line falls between a core tile and a pack tile is not settled -- when a
+    new tile could plausibly go either way, raise it rather than deciding it in
+    passing.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in its
     own subfolder. `makecode/simx/bridge` connects to the bridge service,
-    joining the editor webapp to the MakeCode project.
+    joining the editor webapp to the MakeCode project. A simx is a channel: not
+    a store, not a UI. It reloads on every sim restart, so no state may live
+    only there.
   - `apps/arcade` owns the Wendoo editor webapp: brain authoring, project
     management, compiler integration, and diagnostics.
   - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects
