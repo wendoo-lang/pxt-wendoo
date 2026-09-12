@@ -414,14 +414,13 @@ namespace wendoo {
     /**
      * Ask that `pageIndex` be the active page from the next think, cancelling
      * the active page's fibers now. The index of the active page restarts it
-     * instead; an index outside the program's pages leaves no page active
-     * from the next think on.
+     * instead. An index outside the program's pages is a no-op: the active
+     * page stays active and loses no fiber.
      *
      * @param pageIndex - Zero-based index of the page to switch to.
      */
     requestPageChange(pageIndex: number): void {
       if (pageIndex < 0 || pageIndex >= this.program.pages.length) {
-        this.desiredPageIndex = NO_PAGE;
         return;
       }
       if (pageIndex === this.currentPageIndex) {
@@ -434,7 +433,7 @@ namespace wendoo {
 
     /**
      * Ask that the page carrying `pageId` be the active page from the next
-     * think. A `pageId` no page carries leaves no page active.
+     * think. A no-op when no page carries the id.
      *
      * @param pageId - Stable page id of the page to switch to.
      */
@@ -445,7 +444,6 @@ namespace wendoo {
           return;
         }
       }
-      this.requestPageChange(NO_PAGE);
     }
 
     /**
