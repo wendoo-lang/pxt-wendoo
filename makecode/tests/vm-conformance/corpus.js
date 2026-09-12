@@ -37,9 +37,14 @@ function programHex(caseId, precision) {
   return fs.readFileSync(file).toString("hex");
 }
 
+/** The case's committed compiled-program JSON, parsed. */
+function programJson(caseId) {
+  return JSON.parse(fs.readFileSync(path.join(CORPUS_DIR, `${caseId}.program.json`), "utf8"));
+}
+
 /** The case's committed observable trace at `precision`, verbatim. */
 function goldenTrace(caseId, precision) {
   return fs.readFileSync(path.join(CORPUS_DIR, `${caseId}.${precision}.trace`), "utf8");
 }
 
-module.exports = { CORPUS_DIR, readManifest, caseEntry, programHex, goldenTrace };
+module.exports = { CORPUS_DIR, readManifest, caseEntry, programHex, programJson, goldenTrace };

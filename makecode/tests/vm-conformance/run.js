@@ -6,6 +6,11 @@
  * build each project JS-only, capture its run N times, and report the verdict
  * and the sha256 of every capture.
  *
+ * A case whose compiled program carries an opcode listed in
+ * `unsupported-opcodes.json` is classified SKIP, naming the opcodes, and does
+ * not fail the run. A case that is not skipped is held to the golden in full:
+ * hitting the extension's unimplemented-opcode fault still fails it.
+ *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
  */
@@ -21,6 +26,9 @@ const gen = require("./gen-cases");
 const TRACE_START_PREFIX = "SIMCAP START ";
 const TRACE_END = "SIMCAP TRACE-END";
 const DIAG_PREFIX = "DIAG ";
+
+/** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
+const UNSUPPORTED_OPCODES_PATH = path.join(__dirname, "unsupported-opcodes.json");
 
 function usage(message) {
   process.stderr.write(`run: ${message}\n`);
@@ -84,6 +92,30 @@ function sha256(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+/** The unsupported-opcode list, as a map from opcode number to opcode name. */
+function readUnsupportedOpcodes() {
+  const declared = JSON.parse(fs.readFileSync(UNSUPPORTED_OPCODES_PATH, "utf8")).opcodes;
+  return new Map(declared.map((entry) => [entry.op, entry.name]));
+}
+
+/**
+ * The names of the unsupported opcodes a case's compiled program carries, in
+ * opcode order and without repeats. An empty array means the extension
+ * dispatches every opcode the case can reach.
+ *
+ * @param caseId Manifest id of the case to scan.
+ * @param unsupported Opcode number to opcode name, from `readUnsupportedOpcodes`.
+ */
+function unsupportedOpcodesOfCase(caseId, unsupported) {
+  const hit = new Set();
+  for (const fn of corpus.programJson(caseId).program.functions) {
+    for (const instruction of fn.code) {
+      if (unsupported.has(instruction.op)) hit.add(instruction.op);
+    }
+  }
+  return [...hit].sort((a, b) => a - b).map((op) => unsupported.get(op));
+}
+
 /** The first line where `actual` and `expected` differ, or null when they match. */
 function firstDivergence(actual, expected) {
   const a = actual.split("\n");
@@ -102,8 +134,10 @@ function main() {
   const wanted = options.cases.length ? manifest.cases.filter((c) => options.cases.includes(c.id)) : manifest.cases;
   if (!wanted.length) usage("no corpus case matched --case");
 
+  const unsupported = readUnsupportedOpcodes();
   const results = [];
   let failures = 0;
+  let skipped = 0;
 
   for (const targetDir of options.targets) {
     const targetName = path.basename(targetDir);
@@ -116,8 +150,16 @@ function main() {
     for (const entry of wanted) {
       const projectDir = byId.get(entry.id);
       if (!projectDir) continue;
-      const record = { target: targetName, case: entry.id, runs: [], verdict: "", diagnostics: [] };
+      const record = { target: targetName, case: entry.id, runs: [], verdict: "", diagnostics: [], unsupported: [] };
       results.push(record);
+
+      record.unsupported = unsupportedOpcodesOfCase(entry.id, unsupported);
+      if (record.unsupported.length) {
+        record.verdict = `SKIP (unsupported: ${record.unsupported.join(", ")})`;
+        skipped++;
+        process.stdout.write(`${targetName}/${entry.id}: ${record.verdict}\n`);
+        continue;
+      }
 
       if (!options.skipBuild) {
         const built = build(targetDir, projectDir);
@@ -165,7 +207,7 @@ function main() {
     }
   }
 
-  process.stdout.write(`\n${JSON.stringify({ precision: options.precision, results }, null, 2)}\n`);
+  process.stdout.write(`\n${JSON.stringify({ precision: options.precision, skipped, results }, null, 2)}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

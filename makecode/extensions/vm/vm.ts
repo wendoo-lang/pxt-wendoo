@@ -410,6 +410,10 @@ namespace wendoo {
           return this.execPushConstVal(fiber, ins, frame);
         case Op.PUSH_CONST_NUM:
           return this.execPushConstNum(fiber, ins, frame);
+        case Op.PUSH_CONST_STR:
+          return this.execPushConstStr(fiber, ins, frame);
+        case Op.POP:
+          return this.execPop(fiber, frame);
         case Op.DUP:
           return this.execDup(fiber, frame);
         case Op.STACK_SET_REL:
@@ -422,6 +426,8 @@ namespace wendoo {
           return this.execJmp(ins, frame);
         case Op.JMP_IF_FALSE:
           return this.execJmpIfFalse(fiber, ins, frame);
+        case Op.JMP_IF_TRUE:
+          return this.execJmpIfTrue(fiber, ins, frame);
         case Op.RET:
           return this.execRet(fiber);
         case Op.SPAWN_RULE:
@@ -490,6 +496,23 @@ namespace wendoo {
       return StepOutcome.Continue;
     }
 
+    private execPushConstStr(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      if (ins.a < 0 || ins.a >= this.program.constStrings.length) {
+        this.raise(ErrorCode.ScriptError, "PUSH_CONST_STR constant index out of bounds");
+        return StepOutcome.Continue;
+      }
+      this.push(fiber, mkString(this.program.constStrings[ins.a]));
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /** Discards the top of the operand stack. */
+    private execPop(fiber: Fiber, frame: Frame): StepOutcome {
+      this.pop(fiber);
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
     private execDup(fiber: Fiber, frame: Frame): StepOutcome {
       if (fiber.vstack.length === 0) {
         this.raise(ErrorCode.StackUnderflow, "operand stack is empty");
@@ -545,6 +568,16 @@ namespace wendoo {
     private execJmpIfFalse(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const condition = this.pop(fiber);
       frame.pc += isTruthy(condition) ? 1 : ins.a;
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Pops the branch condition and advances the PC by the instruction's
+     * signed offset when it is truthy, or by one when it is not.
+     */
+    private execJmpIfTrue(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const condition = this.pop(fiber);
+      frame.pc += isTruthy(condition) ? ins.a : 1;
       return StepOutcome.Continue;
     }
 
