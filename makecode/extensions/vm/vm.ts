@@ -113,9 +113,9 @@ namespace wendoo {
     rootRuleFuncId: number;
     /** Where the fiber resumes while it is parked at an `AWAIT`, else `undefined`. */
     awaitSite: AwaitSite;
-    /** Whether a settled rejection is queued to throw at the resume point. */
+    /** Whether a handle that settled without a value is queued to throw at the resume point. */
     pendingInjectedThrow: boolean;
-    /** Classifier the queued rejection throws. */
+    /** Classifier that queued throw carries. */
     injectedErrorCode: ErrorCode;
     /** Program counter of the dispatch that last found the handle table full, or -1. */
     handleBackpressurePc: number;
@@ -281,7 +281,7 @@ namespace wendoo {
         const frame = fiber.frames[fiber.frames.length - 1];
         if (fiber.pendingInjectedThrow) {
           fiber.pendingInjectedThrow = false;
-          this.raise(fiber.injectedErrorCode, "awaited handle rejected");
+          this.raise(fiber.injectedErrorCode, "awaited handle did not resolve");
           return this.consumeFault(fiber, frame);
         }
 
@@ -313,9 +313,9 @@ namespace wendoo {
     /**
      * Resume `fiber` from the handle it parked on: truncate its operand and
      * frame stacks to the await site, continue at the instruction past the
-     * `AWAIT`, and either push the settled value or queue the rejection to
-     * throw there. Returns whether the fiber was parked on `handle` and is now
-     * runnable.
+     * `AWAIT`, and either push the settled value or, on a handle that settled
+     * without one, queue its classifier to throw there. Returns whether the
+     * fiber was parked on `handle` and is now runnable.
      *
      * @param fiber - The fiber to resume.
      * @param handle - The settled handle it parked on.
@@ -344,6 +344,28 @@ namespace wendoo {
         fiber.injectedErrorCode = handle.errorCode;
       }
       return true;
+    }
+
+    /**
+     * End `fiber` without running it again: unpark it from any handle it
+     * waits on, so a later settle of that handle reaches it no more, and move
+     * it to {@link FiberState.Cancelled}, which marks every rule in its
+     * ancestry as an abandoned firing. A fiber already in a terminal state is
+     * left alone.
+     *
+     * A cancelled fiber raises no fault and reports nothing to the observer.
+     *
+     * @param fiber - The fiber to cancel.
+     */
+    cancelFiber(fiber: Fiber): void {
+      if (fiber.state === FiberState.Done || fiber.state === FiberState.Fault || fiber.state === FiberState.Cancelled) {
+        return;
+      }
+      if (fiber.state === FiberState.Waiting && fiber.awaitSite) {
+        this.handles.removeWaiter(fiber.awaitSite.handleId, fiber.id);
+        fiber.awaitSite = undefined;
+      }
+      this.transitionState(fiber, FiberState.Cancelled);
     }
 
     private consumeFault(fiber: Fiber, frame: Frame): VmStatus {
@@ -742,8 +764,9 @@ namespace wendoo {
 
     /**
      * Pops a handle. A resolved handle pushes its value and dispatch
-     * continues; a rejected one faults the fiber with the classifier it
-     * carries; a pending one parks the fiber until the handle settles.
+     * continues; a rejected or cancelled one faults the fiber with the
+     * classifier it carries; a pending one parks the fiber until the handle
+     * settles.
      */
     private execAwait(fiber: Fiber, frame: Frame): StepOutcome {
       const handleValue = this.pop(fiber);
@@ -761,8 +784,8 @@ namespace wendoo {
         frame.pc++;
         return StepOutcome.Continue;
       }
-      if (handle.state === HandleState.Rejected) {
-        this.raise(handle.errorCode, "awaited handle rejected");
+      if (handle.state !== HandleState.Pending) {
+        this.raise(handle.errorCode, "awaited handle did not resolve");
         return StepOutcome.Continue;
       }
 

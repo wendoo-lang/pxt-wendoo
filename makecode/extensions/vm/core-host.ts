@@ -73,6 +73,16 @@ namespace wendoo {
 
   /** Stable action ids of the core host actions. */
   export enum CoreActionId {
+    /** The page-change actuator. */
+    SwitchPage = 0,
+    /** The page-restart actuator. */
+    RestartPage = 1,
+    /** The page-activation edge sensor. */
+    OnPageEntered = 4,
+    /** The active page's identity sensor. */
+    CurrentPage = 6,
+    /** The most recently deactivated page's identity sensor. */
+    PreviousPage = 7,
     /** The `otherwise` chain sensor. */
     Otherwise = 8,
     /** The THEN trigger's arming read. */
@@ -339,6 +349,106 @@ namespace wendoo {
     }
   }
 
+  /** Argument slot of the 1-based page number `switch page` accepts. */
+  const SWITCH_PAGE_NUMBER_SLOT = 0;
+
+  /** Argument slot of the stable page id `switch page` accepts. */
+  const SWITCH_PAGE_STRING_SLOT = 1;
+
+  /**
+   * `switch page`: makes another page the active one from the next think. A
+   * number argument names the page by its 1-based page number, a string
+   * argument by its stable page id, and an argument buffer carrying neither
+   * restarts the active page.
+   */
+  class SwitchPageActuator extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.SwitchPage, "switch-page", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const pages = ctx.services.pages;
+      const numberArg = argAt(args, SWITCH_PAGE_NUMBER_SLOT);
+      if (numberArg.t === ValueTag.Number) {
+        pages.requestPageChange(numberArg.num - 1);
+        return VOID_VALUE;
+      }
+      const stringArg = argAt(args, SWITCH_PAGE_STRING_SLOT);
+      if (stringArg.t === ValueTag.String) {
+        pages.requestPageChangeByPageId(stringArg.str);
+        return VOID_VALUE;
+      }
+      pages.requestPageRestart();
+      return VOID_VALUE;
+    }
+  }
+
+  /**
+   * `restart page`: cancels the active page's fibers so its root rules
+   * respawn at the next think. The page is not deactivated, so no activation
+   * hook runs again and every call site keeps the state it holds.
+   */
+  class RestartPageActuator extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.RestartPage, "restart-page", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      ctx.services.pages.requestPageRestart();
+      return VOID_VALUE;
+    }
+  }
+
+  /** `current page`: the stable page id of the active page. */
+  class CurrentPageSensor extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.CurrentPage, "current-page", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return mkString(ctx.services.pages.getCurrentPageId());
+    }
+  }
+
+  /**
+   * `previous page`: the stable page id of the most recently deactivated
+   * page, which reads the active page's id while no page has been deactivated
+   * yet.
+   */
+  class PreviousPageSensor extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.PreviousPage, "previous-page", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return mkString(ctx.services.pages.getPreviousPageId());
+    }
+  }
+
+  /**
+   * `on page entered`: true on the first read at its call site after the
+   * site's page was activated, and false on every read after that. A page
+   * restart does not re-arm it.
+   */
+  class OnPageEnteredSensor extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.OnPageEntered, "on-page-entered", false);
+    }
+
+    onPageEntered(ctx: ExecutionContext): void {
+      ctx.services.callsite.setHostState(ctx.currentCallSiteId, FALSE_VALUE);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const state = ctx.services.callsite.getHostState(ctx.currentCallSiteId);
+      if (state && state.t === ValueTag.Boolean && !state.b) {
+        ctx.services.callsite.setHostState(ctx.currentCallSiteId, TRUE_VALUE);
+        return TRUE_VALUE;
+      }
+      return FALSE_VALUE;
+    }
+  }
+
   /**
    * Arming read behind the ELSE (`otherwise`) rule trigger: true when the
    * rule immediately above this one at its own nesting level evaluated its
@@ -463,6 +573,11 @@ namespace wendoo {
    *   operands resolve against.
    */
   export function registerCoreHostActions(registry: HostActionRegistry): void {
+    registry.register(new SwitchPageActuator());
+    registry.register(new RestartPageActuator());
+    registry.register(new OnPageEnteredSensor());
+    registry.register(new CurrentPageSensor());
+    registry.register(new PreviousPageSensor());
     registry.register(new OtherwiseTrigger());
     registry.register(new RuleTrigger());
   }

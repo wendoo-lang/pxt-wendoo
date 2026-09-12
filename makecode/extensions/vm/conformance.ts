@@ -2,7 +2,7 @@
  * The conformance host profile and the corpus replay driver.
  *
  * The profile is the host surface every Wendoo VM implements in its test
- * harness to replay the shared conformance corpus: six target-partition host
+ * harness to replay the shared conformance corpus: eight target-partition host
  * actions over a world that owns no clock and no random stream, so two runs of
  * one program over one schedule observe the same world.
  *
@@ -18,6 +18,12 @@
  * - `signal(period)` -- synchronous presence-gated sensor delivering the
  *   number `0` on every think whose ordinal is a multiple of `period`, and nil
  *   on every other think.
+ * - `counter()` -- synchronous sensor returning how many times it has been
+ *   read at its own call site since that call site's page was last activated.
+ *   Call sites count independently, and a page restart leaves the count
+ *   standing.
+ * - `defer cancel(ticks)` -- asynchronous actuator whose handle is cancelled
+ *   exactly `ticks` ticks after its dispatch.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -41,6 +47,9 @@ namespace wendoo {
   /** Falsy value `signal` delivers on a tick it is present. */
   const SIGNAL_VALUE = mkNumber(0);
 
+  /** Count `counter` holds at a call site its activation hook has just reset; its first read returns one more. */
+  const COUNTER_START = 0;
+
   /**
    * Stable action ids of the conformance host profile, allocated from the
    * target partition core reserves at id 1024. Serialized programs record
@@ -53,6 +62,8 @@ namespace wendoo {
     DeferFail = 1027,
     Fault = 1028,
     Signal = 1029,
+    Counter = 1030,
+    DeferCancel = 1031,
   }
 
   /**
@@ -242,7 +253,56 @@ namespace wendoo {
   }
 
   /**
-   * Register the conformance host profile's six actions into `registry`.
+   * `counter()`: how many times this call site has been read since its page
+   * was last activated. Call sites count independently; only page activation
+   * resets the count.
+   */
+  class CounterSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.Counter, "sensor.conformance.counter", false);
+    }
+
+    onPageEntered(ctx: ExecutionContext): void {
+      ctx.services.callsite.setHostState(ctx.currentCallSiteId, mkNumber(COUNTER_START));
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const stored = ctx.services.callsite.getHostState(ctx.currentCallSiteId);
+      const count = stored && stored.t === ValueTag.Number ? stored.num : COUNTER_START;
+      const next = mkNumber(count + 1);
+      ctx.services.callsite.setHostState(ctx.currentCallSiteId, next);
+      return next;
+    }
+  }
+
+  /** Settles its handle as cancelled. */
+  class CancelSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+
+    constructor(handle: AsyncHandle) {
+      super(0);
+      this.handle = handle;
+    }
+
+    settle(): void {
+      this.handle.cancel();
+    }
+  }
+
+  /** `defer cancel(ticks)`: cancels its handle after `ticks` ticks. */
+  class DeferCancelActuator extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.DeferCancel, "actuator.conformance.defer-cancel", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, wholeTicksArg(args, 0), new CancelSettlement(handle));
+    }
+  }
+
+  /**
+   * Register the conformance host profile's eight actions into `registry`.
    *
    * @param registry - Host-action registry the corpus program dispatches against.
    */
@@ -253,6 +313,8 @@ namespace wendoo {
     registry.register(new DeferFailActuator());
     registry.register(new FaultActuator());
     registry.register(new SignalSensor());
+    registry.register(new CounterSensor());
+    registry.register(new DeferCancelActuator());
   }
 
   /** Line that closes the trace body of a replayed case. */

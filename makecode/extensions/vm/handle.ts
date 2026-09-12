@@ -19,6 +19,8 @@ namespace wendoo {
     Resolved = 1,
     /** The operation rejected; {@link Handle.errorCode} holds its classifier. */
     Rejected = 2,
+    /** The operation was cancelled; {@link Handle.errorCode} holds `Cancelled`. */
+    Cancelled = 3,
   }
 
   /**
@@ -32,7 +34,7 @@ namespace wendoo {
     state: HandleState;
     /** Resolved value; meaningful only in {@link HandleState.Resolved}. */
     result: Value;
-    /** Fault classifier; meaningful only in {@link HandleState.Rejected}. */
+    /** Fault classifier; meaningful in {@link HandleState.Rejected} and {@link HandleState.Cancelled}. */
     errorCode: ErrorCode;
     /** Ids of the fibers parked on this handle, in park order. */
     waiters: number[];
@@ -148,6 +150,22 @@ namespace wendoo {
     }
 
     /**
+     * Settle `id` as cancelled carrying {@link ErrorCode.Cancelled}, and
+     * enqueue it for draining. A handle that is not pending is left alone.
+     *
+     * @param id - Handle id.
+     */
+    cancel(id: number): void {
+      const handle = this.get(id);
+      if (!handle || handle.state !== HandleState.Pending) {
+        return;
+      }
+      handle.state = HandleState.Cancelled;
+      handle.errorCode = ErrorCode.Cancelled;
+      this.completedQueue.push(handle);
+    }
+
+    /**
      * Park `fiberId` on `id`. A handle that no longer exists is a no-op.
      *
      * @param id - Handle id.
@@ -159,6 +177,25 @@ namespace wendoo {
         return;
       }
       handle.waiters.push(fiberId);
+    }
+
+    /**
+     * Unpark `fiberId` from `id`, so a later settle of the handle reaches it
+     * no more. A handle that no longer exists, and a fiber that is not parked
+     * on it, are both no-ops.
+     *
+     * @param id - Handle id.
+     * @param fiberId - Id of the fiber to unpark.
+     */
+    removeWaiter(id: number, fiberId: number): void {
+      const handle = this.get(id);
+      if (!handle) {
+        return;
+      }
+      const idx = handle.waiters.indexOf(fiberId);
+      if (idx >= 0) {
+        handle.waiters.splice(idx, 1);
+      }
     }
 
     /**
@@ -195,8 +232,9 @@ namespace wendoo {
   /**
    * The settle handle one async host body receives beside its argument
    * snapshot. The body retains it across the async boundary and calls exactly
-   * one of {@link AsyncHandle.resolve} or {@link AsyncHandle.reject} when the
-   * work completes; settling a handle that is no longer pending is a no-op.
+   * one of {@link AsyncHandle.resolve}, {@link AsyncHandle.reject} or
+   * {@link AsyncHandle.cancel} when the work completes; settling a handle that
+   * is no longer pending is a no-op.
    */
   export class AsyncHandle {
     private table: HandleTable;
@@ -228,6 +266,14 @@ namespace wendoo {
      */
     reject(errorCode: ErrorCode): void {
       this.table.reject(this.id, errorCode);
+    }
+
+    /**
+     * Settle the handle as cancelled; the awaiting fiber faults with
+     * {@link ErrorCode.Cancelled}.
+     */
+    cancel(): void {
+      this.table.cancel(this.id);
     }
   }
 }

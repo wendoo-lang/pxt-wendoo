@@ -90,6 +90,36 @@ namespace wendoo {
     }
 
     /**
+     * Cancel the tracked fiber with `fiberId`. A fiber the scheduler no
+     * longer tracks, and one already in a terminal state, are both no-ops.
+     *
+     * @param fiberId - Scheduler-assigned fiber id.
+     */
+    cancel(fiberId: number): void {
+      const fiber = this.getFiber(fiberId);
+      if (fiber) {
+        this.vm.cancelFiber(fiber);
+      }
+    }
+
+    /**
+     * Cancel every live child-rule fiber, leaving root-rule fibers untouched.
+     * Safe to call mid-round: a fiber cancelled while it is queued or held in
+     * the round's spawn drain is skipped when its turn comes.
+     */
+    cancelChildRuleFibers(): void {
+      for (let i = 0; i < this.fibers.length; i++) {
+        const fiber = this.fibers[i];
+        if (fiber.rootRuleFuncId === NO_RULE) {
+          continue;
+        }
+        if (fiber.state === FiberState.Runnable || fiber.state === FiberState.Waiting) {
+          this.vm.cancelFiber(fiber);
+        }
+      }
+    }
+
+    /**
      * Whether any runnable or waiting fiber belongs to the subtree of the root
      * rule `rootRuleFuncId`.
      *
@@ -214,6 +244,39 @@ namespace wendoo {
     }
   }
 
+  /** Page-index sentinel meaning no page. */
+  const NO_PAGE = -1;
+
+  /** Serves the page service from a {@link BrainRuntime}'s page-lifecycle state. */
+  class RuntimeBrainPages extends BrainPageServices {
+    private runtime: BrainRuntime;
+
+    constructor(runtime: BrainRuntime) {
+      super();
+      this.runtime = runtime;
+    }
+
+    getCurrentPageId(): string {
+      return this.runtime.getCurrentPageId();
+    }
+
+    getPreviousPageId(): string {
+      return this.runtime.getPreviousPageId();
+    }
+
+    requestPageChange(pageIndex: number): void {
+      this.runtime.requestPageChange(pageIndex);
+    }
+
+    requestPageChangeByPageId(pageId: string): void {
+      this.runtime.requestPageChangeByPageId(pageId);
+    }
+
+    requestPageRestart(): void {
+      this.runtime.requestPageRestart();
+    }
+  }
+
   /** One active root rule and the fiber currently running it. */
   class ActiveRule {
     /** Entry function id of the rule. */
@@ -236,11 +299,18 @@ namespace wendoo {
    */
   export class BrainRuntime {
     private program: Program;
+    private hostActions: HostActionRegistry;
     private vm: VM;
     private scheduler: FiberScheduler;
     private ctx: ExecutionContext;
     private lastThinkTime: number = 0;
     private activeRules: ActiveRule[] = [];
+    /** Index of the page whose rules are running. */
+    private currentPageIndex: number = 0;
+    /** Index of the page a page-change request asked for. */
+    private desiredPageIndex: number = 0;
+    /** Index of the most recently deactivated page, or {@link NO_PAGE}. */
+    private previousPageIndex: number = NO_PAGE;
 
     /**
      * @param program - The decoded, linked program to run.
@@ -259,11 +329,16 @@ namespace wendoo {
       world: HostWorld
     ) {
       this.program = program;
+      this.hostActions = hostActions;
       const variables = new VariableStore();
       variables.install(program);
       this.vm = new VM(program, hostFunctions, hostActions, observer, caps);
       this.scheduler = new FiberScheduler(this.vm, caps);
-      const services = new BrainServices(program, new SchedulerRuleLiveness(this.scheduler));
+      const services = new BrainServices(
+        program,
+        new SchedulerRuleLiveness(this.scheduler),
+        new RuntimeBrainPages(this)
+      );
       this.ctx = new ExecutionContext(services, variables, world);
     }
 
@@ -275,6 +350,9 @@ namespace wendoo {
     /** Activate the first page and spawn a fiber for each of its root rules. */
     startup(): void {
       this.lastThinkTime = 0;
+      this.currentPageIndex = 0;
+      this.desiredPageIndex = 0;
+      this.previousPageIndex = NO_PAGE;
       if (this.program.pages.length === 0) {
         return;
       }
@@ -283,8 +361,13 @@ namespace wendoo {
 
     /**
      * Advance the brain by one tick: resume the fibers whose handles settled
-     * since the last think, respawn every root rule whose firing has ended and
-     * whose subtree has emptied, then run one scheduler round.
+     * since the last think, serve any page change requested since it, respawn
+     * every root rule whose firing has ended and whose subtree has emptied,
+     * then run one scheduler round.
+     *
+     * A page change requested during a think therefore takes effect at the
+     * start of the next one: the requesting think finishes on the page it
+     * began on.
      *
      * @param currentTime - Cumulative scheduled time of this think.
      */
@@ -294,6 +377,93 @@ namespace wendoo {
       }
       this.scheduler.drainCompletedHandles();
 
+      if (this.currentPageIndex !== this.desiredPageIndex) {
+        this.deactivateCurrentPage();
+        this.previousPageIndex = this.currentPageIndex;
+        this.currentPageIndex = this.desiredPageIndex;
+        if (this.isValidPageIndex(this.currentPageIndex)) {
+          this.activatePage(this.currentPageIndex);
+        }
+      }
+
+      if (this.isValidPageIndex(this.currentPageIndex)) {
+        this.thinkPage(currentTime);
+      }
+      this.lastThinkTime = currentTime;
+    }
+
+    /** Stable page id of the active page, or `""` when no page is active. */
+    getCurrentPageId(): string {
+      if (!this.isValidPageIndex(this.currentPageIndex)) {
+        return "";
+      }
+      return this.program.pages[this.currentPageIndex].pageId;
+    }
+
+    /**
+     * Stable page id of the most recently deactivated page, falling back to
+     * the active page's while no page has been deactivated yet.
+     */
+    getPreviousPageId(): string {
+      if (!this.isValidPageIndex(this.previousPageIndex)) {
+        return this.getCurrentPageId();
+      }
+      return this.program.pages[this.previousPageIndex].pageId;
+    }
+
+    /**
+     * Ask that `pageIndex` be the active page from the next think, cancelling
+     * the active page's fibers now. The index of the active page restarts it
+     * instead; an index outside the program's pages leaves no page active
+     * from the next think on.
+     *
+     * @param pageIndex - Zero-based index of the page to switch to.
+     */
+    requestPageChange(pageIndex: number): void {
+      if (pageIndex < 0 || pageIndex >= this.program.pages.length) {
+        this.desiredPageIndex = NO_PAGE;
+        return;
+      }
+      if (pageIndex === this.currentPageIndex) {
+        this.requestPageRestart();
+        return;
+      }
+      this.desiredPageIndex = pageIndex;
+      this.cancelActiveFibers();
+    }
+
+    /**
+     * Ask that the page carrying `pageId` be the active page from the next
+     * think. A `pageId` no page carries leaves no page active.
+     *
+     * @param pageId - Stable page id of the page to switch to.
+     */
+    requestPageChangeByPageId(pageId: string): void {
+      for (let i = 0; i < this.program.pages.length; i++) {
+        if (this.program.pages[i].pageId === pageId) {
+          this.requestPageChange(i);
+          return;
+        }
+      }
+      this.requestPageChange(NO_PAGE);
+    }
+
+    /**
+     * Restart the active page: cancel its fibers now, so its root rules
+     * respawn at the next think. The page is not deactivated and not
+     * reactivated, so no activation hook runs and every call site keeps the
+     * state it holds.
+     */
+    requestPageRestart(): void {
+      this.cancelActiveFibers();
+    }
+
+    /**
+     * Run one think of the active page: stamp the per-tick scalars, respawn
+     * every root rule whose firing has ended and whose subtree has emptied,
+     * run one scheduler round, and collect the fibers it finished.
+     */
+    private thinkPage(currentTime: number): void {
       this.ctx.time = currentTime;
       this.ctx.dt = this.lastThinkTime === 0 ? 0 : currentTime - this.lastThinkTime;
       this.ctx.currentTick++;
@@ -311,12 +481,27 @@ namespace wendoo {
 
       this.scheduler.tick();
       this.scheduler.gc();
-      this.lastThinkTime = currentTime;
     }
 
+    /**
+     * Activate `pageIndex`: run the page-activation hook of every host-bound
+     * call site on it, in the page's call-site order, then spawn a fiber for
+     * each of its root rules.
+     */
     private activatePage(pageIndex: number): void {
       const page = this.program.pages[pageIndex];
       this.activeRules = [];
+      for (let i = 0; i < page.actionCallSites.length; i++) {
+        const site = page.actionCallSites[i];
+        if (!site.isHostBinding) {
+          continue;
+        }
+        const action = this.hostActions.getById(site.id);
+        if (!action) {
+          continue;
+        }
+        this.runActivationHook(site.callSiteId, action);
+      }
       this.ctx.currentCallSiteId = NO_CALL_SITE;
       this.ctx.currentRuleFuncId = NO_RULE;
       for (let i = 0; i < page.rootRuleFuncIds.length; i++) {
@@ -324,6 +509,46 @@ namespace wendoo {
         entry.fiberId = this.scheduler.spawn(entry.funcId, this.ctx);
         this.activeRules.push(entry);
       }
+    }
+
+    /**
+     * Run `action`'s page-activation hook bound to `callSiteId`, restoring the
+     * context's call-site and rule binding afterwards.
+     */
+    private runActivationHook(callSiteId: number, action: HostActionBinding): void {
+      const previousCallSiteId = this.ctx.currentCallSiteId;
+      const previousRuleFuncId = this.ctx.currentRuleFuncId;
+      this.ctx.currentCallSiteId = callSiteId;
+      this.ctx.currentRuleFuncId = NO_RULE;
+      action.onPageEntered(this.ctx);
+      this.ctx.currentCallSiteId = previousCallSiteId;
+      this.ctx.currentRuleFuncId = previousRuleFuncId;
+    }
+
+    /** Deactivate the active page: cancel its fibers and drop its root rules. */
+    private deactivateCurrentPage(): void {
+      this.cancelActiveFibers();
+      this.activeRules = [];
+      this.ctx.currentCallSiteId = NO_CALL_SITE;
+      this.ctx.currentRuleFuncId = NO_RULE;
+    }
+
+    /**
+     * Cancel every fiber of the active page: each root rule's own fiber, then
+     * the cascade over every live child-rule fiber spawned beneath them.
+     */
+    private cancelActiveFibers(): void {
+      for (let i = 0; i < this.activeRules.length; i++) {
+        const fiberId = this.activeRules[i].fiberId;
+        if (fiberId >= 0) {
+          this.scheduler.cancel(fiberId);
+        }
+      }
+      this.scheduler.cancelChildRuleFibers();
+    }
+
+    private isValidPageIndex(pageIndex: number): boolean {
+      return pageIndex >= 0 && pageIndex < this.program.pages.length;
     }
 
     private isRuleFiringOver(fiberId: number): boolean {

@@ -332,10 +332,106 @@ namespace wendoo {
   }
 
   /**
+   * Per-callsite host state: one opaque cell per call-site id, written and
+   * read by the host body dispatched at that site.
+   *
+   * Cells live as long as the brain instance, so state survives a page
+   * restart. A page activation hook is the only writer outside a dispatch.
+   */
+  export class CallsiteStore {
+    private callSiteIds: number[] = [];
+    private hostStates: Value[] = [];
+
+    constructor() {}
+
+    /**
+     * The cell at `callSiteId`, or `undefined` when nothing has written one.
+     *
+     * @param callSiteId - Call-site id to read.
+     */
+    getHostState(callSiteId: number): Value {
+      for (let i = 0; i < this.callSiteIds.length; i++) {
+        if (this.callSiteIds[i] === callSiteId) {
+          return this.hostStates[i];
+        }
+      }
+      return undefined;
+    }
+
+    /**
+     * Overwrite the cell at `callSiteId`, allocating it on first write. A
+     * `callSiteId` of {@link NO_CALL_SITE} is a no-op.
+     *
+     * @param callSiteId - Call-site id to write.
+     * @param state - Value to store.
+     */
+    setHostState(callSiteId: number, state: Value): void {
+      if (callSiteId === NO_CALL_SITE) {
+        return;
+      }
+      for (let i = 0; i < this.callSiteIds.length; i++) {
+        if (this.callSiteIds[i] === callSiteId) {
+          this.hostStates[i] = state;
+          return;
+        }
+      }
+      this.callSiteIds.push(callSiteId);
+      this.hostStates.push(state);
+    }
+  }
+
+  /**
+   * The page-lifecycle surface a host body reads and requests through. Every
+   * request records what the host loop is to do at its next think. Subclass
+   * and override; the base implementation answers the empty id and ignores
+   * every request.
+   */
+  export class BrainPageServices {
+    constructor() {}
+
+    /** Stable page id of the active page, or `""` when no page is active. */
+    getCurrentPageId(): string {
+      return "";
+    }
+
+    /**
+     * Stable page id of the most recently deactivated page, falling back to
+     * the active page's while no page has been deactivated yet.
+     */
+    getPreviousPageId(): string {
+      return "";
+    }
+
+    /**
+     * Ask that `pageIndex` be the active page from the next think. The index
+     * of the active page restarts it instead; an index outside the program's
+     * pages leaves no page active.
+     *
+     * @param pageIndex - Zero-based index of the page to switch to.
+     */
+    requestPageChange(pageIndex: number): void {}
+
+    /**
+     * Ask that the page carrying `pageId` be the active page from the next
+     * think. A `pageId` no page carries leaves no page active.
+     *
+     * @param pageId - Stable page id of the page to switch to.
+     */
+    requestPageChangeByPageId(pageId: string): void {}
+
+    /**
+     * Ask that the active page restart: its fibers are cancelled now and its
+     * root rules respawn at the next think, with no deactivation and no
+     * reactivation.
+     */
+    requestPageRestart(): void {}
+  }
+
+  /**
    * The brain-instance state surface host bodies and the WHEN gates read
    * through: the loaded program's rule tables, the firing records, the
-   * per-rule variable store, and the rule-completion machinery behind the
-   * THEN trigger.
+   * per-rule variable store, the rule-completion machinery behind the THEN
+   * trigger, the page-lifecycle requests, and per-callsite host state.
    */
   export class BrainServices {
     /** The loaded program. */
@@ -346,16 +442,23 @@ namespace wendoo {
     ruleVars: RuleVariableStore;
     /** Cluster liveness, watcher slots, and abandonment marks. */
     ruleCompletion: RuleCompletionStore;
+    /** Page identity reads and page-change requests. */
+    pages: BrainPageServices;
+    /** Per-callsite host state. */
+    callsite: CallsiteStore;
 
     /**
      * @param program - The loaded program.
      * @param liveness - Cluster-liveness query, supplied by the fiber scheduler.
+     * @param pages - Page-lifecycle surface, supplied by the brain runtime.
      */
-    constructor(program: Program, liveness: RuleSubtreeLiveness) {
+    constructor(program: Program, liveness: RuleSubtreeLiveness, pages: BrainPageServices) {
       this.program = program;
       this.ruleFiring = new RuleFiringStore();
       this.ruleVars = new RuleVariableStore(program);
       this.ruleCompletion = new RuleCompletionStore(liveness);
+      this.pages = pages;
+      this.callsite = new CallsiteStore();
     }
   }
 
@@ -528,6 +631,17 @@ namespace wendoo {
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
       ctx.raise(ErrorCode.ScriptError, `host action ${this.key} is missing execAsync`);
     }
+
+    /**
+     * Prepare one call site of this action for the page that is being
+     * activated. The brain runtime runs it once per call site of the page, in
+     * the page's call-site order, before the page's root rules spawn, with
+     * `ctx.currentCallSiteId` bound to that site. The base implementation does
+     * nothing.
+     *
+     * @param ctx - Execution context, bound to the call site being activated.
+     */
+    onPageEntered(ctx: ExecutionContext): void {}
   }
 
   /** The host actions a program's `HOST_ACTION_CALL` operands resolve against. */
