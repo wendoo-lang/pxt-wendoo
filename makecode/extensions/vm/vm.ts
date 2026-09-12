@@ -456,6 +456,8 @@ namespace wendoo {
           return this.execSpawnRule(fiber, ins, frame, spawner);
         case Op.HOST_CALL:
           return this.execHostCall(fiber, ins, frame);
+        case Op.HOST_CALL_ASYNC:
+          return this.execHostCallAsync(fiber, ins, frame);
         case Op.HOST_ACTION_CALL:
           return this.execHostActionCall(fiber, ins, frame);
         case Op.HOST_ACTION_CALL_ASYNC:
@@ -647,6 +649,53 @@ namespace wendoo {
         fiber.vstack.pop();
       }
       this.push(fiber, result);
+      frame.pc++;
+      this.syncContextFromTopFrame(fiber);
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Dispatches an asynchronous host function: allocates a pending handle,
+     * hands the function an owned argument snapshot and that handle, and leaves
+     * the handle on the operand stack in place of the arguments. With the handle
+     * table full the fiber yields at this same instruction, having consumed
+     * nothing, and retries next round.
+     */
+    private execHostCallAsync(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const fn = this.hostFunctions.getById(ins.a);
+      if (!fn) {
+        this.raise(ErrorCode.ScriptError, `no async host function registered under id ${ins.a}`);
+        return StepOutcome.Continue;
+      }
+      if (!fn.isAsync) {
+        this.raise(ErrorCode.ScriptError, `host function ${ins.a} requires HOST_CALL`);
+        return StepOutcome.Continue;
+      }
+      const argc = ins.b;
+      if (argc < 0 || argc > fiber.vstack.length) {
+        this.raise(ErrorCode.StackUnderflow, "HOST_CALL_ASYNC argc exceeds stack size");
+        return StepOutcome.Continue;
+      }
+      if (!this.handles.hasCapacity()) {
+        return this.backpressureOnHandles(fiber, frame);
+      }
+      this.clearHandleBackpressure(fiber);
+
+      this.bindContext(fiber, frame, ins.c);
+      const args = this.readArgs(fiber, argc);
+      const handleId = this.handles.createPending(true);
+      fn.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      if (fiber.ctx.hasFault()) {
+        this.handles.deleteHandle(handleId);
+        this.raise(fiber.ctx.faultCode, fiber.ctx.faultMessage);
+        fiber.ctx.clearFault();
+        return StepOutcome.Continue;
+      }
+
+      for (let i = 0; i < argc; i++) {
+        fiber.vstack.pop();
+      }
+      this.push(fiber, mkHandle(handleId));
       frame.pc++;
       this.syncContextFromTopFrame(fiber);
       return StepOutcome.Continue;

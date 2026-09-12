@@ -524,20 +524,26 @@ namespace wendoo {
   }
 
   /**
-   * One synchronous host function, dispatched by `HOST_CALL` against its
-   * stable funcId. Subclass and override {@link HostFunction.exec}.
+   * One host function, dispatched by `HOST_CALL` (or its async form) against
+   * its stable funcId. Subclass and override {@link HostFunction.exec} for a
+   * synchronous function; an asynchronous one sets {@link HostFunction.isAsync}
+   * and overrides {@link HostFunction.execAsync}.
    */
   export class HostFunction {
     /** Stable funcId the bytecode dispatches this function by. */
     fnId: number;
+    /** Whether the function returns a pending handle and no value. */
+    isAsync: boolean;
 
     constructor(fnId: number) {
       this.fnId = fnId;
+      this.isAsync = false;
     }
 
     /**
      * Run the function body over its positional argument buffer. The base
-     * implementation raises `ScriptError`: the function carries no body.
+     * implementation raises `ScriptError`: the function carries no synchronous
+     * body.
      *
      * @param ctx - Execution context of the calling fiber.
      * @param args - Positional argument buffer, one entry per declared slot.
@@ -545,6 +551,20 @@ namespace wendoo {
     exec(ctx: ExecutionContext, args: Value[]): Value {
       ctx.raise(ErrorCode.ScriptError, `host function ${this.fnId} has no body`);
       return NIL_VALUE;
+    }
+
+    /**
+     * Start the asynchronous function body over an owned copy of its positional
+     * argument buffer, and settle `handle` when the work completes. The base
+     * implementation raises `ScriptError`: the function carries no asynchronous
+     * body.
+     *
+     * @param ctx - Execution context of the dispatching fiber.
+     * @param args - Owned positional argument buffer, one entry per declared slot.
+     * @param handle - Settle handle of the pending operation the dispatch allocated.
+     */
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      ctx.raise(ErrorCode.ScriptError, `host function ${this.fnId} is missing execAsync`);
     }
   }
 

@@ -2,9 +2,10 @@
  * The conformance host profile and the corpus replay driver.
  *
  * The profile is the host surface every Wendoo VM implements in its test
- * harness to replay the shared conformance corpus: eight target-partition host
- * actions over a world that owns no clock and no random stream, so two runs of
- * one program over one schedule observe the same world.
+ * harness to replay the shared conformance corpus: nine target-partition host
+ * actions and one target-partition operator overload over a world that owns no
+ * clock and no random stream, so two runs of one program over one schedule
+ * observe the same world.
  *
  * - `echo(value)` -- synchronous sensor returning its argument unchanged.
  * - `emit(value)` -- synchronous actuator returning void, the corpus's
@@ -24,6 +25,13 @@
  *   standing.
  * - `defer cancel(ticks)` -- asynchronous actuator whose handle is cancelled
  *   exactly `ticks` ticks after its dispatch.
+ * - `defer read(value, ticks)` -- asynchronous sensor whose handle resolves to
+ *   `value` exactly `ticks` ticks after its dispatch, so a section reading it
+ *   suspends until then.
+ * - `lhs defer plus rhs` -- asynchronous infix operator whose handle resolves
+ *   to the sum one tick after its dispatch, so the expression containing it
+ *   suspends until then. An operand carrying no number, and a sum that is not
+ *   a number, both resolve nil.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -64,6 +72,16 @@ namespace wendoo {
     Signal = 1029,
     Counter = 1030,
     DeferCancel = 1031,
+    DeferRead = 1032,
+  }
+
+  /**
+   * Stable funcIds of the conformance host profile's operator overloads,
+   * continuing the target partition offsets {@link ConformanceActionId}
+   * allocates from. Serialized programs record these verbatim.
+   */
+  export enum ConformanceFuncId {
+    DeferAdd = 1033,
   }
 
   /**
@@ -301,8 +319,61 @@ namespace wendoo {
     }
   }
 
+  /** `defer read(value, ticks)`: resolves its handle to `value` after `ticks` ticks. */
+  class DeferReadSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.DeferRead, "sensor.conformance.defer-read", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const value = args.length > 0 ? args[0] : NIL_VALUE;
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, wholeTicksArg(args, 1), new ResolveSettlement(handle, value));
+    }
+  }
+
   /**
-   * Register the conformance host profile's eight actions into `registry`.
+   * Whether `args[slot]` carries a number that is not a NaN. A slot past the
+   * end of the buffer, a slot of another kind, and a NaN all read false.
+   */
+  function isValidNumberArg(args: Value[], slot: number): boolean {
+    return slot < args.length && args[slot].t === ValueTag.Number && !isNotANumber(args[slot].num);
+  }
+
+  /** The sum of a binary operator's two operand slots; nil when an operand or the sum is not a number. */
+  function operandSum(args: Value[]): Value {
+    if (!isValidNumberArg(args, 0) || !isValidNumberArg(args, 1)) {
+      return NIL_VALUE;
+    }
+    const sum = args[0].num + args[1].num;
+    return isNotANumber(sum) ? NIL_VALUE : mkNumber(sum);
+  }
+
+  /** `lhs defer plus rhs`: resolves its handle to the sum one tick after its dispatch. */
+  class DeferAddOperator extends HostFunction {
+    constructor() {
+      super(ConformanceFuncId.DeferAdd);
+      this.isAsync = true;
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, DEFAULT_WHOLE_TICKS, new ResolveSettlement(handle, operandSum(args)));
+    }
+  }
+
+  /**
+   * Register the conformance host profile's one operator overload into
+   * `registry`.
+   *
+   * @param registry - Host-function registry the corpus program dispatches against.
+   */
+  export function registerConformanceHostFunctions(registry: HostFunctionRegistry): void {
+    registry.register(new DeferAddOperator());
+  }
+
+  /**
+   * Register the conformance host profile's nine actions into `registry`.
    *
    * @param registry - Host-action registry the corpus program dispatches against.
    */
@@ -315,6 +386,7 @@ namespace wendoo {
     registry.register(new SignalSensor());
     registry.register(new CounterSensor());
     registry.register(new DeferCancelActuator());
+    registry.register(new DeferReadSensor());
   }
 
   /** Line that closes the trace body of a replayed case. */
@@ -345,6 +417,7 @@ namespace wendoo {
 
     const hostFunctions = new HostFunctionRegistry();
     registerCoreHostFunctions(hostFunctions);
+    registerConformanceHostFunctions(hostFunctions);
     const hostActions = new HostActionRegistry();
     registerCoreHostActions(hostActions);
     registerConformanceHostActions(hostActions);

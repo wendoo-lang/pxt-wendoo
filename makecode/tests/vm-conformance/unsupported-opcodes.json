@@ -4,7 +4,6 @@
     { "op": 12, "name": "LOAD_SYSTEM_VAR", "owner": "builtins, enums, buffers and systems" },
     { "op": 13, "name": "STORE_SYSTEM_VAR", "owner": "builtins, enums, buffers and systems" },
     { "op": 30, "name": "CALL", "owner": "frames and calls" },
-    { "op": 41, "name": "HOST_CALL_ASYNC", "owner": "async breadth" },
     { "op": 42, "name": "ACTION_CALL", "owner": "compiled tiles" },
     { "op": 43, "name": "ACTION_CALL_ASYNC", "owner": "compiled tiles" },
     { "op": 90, "name": "LIST_NEW", "owner": "struct and list brain lane" },
