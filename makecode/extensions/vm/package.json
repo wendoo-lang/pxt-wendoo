@@ -1,0 +1,9 @@
+{
+  "name": "wendoo-vm-dev",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test:conformance": "node ../../tests/vm-conformance/cli.js",
+    "test:conformance:quick": "node ../../tests/vm-conformance/cli.js --runs 1"
+  }
+}

@@ -2,7 +2,7 @@
  * The conformance host profile and the corpus replay driver.
  *
  * The profile is the host surface every Wendoo VM implements in its test
- * harness to replay the shared conformance corpus: five target-partition host
+ * harness to replay the shared conformance corpus: six target-partition host
  * actions over a world that owns no clock and no random stream, so two runs of
  * one program over one schedule observe the same world.
  *
@@ -15,6 +15,9 @@
  *   `HostError` exactly `ticks` ticks after its dispatch.
  * - `fault()` -- synchronous actuator that faults the calling fiber with
  *   `ScriptError`.
+ * - `signal(period)` -- synchronous presence-gated sensor delivering the
+ *   number `0` on every think whose ordinal is a multiple of `period`, and nil
+ *   on every other think.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -29,11 +32,14 @@ namespace wendoo {
   /** Concurrent pending-handle cap the corpus is minted under. */
   const CONFORMANCE_MAX_HANDLES = 8;
 
-  /** Ticks a deferred call waits when its `ticks` slot carries no number. */
-  const DEFAULT_DEFER_TICKS = 1;
+  /** Whole-tick count a deferred call waits, or a signal's period, when the argument carries none. */
+  const DEFAULT_WHOLE_TICKS = 1;
 
   /** Classifier `defer fail` rejects its handle with. */
   const DEFER_FAIL_CODE = ErrorCode.HostError;
+
+  /** Falsy value `signal` delivers on a tick it is present. */
+  const SIGNAL_VALUE = mkNumber(0);
 
   /**
    * Stable action ids of the conformance host profile, allocated from the
@@ -46,6 +52,7 @@ namespace wendoo {
     DeferEcho = 1026,
     DeferFail = 1027,
     Fault = 1028,
+    Signal = 1029,
   }
 
   /**
@@ -173,11 +180,11 @@ namespace wendoo {
 
   /**
    * Whole-tick count carried by the argument in `slot`, or
-   * {@link DEFAULT_DEFER_TICKS} when the slot carries no number.
+   * {@link DEFAULT_WHOLE_TICKS} when the slot carries no number.
    */
-  function ticksArg(args: Value[], slot: number): number {
+  function wholeTicksArg(args: Value[], slot: number): number {
     if (slot >= args.length || args[slot].t !== ValueTag.Number) {
-      return DEFAULT_DEFER_TICKS;
+      return DEFAULT_WHOLE_TICKS;
     }
     return args[slot].num;
   }
@@ -191,7 +198,7 @@ namespace wendoo {
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
       const value = args.length > 0 ? args[0] : NIL_VALUE;
       const world = ctx.data as ConformanceWorld;
-      world.defer(ctx.currentTick, ticksArg(args, 1), new ResolveSettlement(handle, value));
+      world.defer(ctx.currentTick, wholeTicksArg(args, 1), new ResolveSettlement(handle, value));
     }
   }
 
@@ -203,7 +210,7 @@ namespace wendoo {
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
       const world = ctx.data as ConformanceWorld;
-      world.defer(ctx.currentTick, ticksArg(args, 0), new RejectSettlement(handle, DEFER_FAIL_CODE));
+      world.defer(ctx.currentTick, wholeTicksArg(args, 0), new RejectSettlement(handle, DEFER_FAIL_CODE));
     }
   }
 
@@ -220,7 +227,22 @@ namespace wendoo {
   }
 
   /**
-   * Register the conformance host profile's five actions into `registry`.
+   * `signal(period)`: delivers {@link SIGNAL_VALUE} on every think whose
+   * ordinal is a multiple of `period`, and nil on every other think.
+   */
+  class SignalSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.Signal, "sensor.conformance.signal", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const period = wholeTicksArg(args, 0);
+      return ctx.currentTick % period === 0 ? SIGNAL_VALUE : NIL_VALUE;
+    }
+  }
+
+  /**
+   * Register the conformance host profile's six actions into `registry`.
    *
    * @param registry - Host-action registry the corpus program dispatches against.
    */
@@ -230,6 +252,7 @@ namespace wendoo {
     registry.register(new DeferEchoActuator());
     registry.register(new DeferFailActuator());
     registry.register(new FaultActuator());
+    registry.register(new SignalSensor());
   }
 
   /** Line that closes the trace body of a replayed case. */

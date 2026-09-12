@@ -91,7 +91,10 @@ current session. This is an absolute rule.
   `node_modules`; cross-package links use `file:` dependencies and symlinks.
   MakeCode extensions under `makecode/extensions/` sit outside npm entirely:
   their dependencies are declared in `pxt.json` and resolved by the MakeCode
-  toolchain into `pxt_modules/`.
+  toolchain into `pxt_modules/`. An extension may carry a scripts-only
+  `package.json` (no dependencies, private, never listed in `pxt.json` files)
+  as a convenience for invoking dev tooling; it participates in no npm
+  dependency graph.
 - Because there is no hoisting, every package must declare the dev tooling its
   own scripts invoke (for example `tsx`) in its own `devDependencies`, so the
   script resolves the binary from that package's `node_modules/.bin`. Do not

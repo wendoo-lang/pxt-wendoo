@@ -13,6 +13,8 @@ namespace wendoo {
   export enum CoreActionId {
     /** The `otherwise` chain sensor. */
     Otherwise = 8,
+    /** The THEN trigger's arming read. */
+    RuleTrigger = 9,
   }
 
   /**
@@ -70,6 +72,50 @@ namespace wendoo {
   }
 
   /**
+   * Arming read behind the THEN rule trigger: answers whether the calling
+   * rule's subject -- the rule immediately above it at its own nesting
+   * level -- has fired and completed. The caller consumes the handle with an
+   * ordinary `AWAIT`, so an immediate answer falls through without suspending
+   * and a pending one parks the rule.
+   *
+   * - The subject's cluster is in flight: the handle is left pending in the
+   *   subject's watcher slot and the calling rule's own record is written
+   *   `DidNotFire`. The settle walk resolves the handle once that cluster
+   *   empties.
+   * - The subject fired and its cluster has emptied with no fault or
+   *   cancellation in it: resolves true.
+   * - The subject is settled without a firing, its firing was abandoned, or
+   *   the calling rule has no subject: resolves false.
+   */
+  class RuleTrigger extends HostActionBinding {
+    constructor() {
+      super(CoreActionId.RuleTrigger, "rule-trigger", true);
+      this.uncappedHandles = true;
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const services = ctx.services;
+      const ruleFuncId = ctx.currentRuleFuncId;
+      const subjectFuncId = ruleFuncId === NO_RULE ? NO_RULE : services.program.precedingSiblingRuleFuncId(ruleFuncId);
+      if (subjectFuncId === NO_RULE) {
+        handle.resolve(FALSE_VALUE);
+        return;
+      }
+
+      if (services.ruleCompletion.hasLiveSubtree(subjectFuncId)) {
+        services.ruleFiring.set(ruleFuncId, RuleFiringState.DidNotFire);
+        services.ruleCompletion.setWatcher(subjectFuncId, handle.id);
+        return;
+      }
+
+      const completed =
+        services.ruleFiring.get(subjectFuncId) === RuleFiringState.DidFire &&
+        !services.ruleCompletion.isAbandoned(subjectFuncId);
+      handle.resolve(completed ? TRUE_VALUE : FALSE_VALUE);
+    }
+  }
+
+  /**
    * Register the core host functions into `registry`.
    *
    * @param registry - Host-function registry the program's `HOST_CALL`
@@ -87,5 +133,6 @@ namespace wendoo {
    */
   export function registerCoreHostActions(registry: HostActionRegistry): void {
     registry.register(new OtherwiseTrigger());
+    registry.register(new RuleTrigger());
   }
 }

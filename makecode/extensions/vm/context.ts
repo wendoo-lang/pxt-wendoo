@@ -72,6 +72,144 @@ namespace wendoo {
   }
 
   /**
+   * Answers whether a rule's cluster still holds a live fiber. Subclass and
+   * override {@link RuleSubtreeLiveness.hasLiveSubtree}.
+   */
+  export class RuleSubtreeLiveness {
+    constructor() {}
+
+    /**
+     * Whether any live fiber belongs to `ruleFuncId`'s cluster. The base
+     * implementation always answers false.
+     *
+     * @param ruleFuncId - Rule funcId whose cluster is queried.
+     */
+    hasLiveSubtree(ruleFuncId: number): boolean {
+      return false;
+    }
+  }
+
+  /**
+   * Rule-cluster liveness, the per-rule watcher slot behind the THEN trigger,
+   * and the per-rule abandonment mark that records a fault or a cancellation
+   * in a rule's cluster.
+   *
+   * A rule's cluster is its own fiber plus every fiber spawned beneath it;
+   * membership is the static rule ancestry. Slots and marks are
+   * runtime-internal: never brain values, never serialized, never traced.
+   */
+  export class RuleCompletionStore {
+    private liveness: RuleSubtreeLiveness;
+    private watcherRuleFuncIds: number[] = [];
+    private watcherHandleIds: number[] = [];
+    private abandonedRuleFuncIds: number[] = [];
+
+    /**
+     * @param liveness - Cluster-liveness query, supplied by the fiber scheduler.
+     */
+    constructor(liveness: RuleSubtreeLiveness) {
+      this.liveness = liveness;
+    }
+
+    /**
+     * Whether any fiber in `ruleFuncId`'s cluster is live, its own fiber
+     * included.
+     *
+     * @param ruleFuncId - Rule funcId whose cluster is queried.
+     */
+    hasLiveSubtree(ruleFuncId: number): boolean {
+      return this.liveness.hasLiveSubtree(ruleFuncId);
+    }
+
+    /**
+     * The handle parked on `ruleFuncId`'s completion, or {@link NO_HANDLE}
+     * when no rule watches it.
+     *
+     * @param ruleFuncId - Rule funcId whose watcher slot is read.
+     */
+    getWatcher(ruleFuncId: number): number {
+      for (let i = 0; i < this.watcherRuleFuncIds.length; i++) {
+        if (this.watcherRuleFuncIds[i] === ruleFuncId) {
+          return this.watcherHandleIds[i];
+        }
+      }
+      return NO_HANDLE;
+    }
+
+    /**
+     * Park `handleId` on `ruleFuncId`'s completion, replacing any handle the
+     * slot already holds. A `ruleFuncId` of {@link NO_RULE} is a no-op.
+     *
+     * @param ruleFuncId - Rule funcId whose watcher slot is filled.
+     * @param handleId - Handle the settle walk resolves when the cluster empties.
+     */
+    setWatcher(ruleFuncId: number, handleId: number): void {
+      if (ruleFuncId === NO_RULE) {
+        return;
+      }
+      for (let i = 0; i < this.watcherRuleFuncIds.length; i++) {
+        if (this.watcherRuleFuncIds[i] === ruleFuncId) {
+          this.watcherHandleIds[i] = handleId;
+          return;
+        }
+      }
+      this.watcherRuleFuncIds.push(ruleFuncId);
+      this.watcherHandleIds.push(handleId);
+    }
+
+    /**
+     * Empty `ruleFuncId`'s watcher slot.
+     *
+     * @param ruleFuncId - Rule funcId whose watcher slot is emptied.
+     */
+    clearWatcher(ruleFuncId: number): void {
+      for (let i = 0; i < this.watcherRuleFuncIds.length; i++) {
+        if (this.watcherRuleFuncIds[i] === ruleFuncId) {
+          this.watcherRuleFuncIds.splice(i, 1);
+          this.watcherHandleIds.splice(i, 1);
+          return;
+        }
+      }
+    }
+
+    /**
+     * Whether `ruleFuncId`'s current firing has lost a fiber to a fault or a
+     * cancellation anywhere in its cluster.
+     *
+     * @param ruleFuncId - Rule funcId whose mark is read.
+     */
+    isAbandoned(ruleFuncId: number): boolean {
+      return this.abandonedRuleFuncIds.indexOf(ruleFuncId) >= 0;
+    }
+
+    /**
+     * Mark `ruleFuncId`'s current firing abandoned. A `ruleFuncId` of
+     * {@link NO_RULE} is a no-op.
+     *
+     * @param ruleFuncId - Rule funcId to mark.
+     */
+    markAbandoned(ruleFuncId: number): void {
+      if (ruleFuncId === NO_RULE || this.isAbandoned(ruleFuncId)) {
+        return;
+      }
+      this.abandonedRuleFuncIds.push(ruleFuncId);
+    }
+
+    /**
+     * Drop `ruleFuncId`'s abandonment mark, so it describes the firing
+     * starting now.
+     *
+     * @param ruleFuncId - Rule funcId to clear.
+     */
+    clearAbandoned(ruleFuncId: number): void {
+      const idx = this.abandonedRuleFuncIds.indexOf(ruleFuncId);
+      if (idx >= 0) {
+        this.abandonedRuleFuncIds.splice(idx, 1);
+      }
+    }
+  }
+
+  /**
    * Per-rule variable storage keyed by rule funcId and variable name. Reads
    * walk the rule-ancestor chain; writes land on the rule's own store.
    */
@@ -195,8 +333,9 @@ namespace wendoo {
 
   /**
    * The brain-instance state surface host bodies and the WHEN gates read
-   * through: the loaded program's rule tables, the firing records, and the
-   * per-rule variable store.
+   * through: the loaded program's rule tables, the firing records, the
+   * per-rule variable store, and the rule-completion machinery behind the
+   * THEN trigger.
    */
   export class BrainServices {
     /** The loaded program. */
@@ -205,11 +344,18 @@ namespace wendoo {
     ruleFiring: RuleFiringStore;
     /** Per-rule variable storage. */
     ruleVars: RuleVariableStore;
+    /** Cluster liveness, watcher slots, and abandonment marks. */
+    ruleCompletion: RuleCompletionStore;
 
-    constructor(program: Program) {
+    /**
+     * @param program - The loaded program.
+     * @param liveness - Cluster-liveness query, supplied by the fiber scheduler.
+     */
+    constructor(program: Program, liveness: RuleSubtreeLiveness) {
       this.program = program;
       this.ruleFiring = new RuleFiringStore();
       this.ruleVars = new RuleVariableStore(program);
+      this.ruleCompletion = new RuleCompletionStore(liveness);
     }
   }
 
@@ -341,11 +487,19 @@ namespace wendoo {
     key: string;
     /** Whether the action returns a pending handle and no value. */
     isAsync: boolean;
+    /**
+     * Whether an asynchronous dispatch of this action allocates its handle
+     * outside the live-handle cap, skipping the capacity check. Correct only
+     * on an action whose live pending handles the runtime already bounds by
+     * construction.
+     */
+    uncappedHandles: boolean;
 
     constructor(actionId: number, key: string, isAsync: boolean) {
       this.actionId = actionId;
       this.key = key;
       this.isAsync = isAsync;
+      this.uncappedHandles = false;
     }
 
     /**

@@ -109,6 +109,31 @@ namespace wendoo {
     }
 
     /**
+     * Whether any live (runnable or waiting) fiber belongs to `ruleFuncId`'s
+     * cluster: its own fiber, or a fiber whose rule reaches `ruleFuncId` by
+     * walking the program's rule-ancestor chain. Child-rule fibers held in the
+     * current round's spawn drain are runnable and count.
+     *
+     * @param ruleFuncId - Rule funcId whose cluster is queried.
+     */
+    hasLiveRuleSubtree(ruleFuncId: number): boolean {
+      for (let i = 0; i < this.fibers.length; i++) {
+        const fiber = this.fibers[i];
+        if (fiber.state !== FiberState.Runnable && fiber.state !== FiberState.Waiting) {
+          continue;
+        }
+        let cur = fiber.ruleFuncId;
+        while (cur !== NO_RULE) {
+          if (cur === ruleFuncId) {
+            return true;
+          }
+          cur = this.vm.ruleParentFuncId(cur);
+        }
+      }
+      return false;
+    }
+
+    /**
      * Execute one round: one budget slice for every fiber queued at entry,
      * each followed by the depth-first drain of the child rules that slice
      * spawned.
@@ -175,6 +200,20 @@ namespace wendoo {
     }
   }
 
+  /** Answers cluster liveness from a {@link FiberScheduler}'s fiber table. */
+  class SchedulerRuleLiveness extends RuleSubtreeLiveness {
+    private scheduler: FiberScheduler;
+
+    constructor(scheduler: FiberScheduler) {
+      super();
+      this.scheduler = scheduler;
+    }
+
+    hasLiveSubtree(ruleFuncId: number): boolean {
+      return this.scheduler.hasLiveRuleSubtree(ruleFuncId);
+    }
+  }
+
   /** One active root rule and the fiber currently running it. */
   class ActiveRule {
     /** Entry function id of the rule. */
@@ -222,9 +261,10 @@ namespace wendoo {
       this.program = program;
       const variables = new VariableStore();
       variables.install(program);
-      this.ctx = new ExecutionContext(new BrainServices(program), variables, world);
       this.vm = new VM(program, hostFunctions, hostActions, observer, caps);
       this.scheduler = new FiberScheduler(this.vm, caps);
+      const services = new BrainServices(program, new SchedulerRuleLiveness(this.scheduler));
+      this.ctx = new ExecutionContext(services, variables, world);
     }
 
     /** Every fault the VM raised during this run, in the order it raised them. */

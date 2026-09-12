@@ -238,9 +238,25 @@ namespace wendoo {
      */
     spawnFiber(fiberId: number, funcId: number, ctx: ExecutionContext): Fiber {
       const ruleFuncId = this.program.isRuleFunc(funcId) ? funcId : NO_RULE;
+      if (ruleFuncId !== NO_RULE) {
+        // A fiber spawned at a rule's own entry point is that rule's next
+        // firing; its abandonment mark starts empty.
+        ctx.services.ruleCompletion.clearAbandoned(ruleFuncId);
+      }
       const fiber = new Fiber(fiberId, ctx, ruleFuncId);
       fiber.frames.push(new Frame(funcId, ruleFuncId));
       return fiber;
+    }
+
+    /**
+     * The parent rule of `ruleFuncId` in the loaded program's rule-ancestor
+     * table, or {@link NO_RULE} for a root rule and for a funcId the table
+     * does not declare.
+     *
+     * @param ruleFuncId - Rule funcId to resolve.
+     */
+    ruleParentFuncId(ruleFuncId: number): number {
+      return this.program.ruleParentFuncId(ruleFuncId);
     }
 
     /**
@@ -280,7 +296,7 @@ namespace wendoo {
           return this.consumeFault(fiber, frame);
         }
         if (outcome === StepOutcome.Done) {
-          fiber.state = FiberState.Done;
+          this.transitionState(fiber, FiberState.Done);
           return VmStatus.Done;
         }
         if (outcome === StepOutcome.Waiting) {
@@ -335,9 +351,50 @@ namespace wendoo {
       this.faults.push(new VmFault(code, this.faultMessage, frame.funcId, frame.pc));
       this.faultCode = NO_FAULT;
       this.faultMessage = "";
-      fiber.state = FiberState.Fault;
+      this.transitionState(fiber, FiberState.Fault);
       this.observer.onFiberFault(fiber.id, code);
       return VmStatus.Fault;
+    }
+
+    /**
+     * Move `fiber` to `newState`, running the settle walk on every terminal
+     * transition.
+     */
+    private transitionState(fiber: Fiber, newState: FiberState): void {
+      fiber.state = newState;
+      if (newState === FiberState.Done || newState === FiberState.Fault || newState === FiberState.Cancelled) {
+        this.settleRuleWatchers(fiber, newState);
+      }
+    }
+
+    /**
+     * The settle walk, run at every fiber terminal transition. Marks every
+     * rule in the finishing fiber's ancestry as an abandoned firing when the
+     * fiber faulted or was cancelled, then settles the watcher slot of each
+     * of those rules whose cluster has emptied: `true` on a `DidFire` record
+     * with no abandonment mark, `false` otherwise.
+     *
+     * Call only once `fiber.state` is terminal.
+     */
+    private settleRuleWatchers(fiber: Fiber, cause: FiberState): void {
+      const completion = fiber.ctx.services.ruleCompletion;
+      const abandoning = cause !== FiberState.Done;
+
+      let ruleFuncId = fiber.ruleFuncId;
+      while (ruleFuncId !== NO_RULE) {
+        if (abandoning) {
+          completion.markAbandoned(ruleFuncId);
+        }
+        const handleId = completion.getWatcher(ruleFuncId);
+        if (handleId !== NO_HANDLE && !completion.hasLiveSubtree(ruleFuncId)) {
+          const fired =
+            !completion.isAbandoned(ruleFuncId) &&
+            fiber.ctx.services.ruleFiring.get(ruleFuncId) === RuleFiringState.DidFire;
+          completion.clearWatcher(ruleFuncId);
+          this.handles.resolve(handleId, fired ? TRUE_VALUE : FALSE_VALUE);
+        }
+        ruleFuncId = this.ruleParentFuncId(ruleFuncId);
+      }
     }
 
     private raise(code: ErrorCode, message: string): void {
@@ -361,6 +418,10 @@ namespace wendoo {
           return this.execLoadVarSlot(fiber, ins, frame);
         case Op.STORE_VAR_SLOT:
           return this.execStoreVarSlot(fiber, ins, frame);
+        case Op.JMP:
+          return this.execJmp(ins, frame);
+        case Op.JMP_IF_FALSE:
+          return this.execJmpIfFalse(fiber, ins, frame);
         case Op.RET:
           return this.execRet(fiber);
         case Op.SPAWN_RULE:
@@ -376,9 +437,13 @@ namespace wendoo {
         case Op.WHEN_START:
           return this.execWhenStart(fiber, frame);
         case Op.WHEN_END:
-          return this.execWhenGate(fiber, ins, frame, false);
+          return this.execWhenGate(fiber, ins, frame, false, false);
+        case Op.WHEN_END_PRESENT:
+          return this.execWhenGate(fiber, ins, frame, true, false);
         case Op.WHEN_END_CHAIN:
-          return this.execWhenGate(fiber, ins, frame, true);
+          return this.execWhenGate(fiber, ins, frame, false, true);
+        case Op.WHEN_END_PRESENT_CHAIN:
+          return this.execWhenGate(fiber, ins, frame, true, true);
         case Op.DO_START:
         case Op.DO_END:
           frame.pc++;
@@ -464,6 +529,22 @@ namespace wendoo {
       }
       fiber.ctx.variables.setBySlot(ins.a, this.pop(fiber));
       frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /** Advances the PC by the instruction's signed offset. */
+    private execJmp(ins: Instr, frame: Frame): StepOutcome {
+      frame.pc += ins.a;
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Pops the branch condition and advances the PC by one when it is truthy,
+     * or by the instruction's signed offset when it is not.
+     */
+    private execJmpIfFalse(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const condition = this.pop(fiber);
+      frame.pc += isTruthy(condition) ? 1 : ins.a;
       return StepOutcome.Continue;
     }
 
@@ -557,7 +638,8 @@ namespace wendoo {
      * handle, hands the action an owned argument snapshot and that handle, and
      * leaves the handle on the operand stack in place of the arguments. With
      * the handle table full the fiber yields at this same instruction, having
-     * consumed nothing, and retries next round.
+     * consumed nothing, and retries next round; an action declaring
+     * `uncappedHandles` skips the capacity check and allocates outside the cap.
      */
     private execHostActionCallAsync(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const action = this.hostActions.getById(ins.a);
@@ -574,7 +656,8 @@ namespace wendoo {
         this.raise(ErrorCode.StackUnderflow, "HOST_ACTION_CALL_ASYNC argc exceeds stack size");
         return StepOutcome.Continue;
       }
-      if (!this.handles.hasCapacity()) {
+      const capped = !action.uncappedHandles;
+      if (capped && !this.handles.hasCapacity()) {
         return this.backpressureOnHandles(fiber, frame);
       }
       this.clearHandleBackpressure(fiber);
@@ -582,7 +665,7 @@ namespace wendoo {
       const callSiteId = ins.c;
       this.bindContext(fiber, frame, callSiteId);
       const args = this.readArgs(fiber, argc);
-      const handleId = this.handles.createPending();
+      const handleId = this.handles.createPending(capped);
       action.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
       if (fiber.ctx.hasFault()) {
         this.handles.deleteHandle(handleId);
@@ -680,16 +763,24 @@ namespace wendoo {
      * advances the PC by one on a fire or by the gate's signed offset on a
      * skip.
      *
+     * @param presenceGated - Gate on the WHEN result being present (non-nil),
+     *   so a present falsy value fires. Otherwise the gate is on truthiness.
      * @param chained - Write the chain-aware firing record of an
      *   `otherwise` rule. Otherwise the record is the rule's own outcome.
      */
-    private execWhenGate(fiber: Fiber, ins: Instr, frame: Frame, chained: boolean): StepOutcome {
+    private execWhenGate(
+      fiber: Fiber,
+      ins: Instr,
+      frame: Frame,
+      presenceGated: boolean,
+      chained: boolean
+    ): StepOutcome {
       const whenResult = this.pop(fiber);
       const services = fiber.ctx.services;
       const ruleFuncId = this.frameRuleFuncId(frame);
       services.ruleVars.setByName(ruleFuncId, WHEN_RESULT_VAR, whenResult);
 
-      const fired = isTruthy(whenResult);
+      const fired = presenceGated ? whenResult.t !== ValueTag.Nil : isTruthy(whenResult);
       services.ruleFiring.set(
         ruleFuncId,
         chained

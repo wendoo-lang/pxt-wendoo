@@ -36,52 +36,66 @@ namespace wendoo {
     errorCode: ErrorCode;
     /** Ids of the fibers parked on this handle, in park order. */
     waiters: number[];
+    /**
+     * Whether this handle counts against the table's live-handle cap. False on
+     * a handle whose live count the runtime already bounds by construction.
+     */
+    capped: boolean;
 
-    constructor(id: number) {
+    constructor(id: number, capped: boolean) {
       this.id = id;
       this.state = HandleState.Pending;
       this.result = NIL_VALUE;
       this.errorCode = ErrorCode.HostError;
       this.waiters = [];
+      this.capped = capped;
     }
   }
 
   /**
-   * The pending async operations one brain instance owns. Allocation is capped
-   * at the profile's live-handle limit.
+   * The pending async operations one brain instance owns. Allocation of a
+   * capped handle is limited to the profile's live-handle limit; an uncapped
+   * handle allocates outside that accounting.
    */
   export class HandleTable {
     private handles: Handle[] = [];
     private completedQueue: Handle[] = [];
     private nextId: number = 1;
     private maxHandles: number;
+    private cappedCount: number = 0;
 
     /**
-     * @param maxHandles - Live handles the table allocates at once; a device profile pins it.
+     * @param maxHandles - Live capped handles the table allocates at once; a device profile pins it.
      */
     constructor(maxHandles: number) {
       this.maxHandles = maxHandles;
     }
 
     /**
-     * Whether {@link HandleTable.createPending} would allocate right now: the
-     * live handle count is below the cap. Non-mutating.
+     * Whether a capped {@link HandleTable.createPending} would allocate right
+     * now: the live capped-handle count is below the cap. Uncapped handles are
+     * excluded from that count and always allocate. Non-mutating.
      */
     hasCapacity(): boolean {
-      return this.handles.length < this.maxHandles;
+      return this.cappedCount < this.maxHandles;
     }
 
     /**
-     * Allocate a pending handle and return its id, or {@link NO_HANDLE} when
-     * the table is at its cap.
+     * Allocate a pending handle and return its id, or {@link NO_HANDLE} when a
+     * capped allocation finds the table at its cap.
+     *
+     * @param capped - Whether the handle counts against the live-handle cap.
      */
-    createPending(): number {
-      if (!this.hasCapacity()) {
+    createPending(capped: boolean): number {
+      if (capped && !this.hasCapacity()) {
         return NO_HANDLE;
       }
-      const handle = new Handle(this.nextId);
+      const handle = new Handle(this.nextId, capped);
       this.nextId++;
       this.handles.push(handle);
+      if (capped) {
+        this.cappedCount++;
+      }
       return handle.id;
     }
 
@@ -160,13 +174,17 @@ namespace wendoo {
     }
 
     /**
-     * Free the handle holding `id`, releasing its slot against the cap.
+     * Free the handle holding `id`, releasing the slot a capped handle holds
+     * against the cap.
      *
      * @param id - Handle id.
      */
     deleteHandle(id: number): void {
       for (let i = 0; i < this.handles.length; i++) {
         if (this.handles[i].id === id) {
+          if (this.handles[i].capped) {
+            this.cappedCount--;
+          }
           this.handles.splice(i, 1);
           return;
         }

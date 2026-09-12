@@ -8,6 +8,7 @@ dist/
 # MakeCode (pxt) build output and installed dependencies
 built/
 pxt_modules/
+makecode/tests/vm-conformance/targets/
 .header.json
 .headers.json
 .simstate.json
