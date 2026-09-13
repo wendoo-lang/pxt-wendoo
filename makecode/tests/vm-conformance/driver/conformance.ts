@@ -1,3 +1,10 @@
+/*
+ * Test-only surface: `gen-cases.js` copies this file into every generated case
+ * project and lists it in that project's `pxt.json`, because pxt's `testFiles`
+ * compile only when their package is the top-level project and a generated case
+ * project consumes the extension as a dependency.
+ */
+
 /**
  * The conformance host profile and the corpus replay driver.
  *

@@ -60,7 +60,7 @@
   },
   "overrides": [
     {
-      "includes": ["makecode/extensions/**"],
+      "includes": ["makecode/extensions/**", "makecode/tests/vm-conformance/driver/**"],
       "linter": {
         "rules": {
           "complexity": {

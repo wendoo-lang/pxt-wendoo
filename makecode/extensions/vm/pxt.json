@@ -1,7 +1,7 @@
 {
     "name": "wendoo-vm",
     "version": "0.0.0",
-    "description": "The Wendoo bytecode VM for MakeCode, in Static TypeScript: target-agnostic, no blocks, no target-specific dependencies. Game- and device-facing Wendoo extensions depend on this one.",
+    "description": "The Wendoo VM for MakeCode",
     "license": "MIT",
     "dependencies": {
         "core": "*"
@@ -18,8 +18,7 @@
         "core-host.ts",
         "vm.ts",
         "runtime.ts",
-        "trace.ts",
-        "conformance.ts"
+        "trace.ts"
     ],
     "supportedTargets": [
         "arcade"
