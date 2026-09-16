@@ -69,6 +69,18 @@ namespace wendoo {
     OpNotEqualToStringNil = 40,
     /** Nil `!=` string. */
     OpNotEqualToNilString = 41,
+    /** Implicit conversion of a number to its decimal string form. */
+    ConvNumberToString = 42,
+    /** Implicit conversion of a decimal string to a number; unparseable text converts to 0. */
+    ConvStringToNumber = 43,
+    /** Implicit conversion of a number to a boolean: nonzero converts true. */
+    ConvNumberToBoolean = 44,
+    /** Implicit conversion of a boolean to a number: 1 for true, 0 for false. */
+    ConvBooleanToNumber = 45,
+    /** Implicit conversion of a string to a boolean: true unless the string trims to empty. */
+    ConvStringToBoolean = 46,
+    /** Implicit conversion of a boolean to the string `true` or `false`. */
+    ConvBooleanToString = 47,
   }
 
   /** Stable action ids of the core host actions. */
@@ -118,6 +130,16 @@ namespace wendoo {
   enum StringComparisonKind {
     EqualTo = 0,
     NotEqualTo = 1,
+  }
+
+  /** Which conversion a {@link TypeConversion} binding computes. */
+  enum ConversionKind {
+    NumberToString = 0,
+    StringToNumber = 1,
+    NumberToBoolean = 2,
+    BooleanToNumber = 3,
+    StringToBoolean = 4,
+    BooleanToString = 5,
   }
 
   /** What a {@link NilEquality} binding answers. */
@@ -349,6 +371,43 @@ namespace wendoo {
     }
   }
 
+  /**
+   * An implicit conversion between two core primitive types, compiled in
+   * where a value's static type mismatches the slot, operand, or assignment
+   * target consuming it. The operand's source-typed payload is read
+   * unchecked, so an operand of another kind converts its payload field's
+   * default.
+   */
+  class TypeConversion extends HostFunction {
+    private kind: ConversionKind;
+
+    constructor(fnId: number, kind: ConversionKind) {
+      super(fnId);
+      this.kind = kind;
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const operand = argAt(args, 0);
+      switch (this.kind) {
+        case ConversionKind.NumberToString:
+          return mkString(`${operand.num}`);
+        case ConversionKind.StringToNumber: {
+          // biome-ignore lint/style/useNumberNamespace: pxt declares only the global parseFloat.
+          const parsed = parseFloat(operand.str);
+          return mkNumber(isNotANumber(parsed) ? 0 : parsed);
+        }
+        case ConversionKind.NumberToBoolean:
+          return mkBoolean(operand.num !== 0);
+        case ConversionKind.BooleanToNumber:
+          return mkNumber(operand.b ? 1 : 0);
+        case ConversionKind.StringToBoolean:
+          return mkBoolean(operand.str.trim().length > 0);
+        default:
+          return mkString(operand.b ? "true" : "false");
+      }
+    }
+  }
+
   /** Argument slot of the 1-based page number `switch page` accepts. */
   const SWITCH_PAGE_NUMBER_SLOT = 0;
 
@@ -564,6 +623,13 @@ namespace wendoo {
     registry.register(new NilEquality(CoreFuncId.OpEqualToNilString, NilEqualityKind.RightIsNil));
     registry.register(new NilEquality(CoreFuncId.OpNotEqualToStringNil, NilEqualityKind.LeftIsNotNil));
     registry.register(new NilEquality(CoreFuncId.OpNotEqualToNilString, NilEqualityKind.RightIsNotNil));
+
+    registry.register(new TypeConversion(CoreFuncId.ConvNumberToString, ConversionKind.NumberToString));
+    registry.register(new TypeConversion(CoreFuncId.ConvStringToNumber, ConversionKind.StringToNumber));
+    registry.register(new TypeConversion(CoreFuncId.ConvNumberToBoolean, ConversionKind.NumberToBoolean));
+    registry.register(new TypeConversion(CoreFuncId.ConvBooleanToNumber, ConversionKind.BooleanToNumber));
+    registry.register(new TypeConversion(CoreFuncId.ConvStringToBoolean, ConversionKind.StringToBoolean));
+    registry.register(new TypeConversion(CoreFuncId.ConvBooleanToString, ConversionKind.BooleanToString));
   }
 
   /**

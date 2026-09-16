@@ -9,10 +9,10 @@
  * The conformance host profile and the corpus replay driver.
  *
  * The profile is the host surface every Wendoo VM implements in its test
- * harness to replay the shared conformance corpus: nine target-partition host
- * actions and one target-partition operator overload over a world that owns no
- * clock and no random stream, so two runs of one program over one schedule
- * observe the same world.
+ * harness to replay the shared conformance corpus: the target-partition
+ * host actions and operator overloads listed below, over a world that
+ * owns no clock and no random stream, so two runs of one program over one
+ * schedule observe the same world.
  *
  * - `echo(value)` -- synchronous sensor returning its argument unchanged.
  * - `emit(value)` -- synchronous actuator returning void, the corpus's
@@ -35,6 +35,12 @@
  * - `defer read(value, ticks)` -- asynchronous sensor whose handle resolves to
  *   `value` exactly `ticks` ticks after its dispatch, so a section reading it
  *   suspends until then.
+ * - `emit text(value)` -- synchronous actuator whose argument slot is
+ *   String-typed, returning its argument, so a string value lands in the
+ *   trace's argument and result positions.
+ * - `emit flag(value)` -- synchronous actuator whose argument slot is
+ *   Boolean-typed, returning its argument, so a boolean value lands in the
+ *   trace's argument and result positions.
  * - `lhs defer plus rhs` -- asynchronous infix operator whose handle resolves
  *   to the sum one tick after its dispatch, so the expression containing it
  *   suspends until then. An operand carrying no number, and a sum that is not
@@ -80,6 +86,8 @@ namespace wendoo {
     Counter = 1030,
     DeferCancel = 1031,
     DeferRead = 1032,
+    EmitText = 1033,
+    EmitFlag = 1034,
   }
 
   /**
@@ -339,6 +347,28 @@ namespace wendoo {
     }
   }
 
+  /** `emit text(value)`: returns its String-typed argument slot unchanged. */
+  class EmitTextActuator extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.EmitText, "actuator.conformance.emit-text", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return args.length > 0 ? args[0] : NIL_VALUE;
+    }
+  }
+
+  /** `emit flag(value)`: returns its Boolean-typed argument slot unchanged. */
+  class EmitFlagActuator extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.EmitFlag, "actuator.conformance.emit-flag", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return args.length > 0 ? args[0] : NIL_VALUE;
+    }
+  }
+
   /**
    * Whether `args[slot]` carries a number that is not a NaN. A slot past the
    * end of the buffer, a slot of another kind, and a NaN all read false.
@@ -380,7 +410,7 @@ namespace wendoo {
   }
 
   /**
-   * Register the conformance host profile's nine actions into `registry`.
+   * Register the conformance host profile's actions into `registry`.
    *
    * @param registry - Host-action registry the corpus program dispatches against.
    */
@@ -394,6 +424,8 @@ namespace wendoo {
     registry.register(new CounterSensor());
     registry.register(new DeferCancelActuator());
     registry.register(new DeferReadSensor());
+    registry.register(new EmitTextActuator());
+    registry.register(new EmitFlagActuator());
   }
 
   /** Line that closes the trace body of a replayed case. */
