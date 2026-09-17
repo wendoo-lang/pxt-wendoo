@@ -197,6 +197,51 @@ namespace wendoo {
   }
 
   /**
+   * Deep-copy `value` for assignment semantics. A non-struct value passes
+   * through unchanged. A struct value yields a new cell with the same typeId
+   * and a recursively deep-copied field list; a struct already on the current
+   * copy chain (a circular reference) yields the original value. A native
+   * handle is copied by reference, unless the value's registered type carries
+   * a `snapshotNative` hook, which materializes the handle the copy stores.
+   *
+   * @param value - Value to copy.
+   * @param types - Struct types whose `snapshotNative` hooks the copy dispatches.
+   * @param ctx - Execution context of the copying fiber.
+   * @param visited - Struct cells on the current copy chain.
+   */
+  function deepCopyValue(value: Value, types: StructTypeRegistry, ctx: ExecutionContext, visited?: Value[]): Value {
+    if (value.t !== ValueTag.Struct) {
+      return value;
+    }
+    if (!visited) {
+      visited = [];
+    }
+    for (let i = 0; i < visited.length; i++) {
+      if (visited[i] === value) {
+        return value;
+      }
+    }
+    visited.push(value);
+    const fields: Value[] = [];
+    for (let i = 0; i < value.fields.length; i++) {
+      fields.push(deepCopyValue(value.fields[i], types, ctx, visited));
+    }
+
+    let native = value.native;
+    if (native !== undefined) {
+      const binding = types.getByTypeId(value.typeId);
+      // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
+      if (binding && binding.hasSnapshotNative) {
+        native = binding.snapshotNative(value, ctx);
+      }
+    }
+
+    const copy = mkStruct(value.typeId, fields);
+    copy.native = native;
+    return copy;
+  }
+
+  /**
    * The bytecode dispatch loop. One instance runs every fiber of one brain
    * instance against one loaded program.
    */
@@ -204,6 +249,7 @@ namespace wendoo {
     private program: Program;
     private hostFunctions: HostFunctionRegistry;
     private hostActions: HostActionRegistry;
+    private types: StructTypeRegistry;
     private observer: VmObserver;
     private caps: VmCaps;
     private faultCode: number = NO_FAULT;
@@ -217,12 +263,14 @@ namespace wendoo {
       program: Program,
       hostFunctions: HostFunctionRegistry,
       hostActions: HostActionRegistry,
+      types: StructTypeRegistry,
       observer: VmObserver,
       caps: VmCaps
     ) {
       this.program = program;
       this.hostFunctions = hostFunctions;
       this.hostActions = hostActions;
+      this.types = types;
       this.observer = observer;
       this.caps = caps;
       this.handles = new HandleTable(caps.maxHandles);
@@ -478,6 +526,16 @@ namespace wendoo {
         case Op.DO_END:
           frame.pc++;
           return StepOutcome.Continue;
+        case Op.LIST_NEW:
+          return this.execListNew(fiber, ins, frame);
+        case Op.LIST_PUSH:
+          return this.execListPush(fiber, frame);
+        case Op.STRUCT_GET_FIELD:
+          return this.execStructGetField(fiber, ins, frame);
+        case Op.STRUCT_SET_FIELD:
+          return this.execStructSetField(fiber, ins, frame);
+        case Op.STRUCT_DEEP_COPY:
+          return this.execStructDeepCopy(fiber, frame);
         default:
           this.raise(ErrorCode.ScriptError, `${UNIMPLEMENTED_OPCODE_MARKER} ${ins.op}`);
           return StepOutcome.Continue;
@@ -574,7 +632,7 @@ namespace wendoo {
         this.raise(ErrorCode.ScriptError, "STORE_VAR_SLOT slot index out of bounds");
         return StepOutcome.Continue;
       }
-      fiber.ctx.variables.setBySlot(ins.a, this.pop(fiber));
+      fiber.ctx.variables.setBySlot(ins.a, deepCopyValue(this.pop(fiber), this.types, fiber.ctx));
       frame.pc++;
       return StepOutcome.Continue;
     }
@@ -914,6 +972,107 @@ namespace wendoo {
         return RuleFiringState.DidNotFire;
       }
       return services.ruleFiring.get(subjectFuncId);
+    }
+
+    /**
+     * Pushes a fresh empty list. The optional second operand indexes the
+     * program type table for the list's type, faulting `ScriptError` when it
+     * is outside the table; absent, the typeId defaults to `list:<unknown>`.
+     * The first operand is reserved.
+     */
+    private execListNew(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      let typeId = "list:<unknown>";
+      if (ins.b !== NO_OPERAND) {
+        if (ins.b < 0 || ins.b >= this.program.types.length) {
+          this.raise(ErrorCode.ScriptError, "LIST_NEW type-table index out of bounds");
+          return StepOutcome.Continue;
+        }
+        typeId = this.program.types[ins.b].typeId;
+      }
+      this.push(fiber, mkList(typeId, []));
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Pops a value and a list, appends the value to the list's element array
+     * in place (a pure store -- the value is not copied), and pushes the same
+     * list back. Faults `ScriptError` when the popped list is not a list
+     * value.
+     */
+    private execListPush(fiber: Fiber, frame: Frame): StepOutcome {
+      const item = this.pop(fiber);
+      const list = this.pop(fiber);
+      if (list.t !== ValueTag.List) {
+        this.raise(ErrorCode.ScriptError, "LIST_PUSH requires a list");
+        return StepOutcome.Continue;
+      }
+      list.fields.push(item);
+      this.push(fiber, list);
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Pops a struct and pushes the field at the instruction's field id,
+     * dispatching the struct type's registered field getter when it carries
+     * one, else reading the indexed field slot; a getter miss and a field id
+     * beyond the field list both push nil. Faults `ScriptError` when the
+     * popped value is not a struct.
+     */
+    private execStructGetField(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const source = this.pop(fiber);
+      if (source.t !== ValueTag.Struct) {
+        this.raise(ErrorCode.ScriptError, "STRUCT_GET_FIELD requires a struct");
+        return StepOutcome.Continue;
+      }
+      const binding = this.types.getByTypeId(source.typeId);
+      // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
+      if (binding && binding.hasFieldGetter) {
+        const result = binding.fieldGetter(source, ins.a, fiber.ctx);
+        this.push(fiber, result ? result : NIL_VALUE);
+      } else {
+        this.push(fiber, ins.a < source.fields.length ? source.fields[ins.a] : NIL_VALUE);
+      }
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /**
+     * Pops a value and a struct, writes the value into the struct's field
+     * slot in place (a pure store -- the value is not copied), and pushes
+     * the struct back. The write dispatches the struct type's registered
+     * field setter when it carries one, else it writes the indexed field
+     * slot. Faults `ScriptError` when the popped source is not a struct and
+     * when the field setter rejects the write.
+     */
+    private execStructSetField(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
+      const value = this.pop(fiber);
+      const source = this.pop(fiber);
+      if (source.t !== ValueTag.Struct) {
+        this.raise(ErrorCode.ScriptError, "STRUCT_SET_FIELD requires a struct");
+        return StepOutcome.Continue;
+      }
+      const binding = this.types.getByTypeId(source.typeId);
+      // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
+      if (binding && binding.hasFieldSetter) {
+        if (!binding.fieldSetter(source, ins.a, value, fiber.ctx)) {
+          this.raise(ErrorCode.ScriptError, `STRUCT_SET_FIELD cannot set field ${ins.a} on type ${source.typeId}`);
+          return StepOutcome.Continue;
+        }
+      } else {
+        source.fields[ins.a] = value;
+      }
+      this.push(fiber, source);
+      frame.pc++;
+      return StepOutcome.Continue;
+    }
+
+    /** Pops a value and pushes its deep copy; a non-struct value passes through unchanged. */
+    private execStructDeepCopy(fiber: Fiber, frame: Frame): StepOutcome {
+      this.push(fiber, deepCopyValue(this.pop(fiber), this.types, fiber.ctx));
+      frame.pc++;
+      return StepOutcome.Continue;
     }
 
     private frameRuleFuncId(frame: Frame): number {

@@ -7,7 +7,11 @@
  * Format version 1 is locked. Integer scalars render as minimal lowercase
  * hexadecimal of their unsigned 32-bit value; brain-observable numbers render
  * as the IEEE-754 bit pattern at the profile's precision; strings render as a
- * double-quoted UTF-8 byte sequence.
+ * double-quoted UTF-8 byte sequence; an enum value renders as its quoted
+ * symbol; a struct value renders as its field count followed by one value
+ * token per field slot, in slot order, and a native-backed struct value
+ * renders as `opaque`; a list value renders as its element count followed by
+ * one value token per element, in order.
  */
 namespace wendoo {
   /** Version of the core observable-trace grammar this writer renders. */
@@ -207,6 +211,31 @@ namespace wendoo {
       }
       if (v.t === ValueTag.String) {
         return `string ${quoted(v.str)}`;
+      }
+      if (v.t === ValueTag.Enum) {
+        return `enum ${quoted(v.str)}`;
+      }
+      if (v.t === ValueTag.Struct) {
+        if (v.native !== undefined) {
+          return "opaque";
+        }
+        const fields = v.fields;
+        if (!fields) {
+          return "opaque";
+        }
+        let text = `struct ${hexU32(fields.length)}`;
+        for (let i = 0; i < fields.length; i++) {
+          text += ` ${this.valueToken(fields[i])}`;
+        }
+        return text;
+      }
+      if (v.t === ValueTag.List) {
+        const items = v.fields;
+        let text = `list ${hexU32(items.length)}`;
+        for (let i = 0; i < items.length; i++) {
+          text += ` ${this.valueToken(items[i])}`;
+        }
+        return text;
       }
       return "opaque";
     }

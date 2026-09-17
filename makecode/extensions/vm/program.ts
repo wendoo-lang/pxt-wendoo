@@ -28,16 +28,36 @@ namespace wendoo {
     }
   }
 
+  /** Atom-id value of a type-table entry that is not an atom entry. */
+  export const NO_TYPE_ATOM = -1;
+
   /**
    * One program type-table entry, kept as the tag byte it was encoded with.
-   * Type identity travels by table index.
+   * Type identity travels by table index; an atom entry additionally carries
+   * the stable atom id it was encoded with and the typeId the decoding
+   * runtime's registry resolved it to, and a program-local struct or enum
+   * entry carries the typeId reconstructed from its embedded name.
    */
   export class ProgramTypeEntry {
     /** Wire tag of the entry kind. */
     tag: number;
+    /** Stable type-atom id of an atom entry, or {@link NO_TYPE_ATOM}. */
+    atomId: number;
+    /**
+     * TypeId of the entry's type: registry-resolved for an atom entry (`""`
+     * for a core atom the registry does not carry), reconstructed from the
+     * embedded name for a program-local struct or enum entry, and `""` for
+     * every other entry kind.
+     */
+    typeId: string;
+    /** Symbol keys of a program-local enum entry, in ordinal order; empty on every other entry kind. */
+    enumSymbols: string[];
 
     constructor(tag: number) {
       this.tag = tag;
+      this.atomId = NO_TYPE_ATOM;
+      this.typeId = "";
+      this.enumSymbols = [];
     }
   }
 

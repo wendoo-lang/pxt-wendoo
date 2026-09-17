@@ -3,8 +3,10 @@
  *
  * A brain value is one tagged cell: a {@link wendoo.ValueTag} tag plus the
  * payload field that tag selects -- `num` for a number, `str` for a string and
- * an enum symbol, `b` for a boolean. Numbers are plain runtime numbers, which
- * are IEEE-754 binary64 in the MakeCode simulator.
+ * an enum symbol, `b` for a boolean, `typeId` and `fields` for a struct and
+ * for a list, whose elements live in the same `fields` array. Numbers are
+ * plain runtime numbers, which are IEEE-754 binary64 in the MakeCode
+ * simulator.
  */
 namespace wendoo {
   /**
@@ -49,9 +51,10 @@ namespace wendoo {
 
   /**
    * One brain value: a tag plus the payload fields its tag selects. Construct
-   * through {@link mkNumber}, {@link mkString}, {@link mkBoolean} or the
-   * singletons; the payload fields of a kind that does not use them read as
-   * `0`, `""` and `false`.
+   * through {@link mkNumber}, {@link mkString}, {@link mkBoolean},
+   * {@link mkStruct}, {@link mkList} or the singletons; the payload fields of
+   * a kind that does not use them read as `0`, `""` and `false`, and the
+   * `typeId`/`fields` payload is live only on a `Struct` or `List` value.
    */
   export class Value {
     /** Which kind of value this cell holds, and therefore which payload field is live. */
@@ -62,6 +65,21 @@ namespace wendoo {
     str: string;
     /** Truth payload of a `Boolean` value. */
     b: boolean;
+    /** TypeId of a `Struct`, `List` or `Enum` value's type, e.g. `"struct:<Point>"`. */
+    typeId: string;
+    /**
+     * Field values of a `Struct` value, indexed by field id (a missing entry
+     * reads as nil), or the elements of a `List` value, in order.
+     */
+    fields: Value[];
+    /**
+     * Host object behind a native-backed `Struct` value, set only by
+     * {@link mkNativeStruct} and carried through deep copies. The VM never
+     * interprets it: the value's registered field hooks do. Undefined on
+     * every other value.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    native: any;
 
     constructor(t: ValueTag, num: number, str: string, b: boolean) {
       this.t = t;
@@ -110,6 +128,62 @@ namespace wendoo {
   }
 
   /**
+   * An enum value of type `typeId` carrying the symbol key `symbol`.
+   *
+   * @param typeId - TypeId of the enum's type.
+   * @param symbol - Symbol key, carried in the `str` payload.
+   */
+  export function mkEnum(typeId: string, symbol: string): Value {
+    const v = new Value(ValueTag.Enum, 0, symbol, false);
+    v.typeId = typeId;
+    return v;
+  }
+
+  /**
+   * A struct value of type `typeId` carrying `fields`. The cell holds the
+   * array itself, not a copy.
+   *
+   * @param typeId - TypeId of the struct's type.
+   * @param fields - Field values, indexed by field id.
+   */
+  export function mkStruct(typeId: string, fields: Value[]): Value {
+    const v = new Value(ValueTag.Struct, 0, "", false);
+    v.typeId = typeId;
+    v.fields = fields;
+    return v;
+  }
+
+  /**
+   * A list value of type `typeId` carrying `items`. The cell holds the array
+   * itself, not a copy.
+   *
+   * @param typeId - TypeId of the list's type.
+   * @param items - Element values, in order.
+   */
+  export function mkList(typeId: string, items: Value[]): Value {
+    const v = new Value(ValueTag.List, 0, "", false);
+    v.typeId = typeId;
+    v.fields = items;
+    return v;
+  }
+
+  /**
+   * A native-backed struct value of type `typeId`: an empty field list plus
+   * the host object `native` the type's registered field hooks dispatch to.
+   *
+   * @param typeId - TypeId of the struct's type.
+   * @param native - Host object behind the value.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+  export function mkNativeStruct(typeId: string, native: any): Value {
+    const v = new Value(ValueTag.Struct, 0, "", false);
+    v.typeId = typeId;
+    v.fields = [];
+    v.native = native;
+    return v;
+  }
+
+  /**
    * A handle value referencing the pending async operation `id`.
    *
    * @param id - Handle id allocated by the handle table.
@@ -129,7 +203,8 @@ namespace wendoo {
 
   /**
    * Whether `v` passes a truthiness gate. Unknown, void, nil, `false`,
-   * numeric zero and the empty string are falsy; every other value is truthy.
+   * numeric zero, the empty string and the empty list are falsy; every other
+   * value is truthy.
    *
    * @param v - Value to test.
    */
@@ -145,6 +220,9 @@ namespace wendoo {
     }
     if (v.t === ValueTag.String) {
       return v.str.length > 0;
+    }
+    if (v.t === ValueTag.List) {
+      return v.fields.length > 0;
     }
     return true;
   }

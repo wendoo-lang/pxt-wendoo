@@ -29,6 +29,14 @@ namespace wendoo {
   const SYSTEM_FLAG_INIT = 1;
   const SYSTEM_FLAG_THINK = 2;
 
+  /**
+   * Number of core type atoms, dense from id 0 (the member count of the
+   * reference runtime's `CoreTypeAtomId`). An atom entry carrying a core id
+   * always decodes, registered or not; every other atom id must resolve
+   * against the registered struct types.
+   */
+  const CORE_TYPE_ATOM_COUNT = 13;
+
   const TYPE_ENTRY_TAG_ATOM = 0;
   const TYPE_ENTRY_TAG_LIST = 1;
   const TYPE_ENTRY_TAG_MAP = 2;
@@ -182,8 +190,14 @@ namespace wendoo {
   export const DECODE_ERROR_UNKNOWN_OPCODE = "WENDOO_BINARY_CODEC_UNKNOWN_OPCODE";
   /** A TYPS entry tag byte is not a known type-entry tag. */
   export const DECODE_ERROR_INVALID_TYPE_ENTRY_TAG = "WENDOO_BINARY_CODEC_INVALID_TYPE_ENTRY_TAG";
+  /** A TYPS atom entry's atomId is not registered in the decoding runtime. */
+  export const DECODE_ERROR_UNKNOWN_TYPE_ATOM = "WENDOO_BINARY_CODEC_UNKNOWN_TYPE_ATOM";
   /** A TYPS enum entry's value-kind byte is not `0` or `1`. */
   export const DECODE_ERROR_INVALID_ENUM_VALUE_KIND = "WENDOO_BINARY_CODEC_INVALID_ENUM_VALUE_KIND";
+  /** A constant value's type-table index is outside the decoded table. */
+  export const DECODE_ERROR_TYPE_INDEX_OUT_OF_RANGE = "WENDOO_BINARY_CODEC_TYPE_INDEX_OUT_OF_RANGE";
+  /** An enum constant's symbol ordinal resolves to no symbol of its type. */
+  export const DECODE_ERROR_ENUM_ORDINAL_OUT_OF_RANGE = "WENDOO_BINARY_CODEC_ENUM_ORDINAL_OUT_OF_RANGE";
   /** A read ran past the end of the artifact. */
   export const DECODE_ERROR_TRUNCATED = "WENDOO_BINARY_CODEC_TRUNCATED";
   /** A var-int did not terminate within its five-byte budget. */
@@ -246,21 +260,25 @@ namespace wendoo {
    * Decodes a binary program artifact supplied as hexadecimal text.
    *
    * @param hex - The artifact bytes as hexadecimal digit pairs.
+   * @param types - Struct type registry the TYPS atom entries resolve against.
    */
-  export function decodeProgramHex(hex: string): DecodedProgram {
+  export function decodeProgramHex(hex: string, types: StructTypeRegistry): DecodedProgram {
     const bytes = bytesFromHex(hex);
     if (bytes.length === 0) {
       return new DecodedProgram(DECODE_ERROR_INVALID_HEX, 0, new Program());
     }
-    return decodeProgram(bytes);
+    return decodeProgram(bytes, types);
   }
 
   /**
-   * Decodes a binary program artifact.
+   * Decodes a binary program artifact. A TYPS atom entry naming an atom that
+   * is outside the core range and that the registry does not resolve rejects
+   * the artifact with {@link DECODE_ERROR_UNKNOWN_TYPE_ATOM}.
    *
    * @param bytes - The artifact bytes.
+   * @param types - Struct type registry the TYPS atom entries resolve against.
    */
-  export function decodeProgram(bytes: number[]): DecodedProgram {
+  export function decodeProgram(bytes: number[], types: StructTypeRegistry): DecodedProgram {
     const r = new ByteReader(bytes);
     const program = new Program();
 
@@ -277,9 +295,9 @@ namespace wendoo {
 
     const strings = readCstr(r);
     program.constStrings = strings.constStrings;
-    program.types = readTyps(r, strings.all);
+    program.types = readTyps(r, strings.all, types);
     program.constNumbers = readCnum(r);
-    program.constValues = readCval(r, strings.all);
+    program.constValues = readCval(r, strings.all, program.types);
     program.functions = readFunc(r);
     readVars(r, strings.all, program);
     if ((presence & PRESENCE_ACTS) !== 0) {
@@ -330,12 +348,26 @@ namespace wendoo {
     return strings[index];
   }
 
-  function readTyps(r: ByteReader, strings: string[]): ProgramTypeEntry[] {
+  function readTyps(r: ByteReader, strings: string[], types: StructTypeRegistry): ProgramTypeEntry[] {
     const count = r.varUint();
     const entries: ProgramTypeEntry[] = [];
     for (let i = 0; i < count && !r.failed(); i++) {
       const tag = r.u8();
-      if (tag === TYPE_ENTRY_TAG_ATOM || tag === TYPE_ENTRY_TAG_LIST || tag === TYPE_ENTRY_TAG_NULLABLE) {
+      if (tag === TYPE_ENTRY_TAG_ATOM) {
+        const atomId = r.varUint();
+        const binding = types.getByAtomId(atomId);
+        if (!binding && atomId >= CORE_TYPE_ATOM_COUNT) {
+          r.fail(DECODE_ERROR_UNKNOWN_TYPE_ATOM);
+          return entries;
+        }
+        const entry = new ProgramTypeEntry(tag);
+        entry.atomId = atomId;
+        entry.typeId = binding ? binding.typeId : "";
+        entries.push(entry);
+        continue;
+      }
+      const entry = new ProgramTypeEntry(tag);
+      if (tag === TYPE_ENTRY_TAG_LIST || tag === TYPE_ENTRY_TAG_NULLABLE) {
         r.varUint();
       } else if (tag === TYPE_ENTRY_TAG_MAP) {
         r.varUint();
@@ -352,7 +384,9 @@ namespace wendoo {
         }
         r.varUint();
       } else if (tag === TYPE_ENTRY_TAG_STRUCT) {
-        r.varUint();
+        // TypeIds reconstruct from the embedded name exactly as the reference
+        // codec's mkTypeId composes them.
+        entry.typeId = `struct:<${stringAt(r, strings, r.varUint())}>`;
         r.varUint();
         const fieldCount = r.varUint();
         for (let j = 0; j < fieldCount; j++) {
@@ -360,7 +394,7 @@ namespace wendoo {
           r.varUint();
         }
       } else if (tag === TYPE_ENTRY_TAG_ENUM) {
-        r.varUint();
+        entry.typeId = `enum:<${stringAt(r, strings, r.varUint())}>`;
         const symbolCount = r.varUint();
         if (symbolCount > 0) {
           const valueKind = r.u8();
@@ -369,7 +403,7 @@ namespace wendoo {
             return entries;
           }
           for (let j = 0; j < symbolCount; j++) {
-            r.varUint();
+            entry.enumSymbols.push(stringAt(r, strings, r.varUint()));
             if (valueKind === ENUM_VALUE_KIND_STRING) {
               r.varUint();
             } else {
@@ -381,7 +415,7 @@ namespace wendoo {
         r.fail(DECODE_ERROR_INVALID_TYPE_ENTRY_TAG);
         return entries;
       }
-      entries.push(new ProgramTypeEntry(tag));
+      entries.push(entry);
     }
     return entries;
   }
@@ -410,16 +444,16 @@ namespace wendoo {
     return numbers;
   }
 
-  function readCval(r: ByteReader, strings: string[]): Value[] {
+  function readCval(r: ByteReader, strings: string[], types: ProgramTypeEntry[]): Value[] {
     const count = r.varUint();
     const values: Value[] = [];
     for (let i = 0; i < count && !r.failed(); i++) {
-      values.push(readValue(r, strings));
+      values.push(readValue(r, strings, types));
     }
     return values;
   }
 
-  function readValue(r: ByteReader, strings: string[]): Value {
+  function readValue(r: ByteReader, strings: string[], types: ProgramTypeEntry[]): Value {
     const raw = r.u8();
     const tag = raw === 255 ? ValueTag.Unknown : raw;
     if (tag === ValueTag.Unknown) {
@@ -439,6 +473,45 @@ namespace wendoo {
     }
     if (tag === ValueTag.String) {
       return mkString(stringAt(r, strings, r.varUint()));
+    }
+    if (tag === ValueTag.Enum) {
+      const typeIdx = r.varUint();
+      const ordinal = r.varUint();
+      if (typeIdx >= types.length) {
+        r.fail(DECODE_ERROR_TYPE_INDEX_OUT_OF_RANGE);
+        return NIL_VALUE;
+      }
+      const entry = types[typeIdx];
+      if (entry.tag === TYPE_ENTRY_TAG_ENUM) {
+        if (ordinal >= entry.enumSymbols.length) {
+          r.fail(DECODE_ERROR_ENUM_ORDINAL_OUT_OF_RANGE);
+          return NIL_VALUE;
+        }
+        return mkEnum(entry.typeId, entry.enumSymbols[ordinal]);
+      }
+      if (entry.tag === TYPE_ENTRY_TAG_ATOM) {
+        // An atom-typed enum constant resolves its symbol through a
+        // registered enum type; this runtime registers none, so the ordinal
+        // resolves to no symbol.
+        r.fail(DECODE_ERROR_ENUM_ORDINAL_OUT_OF_RANGE);
+        return NIL_VALUE;
+      }
+      r.fail(DECODE_ERROR_INVALID_VALUE_TAG);
+      return NIL_VALUE;
+    }
+    if (tag === ValueTag.Struct) {
+      const typeIdx = r.varUint();
+      if (typeIdx >= types.length) {
+        r.fail(DECODE_ERROR_TYPE_INDEX_OUT_OF_RANGE);
+        return NIL_VALUE;
+      }
+      const typeId = types[typeIdx].typeId;
+      const fieldCount = r.varUint();
+      const fields: Value[] = [];
+      for (let i = 0; i < fieldCount && !r.failed(); i++) {
+        fields.push(readValue(r, strings, types));
+      }
+      return mkStruct(typeId, fields);
     }
     r.fail(DECODE_ERROR_INVALID_VALUE_TAG);
     return NIL_VALUE;

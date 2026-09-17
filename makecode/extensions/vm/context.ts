@@ -695,6 +695,123 @@ namespace wendoo {
   }
 
   /**
+   * One registered struct type, keyed by the typeId its values carry and by
+   * the stable type-atom id its wire (TYPS) entries record. A closed struct
+   * type registers with every hook flag false; a native-backed type
+   * subclasses, sets the flag of each hook it implements, and overrides that
+   * hook to dispatch into the host object behind the value.
+   */
+  export class StructTypeBinding {
+    /** TypeId a struct value of this type carries, e.g. `"struct:<Point>"`. */
+    typeId: string;
+    /** Stable type-atom id the type's wire (TYPS) entries record. */
+    atomId: number;
+    /** Whether {@link StructTypeBinding.fieldGetter} is registered; false reads indexed field slots. */
+    hasFieldGetter: boolean;
+    /** Whether {@link StructTypeBinding.fieldSetter} is registered; false writes indexed field slots. */
+    hasFieldSetter: boolean;
+    /** Whether {@link StructTypeBinding.snapshotNative} is registered; false copies the native handle by reference. */
+    hasSnapshotNative: boolean;
+
+    constructor(typeId: string, atomId: number) {
+      this.typeId = typeId;
+      this.atomId = atomId;
+      this.hasFieldGetter = false;
+      this.hasFieldSetter = false;
+      this.hasSnapshotNative = false;
+    }
+
+    /**
+     * Read the field `fieldId` of `source` from the host object behind it.
+     * A result of `undefined` reads as nil at the dispatch site. The base
+     * implementation reads every field as absent.
+     *
+     * @param source - Struct value the field is read from.
+     * @param fieldId - Numeric field id (the field's storage slot).
+     * @param ctx - Execution context of the reading fiber.
+     */
+    fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
+      return undefined;
+    }
+
+    /**
+     * Write `value` into the field `fieldId` of the host object behind
+     * `source`. Returning false rejects the write, which faults the writing
+     * fiber with `ScriptError`. The base implementation rejects every write.
+     *
+     * @param source - Struct value the field is written through.
+     * @param fieldId - Numeric field id (the field's storage slot).
+     * @param value - Value to write.
+     * @param ctx - Execution context of the writing fiber.
+     */
+    fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
+      return false;
+    }
+
+    /**
+     * Materialize `source`'s native handle for the deep copy an assignment
+     * makes: resolve a lazy handle to the concrete host object the copy
+     * stores. The base implementation passes the handle through unchanged.
+     *
+     * @param source - Struct value being copied.
+     * @param ctx - Execution context of the copying fiber.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    snapshotNative(source: Value, ctx: ExecutionContext): any {
+      return source.native;
+    }
+  }
+
+  /**
+   * The struct types a program's values and TYPS atom entries resolve
+   * against: field-hook dispatch looks types up by typeId, and program
+   * loading validates every TYPS atom entry by atom id.
+   */
+  export class StructTypeRegistry {
+    private types: StructTypeBinding[] = [];
+
+    constructor() {}
+
+    /**
+     * Register `binding` under its declared typeId and atom id.
+     *
+     * @param binding - Struct type binding to register.
+     */
+    register(binding: StructTypeBinding): void {
+      this.types.push(binding);
+    }
+
+    /**
+     * The type registered under `typeId`, or `undefined` when none is.
+     *
+     * @param typeId - TypeId a struct value carries.
+     */
+    getByTypeId(typeId: string): StructTypeBinding {
+      for (let i = 0; i < this.types.length; i++) {
+        if (this.types[i].typeId === typeId) {
+          return this.types[i];
+        }
+      }
+      return undefined;
+    }
+
+    /**
+     * The type registered under the stable atom id `atomId`, or `undefined`
+     * when none is.
+     *
+     * @param atomId - Stable type-atom id from a TYPS entry.
+     */
+    getByAtomId(atomId: number): StructTypeBinding {
+      for (let i = 0; i < this.types.length; i++) {
+        if (this.types[i].atomId === atomId) {
+          return this.types[i];
+        }
+      }
+      return undefined;
+    }
+  }
+
+  /**
    * Passive observer of the VM's externally visible effects. Every method is
    * a no-op by default; a subclass overrides the ones it records. The VM
    * never reads a return value and never branches on an observer, so a run

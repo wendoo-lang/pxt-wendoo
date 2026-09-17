@@ -316,6 +316,7 @@ namespace wendoo {
      * @param program - The decoded, linked program to run.
      * @param hostFunctions - Host functions the program's `HOST_CALL` operands resolve against.
      * @param hostActions - Host actions the program's `HOST_ACTION_CALL` operands resolve against.
+     * @param types - Struct types the program's field hooks and deep copies dispatch against.
      * @param observer - Passive observer of the run's visible effects.
      * @param caps - Per-fiber and per-round capacity caps.
      * @param world - Opaque per-run payload the host profile attaches to the context.
@@ -324,6 +325,7 @@ namespace wendoo {
       program: Program,
       hostFunctions: HostFunctionRegistry,
       hostActions: HostActionRegistry,
+      types: StructTypeRegistry,
       observer: VmObserver,
       caps: VmCaps,
       world: HostWorld
@@ -332,7 +334,7 @@ namespace wendoo {
       this.hostActions = hostActions;
       const variables = new VariableStore();
       variables.install(program);
-      this.vm = new VM(program, hostFunctions, hostActions, observer, caps);
+      this.vm = new VM(program, hostFunctions, hostActions, types, observer, caps);
       this.scheduler = new FiberScheduler(this.vm, caps);
       const services = new BrainServices(
         program,

@@ -45,6 +45,32 @@
  *   to the sum one tick after its dispatch, so the expression containing it
  *   suspends until then. An operand carrying no number, and a sum that is not
  *   a number, both resolve nil.
+ * - `defer point()` -- asynchronous sensor whose handle resolves to a fresh
+ *   `Point` struct reading `{x: 1.5, y: 2.25}` exactly one tick after its
+ *   dispatch. The struct is constructed at settle time, immediately before
+ *   the handle resolves. `Point` is the profile's closed struct type, with
+ *   fields `x` and `y` at field ids 0 and 1.
+ * - `defer anchor()` -- asynchronous sensor whose handle resolves to a fresh
+ *   `Anchor` value one tick after its dispatch, constructed at settle time
+ *   over the world's one anchor host object. `Anchor` is native-backed: its
+ *   field getter and setter read and write that host object, and a deep copy
+ *   shares it by reference, so every copy aliases one anchor.
+ * - `defer target()` -- asynchronous sensor whose handle resolves to a fresh
+ *   `Target` value one tick after its dispatch, backed by a lazy resolver
+ *   over the world's call-counting target resolution. `Target` registers
+ *   `snapshotNative`: an assignment materializes the resolver to the concrete
+ *   host object it resolves to, while the field getter resolves on every read
+ *   of an unassigned value.
+ * - `emit all(value...)` -- synchronous actuator returning void, whose one
+ *   argument slot is a repeated value slot: compiled brain code gathers the
+ *   tiles filling it, in source order, into one list value and passes the
+ *   list in the dispatch's argument position.
+ *
+ * The profile also registers its three struct types -- `Point` (closed),
+ * `Anchor`, and `Target` -- so every corpus program's TYPS atom entries
+ * resolve at load. The profile's `Mode` enum type is program-local: its
+ * symbols travel in each program's own type table, so the replay registers
+ * nothing for it.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -88,6 +114,10 @@ namespace wendoo {
     DeferRead = 1032,
     EmitText = 1033,
     EmitFlag = 1034,
+    DeferPoint = 1035,
+    DeferAnchor = 1036,
+    DeferTarget = 1037,
+    EmitAll = 1038,
   }
 
   /**
@@ -116,9 +146,45 @@ namespace wendoo {
     settle(): void {}
   }
 
+  /** `x` field value the world's anchor host object starts with; exactly representable at f32. */
+  const CONFORMANCE_ANCHOR_X = 1.5;
+
+  /** `y` field value the world's anchor host object starts with; exactly representable at f32. */
+  const CONFORMANCE_ANCHOR_Y = 2.25;
+
+  /** `value` of the target host object the first resolution returns; exactly representable at f32. */
+  const CONFORMANCE_TARGET_FIRST_VALUE = 1.5;
+
+  /** `value` of the target host object every later resolution returns; exactly representable at f32. */
+  const CONFORMANCE_TARGET_LATER_VALUE = 8.5;
+
+  /** The mutable host object behind every `Anchor` value of one world. */
+  export class ConformanceAnchor {
+    /** Current `x` field value. */
+    x: number;
+    /** Current `y` field value. */
+    y: number;
+
+    constructor(x: number, y: number) {
+      this.x = x;
+      this.y = y;
+    }
+  }
+
+  /** One host object a `Target` resolution returns. */
+  export class ConformanceTarget {
+    /** The object's `value` field. */
+    value: number;
+
+    constructor(value: number) {
+      this.value = value;
+    }
+  }
+
   /**
    * The deterministic world the conformance host actions run against: the
-   * pending deferred settlements and nothing else.
+   * pending deferred settlements, the anchor host object, and the
+   * call-counting target resolution.
    *
    * Attach an instance as the brain runtime's context data, and call
    * {@link ConformanceWorld.settleDue} with the ordinal of the think that is
@@ -126,9 +192,32 @@ namespace wendoo {
    */
   export class ConformanceWorld extends HostWorld {
     private pending: DeferredSettlement[] = [];
+    private anchorObject: ConformanceAnchor;
+    private firstTarget: ConformanceTarget;
+    private laterTarget: ConformanceTarget;
+    private targetResolutions: number;
 
     constructor() {
       super();
+      this.anchorObject = new ConformanceAnchor(CONFORMANCE_ANCHOR_X, CONFORMANCE_ANCHOR_Y);
+      this.firstTarget = new ConformanceTarget(CONFORMANCE_TARGET_FIRST_VALUE);
+      this.laterTarget = new ConformanceTarget(CONFORMANCE_TARGET_LATER_VALUE);
+      this.targetResolutions = 0;
+    }
+
+    /** The world's one `Anchor` host object; every `defer anchor` reading is backed by it. */
+    anchor(): ConformanceAnchor {
+      return this.anchorObject;
+    }
+
+    /**
+     * Resolve the current `Target` host object, counting the call: the first
+     * resolution of the run returns the first object, every later one the
+     * later object.
+     */
+    resolveTarget(): ConformanceTarget {
+      this.targetResolutions++;
+      return this.targetResolutions === 1 ? this.firstTarget : this.laterTarget;
     }
 
     /**
@@ -369,6 +458,253 @@ namespace wendoo {
     }
   }
 
+  /** TypeId of the conformance profile's `Point` struct type. */
+  const CONFORMANCE_POINT_TYPE_ID = "struct:<Point>";
+
+  /** `x` field value of every settled `defer point` reading; exactly representable at f32. */
+  const CONFORMANCE_POINT_READING_X = 1.5;
+
+  /** `y` field value of every settled `defer point` reading; exactly representable at f32. */
+  const CONFORMANCE_POINT_READING_Y = 2.25;
+
+  /** Settles its handle as resolved, carrying a fresh `Point` reading built at settle time. */
+  class PointReadingSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+
+    constructor(handle: AsyncHandle) {
+      super(0);
+      this.handle = handle;
+    }
+
+    settle(): void {
+      const fields = [mkNumber(CONFORMANCE_POINT_READING_X), mkNumber(CONFORMANCE_POINT_READING_Y)];
+      this.handle.resolve(mkStruct(CONFORMANCE_POINT_TYPE_ID, fields));
+    }
+  }
+
+  /** `defer point()`: resolves its handle to a fresh `Point` reading one tick after its dispatch. */
+  class DeferPointSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.DeferPoint, "sensor.conformance.defer-point", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, DEFAULT_WHOLE_TICKS, new PointReadingSettlement(handle));
+    }
+  }
+
+  /** TypeId of the conformance profile's `Anchor` native struct type. */
+  const CONFORMANCE_ANCHOR_TYPE_ID = "struct:<Anchor>";
+
+  /** TypeId of the conformance profile's `Target` native struct type. */
+  const CONFORMANCE_TARGET_TYPE_ID = "struct:<Target>";
+
+  /** Stable type-atom id of the `Point` struct type; corpus TYPS entries record it verbatim. */
+  const CONFORMANCE_POINT_ATOM_ID = 1024;
+
+  /** Stable type-atom id of the `Anchor` struct type; corpus TYPS entries record it verbatim. */
+  const CONFORMANCE_ANCHOR_ATOM_ID = 1025;
+
+  /** Stable type-atom id of the `Target` struct type; corpus TYPS entries record it verbatim. */
+  const CONFORMANCE_TARGET_ATOM_ID = 1026;
+
+  /** Field id of the `Anchor` type's `x` field. */
+  const CONFORMANCE_ANCHOR_FIELD_X = 0;
+
+  /** Field id of the `Anchor` type's `y` field. */
+  const CONFORMANCE_ANCHOR_FIELD_Y = 1;
+
+  /** Field id of the `Target` type's `value` field. */
+  const CONFORMANCE_TARGET_FIELD_VALUE = 0;
+
+  /**
+   * Lazy native handle of an unassigned `Target` value: resolves to the host
+   * object the value currently designates, through the world's call-counting
+   * resolution. `snapshotNative` materializes it to the concrete
+   * {@link ConformanceTarget} at assignment.
+   */
+  export class TargetResolver {
+    private world: ConformanceWorld;
+
+    constructor(world: ConformanceWorld) {
+      this.world = world;
+    }
+
+    /** The host object the world's target resolution currently designates. */
+    resolve(): ConformanceTarget {
+      return this.world.resolveTarget();
+    }
+  }
+
+  /**
+   * The host object a `Target` value designates: a resolver native is
+   * resolved, a direct object reference passes through, and a value carrying
+   * no native designates nothing.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+  function resolveConformanceTarget(native: any): ConformanceTarget {
+    if (!native) {
+      return undefined;
+    }
+    if (native instanceof TargetResolver) {
+      return (native as TargetResolver).resolve();
+    }
+    return native as ConformanceTarget;
+  }
+
+  /** The `Anchor` type: field hooks into the world's anchor host object, native shared by reference. */
+  class AnchorTypeBinding extends StructTypeBinding {
+    constructor() {
+      super(CONFORMANCE_ANCHOR_TYPE_ID, CONFORMANCE_ANCHOR_ATOM_ID);
+      this.hasFieldGetter = true;
+      this.hasFieldSetter = true;
+    }
+
+    fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
+      const anchor = source.native as ConformanceAnchor;
+      if (!anchor) {
+        return undefined;
+      }
+      if (fieldId === CONFORMANCE_ANCHOR_FIELD_X) {
+        return mkNumber(anchor.x);
+      }
+      if (fieldId === CONFORMANCE_ANCHOR_FIELD_Y) {
+        return mkNumber(anchor.y);
+      }
+      return undefined;
+    }
+
+    fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
+      const anchor = source.native as ConformanceAnchor;
+      if (!anchor || value.t !== ValueTag.Number) {
+        return false;
+      }
+      if (fieldId === CONFORMANCE_ANCHOR_FIELD_X) {
+        anchor.x = value.num;
+        return true;
+      }
+      if (fieldId === CONFORMANCE_ANCHOR_FIELD_Y) {
+        anchor.y = value.num;
+        return true;
+      }
+      return false;
+    }
+  }
+
+  /** The `Target` type: a resolver-reading field getter and the snapshot that pins a resolution. */
+  class TargetTypeBinding extends StructTypeBinding {
+    constructor() {
+      super(CONFORMANCE_TARGET_TYPE_ID, CONFORMANCE_TARGET_ATOM_ID);
+      this.hasFieldGetter = true;
+      this.hasSnapshotNative = true;
+    }
+
+    fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
+      const target = resolveConformanceTarget(source.native);
+      if (!target) {
+        return undefined;
+      }
+      if (fieldId === CONFORMANCE_TARGET_FIELD_VALUE) {
+        return mkNumber(target.value);
+      }
+      return undefined;
+    }
+
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    snapshotNative(source: Value, ctx: ExecutionContext): any {
+      const native = source.native;
+      if (!native) {
+        return native;
+      }
+      if (native instanceof TargetResolver) {
+        return (native as TargetResolver).resolve();
+      }
+      return native;
+    }
+  }
+
+  /** Settles its handle as resolved, carrying an `Anchor` value built at settle time over the world's anchor. */
+  class AnchorReadingSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+    private world: ConformanceWorld;
+
+    constructor(handle: AsyncHandle, world: ConformanceWorld) {
+      super(0);
+      this.handle = handle;
+      this.world = world;
+    }
+
+    settle(): void {
+      this.handle.resolve(mkNativeStruct(CONFORMANCE_ANCHOR_TYPE_ID, this.world.anchor()));
+    }
+  }
+
+  /** Settles its handle as resolved, carrying a `Target` value backed by a fresh resolver built at settle time. */
+  class TargetReadingSettlement extends DeferredSettlement {
+    private handle: AsyncHandle;
+    private world: ConformanceWorld;
+
+    constructor(handle: AsyncHandle, world: ConformanceWorld) {
+      super(0);
+      this.handle = handle;
+      this.world = world;
+    }
+
+    settle(): void {
+      this.handle.resolve(mkNativeStruct(CONFORMANCE_TARGET_TYPE_ID, new TargetResolver(this.world)));
+    }
+  }
+
+  /** `defer anchor()`: resolves its handle to a fresh `Anchor` value one tick after its dispatch. */
+  class DeferAnchorSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.DeferAnchor, "sensor.conformance.defer-anchor", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, DEFAULT_WHOLE_TICKS, new AnchorReadingSettlement(handle, world));
+    }
+  }
+
+  /** `defer target()`: resolves its handle to a fresh resolver-backed `Target` value one tick after its dispatch. */
+  class DeferTargetSensor extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.DeferTarget, "sensor.conformance.defer-target", true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const world = ctx.data as ConformanceWorld;
+      world.defer(ctx.currentTick, DEFAULT_WHOLE_TICKS, new TargetReadingSettlement(handle, world));
+    }
+  }
+
+  /** `emit all(value...)`: receives its repeated value slot's arguments as one gathered list; returns void. */
+  class EmitAllActuator extends HostActionBinding {
+    constructor() {
+      super(ConformanceActionId.EmitAll, "actuator.conformance.emit-all", false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return VOID_VALUE;
+    }
+  }
+
+  /**
+   * Register the conformance host profile's struct types into `registry`:
+   * the closed `Point` type and the native-backed `Anchor` and `Target`
+   * types. Every corpus program's TYPS atom entries resolve against these
+   * three registrations.
+   *
+   * @param registry - Struct type registry the corpus program loads and dispatches against.
+   */
+  export function registerConformanceStructTypes(registry: StructTypeRegistry): void {
+    registry.register(new StructTypeBinding(CONFORMANCE_POINT_TYPE_ID, CONFORMANCE_POINT_ATOM_ID));
+    registry.register(new AnchorTypeBinding());
+    registry.register(new TargetTypeBinding());
+  }
+
   /**
    * Whether `args[slot]` carries a number that is not a NaN. A slot past the
    * end of the buffer, a slot of another kind, and a NaN all read false.
@@ -426,6 +762,10 @@ namespace wendoo {
     registry.register(new DeferReadSensor());
     registry.register(new EmitTextActuator());
     registry.register(new EmitFlagActuator());
+    registry.register(new DeferPointSensor());
+    registry.register(new DeferAnchorSensor());
+    registry.register(new DeferTargetSensor());
+    registry.register(new EmitAllActuator());
   }
 
   /** Line that closes the trace body of a replayed case. */
@@ -443,7 +783,9 @@ namespace wendoo {
    */
   export function runConformanceCase(caseId: string, programHex: string, schedule: number[]): void {
     console.log(`SIMCAP START ${caseId}`);
-    const decoded = decodeProgramHex(programHex);
+    const types = new StructTypeRegistry();
+    registerConformanceStructTypes(types);
+    const decoded = decodeProgramHex(programHex, types);
     if (decoded.errorCode.length > 0) {
       console.log(CONFORMANCE_TRACE_END);
       console.log(`DIAG decode-failed ${decoded.errorCode}`);
@@ -466,6 +808,7 @@ namespace wendoo {
       decoded.program,
       hostFunctions,
       hostActions,
+      types,
       new TraceTap(writer),
       new VmCaps(CONFORMANCE_DEFAULT_BUDGET, CONFORMANCE_MAX_STACK_SIZE, CONFORMANCE_MAX_HANDLES),
       world
