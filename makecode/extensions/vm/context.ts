@@ -465,6 +465,9 @@ namespace wendoo {
   /** Fault code meaning no fault is in flight. */
   export const NO_FAULT = 0;
 
+  /** Identity a binding carries until a registry assigns it one. */
+  export const UNASSIGNED_ID = -1;
+
   /**
    * The context every fiber carries. Host bodies read the per-tick scalars
    * and the brain-instance state through it, and report failure through
@@ -524,19 +527,45 @@ namespace wendoo {
   }
 
   /**
+   * The rule-variable name an action's named output is carried in. The output
+   * tile that reads the output resolves to this same name.
+   *
+   * @param typeId - TypeId of the output's value.
+   * @param name - Output name as the action declares it.
+   */
+  export function actionOutputVariableName(typeId: string, name: string): string {
+    return `__out.${typeId}.${name}`;
+  }
+
+  /**
+   * Write one of the running action's named outputs, from the action's own
+   * body. The value is stored on the rule the body is executing under, so the
+   * reading tile sees it in that rule and in every rule below it. A body
+   * running under no rule writes nothing.
+   *
+   * @param ctx - Execution context of the running action.
+   * @param typeId - TypeId of the output's value.
+   * @param name - Output name as the action declares it.
+   * @param value - Value to store.
+   */
+  export function setActionOutput(ctx: ExecutionContext, typeId: string, name: string, value: Value): void {
+    ctx.services.ruleVars.setByName(ctx.currentRuleFuncId, actionOutputVariableName(typeId, name), value);
+  }
+
+  /**
    * One host function, dispatched by `HOST_CALL` (or its async form) against
    * its stable funcId. Subclass and override {@link HostFunction.exec} for a
    * synchronous function; an asynchronous one sets {@link HostFunction.isAsync}
    * and overrides {@link HostFunction.execAsync}.
    */
   export class HostFunction {
-    /** Stable funcId the bytecode dispatches this function by. */
+    /** Stable funcId the bytecode dispatches this function by, assigned when it is registered. */
     fnId: number;
     /** Whether the function returns a pending handle and no value. */
     isAsync: boolean;
 
-    constructor(fnId: number) {
-      this.fnId = fnId;
+    constructor() {
+      this.fnId = UNASSIGNED_ID;
       this.isAsync = false;
     }
 
@@ -575,11 +604,14 @@ namespace wendoo {
     constructor() {}
 
     /**
-     * Register `fn` under its declared funcId.
+     * Register `fn` under `fnId`, which becomes the function's
+     * {@link HostFunction.fnId}.
      *
+     * @param fnId - Stable funcId the bytecode dispatches the function by.
      * @param fn - Host function to register.
      */
-    register(fn: HostFunction): void {
+    register(fnId: number, fn: HostFunction): void {
+      fn.fnId = fnId;
       this.functions.push(fn);
     }
 
@@ -604,9 +636,9 @@ namespace wendoo {
    * {@link HostActionBinding.execSync} for a synchronous action.
    */
   export class HostActionBinding {
-    /** Stable action id the bytecode dispatches this action by. */
+    /** Stable action id the bytecode dispatches this action by, assigned when it is registered. */
     actionId: number;
-    /** Authoring key of the action; the registry key and host-function name. */
+    /** Authoring name of the action, assigned when it is registered. */
     key: string;
     /** Whether the action returns a pending handle and no value. */
     isAsync: boolean;
@@ -618,9 +650,9 @@ namespace wendoo {
      */
     uncappedHandles: boolean;
 
-    constructor(actionId: number, key: string, isAsync: boolean) {
-      this.actionId = actionId;
-      this.key = key;
+    constructor(isAsync: boolean) {
+      this.actionId = UNASSIGNED_ID;
+      this.key = "";
       this.isAsync = isAsync;
       this.uncappedHandles = false;
     }
@@ -671,11 +703,16 @@ namespace wendoo {
     constructor() {}
 
     /**
-     * Register `action` under its declared action id.
+     * Register `action` under `actionId` and `key`, which become its
+     * {@link HostActionBinding.actionId} and {@link HostActionBinding.key}.
      *
+     * @param actionId - Stable action id the bytecode dispatches the action by.
+     * @param key - Authoring name of the action.
      * @param action - Host action binding to register.
      */
-    register(action: HostActionBinding): void {
+    register(actionId: number, key: string, action: HostActionBinding): void {
+      action.actionId = actionId;
+      action.key = key;
       this.actions.push(action);
     }
 
@@ -702,23 +739,33 @@ namespace wendoo {
    * hook to dispatch into the host object behind the value.
    */
   export class StructTypeBinding {
-    /** TypeId a struct value of this type carries, e.g. `"struct:<Point>"`. */
+    /** TypeId a struct value of this type carries, e.g. `"struct:<Point>"`, assigned when it is registered. */
     typeId: string;
-    /** Stable type-atom id the type's wire (TYPS) entries record. */
+    /** Stable type-atom id the type's wire (TYPS) entries record, assigned when it is registered. */
     atomId: number;
+    /**
+     * Field ids of the type's declared fields, in declaration order, assigned
+     * when it is registered. A hook that dispatches on a field id reads the
+     * id it is to compare against from here.
+     */
+    fieldIds: number[];
     /** Whether {@link StructTypeBinding.fieldGetter} is registered; false reads indexed field slots. */
     hasFieldGetter: boolean;
     /** Whether {@link StructTypeBinding.fieldSetter} is registered; false writes indexed field slots. */
     hasFieldSetter: boolean;
     /** Whether {@link StructTypeBinding.snapshotNative} is registered; false copies the native handle by reference. */
     hasSnapshotNative: boolean;
+    /** Whether the type declares every field read-only, so no brain can write one. */
+    fieldsAreReadOnly: boolean;
 
-    constructor(typeId: string, atomId: number) {
-      this.typeId = typeId;
-      this.atomId = atomId;
+    constructor() {
+      this.typeId = "";
+      this.atomId = UNASSIGNED_ID;
+      this.fieldIds = [];
       this.hasFieldGetter = false;
       this.hasFieldSetter = false;
       this.hasSnapshotNative = false;
+      this.fieldsAreReadOnly = false;
     }
 
     /**
@@ -773,11 +820,19 @@ namespace wendoo {
     constructor() {}
 
     /**
-     * Register `binding` under its declared typeId and atom id.
+     * Register `binding` under `typeId`, `atomId` and `fieldIds`, which become
+     * its {@link StructTypeBinding.typeId}, {@link StructTypeBinding.atomId}
+     * and {@link StructTypeBinding.fieldIds}.
      *
+     * @param typeId - TypeId a struct value of the type carries.
+     * @param atomId - Stable type-atom id the type's wire (TYPS) entries record.
+     * @param fieldIds - Field ids of the type's declared fields, in declaration order.
      * @param binding - Struct type binding to register.
      */
-    register(binding: StructTypeBinding): void {
+    register(typeId: string, atomId: number, fieldIds: number[], binding: StructTypeBinding): void {
+      binding.typeId = typeId;
+      binding.atomId = atomId;
+      binding.fieldIds = fieldIds;
       this.types.push(binding);
     }
 

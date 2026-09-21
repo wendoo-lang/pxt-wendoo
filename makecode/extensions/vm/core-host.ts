@@ -202,8 +202,8 @@ namespace wendoo {
   class NumberArithmetic extends HostFunction {
     private kind: NumberArithmeticKind;
 
-    constructor(fnId: number, kind: NumberArithmeticKind) {
-      super(fnId);
+    constructor(kind: NumberArithmeticKind) {
+      super();
       this.kind = kind;
     }
 
@@ -237,7 +237,7 @@ namespace wendoo {
   /** `negative` of a number operand. A bad operand and a result that is not a number both evaluate nil. */
   class OpNegateNumber extends HostFunction {
     constructor() {
-      super(CoreFuncId.OpNegateNumber);
+      super();
     }
 
     exec(ctx: ExecutionContext, args: Value[]): Value {
@@ -253,8 +253,8 @@ namespace wendoo {
   class NumberComparison extends HostFunction {
     private kind: NumberComparisonKind;
 
-    constructor(fnId: number, kind: NumberComparisonKind) {
-      super(fnId);
+    constructor(kind: NumberComparisonKind) {
+      super();
       this.kind = kind;
     }
 
@@ -290,8 +290,8 @@ namespace wendoo {
   class BooleanLogic extends HostFunction {
     private kind: BooleanLogicKind;
 
-    constructor(fnId: number, kind: BooleanLogicKind) {
-      super(fnId);
+    constructor(kind: BooleanLogicKind) {
+      super();
       this.kind = kind;
     }
 
@@ -311,7 +311,7 @@ namespace wendoo {
   /** `+` over two string operands: concatenation. A bad operand evaluates nil. */
   class OpAddString extends HostFunction {
     constructor() {
-      super(CoreFuncId.OpAddString);
+      super();
     }
 
     exec(ctx: ExecutionContext, args: Value[]): Value {
@@ -326,8 +326,8 @@ namespace wendoo {
   class StringComparison extends HostFunction {
     private kind: StringComparisonKind;
 
-    constructor(fnId: number, kind: StringComparisonKind) {
-      super(fnId);
+    constructor(kind: StringComparisonKind) {
+      super();
       this.kind = kind;
     }
 
@@ -348,8 +348,8 @@ namespace wendoo {
   class NilEquality extends HostFunction {
     private kind: NilEqualityKind;
 
-    constructor(fnId: number, kind: NilEqualityKind) {
-      super(fnId);
+    constructor(kind: NilEqualityKind) {
+      super();
       this.kind = kind;
     }
 
@@ -381,8 +381,8 @@ namespace wendoo {
   class TypeConversion extends HostFunction {
     private kind: ConversionKind;
 
-    constructor(fnId: number, kind: ConversionKind) {
-      super(fnId);
+    constructor(kind: ConversionKind) {
+      super();
       this.kind = kind;
     }
 
@@ -422,7 +422,7 @@ namespace wendoo {
    */
   class SwitchPageActuator extends HostActionBinding {
     constructor() {
-      super(CoreActionId.SwitchPage, "switch-page", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -449,7 +449,7 @@ namespace wendoo {
    */
   class RestartPageActuator extends HostActionBinding {
     constructor() {
-      super(CoreActionId.RestartPage, "restart-page", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -461,7 +461,7 @@ namespace wendoo {
   /** `current page`: the stable page id of the active page. */
   class CurrentPageSensor extends HostActionBinding {
     constructor() {
-      super(CoreActionId.CurrentPage, "current-page", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -476,7 +476,7 @@ namespace wendoo {
    */
   class PreviousPageSensor extends HostActionBinding {
     constructor() {
-      super(CoreActionId.PreviousPage, "previous-page", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -491,7 +491,7 @@ namespace wendoo {
    */
   class OnPageEnteredSensor extends HostActionBinding {
     constructor() {
-      super(CoreActionId.OnPageEntered, "on-page-entered", false);
+      super(false);
     }
 
     onPageEntered(ctx: ExecutionContext): void {
@@ -516,7 +516,7 @@ namespace wendoo {
    */
   class OtherwiseTrigger extends HostActionBinding {
     constructor() {
-      super(CoreActionId.Otherwise, "otherwise", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -550,7 +550,7 @@ namespace wendoo {
    */
   class RuleTrigger extends HostActionBinding {
     constructor() {
-      super(CoreActionId.RuleTrigger, "rule-trigger", true);
+      super(true);
       this.uncappedHandles = true;
     }
 
@@ -583,53 +583,55 @@ namespace wendoo {
    *   operands resolve against.
    */
   export function registerCoreHostFunctions(registry: HostFunctionRegistry): void {
-    registry.register(new NumberArithmetic(CoreFuncId.OpAddNumber, NumberArithmeticKind.Add));
-    registry.register(new NumberArithmetic(CoreFuncId.OpSubtractNumber, NumberArithmeticKind.Subtract));
-    registry.register(new NumberArithmetic(CoreFuncId.OpMultiplyNumber, NumberArithmeticKind.Multiply));
-    registry.register(new NumberArithmetic(CoreFuncId.OpDivideNumber, NumberArithmeticKind.Divide));
-    registry.register(new OpNegateNumber());
+    registry.register(CoreFuncId.OpAddNumber, new NumberArithmetic(NumberArithmeticKind.Add));
+    registry.register(CoreFuncId.OpSubtractNumber, new NumberArithmetic(NumberArithmeticKind.Subtract));
+    registry.register(CoreFuncId.OpMultiplyNumber, new NumberArithmetic(NumberArithmeticKind.Multiply));
+    registry.register(CoreFuncId.OpDivideNumber, new NumberArithmetic(NumberArithmeticKind.Divide));
+    registry.register(CoreFuncId.OpNegateNumber, new OpNegateNumber());
 
-    registry.register(new NumberComparison(CoreFuncId.OpEqualToNumber, NumberComparisonKind.EqualTo));
-    registry.register(new NumberComparison(CoreFuncId.OpNotEqualToNumber, NumberComparisonKind.NotEqualTo));
-    registry.register(new NumberComparison(CoreFuncId.OpLessThanNumber, NumberComparisonKind.LessThan));
+    registry.register(CoreFuncId.OpEqualToNumber, new NumberComparison(NumberComparisonKind.EqualTo));
+    registry.register(CoreFuncId.OpNotEqualToNumber, new NumberComparison(NumberComparisonKind.NotEqualTo));
+    registry.register(CoreFuncId.OpLessThanNumber, new NumberComparison(NumberComparisonKind.LessThan));
     registry.register(
-      new NumberComparison(CoreFuncId.OpLessThanOrEqualToNumber, NumberComparisonKind.LessThanOrEqualTo)
+      CoreFuncId.OpLessThanOrEqualToNumber,
+      new NumberComparison(NumberComparisonKind.LessThanOrEqualTo)
     );
-    registry.register(new NumberComparison(CoreFuncId.OpGreaterThanNumber, NumberComparisonKind.GreaterThan));
+    registry.register(CoreFuncId.OpGreaterThanNumber, new NumberComparison(NumberComparisonKind.GreaterThan));
     registry.register(
-      new NumberComparison(CoreFuncId.OpGreaterThanOrEqualToNumber, NumberComparisonKind.GreaterThanOrEqualTo)
+      CoreFuncId.OpGreaterThanOrEqualToNumber,
+      new NumberComparison(NumberComparisonKind.GreaterThanOrEqualTo)
     );
 
-    registry.register(new BooleanLogic(CoreFuncId.OpNotBoolean, BooleanLogicKind.Not));
-    registry.register(new BooleanLogic(CoreFuncId.OpEqualToBoolean, BooleanLogicKind.EqualTo));
-    registry.register(new BooleanLogic(CoreFuncId.OpNotEqualToBoolean, BooleanLogicKind.NotEqualTo));
+    registry.register(CoreFuncId.OpNotBoolean, new BooleanLogic(BooleanLogicKind.Not));
+    registry.register(CoreFuncId.OpEqualToBoolean, new BooleanLogic(BooleanLogicKind.EqualTo));
+    registry.register(CoreFuncId.OpNotEqualToBoolean, new BooleanLogic(BooleanLogicKind.NotEqualTo));
 
-    registry.register(new OpAddString());
-    registry.register(new StringComparison(CoreFuncId.OpEqualToString, StringComparisonKind.EqualTo));
-    registry.register(new StringComparison(CoreFuncId.OpNotEqualToString, StringComparisonKind.NotEqualTo));
+    registry.register(CoreFuncId.OpAddString, new OpAddString());
+    registry.register(CoreFuncId.OpEqualToString, new StringComparison(StringComparisonKind.EqualTo));
+    registry.register(CoreFuncId.OpNotEqualToString, new StringComparison(StringComparisonKind.NotEqualTo));
 
-    registry.register(new NilEquality(CoreFuncId.OpEqualToNil, NilEqualityKind.Always));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToNil, NilEqualityKind.Never));
-    registry.register(new NilEquality(CoreFuncId.OpNotNil, NilEqualityKind.Always));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToNumberNil, NilEqualityKind.LeftIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToNilNumber, NilEqualityKind.RightIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToNumberNil, NilEqualityKind.LeftIsNotNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToNilNumber, NilEqualityKind.RightIsNotNil));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToBooleanNil, NilEqualityKind.LeftIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToNilBoolean, NilEqualityKind.RightIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToBooleanNil, NilEqualityKind.LeftIsNotNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToNilBoolean, NilEqualityKind.RightIsNotNil));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToStringNil, NilEqualityKind.LeftIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpEqualToNilString, NilEqualityKind.RightIsNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToStringNil, NilEqualityKind.LeftIsNotNil));
-    registry.register(new NilEquality(CoreFuncId.OpNotEqualToNilString, NilEqualityKind.RightIsNotNil));
+    registry.register(CoreFuncId.OpEqualToNil, new NilEquality(NilEqualityKind.Always));
+    registry.register(CoreFuncId.OpNotEqualToNil, new NilEquality(NilEqualityKind.Never));
+    registry.register(CoreFuncId.OpNotNil, new NilEquality(NilEqualityKind.Always));
+    registry.register(CoreFuncId.OpEqualToNumberNil, new NilEquality(NilEqualityKind.LeftIsNil));
+    registry.register(CoreFuncId.OpEqualToNilNumber, new NilEquality(NilEqualityKind.RightIsNil));
+    registry.register(CoreFuncId.OpNotEqualToNumberNil, new NilEquality(NilEqualityKind.LeftIsNotNil));
+    registry.register(CoreFuncId.OpNotEqualToNilNumber, new NilEquality(NilEqualityKind.RightIsNotNil));
+    registry.register(CoreFuncId.OpEqualToBooleanNil, new NilEquality(NilEqualityKind.LeftIsNil));
+    registry.register(CoreFuncId.OpEqualToNilBoolean, new NilEquality(NilEqualityKind.RightIsNil));
+    registry.register(CoreFuncId.OpNotEqualToBooleanNil, new NilEquality(NilEqualityKind.LeftIsNotNil));
+    registry.register(CoreFuncId.OpNotEqualToNilBoolean, new NilEquality(NilEqualityKind.RightIsNotNil));
+    registry.register(CoreFuncId.OpEqualToStringNil, new NilEquality(NilEqualityKind.LeftIsNil));
+    registry.register(CoreFuncId.OpEqualToNilString, new NilEquality(NilEqualityKind.RightIsNil));
+    registry.register(CoreFuncId.OpNotEqualToStringNil, new NilEquality(NilEqualityKind.LeftIsNotNil));
+    registry.register(CoreFuncId.OpNotEqualToNilString, new NilEquality(NilEqualityKind.RightIsNotNil));
 
-    registry.register(new TypeConversion(CoreFuncId.ConvNumberToString, ConversionKind.NumberToString));
-    registry.register(new TypeConversion(CoreFuncId.ConvStringToNumber, ConversionKind.StringToNumber));
-    registry.register(new TypeConversion(CoreFuncId.ConvNumberToBoolean, ConversionKind.NumberToBoolean));
-    registry.register(new TypeConversion(CoreFuncId.ConvBooleanToNumber, ConversionKind.BooleanToNumber));
-    registry.register(new TypeConversion(CoreFuncId.ConvStringToBoolean, ConversionKind.StringToBoolean));
-    registry.register(new TypeConversion(CoreFuncId.ConvBooleanToString, ConversionKind.BooleanToString));
+    registry.register(CoreFuncId.ConvNumberToString, new TypeConversion(ConversionKind.NumberToString));
+    registry.register(CoreFuncId.ConvStringToNumber, new TypeConversion(ConversionKind.StringToNumber));
+    registry.register(CoreFuncId.ConvNumberToBoolean, new TypeConversion(ConversionKind.NumberToBoolean));
+    registry.register(CoreFuncId.ConvBooleanToNumber, new TypeConversion(ConversionKind.BooleanToNumber));
+    registry.register(CoreFuncId.ConvStringToBoolean, new TypeConversion(ConversionKind.StringToBoolean));
+    registry.register(CoreFuncId.ConvBooleanToString, new TypeConversion(ConversionKind.BooleanToString));
   }
 
   /**
@@ -639,12 +641,12 @@ namespace wendoo {
    *   operands resolve against.
    */
   export function registerCoreHostActions(registry: HostActionRegistry): void {
-    registry.register(new SwitchPageActuator());
-    registry.register(new RestartPageActuator());
-    registry.register(new OnPageEnteredSensor());
-    registry.register(new CurrentPageSensor());
-    registry.register(new PreviousPageSensor());
-    registry.register(new OtherwiseTrigger());
-    registry.register(new RuleTrigger());
+    registry.register(CoreActionId.SwitchPage, "switch-page", new SwitchPageActuator());
+    registry.register(CoreActionId.RestartPage, "restart-page", new RestartPageActuator());
+    registry.register(CoreActionId.OnPageEntered, "on-page-entered", new OnPageEnteredSensor());
+    registry.register(CoreActionId.CurrentPage, "current-page", new CurrentPageSensor());
+    registry.register(CoreActionId.PreviousPage, "previous-page", new PreviousPageSensor());
+    registry.register(CoreActionId.Otherwise, "otherwise", new OtherwiseTrigger());
+    registry.register(CoreActionId.RuleTrigger, "rule-trigger", new RuleTrigger());
   }
 }

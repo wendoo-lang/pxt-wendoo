@@ -15,6 +15,7 @@
         "decoder.ts",
         "handle.ts",
         "context.ts",
+        "registration.ts",
         "core-host.ts",
         "vm.ts",
         "runtime.ts",

@@ -9,7 +9,9 @@
  * A case whose compiled program carries an opcode listed in
  * `unsupported-opcodes.json` is classified SKIP, naming the opcodes, and does
  * not fail the run. A case that is not skipped is held to the golden in full:
- * hitting the extension's unimplemented-opcode fault still fails it.
+ * hitting the extension's unimplemented-opcode fault still fails it, and so
+ * does a replay that reports a registration diagnostic -- the corpus
+ * vocabulary registers cleanly.
  *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
@@ -26,6 +28,9 @@ const gen = require("./gen-cases");
 const TRACE_START_PREFIX = "SIMCAP START ";
 const TRACE_END = "SIMCAP TRACE-END";
 const DIAG_PREFIX = "DIAG ";
+
+/** Diagnostic prefix a replay reports a registration problem under. */
+const REGISTRATION_DIAG_PREFIX = "registration ";
 
 /** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
 const UNSUPPORTED_OPCODES_PATH = path.join(__dirname, "unsupported-opcodes.json");
@@ -196,12 +201,13 @@ function main() {
         }
       }
 
-      record.verdict = allMatch ? "PASS" : "STOPPED";
-      if (!allMatch) {
+      const registrationDiagnosed = record.diagnostics.some((diag) => diag.startsWith(REGISTRATION_DIAG_PREFIX));
+      record.verdict = allMatch && !registrationDiagnosed ? "PASS" : "STOPPED";
+      if (!allMatch && firstBody !== null) {
+        record.divergence = firstDivergence(firstBody, golden);
+      }
+      if (record.verdict !== "PASS") {
         failures++;
-        if (firstBody !== null) {
-          record.divergence = firstDivergence(firstBody, golden);
-        }
       }
       reportCase(record);
     }

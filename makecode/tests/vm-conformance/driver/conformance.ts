@@ -45,6 +45,9 @@
  *   to the sum one tick after its dispatch, so the expression containing it
  *   suspends until then. An operand carrying no number, and a sum that is not
  *   a number, both resolve nil.
+ * - `lhs point plus rhs` -- synchronous infix operator over two `Point`
+ *   operands, evaluating to a fresh `Point` carrying the fieldwise sums. An
+ *   operand carrying no `Point` reading evaluates nil.
  * - `defer point()` -- asynchronous sensor whose handle resolves to a fresh
  *   `Point` struct reading `{x: 1.5, y: 2.25}` exactly one tick after its
  *   dispatch. The struct is constructed at settle time, immediately before
@@ -55,6 +58,11 @@
  *   over the world's one anchor host object. `Anchor` is native-backed: its
  *   field getter and setter read and write that host object, and a deep copy
  *   shares it by reference, so every copy aliases one anchor.
+ * - `destroy anchor()` -- synchronous actuator returning void, destroying the
+ *   world's one anchor host object. Every `Anchor` value handed out before the
+ *   call keeps fronting that object, and from then on the type's field hooks
+ *   designate nothing: reads return absent, which the VM renders nil, and
+ *   writes are rejected.
  * - `defer target()` -- asynchronous sensor whose handle resolves to a fresh
  *   `Target` value one tick after its dispatch, backed by a lazy resolver
  *   over the world's call-counting target resolution. `Target` registers
@@ -71,6 +79,11 @@
  * resolve at load. The profile's `Mode` enum type is program-local: its
  * symbols travel in each program's own type table, so the replay registers
  * nothing for it.
+ *
+ * Every registration above is made by name from this file's top-level code,
+ * through the pack surface, and the ids the corpus pins are recorded in the
+ * profile's own name-to-id mapping; replaying a case drains that mapping into
+ * the registries before it decodes the program.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -118,6 +131,7 @@ namespace wendoo {
     DeferAnchor = 1036,
     DeferTarget = 1037,
     EmitAll = 1038,
+    DestroyAnchor = 1039,
   }
 
   /**
@@ -127,6 +141,7 @@ namespace wendoo {
    */
   export enum ConformanceFuncId {
     DeferAdd = 1033,
+    PointAdd = 1041,
   }
 
   /**
@@ -164,10 +179,13 @@ namespace wendoo {
     x: number;
     /** Current `y` field value. */
     y: number;
+    /** True once the world has destroyed the object; a destroyed anchor designates nothing. */
+    destroyed: boolean;
 
     constructor(x: number, y: number) {
       this.x = x;
       this.y = y;
+      this.destroyed = false;
     }
   }
 
@@ -208,6 +226,16 @@ namespace wendoo {
     /** The world's one `Anchor` host object; every `defer anchor` reading is backed by it. */
     anchor(): ConformanceAnchor {
       return this.anchorObject;
+    }
+
+    /**
+     * Destroy the world's one anchor host object. Every `Anchor` value already
+     * handed out keeps fronting it, and every field hook of the type then
+     * designates nothing. Destroying an already destroyed anchor changes
+     * nothing.
+     */
+    destroyAnchor(): void {
+      this.anchorObject.destroyed = true;
     }
 
     /**
@@ -260,7 +288,7 @@ namespace wendoo {
   /** `echo(value)`: returns its single argument slot unchanged. */
   class EchoSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.Echo, "sensor.conformance.echo", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -271,7 +299,7 @@ namespace wendoo {
   /** `emit(value)`: the corpus's observable output channel; returns void. */
   class EmitActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.Emit, "actuator.conformance.emit", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -325,7 +353,7 @@ namespace wendoo {
   /** `defer echo(value, ticks)`: resolves its handle to `value` after `ticks` ticks. */
   class DeferEchoActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferEcho, "actuator.conformance.defer-echo", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -338,7 +366,7 @@ namespace wendoo {
   /** `defer fail(ticks)`: rejects its handle with `HostError` after `ticks` ticks. */
   class DeferFailActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferFail, "actuator.conformance.defer-fail", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -350,7 +378,7 @@ namespace wendoo {
   /** `fault()`: faults the calling fiber with `ScriptError`. */
   class FaultActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.Fault, "actuator.conformance.fault", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -365,7 +393,7 @@ namespace wendoo {
    */
   class SignalSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.Signal, "sensor.conformance.signal", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -381,7 +409,7 @@ namespace wendoo {
    */
   class CounterSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.Counter, "sensor.conformance.counter", false);
+      super(false);
     }
 
     onPageEntered(ctx: ExecutionContext): void {
@@ -414,7 +442,7 @@ namespace wendoo {
   /** `defer cancel(ticks)`: cancels its handle after `ticks` ticks. */
   class DeferCancelActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferCancel, "actuator.conformance.defer-cancel", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -426,7 +454,7 @@ namespace wendoo {
   /** `defer read(value, ticks)`: resolves its handle to `value` after `ticks` ticks. */
   class DeferReadSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferRead, "sensor.conformance.defer-read", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -439,7 +467,7 @@ namespace wendoo {
   /** `emit text(value)`: returns its String-typed argument slot unchanged. */
   class EmitTextActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.EmitText, "actuator.conformance.emit-text", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -450,7 +478,7 @@ namespace wendoo {
   /** `emit flag(value)`: returns its Boolean-typed argument slot unchanged. */
   class EmitFlagActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.EmitFlag, "actuator.conformance.emit-flag", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
@@ -458,8 +486,11 @@ namespace wendoo {
     }
   }
 
+  /** Wendoo type name of the conformance profile's closed struct type. */
+  const POINT_TYPE_NAME = "Point";
+
   /** TypeId of the conformance profile's `Point` struct type. */
-  const CONFORMANCE_POINT_TYPE_ID = "struct:<Point>";
+  const CONFORMANCE_POINT_TYPE_ID = structTypeId(POINT_TYPE_NAME);
 
   /** `x` field value of every settled `defer point` reading; exactly representable at f32. */
   const CONFORMANCE_POINT_READING_X = 1.5;
@@ -485,7 +516,7 @@ namespace wendoo {
   /** `defer point()`: resolves its handle to a fresh `Point` reading one tick after its dispatch. */
   class DeferPointSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferPoint, "sensor.conformance.defer-point", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -494,11 +525,17 @@ namespace wendoo {
     }
   }
 
+  /** Wendoo type name of the conformance profile's anchor-backed struct type. */
+  const ANCHOR_TYPE_NAME = "Anchor";
+
+  /** Wendoo type name of the conformance profile's resolver-backed struct type. */
+  const TARGET_TYPE_NAME = "Target";
+
   /** TypeId of the conformance profile's `Anchor` native struct type. */
-  const CONFORMANCE_ANCHOR_TYPE_ID = "struct:<Anchor>";
+  const CONFORMANCE_ANCHOR_TYPE_ID = structTypeId(ANCHOR_TYPE_NAME);
 
   /** TypeId of the conformance profile's `Target` native struct type. */
-  const CONFORMANCE_TARGET_TYPE_ID = "struct:<Target>";
+  const CONFORMANCE_TARGET_TYPE_ID = structTypeId(TARGET_TYPE_NAME);
 
   /** Stable type-atom id of the `Point` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_POINT_ATOM_ID = 1024;
@@ -509,13 +546,31 @@ namespace wendoo {
   /** Stable type-atom id of the `Target` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_TARGET_ATOM_ID = 1026;
 
-  /** Field id of the `Anchor` type's `x` field. */
+  /** Field names of the `Point` type, in declaration order. */
+  const POINT_FIELD_NAMES = ["x", "y"];
+
+  /** Field names of the `Anchor` type, in declaration order. */
+  const ANCHOR_FIELD_NAMES = ["x", "y"];
+
+  /** Field names of the `Target` type, in declaration order. */
+  const TARGET_FIELD_NAMES = ["value"];
+
+  /** Hand-assigned field ids of the `Point` type, parallel to {@link POINT_FIELD_NAMES}; corpus programs record them verbatim. */
+  const POINT_FIELD_IDS = [0, 1];
+
+  /** Hand-assigned field ids of the `Anchor` type, parallel to {@link ANCHOR_FIELD_NAMES}; corpus programs record them verbatim. */
+  const ANCHOR_FIELD_IDS = [0, 1];
+
+  /** Hand-assigned field ids of the `Target` type, parallel to {@link TARGET_FIELD_NAMES}; corpus programs record them verbatim. */
+  const TARGET_FIELD_IDS = [0];
+
+  /** Position of the `Anchor` type's `x` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_ANCHOR_FIELD_X = 0;
 
-  /** Field id of the `Anchor` type's `y` field. */
+  /** Position of the `Anchor` type's `y` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_ANCHOR_FIELD_Y = 1;
 
-  /** Field id of the `Target` type's `value` field. */
+  /** Position of the `Target` type's `value` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_TARGET_FIELD_VALUE = 0;
 
   /**
@@ -553,38 +608,51 @@ namespace wendoo {
     return native as ConformanceTarget;
   }
 
+  /**
+   * The anchor host object an `Anchor` value designates: nothing when the
+   * value carries no native and nothing once the world destroyed the object.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+  function resolveConformanceAnchor(native: any): ConformanceAnchor {
+    if (!native) {
+      return undefined;
+    }
+    const anchor = native as ConformanceAnchor;
+    return anchor.destroyed ? undefined : anchor;
+  }
+
   /** The `Anchor` type: field hooks into the world's anchor host object, native shared by reference. */
   class AnchorTypeBinding extends StructTypeBinding {
     constructor() {
-      super(CONFORMANCE_ANCHOR_TYPE_ID, CONFORMANCE_ANCHOR_ATOM_ID);
+      super();
       this.hasFieldGetter = true;
       this.hasFieldSetter = true;
     }
 
     fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
-      const anchor = source.native as ConformanceAnchor;
+      const anchor = resolveConformanceAnchor(source.native);
       if (!anchor) {
         return undefined;
       }
-      if (fieldId === CONFORMANCE_ANCHOR_FIELD_X) {
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_X]) {
         return mkNumber(anchor.x);
       }
-      if (fieldId === CONFORMANCE_ANCHOR_FIELD_Y) {
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_Y]) {
         return mkNumber(anchor.y);
       }
       return undefined;
     }
 
     fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
-      const anchor = source.native as ConformanceAnchor;
+      const anchor = resolveConformanceAnchor(source.native);
       if (!anchor || value.t !== ValueTag.Number) {
         return false;
       }
-      if (fieldId === CONFORMANCE_ANCHOR_FIELD_X) {
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_X]) {
         anchor.x = value.num;
         return true;
       }
-      if (fieldId === CONFORMANCE_ANCHOR_FIELD_Y) {
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_Y]) {
         anchor.y = value.num;
         return true;
       }
@@ -595,9 +663,10 @@ namespace wendoo {
   /** The `Target` type: a resolver-reading field getter and the snapshot that pins a resolution. */
   class TargetTypeBinding extends StructTypeBinding {
     constructor() {
-      super(CONFORMANCE_TARGET_TYPE_ID, CONFORMANCE_TARGET_ATOM_ID);
+      super();
       this.hasFieldGetter = true;
       this.hasSnapshotNative = true;
+      this.fieldsAreReadOnly = true;
     }
 
     fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
@@ -605,7 +674,7 @@ namespace wendoo {
       if (!target) {
         return undefined;
       }
-      if (fieldId === CONFORMANCE_TARGET_FIELD_VALUE) {
+      if (fieldId === this.fieldIds[CONFORMANCE_TARGET_FIELD_VALUE]) {
         return mkNumber(target.value);
       }
       return undefined;
@@ -659,7 +728,7 @@ namespace wendoo {
   /** `defer anchor()`: resolves its handle to a fresh `Anchor` value one tick after its dispatch. */
   class DeferAnchorSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferAnchor, "sensor.conformance.defer-anchor", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -668,10 +737,23 @@ namespace wendoo {
     }
   }
 
+  /** `destroy anchor()`: destroys the world's one anchor host object; returns void. */
+  class DestroyAnchorActuator extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const world = ctx.data as ConformanceWorld;
+      world.destroyAnchor();
+      return VOID_VALUE;
+    }
+  }
+
   /** `defer target()`: resolves its handle to a fresh resolver-backed `Target` value one tick after its dispatch. */
   class DeferTargetSensor extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.DeferTarget, "sensor.conformance.defer-target", true);
+      super(true);
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
@@ -683,26 +765,12 @@ namespace wendoo {
   /** `emit all(value...)`: receives its repeated value slot's arguments as one gathered list; returns void. */
   class EmitAllActuator extends HostActionBinding {
     constructor() {
-      super(ConformanceActionId.EmitAll, "actuator.conformance.emit-all", false);
+      super(false);
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
       return VOID_VALUE;
     }
-  }
-
-  /**
-   * Register the conformance host profile's struct types into `registry`:
-   * the closed `Point` type and the native-backed `Anchor` and `Target`
-   * types. Every corpus program's TYPS atom entries resolve against these
-   * three registrations.
-   *
-   * @param registry - Struct type registry the corpus program loads and dispatches against.
-   */
-  export function registerConformanceStructTypes(registry: StructTypeRegistry): void {
-    registry.register(new StructTypeBinding(CONFORMANCE_POINT_TYPE_ID, CONFORMANCE_POINT_ATOM_ID));
-    registry.register(new AnchorTypeBinding());
-    registry.register(new TargetTypeBinding());
   }
 
   /**
@@ -725,7 +793,7 @@ namespace wendoo {
   /** `lhs defer plus rhs`: resolves its handle to the sum one tick after its dispatch. */
   class DeferAddOperator extends HostFunction {
     constructor() {
-      super(ConformanceFuncId.DeferAdd);
+      super();
       this.isAsync = true;
     }
 
@@ -735,38 +803,161 @@ namespace wendoo {
     }
   }
 
+  /** Position of the `Point` type's `x` field in its declaration, which indexes {@link POINT_FIELD_IDS}. */
+  const CONFORMANCE_POINT_FIELD_X = 0;
+
+  /** Position of the `Point` type's `y` field in its declaration, which indexes {@link POINT_FIELD_IDS}. */
+  const CONFORMANCE_POINT_FIELD_Y = 1;
+
   /**
-   * Register the conformance host profile's one operator overload into
-   * `registry`.
-   *
-   * @param registry - Host-function registry the corpus program dispatches against.
+   * The number value in the `Point` field at `position` of `operand`, or
+   * `undefined` when the operand is no struct or carries no number there.
    */
-  export function registerConformanceHostFunctions(registry: HostFunctionRegistry): void {
-    registry.register(new DeferAddOperator());
+  function pointFieldNumber(operand: Value, position: number): Value {
+    if (operand.t !== ValueTag.Struct || !operand.fields) {
+      return undefined;
+    }
+    const fieldId = POINT_FIELD_IDS[position];
+    if (fieldId >= operand.fields.length) {
+      return undefined;
+    }
+    const field = operand.fields[fieldId];
+    return field.t === ValueTag.Number ? field : undefined;
+  }
+
+  /** `lhs point plus rhs`: the fieldwise sum of two `Point` operands; nil when an operand carries no reading. */
+  class PointAddOperator extends HostFunction {
+    constructor() {
+      super();
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const lhs = args.length > 0 ? args[0] : NIL_VALUE;
+      const rhs = args.length > 1 ? args[1] : NIL_VALUE;
+      const lhsX = pointFieldNumber(lhs, CONFORMANCE_POINT_FIELD_X);
+      const lhsY = pointFieldNumber(lhs, CONFORMANCE_POINT_FIELD_Y);
+      const rhsX = pointFieldNumber(rhs, CONFORMANCE_POINT_FIELD_X);
+      const rhsY = pointFieldNumber(rhs, CONFORMANCE_POINT_FIELD_Y);
+      if (!lhsX || !lhsY || !rhsX || !rhsY) {
+        return NIL_VALUE;
+      }
+      const fields = [mkNumber(lhsX.num + rhsX.num), mkNumber(lhsY.num + rhsY.num)];
+      return mkStruct(CONFORMANCE_POINT_TYPE_ID, fields);
+    }
   }
 
   /**
-   * Register the conformance host profile's actions into `registry`.
-   *
-   * @param registry - Host-action registry the corpus program dispatches against.
+   * The pack handle the conformance profile registers its vocabulary through,
+   * and the name every registration diagnostic about the profile reports.
    */
-  export function registerConformanceHostActions(registry: HostActionRegistry): void {
-    registry.register(new EchoSensor());
-    registry.register(new EmitActuator());
-    registry.register(new DeferEchoActuator());
-    registry.register(new DeferFailActuator());
-    registry.register(new FaultActuator());
-    registry.register(new SignalSensor());
-    registry.register(new CounterSensor());
-    registry.register(new DeferCancelActuator());
-    registry.register(new DeferReadSensor());
-    registry.register(new EmitTextActuator());
-    registry.register(new EmitFlagActuator());
-    registry.register(new DeferPointSensor());
-    registry.register(new DeferAnchorSensor());
-    registry.register(new DeferTargetSensor());
-    registry.register(new EmitAllActuator());
+  const conformancePack = pack("conformance");
+
+  /**
+   * The profile's name-to-id mapping: one hand-assigned id per registered
+   * name. The corpus goldens pin these profile ids and type-atom ids
+   * verbatim.
+   */
+  const conformanceIds = new RegistrationIdMap();
+
+  /**
+   * Register one profile struct type and record the ids the corpus pins for
+   * it.
+   *
+   * @param name - Wendoo type name.
+   * @param atomId - Hand-assigned type-atom id; corpus TYPS entries record it verbatim.
+   * @param fieldNames - Field names in declaration order.
+   * @param fieldIds - Hand-assigned field ids, parallel to `fieldNames`.
+   * @param binding - Type binding carrying the type's hooks.
+   */
+  function defineConformanceStruct(
+    name: string,
+    atomId: number,
+    fieldNames: string[],
+    fieldIds: number[],
+    binding: StructTypeBinding
+  ): void {
+    conformancePack.defineStruct(name, fieldNames, binding);
+    conformanceIds.add(name, atomId);
+    for (let i = 0; i < fieldNames.length; i++) {
+      conformanceIds.add(structFieldKey(name, fieldNames[i]), fieldIds[i]);
+    }
   }
+
+  /**
+   * Register one profile sensor or actuator and record the action id the
+   * corpus pins for it.
+   *
+   * @param name - Tile name.
+   * @param actionId - Hand-assigned action id; corpus programs record it verbatim.
+   * @param binding - Action binding carrying the tile's body.
+   */
+  function bindConformanceAction(name: string, actionId: number, binding: HostActionBinding): void {
+    conformancePack.bind(name, binding);
+    conformanceIds.add(name, actionId);
+  }
+
+  /**
+   * Register one profile operator overload and record the funcId the corpus
+   * pins for it.
+   *
+   * @param name - Operator name.
+   * @param fnId - Hand-assigned funcId; corpus programs record it verbatim.
+   * @param fn - Host function computing the operator.
+   */
+  function bindConformanceOperator(name: string, fnId: number, fn: HostFunction): void {
+    conformancePack.bindOperator(name, fn);
+    conformanceIds.add(name, fnId);
+  }
+
+  defineConformanceStruct(
+    POINT_TYPE_NAME,
+    CONFORMANCE_POINT_ATOM_ID,
+    POINT_FIELD_NAMES,
+    POINT_FIELD_IDS,
+    new StructTypeBinding()
+  );
+  defineConformanceStruct(
+    ANCHOR_TYPE_NAME,
+    CONFORMANCE_ANCHOR_ATOM_ID,
+    ANCHOR_FIELD_NAMES,
+    ANCHOR_FIELD_IDS,
+    new AnchorTypeBinding()
+  );
+  defineConformanceStruct(
+    TARGET_TYPE_NAME,
+    CONFORMANCE_TARGET_ATOM_ID,
+    TARGET_FIELD_NAMES,
+    TARGET_FIELD_IDS,
+    new TargetTypeBinding()
+  );
+
+  bindConformanceAction("sensor.conformance.echo", ConformanceActionId.Echo, new EchoSensor());
+  bindConformanceAction("actuator.conformance.emit", ConformanceActionId.Emit, new EmitActuator());
+  bindConformanceAction("actuator.conformance.defer-echo", ConformanceActionId.DeferEcho, new DeferEchoActuator());
+  bindConformanceAction("actuator.conformance.defer-fail", ConformanceActionId.DeferFail, new DeferFailActuator());
+  bindConformanceAction("actuator.conformance.fault", ConformanceActionId.Fault, new FaultActuator());
+  bindConformanceAction("sensor.conformance.signal", ConformanceActionId.Signal, new SignalSensor());
+  bindConformanceAction("sensor.conformance.counter", ConformanceActionId.Counter, new CounterSensor());
+  bindConformanceAction(
+    "actuator.conformance.defer-cancel",
+    ConformanceActionId.DeferCancel,
+    new DeferCancelActuator()
+  );
+  bindConformanceAction("sensor.conformance.defer-read", ConformanceActionId.DeferRead, new DeferReadSensor());
+  bindConformanceAction("actuator.conformance.emit-text", ConformanceActionId.EmitText, new EmitTextActuator());
+  bindConformanceAction("actuator.conformance.emit-flag", ConformanceActionId.EmitFlag, new EmitFlagActuator());
+  bindConformanceAction("sensor.conformance.defer-point", ConformanceActionId.DeferPoint, new DeferPointSensor());
+  bindConformanceAction("sensor.conformance.defer-anchor", ConformanceActionId.DeferAnchor, new DeferAnchorSensor());
+  bindConformanceAction("sensor.conformance.defer-target", ConformanceActionId.DeferTarget, new DeferTargetSensor());
+  bindConformanceAction("actuator.conformance.emit-all", ConformanceActionId.EmitAll, new EmitAllActuator());
+  bindConformanceAction(
+    "actuator.conformance.destroy-anchor",
+    ConformanceActionId.DestroyAnchor,
+    new DestroyAnchorActuator()
+  );
+
+  bindConformanceOperator("conformance.defer-add", ConformanceFuncId.DeferAdd, new DeferAddOperator());
+  bindConformanceOperator("conformance.point-add", ConformanceFuncId.PointAdd, new PointAddOperator());
 
   /** Line that closes the trace body of a replayed case. */
   export const CONFORMANCE_TRACE_END = "SIMCAP TRACE-END";
@@ -783,8 +974,13 @@ namespace wendoo {
    */
   export function runConformanceCase(caseId: string, programHex: string, schedule: number[]): void {
     console.log(`SIMCAP START ${caseId}`);
+    const hostFunctions = new HostFunctionRegistry();
+    registerCoreHostFunctions(hostFunctions);
+    const hostActions = new HostActionRegistry();
+    registerCoreHostActions(hostActions);
     const types = new StructTypeRegistry();
-    registerConformanceStructTypes(types);
+    applyPendingRegistrations(conformanceIds, hostFunctions, hostActions, types);
+
     const decoded = decodeProgramHex(programHex, types);
     if (decoded.errorCode.length > 0) {
       console.log(CONFORMANCE_TRACE_END);
@@ -795,13 +991,6 @@ namespace wendoo {
 
     const sink = new ConsoleTraceSink();
     const writer = new ObservableTraceWriter(sink, decoded.profileId);
-
-    const hostFunctions = new HostFunctionRegistry();
-    registerCoreHostFunctions(hostFunctions);
-    registerConformanceHostFunctions(hostFunctions);
-    const hostActions = new HostActionRegistry();
-    registerCoreHostActions(hostActions);
-    registerConformanceHostActions(hostActions);
 
     const world = new ConformanceWorld();
     const runtime = new BrainRuntime(
@@ -833,6 +1022,12 @@ namespace wendoo {
     for (let i = 0; i < faults.length; i++) {
       const fault = faults[i];
       console.log(`DIAG fault code=${fault.code} func=${fault.funcId} pc=${fault.pc} ${fault.message}`);
+    }
+    const registrationProblems = registrationDiagnostics();
+    for (let i = 0; i < registrationProblems.length; i++) {
+      const problem = registrationProblems[i];
+      const packs = problem.otherPack.length > 0 ? `${problem.pack} ${problem.otherPack}` : problem.pack;
+      console.log(`DIAG registration ${problem.code} ${problem.name} ${packs}`);
     }
     console.log(`SIMCAP PASS ${caseId}`);
   }

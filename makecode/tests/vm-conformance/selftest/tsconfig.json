@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "ignoreDeprecations": "6.0",
+    "noLib": true,
+    "noImplicitAny": true,
+    "strictPropertyInitialization": false,
+    "strictNullChecks": false
+  },
+  "include": ["*.ts", "packs/*.ts", "../../../extensions/vm/*.ts", "../../../extensions/vm/pxt_modules/**/*.ts"],
+  "exclude": ["../../../extensions/vm/built/**", "../../../extensions/vm/pxt_modules/**/*test.ts"]
+}

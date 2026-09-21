@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test:conformance": "node ../../tests/vm-conformance/cli.js",
-    "test:conformance:quick": "node ../../tests/vm-conformance/cli.js --runs 1"
+    "test:conformance:quick": "node ../../tests/vm-conformance/cli.js --runs 1",
+    "test:registration": "node ../../tests/vm-conformance/selftest.js"
   }
 }
