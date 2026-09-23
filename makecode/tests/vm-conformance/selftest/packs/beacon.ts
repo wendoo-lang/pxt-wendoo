@@ -87,7 +87,31 @@ namespace beacon {
   export const PACK_NAME = "beacon";
 
   const pack = wendoo.pack(PACK_NAME);
-  pack.defineStruct("Beacon", ["x", "y"], new BeaconTypeBinding());
-  pack.bind("sensor.beacon.reading", new ReadingSensor());
-  pack.bindOperator("beacon.combine", new CombineOperator());
+
+  /** Catalog metadata of the `Beacon` type, sample values the catalog assertions pin. */
+  const beaconMeta = new wendoo.CatalogMeta();
+  beaconMeta.label = "Beacon";
+  beaconMeta.docs = "# Beacon\n\nA beacon at a fixed position, read through its field hooks.";
+  beaconMeta.icon = "beacon";
+  pack.defineStruct(
+    "Beacon",
+    [wendoo.field("x", wendoo.TYPE_NUMBER), wendoo.field("y", wendoo.TYPE_NUMBER)],
+    new BeaconTypeBinding(),
+    beaconMeta
+  );
+
+  /** Declared shape of the reading tile, with a named output and sample metadata the catalog assertions pin. */
+  const readingSpec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_STRING);
+  readingSpec.outputs = [wendoo.output("position", "Beacon")];
+  readingSpec.label = "beacon reading";
+  readingSpec.group = "Beacons";
+  readingSpec.docs = '# Beacon reading\n\nReads the name of the pack whose "reading" tile stands.';
+  readingSpec.icon = "beacon-reading";
+  pack.bind("sensor.beacon.reading", new ReadingSensor(), readingSpec);
+
+  pack.bindOperator(
+    "beacon.combine",
+    new CombineOperator(),
+    new wendoo.OperatorSpec([wendoo.TYPE_NUMBER, wendoo.TYPE_NUMBER], wendoo.TYPE_NUMBER)
+  );
 }

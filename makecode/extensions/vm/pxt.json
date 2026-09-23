@@ -16,6 +16,7 @@
         "handle.ts",
         "context.ts",
         "registration.ts",
+        "catalog.ts",
         "core-host.ts",
         "vm.ts",
         "runtime.ts",

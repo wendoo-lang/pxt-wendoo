@@ -1,0 +1,66 @@
+{
+  "name": "@wendoo/makecode-session",
+  "description": "The makecode session kind: the wire contract between the Wendoo editor and the peer serving a MakeCode project",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "author": "wendoo-lang",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "wendooBuild": {
+    "script": "build:prod",
+    "outputs": [
+      "dist"
+    ],
+    "postProcessed": false
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "build:prod": "wireit",
+    "build:deps": "node ../../external/wendoo-lang/scripts/build-packages.js .",
+    "check:only": "biome check ./src",
+    "check": "biome check ./src --write",
+    "pretypecheck": "npm run build:deps",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.spec.json",
+    "pretest": "npm run build:deps",
+    "test": "tsx --tsconfig tsconfig.spec.json --test $(find src -name '*.spec.ts')"
+  },
+  "wireit": {
+    "build:prod": {
+      "command": "tsc --build tsconfig.prod.json",
+      "dependencies": [
+        "../../external/wendoo-lang/packages/bridge-app:build:prod"
+      ],
+      "files": [
+        "src/**",
+        "!src/**/*.spec.ts",
+        "tsconfig.json",
+        "tsconfig.prod.json",
+        "package-lock.json"
+      ],
+      "output": [
+        "dist/**",
+        "tsconfig.prod.tsbuildinfo"
+      ],
+      "clean": true,
+      "packageLocks": []
+    }
+  },
+  "dependencies": {
+    "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.15",
+    "@types/node": "^25.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "wireit": "^0.14.13"
+  }
+}

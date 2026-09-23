@@ -83,7 +83,10 @@
  * Every registration above is made by name from this file's top-level code,
  * through the pack surface, and the ids the corpus pins are recorded in the
  * profile's own name-to-id mapping; replaying a case drains that mapping into
- * the registries before it decodes the program.
+ * the registries before it decodes the program. Each registration also
+ * carries its declared shape -- kind, argument slots, returns, label -- and
+ * `runConformanceCatalog` serializes the profile's catalog from it for the
+ * harness to assert.
  */
 namespace wendoo {
   /** Numeric device-profile id every corpus binary envelope and trace header carries. */
@@ -546,22 +549,22 @@ namespace wendoo {
   /** Stable type-atom id of the `Target` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_TARGET_ATOM_ID = 1026;
 
-  /** Field names of the `Point` type, in declaration order. */
-  const POINT_FIELD_NAMES = ["x", "y"];
+  /** Field specs of the `Point` type, in declaration order. */
+  const POINT_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
 
-  /** Field names of the `Anchor` type, in declaration order. */
-  const ANCHOR_FIELD_NAMES = ["x", "y"];
+  /** Field specs of the `Anchor` type, in declaration order. */
+  const ANCHOR_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
 
-  /** Field names of the `Target` type, in declaration order. */
-  const TARGET_FIELD_NAMES = ["value"];
+  /** Field specs of the `Target` type, in declaration order. */
+  const TARGET_FIELDS = [readOnlyField("value", TYPE_NUMBER)];
 
-  /** Hand-assigned field ids of the `Point` type, parallel to {@link POINT_FIELD_NAMES}; corpus programs record them verbatim. */
+  /** Hand-assigned field ids of the `Point` type, parallel to {@link POINT_FIELDS}; corpus programs record them verbatim. */
   const POINT_FIELD_IDS = [0, 1];
 
-  /** Hand-assigned field ids of the `Anchor` type, parallel to {@link ANCHOR_FIELD_NAMES}; corpus programs record them verbatim. */
+  /** Hand-assigned field ids of the `Anchor` type, parallel to {@link ANCHOR_FIELDS}; corpus programs record them verbatim. */
   const ANCHOR_FIELD_IDS = [0, 1];
 
-  /** Hand-assigned field ids of the `Target` type, parallel to {@link TARGET_FIELD_NAMES}; corpus programs record them verbatim. */
+  /** Hand-assigned field ids of the `Target` type, parallel to {@link TARGET_FIELDS}; corpus programs record them verbatim. */
   const TARGET_FIELD_IDS = [0];
 
   /** Position of the `Anchor` type's `x` field in its declaration, which indexes the binding's field ids. */
@@ -865,22 +868,47 @@ namespace wendoo {
    *
    * @param name - Wendoo type name.
    * @param atomId - Hand-assigned type-atom id; corpus TYPS entries record it verbatim.
-   * @param fieldNames - Field names in declaration order.
-   * @param fieldIds - Hand-assigned field ids, parallel to `fieldNames`.
+   * @param fields - Field specs in declaration order.
+   * @param fieldIds - Hand-assigned field ids, parallel to `fields`.
    * @param binding - Type binding carrying the type's hooks.
    */
   function defineConformanceStruct(
     name: string,
     atomId: number,
-    fieldNames: string[],
+    fields: StructFieldSpec[],
     fieldIds: number[],
     binding: StructTypeBinding
   ): void {
-    conformancePack.defineStruct(name, fieldNames, binding);
+    conformancePack.defineStruct(name, fields, binding);
     conformanceIds.add(name, atomId);
-    for (let i = 0; i < fieldNames.length; i++) {
-      conformanceIds.add(structFieldKey(name, fieldNames[i]), fieldIds[i]);
+    for (let i = 0; i < fields.length; i++) {
+      conformanceIds.add(structFieldKey(name, fields[i].name), fieldIds[i]);
     }
+  }
+
+  /**
+   * The spec of one profile sensor.
+   *
+   * @param args - Declared argument slots, in call order.
+   * @param returns - Type name of the sensor's reading.
+   * @param label - Display label.
+   */
+  function sensorSpec(args: TileArgSpec[], returns: string, label: string): TileSpec {
+    const spec = new TileSpec(TILE_KIND_SENSOR, args, returns);
+    spec.label = label;
+    return spec;
+  }
+
+  /**
+   * The spec of one profile actuator.
+   *
+   * @param args - Declared argument slots, in call order.
+   * @param label - Display label.
+   */
+  function actuatorSpec(args: TileArgSpec[], label: string): TileSpec {
+    const spec = new TileSpec(TILE_KIND_ACTUATOR, args, "");
+    spec.label = label;
+    return spec;
   }
 
   /**
@@ -890,9 +918,10 @@ namespace wendoo {
    * @param name - Tile name.
    * @param actionId - Hand-assigned action id; corpus programs record it verbatim.
    * @param binding - Action binding carrying the tile's body.
+   * @param spec - Declared shape of the tile.
    */
-  function bindConformanceAction(name: string, actionId: number, binding: HostActionBinding): void {
-    conformancePack.bind(name, binding);
+  function bindConformanceAction(name: string, actionId: number, binding: HostActionBinding, spec: TileSpec): void {
+    conformancePack.bind(name, binding, spec);
     conformanceIds.add(name, actionId);
   }
 
@@ -903,64 +932,192 @@ namespace wendoo {
    * @param name - Operator name.
    * @param fnId - Hand-assigned funcId; corpus programs record it verbatim.
    * @param fn - Host function computing the operator.
+   * @param spec - Declared shape of the operator.
    */
-  function bindConformanceOperator(name: string, fnId: number, fn: HostFunction): void {
-    conformancePack.bindOperator(name, fn);
+  function bindConformanceOperator(name: string, fnId: number, fn: HostFunction, spec: OperatorSpec): void {
+    conformancePack.bindOperator(name, fn, spec);
     conformanceIds.add(name, fnId);
   }
 
   defineConformanceStruct(
     POINT_TYPE_NAME,
     CONFORMANCE_POINT_ATOM_ID,
-    POINT_FIELD_NAMES,
+    POINT_FIELDS,
     POINT_FIELD_IDS,
     new StructTypeBinding()
   );
   defineConformanceStruct(
     ANCHOR_TYPE_NAME,
     CONFORMANCE_ANCHOR_ATOM_ID,
-    ANCHOR_FIELD_NAMES,
+    ANCHOR_FIELDS,
     ANCHOR_FIELD_IDS,
     new AnchorTypeBinding()
   );
   defineConformanceStruct(
     TARGET_TYPE_NAME,
     CONFORMANCE_TARGET_ATOM_ID,
-    TARGET_FIELD_NAMES,
+    TARGET_FIELDS,
     TARGET_FIELD_IDS,
     new TargetTypeBinding()
   );
 
-  bindConformanceAction("sensor.conformance.echo", ConformanceActionId.Echo, new EchoSensor());
-  bindConformanceAction("actuator.conformance.emit", ConformanceActionId.Emit, new EmitActuator());
-  bindConformanceAction("actuator.conformance.defer-echo", ConformanceActionId.DeferEcho, new DeferEchoActuator());
-  bindConformanceAction("actuator.conformance.defer-fail", ConformanceActionId.DeferFail, new DeferFailActuator());
-  bindConformanceAction("actuator.conformance.fault", ConformanceActionId.Fault, new FaultActuator());
-  bindConformanceAction("sensor.conformance.signal", ConformanceActionId.Signal, new SignalSensor());
-  bindConformanceAction("sensor.conformance.counter", ConformanceActionId.Counter, new CounterSensor());
+  bindConformanceAction(
+    "sensor.conformance.echo",
+    ConformanceActionId.Echo,
+    new EchoSensor(),
+    sensorSpec([arg("value", TYPE_ANY)], TYPE_NUMBER, "echo")
+  );
+  bindConformanceAction(
+    "actuator.conformance.emit",
+    ConformanceActionId.Emit,
+    new EmitActuator(),
+    actuatorSpec([arg("value", TYPE_ANY)], "emit")
+  );
+  bindConformanceAction(
+    "actuator.conformance.defer-echo",
+    ConformanceActionId.DeferEcho,
+    new DeferEchoActuator(),
+    actuatorSpec([arg("value", TYPE_ANY), optionalArg("ticks", TYPE_NUMBER)], "defer echo")
+  );
+  bindConformanceAction(
+    "actuator.conformance.defer-fail",
+    ConformanceActionId.DeferFail,
+    new DeferFailActuator(),
+    actuatorSpec([optionalArg("ticks", TYPE_NUMBER)], "defer fail")
+  );
+  bindConformanceAction(
+    "actuator.conformance.fault",
+    ConformanceActionId.Fault,
+    new FaultActuator(),
+    actuatorSpec([], "fault")
+  );
+  bindConformanceAction(
+    "sensor.conformance.signal",
+    ConformanceActionId.Signal,
+    new SignalSensor(),
+    sensorSpec([optionalArg("period", TYPE_NUMBER)], TYPE_NUMBER, "signal")
+  );
+  bindConformanceAction(
+    "sensor.conformance.counter",
+    ConformanceActionId.Counter,
+    new CounterSensor(),
+    sensorSpec([], TYPE_NUMBER, "counter")
+  );
   bindConformanceAction(
     "actuator.conformance.defer-cancel",
     ConformanceActionId.DeferCancel,
-    new DeferCancelActuator()
+    new DeferCancelActuator(),
+    actuatorSpec([optionalArg("ticks", TYPE_NUMBER)], "defer cancel")
   );
-  bindConformanceAction("sensor.conformance.defer-read", ConformanceActionId.DeferRead, new DeferReadSensor());
-  bindConformanceAction("actuator.conformance.emit-text", ConformanceActionId.EmitText, new EmitTextActuator());
-  bindConformanceAction("actuator.conformance.emit-flag", ConformanceActionId.EmitFlag, new EmitFlagActuator());
-  bindConformanceAction("sensor.conformance.defer-point", ConformanceActionId.DeferPoint, new DeferPointSensor());
-  bindConformanceAction("sensor.conformance.defer-anchor", ConformanceActionId.DeferAnchor, new DeferAnchorSensor());
-  bindConformanceAction("sensor.conformance.defer-target", ConformanceActionId.DeferTarget, new DeferTargetSensor());
-  bindConformanceAction("actuator.conformance.emit-all", ConformanceActionId.EmitAll, new EmitAllActuator());
+  bindConformanceAction(
+    "sensor.conformance.defer-read",
+    ConformanceActionId.DeferRead,
+    new DeferReadSensor(),
+    sensorSpec([arg("value", TYPE_ANY), optionalArg("ticks", TYPE_NUMBER)], TYPE_NUMBER, "defer read")
+  );
+  bindConformanceAction(
+    "actuator.conformance.emit-text",
+    ConformanceActionId.EmitText,
+    new EmitTextActuator(),
+    actuatorSpec([arg("value", TYPE_STRING)], "emit text")
+  );
+  bindConformanceAction(
+    "actuator.conformance.emit-flag",
+    ConformanceActionId.EmitFlag,
+    new EmitFlagActuator(),
+    actuatorSpec([arg("value", TYPE_BOOLEAN)], "emit flag")
+  );
+  bindConformanceAction(
+    "sensor.conformance.defer-point",
+    ConformanceActionId.DeferPoint,
+    new DeferPointSensor(),
+    sensorSpec([], POINT_TYPE_NAME, "defer point")
+  );
+  bindConformanceAction(
+    "sensor.conformance.defer-anchor",
+    ConformanceActionId.DeferAnchor,
+    new DeferAnchorSensor(),
+    sensorSpec([], ANCHOR_TYPE_NAME, "defer anchor")
+  );
+  bindConformanceAction(
+    "sensor.conformance.defer-target",
+    ConformanceActionId.DeferTarget,
+    new DeferTargetSensor(),
+    sensorSpec([], TARGET_TYPE_NAME, "defer target")
+  );
+  bindConformanceAction(
+    "actuator.conformance.emit-all",
+    ConformanceActionId.EmitAll,
+    new EmitAllActuator(),
+    actuatorSpec([rest("value", TYPE_ANY, 0)], "emit all")
+  );
   bindConformanceAction(
     "actuator.conformance.destroy-anchor",
     ConformanceActionId.DestroyAnchor,
-    new DestroyAnchorActuator()
+    new DestroyAnchorActuator(),
+    actuatorSpec([], "destroy anchor")
   );
 
-  bindConformanceOperator("conformance.defer-add", ConformanceFuncId.DeferAdd, new DeferAddOperator());
-  bindConformanceOperator("conformance.point-add", ConformanceFuncId.PointAdd, new PointAddOperator());
+  bindConformanceOperator(
+    "conformance.defer-add",
+    ConformanceFuncId.DeferAdd,
+    new DeferAddOperator(),
+    new OperatorSpec([TYPE_NUMBER, TYPE_NUMBER], TYPE_NUMBER)
+  );
+  bindConformanceOperator(
+    "conformance.point-add",
+    ConformanceFuncId.PointAdd,
+    new PointAddOperator(),
+    new OperatorSpec([POINT_TYPE_NAME, POINT_TYPE_NAME], POINT_TYPE_NAME)
+  );
 
   /** Line that closes the trace body of a replayed case. */
   export const CONFORMANCE_TRACE_END = "SIMCAP TRACE-END";
+
+  /** The registries of one replay: host functions, host actions, and struct types. */
+  class ConformanceRegistries {
+    /** Host functions, carrying the core set and the profile's operator overloads. */
+    functions: HostFunctionRegistry;
+    /** Host actions, carrying the core set and the profile's tiles. */
+    actions: HostActionRegistry;
+    /** The profile's struct types. */
+    types: StructTypeRegistry;
+
+    constructor(functions: HostFunctionRegistry, actions: HostActionRegistry, types: StructTypeRegistry) {
+      this.functions = functions;
+      this.actions = actions;
+      this.types = types;
+    }
+  }
+
+  /**
+   * Construct one replay's registries, seed them with the core sets, and
+   * drain the profile's registrations into them under its pinned ids.
+   */
+  function drainConformanceRegistrations(): ConformanceRegistries {
+    const functions = new HostFunctionRegistry();
+    registerCoreHostFunctions(functions);
+    const actions = new HostActionRegistry();
+    registerCoreHostActions(actions);
+    const types = new StructTypeRegistry();
+    applyPendingRegistrations(conformanceIds, functions, actions, types);
+    return new ConformanceRegistries(functions, actions, types);
+  }
+
+  /**
+   * Serialize the conformance profile's catalog, from the drained
+   * registration state, and write it to the console as one
+   * `CATALOG <payload>` line, bracketed by the capture harness's case
+   * markers. The payload carries no icons.
+   *
+   * @param caseId - Case id the capture harness brackets the run's output with.
+   */
+  export function runConformanceCatalog(caseId: string): void {
+    console.log(`SIMCAP START ${caseId}`);
+    drainConformanceRegistrations();
+    console.log(`CATALOG ${serializeCatalog(new CatalogIconEncoder())}`);
+    console.log(`SIMCAP PASS ${caseId}`);
+  }
 
   /**
    * Replay one corpus case and write its observable trace to the console,
@@ -974,12 +1131,10 @@ namespace wendoo {
    */
   export function runConformanceCase(caseId: string, programHex: string, schedule: number[]): void {
     console.log(`SIMCAP START ${caseId}`);
-    const hostFunctions = new HostFunctionRegistry();
-    registerCoreHostFunctions(hostFunctions);
-    const hostActions = new HostActionRegistry();
-    registerCoreHostActions(hostActions);
-    const types = new StructTypeRegistry();
-    applyPendingRegistrations(conformanceIds, hostFunctions, hostActions, types);
+    const registries = drainConformanceRegistrations();
+    const hostFunctions = registries.functions;
+    const hostActions = registries.actions;
+    const types = registries.types;
 
     const decoded = decodeProgramHex(programHex, types);
     if (decoded.errorCode.length > 0) {

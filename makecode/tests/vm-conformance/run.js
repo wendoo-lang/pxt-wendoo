@@ -13,6 +13,10 @@
  * does a replay that reports a registration diagnostic -- the corpus
  * vocabulary registers cleanly.
  *
+ * Each target also builds and captures the catalog project twice, holding the
+ * serialized conformance catalog to its expected entries and byte-identical
+ * across the captures. A `--case` filter skips the catalog capture.
+ *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
  */
@@ -22,6 +26,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const capture = require("./capture");
+const catalog = require("./catalog");
 const corpus = require("./corpus");
 const gen = require("./gen-cases");
 
@@ -121,6 +126,126 @@ function unsupportedOpcodesOfCase(caseId, unsupported) {
   return [...hit].sort((a, b) => a - b).map((op) => unsupported.get(op));
 }
 
+/** How many captures of the catalog project one harness run compares. */
+const CATALOG_RUNS = 2;
+
+/** Entries the conformance catalog must carry verbatim, keyed by section then entry name. */
+const EXPECTED_CATALOG_ENTRIES = {
+  types: {
+    Point: {
+      name: "Point",
+      fields: [
+        { name: "x", type: "number" },
+        { name: "y", type: "number" },
+      ],
+    },
+    Anchor: {
+      name: "Anchor",
+      native: true,
+      fields: [
+        { name: "x", type: "number" },
+        { name: "y", type: "number" },
+      ],
+    },
+    Target: { name: "Target", native: true, fields: [{ name: "value", type: "number", readOnly: true }] },
+  },
+  tiles: {
+    "sensor.conformance.defer-anchor": {
+      name: "sensor.conformance.defer-anchor",
+      kind: "sensor",
+      async: true,
+      returns: "Anchor",
+      label: "defer anchor",
+    },
+    "actuator.conformance.emit-all": {
+      name: "actuator.conformance.emit-all",
+      kind: "actuator",
+      args: [{ name: "value", type: "any", repeated: true }],
+      label: "emit all",
+    },
+  },
+  operators: {
+    "conformance.point-add": { name: "conformance.point-add", operands: ["Point", "Point"], returns: "Point" },
+  },
+};
+
+/** The ways `payload` misses the expected conformance catalog; empty when it carries every entry. */
+function catalogProblems(payload) {
+  let parsed;
+  try {
+    parsed = JSON.parse(payload);
+  } catch (error) {
+    return [`payload is not JSON: ${error.message}`];
+  }
+  const pack = (parsed.packs || []).find((entry) => entry.name === "conformance");
+  if (!pack) return ["no conformance pack in payload"];
+  const problems = [];
+  for (const [section, expectedEntries] of Object.entries(EXPECTED_CATALOG_ENTRIES)) {
+    for (const [name, expected] of Object.entries(expectedEntries)) {
+      const actual = (pack[section] || []).find((entry) => entry.name === name);
+      if (!actual) {
+        problems.push(`no ${section} entry ${name}`);
+      } else if (!catalog.sameJson(actual, expected)) {
+        problems.push(
+          `${section} entry ${name} is ${JSON.stringify(catalog.canonical(actual))}, ` +
+            `expected ${JSON.stringify(catalog.canonical(expected))}`
+        );
+      }
+    }
+  }
+  if (parsed.diagnostics) problems.push("payload carries registration diagnostics");
+  return problems;
+}
+
+/**
+ * Builds and captures the catalog project `CATALOG_RUNS` times, and holds
+ * the payload to the expected entries, byte-identical across the captures.
+ *
+ * @returns The catalog record: target, case id, per-capture payload hashes,
+ *   verdict, and the problems found.
+ */
+function runCatalogCheck(targetDir, targetName, options) {
+  const project = gen.generateCatalogProject(targetDir, { copyExtension: options.copyExtension });
+  const record = { target: targetName, case: project.id, runs: [], verdict: "", problems: [] };
+
+  if (!options.skipBuild) {
+    const built = build(targetDir, project.dir);
+    if (!built.ok) {
+      record.verdict = "BUILD FAILED";
+      record.buildOutput = built.output;
+      process.stdout.write(`${targetName}/${project.id}: BUILD FAILED\n${built.output}\n`);
+      return record;
+    }
+  }
+
+  const binary = path.join(project.dir, "built", "debug", "binary.js");
+  const payloads = [];
+  for (let r = 1; r <= CATALOG_RUNS; r++) {
+    const logPath = path.join(project.dir, "built", `capture-run${r}.log`);
+    const captured = capture.capture(binary, logPath, { expect: project.id, timeoutSec: 120 });
+    const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+    const payload = catalog.payloadOf(log);
+    payloads.push(payload);
+    record.runs.push({ run: r, exit: captured.code, sha256: payload === null ? null : sha256(payload) });
+  }
+
+  if (payloads.some((payload) => payload === null)) {
+    record.problems.push("a capture printed no single CATALOG line");
+  } else if (new Set(payloads).size !== 1) {
+    record.problems.push("payload differs between captures");
+  } else {
+    record.problems.push(...catalogProblems(payloads[0]));
+  }
+  record.verdict = record.problems.length ? "STOPPED" : "PASS";
+
+  const shas = record.runs.map((run) => (run.sha256 || "<no payload>").slice(0, 16)).join(" ");
+  process.stdout.write(`${targetName}/${record.case}: ${record.verdict}  sha256[0:16]=${shas}\n`);
+  for (const problem of record.problems) {
+    process.stdout.write(`    problem: ${problem}\n`);
+  }
+  return record;
+}
+
 /** The first line where `actual` and `expected` differ, or null when they match. */
 function firstDivergence(actual, expected) {
   const a = actual.split("\n");
@@ -210,6 +335,14 @@ function main() {
         failures++;
       }
       reportCase(record);
+    }
+
+    if (!options.cases.length) {
+      const catalogRecord = runCatalogCheck(targetDir, targetName, options);
+      results.push(catalogRecord);
+      if (catalogRecord.verdict !== "PASS") {
+        failures++;
+      }
     }
   }
 

@@ -20,6 +20,10 @@
  * diagnosed and survived: the run reaches its verdict line either way, and
  * that it does is what proves registration is never fatal.
  *
+ * The selftest also serializes the packs' catalog, twice, checking the two
+ * payloads are byte-identical, and prints it for the node-side runner to
+ * assert.
+ *
  * Output grammar, one line each:
  *
  * - `DIAG registration <code> <name> <pack> <otherPack>` -- one per recorded
@@ -27,6 +31,7 @@
  * - `CHECK <check> ok` or `CHECK <check> failed`, one per check.
  * - `ASSERT <check>` -- follows each failed check; the capture harness reads
  *   it as the run's failure.
+ * - `CATALOG <payload>` -- the serialized catalog, verbatim.
  * - `SIMCAP PASS <case>` -- the run reached its end.
  */
 namespace registrationSelftest {
@@ -204,6 +209,29 @@ namespace registrationSelftest {
     check("late-registration-not-bound", actions.getById(ids.idOf(LATE_TILE_NAME)) === undefined);
   }
 
+  /**
+   * The selftest's icon encoder: renders an opaque icon string as
+   * `img<...>`, and renders nothing for the value `unencodable`.
+   */
+  class SelftestIconEncoder extends wendoo.CatalogIconEncoder {
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    encode(icon: any): string {
+      const text = icon as string;
+      return text === "unencodable" ? "" : `img<${text}>`;
+    }
+  }
+
+  /**
+   * Serializing the catalog twice yields byte-identical payloads; the
+   * payload is printed for the node-side runner to assert.
+   */
+  function checkCatalog(): void {
+    const first = wendoo.serializeCatalog(new SelftestIconEncoder());
+    const second = wendoo.serializeCatalog(new SelftestIconEncoder());
+    check("catalog-serialize-repeatable", first === second);
+    console.log(`CATALOG ${first}`);
+  }
+
   /** An action's named output is readable under the name its output tile reads. */
   function checkActionOutput(): void {
     const ctx = newContext();
@@ -240,6 +268,7 @@ namespace registrationSelftest {
     checkOperatorRegistration(ids, functions);
     checkLateRegistrationIgnored(ids, actions);
     checkActionOutput();
+    checkCatalog();
 
     const recorded = wendoo.registrationDiagnostics();
     for (let i = 0; i < recorded.length; i++) {

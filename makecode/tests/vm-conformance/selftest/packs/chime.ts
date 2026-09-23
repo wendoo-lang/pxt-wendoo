@@ -58,7 +58,24 @@ namespace chime {
   export const PACK_NAME = "chime";
 
   const pack = wendoo.pack(PACK_NAME);
-  pack.bind("actuator.chime.ring", new RingActuator());
+
+  /** Declared shape of the ring tile: an optional count, a modifier, and sample metadata the catalog assertions pin. */
+  const ringSpec = new wendoo.TileSpec(
+    wendoo.TILE_KIND_ACTUATOR,
+    [wendoo.optionalArg("times", wendoo.TYPE_NUMBER), wendoo.modifier("loudly")],
+    ""
+  );
+  ringSpec.label = "ring the chime";
+  ringSpec.group = "Chimes";
+  ringSpec.docs = "# Ring the chime\n\nRings the chime once, or `times` times, louder with `loudly`.";
+  ringSpec.icon = "chime";
+  pack.bind("actuator.chime.ring", new RingActuator(), ringSpec);
+
   pack.bind("sensor.beacon.reading", new ReadingSensor());
-  pack.bind("sensor.chime.unmapped", new LoudnessSensor());
+
+  /** Declared shape of the loudness tile, whose icon the selftest's encoder refuses to render. */
+  const loudnessSpec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_NUMBER);
+  loudnessSpec.label = "chime loudness";
+  loudnessSpec.icon = "unencodable";
+  pack.bind("sensor.chime.unmapped", new LoudnessSensor(), loudnessSpec);
 }

@@ -267,8 +267,11 @@ over a framework for implementations that do not exist.
   product changes there unless the task explicitly targets the reference.
 - The top level splits by side of the integration: `apps/` is the Wendoo side,
   `makecode/` the MakeCode side. That grouping is not a toolchain boundary,
-  and conflating the two is the standing hazard here. `apps/` and
-  `makecode/simx/` are ordinary npm/TypeScript web projects.
+  and conflating the two is the standing hazard here. A third top-level home,
+  `packages/`, holds this repo's own shared npm packages: contracts spoken by
+  units on both sides of the integration, which therefore belong to neither
+  side. `apps/`, `makecode/simx/`, and `packages/` are ordinary npm/TypeScript
+  projects.
   `makecode/extensions/` are MakeCode (pxt) projects, built by the MakeCode
   toolchain in the static TypeScript subset pxt compiles: a different language
   surface, a different dependency system, and not npm packages. A pattern that
@@ -314,6 +317,15 @@ over a framework for implementations that do not exist.
     only there. A simx is bound by an `approvedRepoLib` entry in EACH MakeCode
     target's own `targetconfig.json`, keyed `owner/repo` and carrying a
     hosting URL -- per-target registration of one shared artifact.
+  - `packages/*` own this repo's cross-side shared npm packages: contracts
+    consumed by units on both sides of the integration via `file:`
+    dependencies. The first is `packages/protocol` (`@wendoo/makecode-session`),
+    the MakeCode session kind binding the upstream peer-session mechanism.
+    Placement rule: platform-specific protocol kinds and other MakeCode-aware
+    shared contracts live here, never in the upstream core packages. The
+    upstream packages carry platform-clean mechanisms only and must stay
+    greppably free of platform names; platform content inside a core package
+    becomes citable precedent for more of it.
   - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
     management, compiler integration, and diagnostics. The editor is
     TARGET-BLIND: the entire tile vocabulary is injected from the MakeCode

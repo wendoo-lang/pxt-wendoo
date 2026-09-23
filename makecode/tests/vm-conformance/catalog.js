@@ -1,0 +1,46 @@
+/*
+ * Reads the serialized catalog out of a capture and compares payloads: the
+ * `CATALOG <payload>` line a run prints, and a canonical form under which two
+ * parsed payloads can be compared field for field.
+ */
+
+/** Line prefix a run prints its serialized catalog under. */
+const CATALOG_PREFIX = "CATALOG ";
+
+/**
+ * The payload of the capture's one `CATALOG` line, verbatim, or null when
+ * the capture carries none or more than one.
+ *
+ * @param log The captured bytes of one run.
+ */
+function payloadOf(log) {
+  const lines = log.split("\n").filter((line) => line.startsWith(CATALOG_PREFIX));
+  if (lines.length !== 1) return null;
+  return lines[0].slice(CATALOG_PREFIX.length);
+}
+
+/**
+ * The canonical form of a parsed JSON value: every object's keys sorted, so
+ * two values serialize identically exactly when they hold the same fields.
+ *
+ * @param value A parsed JSON value.
+ */
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonical(value[key]);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Whether two parsed JSON values hold the same fields, order of object keys
+ * aside.
+ */
+function sameJson(actual, expected) {
+  return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
+}
+
+module.exports = { CATALOG_PREFIX, payloadOf, canonical, sameJson };

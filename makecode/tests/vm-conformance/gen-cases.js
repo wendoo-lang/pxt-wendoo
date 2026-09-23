@@ -26,6 +26,9 @@ const PROJECTS_SUBDIR = path.join("projects", "wendoo-vm-conformance");
 const DRIVER_NAME = "conformance.ts";
 const DRIVER_PATH = path.join(__dirname, "driver", DRIVER_NAME);
 
+/** Case id of the catalog capture: the run that serializes the conformance profile's catalog. */
+const CATALOG_CASE_ID = "conformance-catalog";
+
 function usage(message) {
   process.stderr.write(`gen-cases: ${message}\n`);
   process.stderr.write("Usage: node gen-cases.js <target-dir> [--precision f64] [--copy-extension]\n");
@@ -44,16 +47,15 @@ function copyExtension(destDir) {
 }
 
 /**
- * Writes the projects for every corpus case into `targetDir`.
+ * Reads the target checkout's identity, prepares the output root, and
+ * resolves the extension dependency the generated projects declare.
  *
  * @param targetDir Absolute path of a pxt target checkout.
- * @param options `precision` selects the artifact variant; `copyExtension`
- *   places a disposable copy of the VM extension beside the projects and
- *   depends on the copy, for a pxt that refuses a path escaping the checkout.
- * @returns One record per generated project: its id and its directory.
+ * @param options `copyExtension` places a disposable copy of the VM extension
+ *   beside the projects and depends on the copy, for a pxt that refuses a
+ *   path escaping the checkout.
  */
-function generate(targetDir, options) {
-  const precision = options?.precision || "f64";
+function prepare(targetDir, options) {
   const targetConfigPath = path.join(targetDir, "pxtarget.json");
   if (!fs.existsSync(targetConfigPath)) {
     throw new Error(`no pxtarget.json in ${targetDir}`);
@@ -70,38 +72,87 @@ function generate(targetDir, options) {
     extensionDir = copyExtension(path.join(outRoot, EXTENSION_NAME));
   }
 
+  return { target, version, corepkg, outRoot, extensionDir };
+}
+
+/**
+ * Writes one generated project carrying the driver and `mainSource`.
+ *
+ * @param ctx A prepared target context, from `prepare`.
+ * @param id Project id; names the project's directory under the output root.
+ * @param description Description the project's pxt.json declares.
+ * @param mainSource Text of the project's `main.ts`.
+ * @returns The project's id and directory.
+ */
+function writeProject(ctx, id, description, mainSource) {
+  const dir = path.join(ctx.outRoot, id);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const dependencies = {};
+  dependencies[ctx.corepkg] = `file:${path.posix.join("../../..", "libs", ctx.corepkg)}`;
+  dependencies[EXTENSION_NAME] = `file:${toPosix(path.relative(dir, ctx.extensionDir))}`;
+
+  fs.writeFileSync(
+    path.join(dir, "pxt.json"),
+    `${JSON.stringify(
+      {
+        name: `wendoo-vm-conformance-${id}`,
+        description,
+        dependencies,
+        files: [DRIVER_NAME, "main.ts"],
+        targetVersions: { target: ctx.version },
+        supportedTargets: [ctx.target.id],
+      },
+      null,
+      4
+    )}\n`
+  );
+  fs.copyFileSync(DRIVER_PATH, path.join(dir, DRIVER_NAME));
+  fs.writeFileSync(path.join(dir, "main.ts"), mainSource);
+  return { id, dir };
+}
+
+/**
+ * Writes the projects for every corpus case into `targetDir`.
+ *
+ * @param targetDir Absolute path of a pxt target checkout.
+ * @param options `precision` selects the artifact variant; `copyExtension`
+ *   places a disposable copy of the VM extension beside the projects and
+ *   depends on the copy, for a pxt that refuses a path escaping the checkout.
+ * @returns One record per generated project: its id and its directory.
+ */
+function generate(targetDir, options) {
+  const precision = options?.precision || "f64";
+  const ctx = prepare(targetDir, options);
+
   const generated = [];
   for (const entry of corpus.readManifest().cases) {
     if (!entry.precisions.includes(precision)) continue;
-    const dir = path.join(outRoot, entry.id);
-    fs.mkdirSync(dir, { recursive: true });
-
-    const dependencies = {};
-    dependencies[corepkg] = `file:${path.posix.join("../../..", "libs", corepkg)}`;
-    dependencies[EXTENSION_NAME] = `file:${toPosix(path.relative(dir, extensionDir))}`;
-
-    fs.writeFileSync(
-      path.join(dir, "pxt.json"),
-      `${JSON.stringify(
-        {
-          name: `wendoo-vm-conformance-${entry.id}`,
-          description: `Wendoo VM conformance case (generated) -- ${entry.id}`,
-          dependencies,
-          files: [DRIVER_NAME, "main.ts"],
-          targetVersions: { target: version },
-          supportedTargets: [target.id],
-        },
-        null,
-        4
-      )}\n`
+    generated.push(
+      writeProject(
+        ctx,
+        entry.id,
+        `Wendoo VM conformance case (generated) -- ${entry.id}`,
+        caseEntrySource(entry, precision)
+      )
     );
-    fs.copyFileSync(DRIVER_PATH, path.join(dir, DRIVER_NAME));
-    fs.writeFileSync(path.join(dir, "main.ts"), caseEntrySource(entry, precision));
-    generated.push({ id: entry.id, dir });
   }
 
-  fs.writeFileSync(path.join(outRoot, "cases.txt"), `${generated.map((g) => g.id).join("\n")}\n`);
+  fs.writeFileSync(path.join(ctx.outRoot, "cases.txt"), `${generated.map((g) => g.id).join("\n")}\n`);
   return generated;
+}
+
+/**
+ * Writes the catalog capture project into `targetDir`: a project whose run
+ * serializes the conformance profile's catalog as one `CATALOG` line.
+ *
+ * @param targetDir Absolute path of a pxt target checkout.
+ * @param options `copyExtension` as for `generate`.
+ * @returns The project's id and directory.
+ */
+function generateCatalogProject(targetDir, options) {
+  const ctx = prepare(targetDir, options);
+  return writeProject(ctx, CATALOG_CASE_ID, "Wendoo VM conformance catalog capture (generated)", catalogEntrySource());
 }
 
 function toPosix(p) {
@@ -122,7 +173,17 @@ function caseEntrySource(entry, precision) {
   ].join("\n");
 }
 
-module.exports = { generate, EXTENSION_DIR, PROJECTS_SUBDIR };
+function catalogEntrySource() {
+  return [
+    "// Generated by makecode/tests/vm-conformance/gen-cases.js -- do not edit.",
+    "// Serializes the conformance profile's catalog for the harness to assert.",
+    "",
+    `wendoo.runConformanceCatalog("${CATALOG_CASE_ID}")`,
+    "",
+  ].join("\n");
+}
+
+module.exports = { generate, generateCatalogProject, CATALOG_CASE_ID, EXTENSION_DIR, PROJECTS_SUBDIR };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

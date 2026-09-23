@@ -1,0 +1,40 @@
+{
+  // Solution-style index of this repo's npm/TypeScript projects: packages/*,
+  // apps/*, and makecode/simx/*. No build reads this file: tsc is always
+  // invoked with an explicit project or from a package directory, and the
+  // build driver runs per-package scripts.
+  //
+  // It exists for the EDITOR. Spec files are excluded from every project's
+  // build config (they must not enter build programs), so without an
+  // ancestor config referencing the tsconfig.spec.json projects, tsserver
+  // assigns opened spec files to an inferred project and shows bogus
+  // diagnostics. tsserver walks ancestor directories until a config owns
+  // the file, then searches these references for the owning project.
+  //
+  // Keep the pairing per project: the build config, then its spec config.
+  // The build-config entries make this an honest index of the repo; the
+  // spec-config entries are the load-bearing ones. scripts/
+  // editor-projects.spec.js enforces that every tsconfig.spec.json under
+  // packages/, apps/, and makecode/simx/ is editor-reachable -- from here,
+  // or from a tsconfig.json inside its own project -- run it (root
+  // `npm test`) after config changes.
+  //
+  // makecode/extensions/** and makecode/tests/** are excluded by decision
+  // and must never be indexed here. Their tsconfigs follow the pxt
+  // editor-typing discipline (target ES5, noLib, ignoreDeprecations "6.0"),
+  // are checkable only under typescript@6, and are served by tsserver's
+  // nearest-config walk from their own directories.
+  //
+  // ORDERING CONSTRAINT: the editor assigns a file to the FIRST listed
+  // project that contains it, so a project whose sources another project's
+  // spec config includes must list its own configs BEFORE the including
+  // project. The editor-projects gate asserts ownership and fails if this
+  // order regresses.
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol/tsconfig.json" },
+    { "path": "./packages/protocol/tsconfig.spec.json" },
+    { "path": "./apps/editor/tsconfig.json" },
+    { "path": "./apps/editor/tsconfig.spec.json" }
+  ]
+}
