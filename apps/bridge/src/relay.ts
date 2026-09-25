@@ -5,6 +5,7 @@ import {
   BridgeSessionErrorCode,
   type ControlPongMessage,
   PROTOCOL_VERSION,
+  type SessionCounterpartAwayMessage,
   type SessionErrorMessage,
   type SessionHelloPayload,
   sessionHelloPayloadSchema,
@@ -56,7 +57,7 @@ interface Member {
   readonly socket: RelaySocket;
   /**
    * The pairing this member belongs to; `undefined` before its hello is
-   * accepted and after it leaves or is displaced.
+   * accepted and after it leaves or is removed from it.
    */
   pairing: Pairing | undefined;
   /** Ids of messages forwarded to this member that no message from it has carried back yet. */
@@ -108,27 +109,32 @@ interface Envelope {
  *
  * A pairing is the session: the binding of its two members, identified by
  * its session id and by the binding tokens that name it. A member leaving and
- * binding back in changes the session's status, not the session: a pairing
- * whose members have all left keeps its session id, join code, and binding
- * id, and a hello presenting its join code or a binding token for it binds
- * back into it, until the pairing has had no member for the linger time,
- * which ends it. Each time the pairing comes to have both members bound --
- * when the second member first arrives, and again whenever a member binds
- * back in -- BOTH members receive `session:welcome`, carrying the session id,
- * join code, and a binding token for the pairing. A welcome means "the session is connected". Endpoints must
- * restart the handshake they scope to their counterpart's connection on every
- * welcome, including a further welcome on a connection already welcomed.
+ * binding back in changes the session's status, not the session: when a
+ * member's connection closes without being superseded, the member still
+ * bound receives `session:counterpartAway`; a pairing whose members have all left keeps its
+ * session id, join code, and binding id, and a hello presenting its join code
+ * or a binding token for it binds back into it, until the pairing has had no
+ * member for the linger time, which ends it. Each time the pairing comes to
+ * have both members bound -- when the second member first arrives, and again
+ * whenever a member binds back in -- BOTH members receive `session:welcome`,
+ * carrying the session id, join code, and a binding token for the pairing. A
+ * welcome means "the session is connected". Endpoints must restart the
+ * handshake they scope to their counterpart's connection on every welcome,
+ * including a further welcome on a connection already welcomed.
  *
  * A hello for a slot whose role is already taken supersedes the connection
- * holding it. When the hello presents a binding token for that pairing, the
- * member is returning to the same session: the relay closes only the
- * connection it held before, and a connected peer stays connected and is
- * welcomed again. Otherwise the hello is a new claimant, which ends the session: the
- * relay closes the connection of every member and opens a new session under
- * the same join code, with a new session id and binding id, whose only member
- * is the newcomer. Tokens naming the ended session match nothing. A displaced
- * member whose role is vacant joins the new session by presenting the join
- * code; one presenting it for the newcomer's role is itself a new claimant.
+ * holding it, which receives `session:error` carrying `SESSION_REPLACED`
+ * before the relay closes it. When the hello presents a binding token for
+ * that pairing, the member is returning to the same session: the relay
+ * closes only the connection it held before, and a connected peer stays
+ * connected and is welcomed again. Otherwise the hello is a new claimant,
+ * which ends the session: the relay closes the connection of every member,
+ * the peer's without a code, and opens a new session under the same join
+ * code, with a new session id and binding id, whose only member is the
+ * newcomer. Tokens naming the ended session match nothing. The ended
+ * session's other-role member joins the new session by presenting the join
+ * code; a connection presenting it for the newcomer's role is itself a new
+ * claimant.
  *
  * Messages in {@link RELAY_CONTROL_NAMESPACES} are handled by the relay,
  * except a reply carrying the id of a message the relay forwarded, which goes
@@ -257,9 +263,9 @@ export class Relay {
     const holder = pairing.members.get(role);
     if (holder !== undefined && bindingId === pairing.bindingId) {
       this._logger.info({ kind, role, pairingId: pairing.id }, "member superseded by its own reconnect");
-      this.detach(holder);
+      this.displace(holder);
     } else if (holder !== undefined) {
-      pairing = this.replace(pairing);
+      pairing = this.replace(pairing, role);
     } else if (pairing.members.size >= 2) {
       this._logger.warn({ kind, role, pairingId: pairing.id }, "refused a third role into a pairing");
       const refusal: SessionErrorMessage = {
@@ -303,18 +309,37 @@ export class Relay {
   }
 
   /**
-   * Ends `pairing`, closing the connection of every member, and returns the
-   * empty pairing that succeeds it under the same join code with a new session
-   * id and binding id.
+   * Ends `pairing` for a new claimant of `role`, closing the connection of
+   * every member, and returns the empty pairing that succeeds it under the same
+   * join code with a new session id and binding id. The member holding `role`
+   * is displaced; its peer's connection closes without a code.
    */
-  private replace(pairing: Pairing): Pairing {
+  private replace(pairing: Pairing, role: string): Pairing {
     this._logger.info({ kind: pairing.kind, pairingId: pairing.id }, "session ended by a new claimant");
     for (const member of pairing.members.values()) {
-      this.detach(member);
+      if (member.role === role) this.displace(member);
+      else this.detach(member);
     }
     clearTimeout(pairing.expiry);
     this._pairings.delete(pairing);
     return this.open(pairing.kind, pairing.joinCode);
+  }
+
+  /**
+   * Tells `member` that another connection of its role has taken its place,
+   * with `session:error` carrying `SESSION_REPLACED`, then removes it from its
+   * pairing and closes its connection.
+   */
+  private displace(member: Member): void {
+    const replaced: SessionErrorMessage = {
+      type: "session:error",
+      payload: {
+        message: "Another connection of this role has taken this one's place.",
+        code: BridgeSessionErrorCode.SESSION_REPLACED,
+      },
+    };
+    member.socket.send(JSON.stringify(replaced));
+    this.detach(member);
   }
 
   /** Removes `member` from its pairing and closes its connection. */
@@ -330,13 +355,18 @@ export class Relay {
     if (pairing === undefined) return;
     member.pairing = undefined;
     pairing.members.delete(role);
-    if (pairing.members.size === 0) {
-      pairing.expiry = setTimeout(() => {
-        this._logger.info({ kind, pairingId: pairing.id }, "session ended after lingering with no member");
-        this._pairings.delete(pairing);
-      }, this._lingerMs);
-      pairing.expiry.unref();
+    if (pairing.members.size > 0) {
+      const away: SessionCounterpartAwayMessage = { type: "session:counterpartAway" };
+      for (const remaining of pairing.members.values()) {
+        remaining.socket.send(JSON.stringify(away));
+      }
+      return;
     }
+    pairing.expiry = setTimeout(() => {
+      this._logger.info({ kind, pairingId: pairing.id }, "session ended after lingering with no member");
+      this._pairings.delete(pairing);
+    }, this._lingerMs);
+    pairing.expiry.unref();
   }
 
   private find(kind: string, predicate: (pairing: Pairing) => boolean): Pairing | undefined {
