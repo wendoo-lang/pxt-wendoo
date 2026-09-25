@@ -5,14 +5,19 @@ import { connectPeerSession } from "@wendoo/bridge-app";
 import { ProjectSession } from "@wendoo/bridge-client";
 import type { AppServerMessage, WsMessage } from "@wendoo/bridge-protocol";
 import { BridgeSessionErrorCode, PROTOCOL_VERSION } from "@wendoo/bridge-protocol";
-import { pino } from "pino";
-import { type RelayServer, startRelayServer } from "./server.js";
-
-/** How long a spec waits for an expected frame or close before failing. */
-const WAIT_MS = 2000;
-
-/** The shape of a join code the relay generates: three words of lowercase letters joined by `-`. */
-const JOIN_CODE_SHAPE = /^[a-z]+-[a-z]+-[a-z]+$/;
+import {
+  assertCounterpartAway,
+  assertJoinCode,
+  assertSessionError,
+  assertVersionRejected,
+  assertWelcome,
+  delay,
+  type ScriptedPeer,
+  startTestRelay,
+  type TestRelay,
+  type Welcome,
+  within,
+} from "./testing/index.js";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
@@ -31,172 +36,12 @@ const CATALOG_TEXT =
  */
 const HOSTILE_FRAME = `{\t"type" : "sample:document" ,\r\n  "payload": {"content": ${JSON.stringify(CATALOG_TEXT)}, "escapes": "\\u0041\\/\\b\\f\\u001f", "count": 2.50, "big": 1E3, "raw": "caf\u00e9 \ud83d\ude00"},\n  "unknownKey": [null, true, {}]\n}`;
 
-/** A WebSocket endpoint driven by hand, recording every frame it receives as text. */
-class ScriptedPeer {
-  private readonly _inbox: string[] = [];
-  private readonly _waiters: ((frame: string) => void)[] = [];
-  private readonly _socket: WebSocket;
-  private _pingCount = 0;
-  /** Resolves when the connection has closed, from either side. */
-  readonly closed: Promise<void>;
-
-  private constructor(socket: WebSocket) {
-    this._socket = socket;
-    socket.addEventListener("message", (event) => {
-      const frame = String(event.data);
-      const waiter = this._waiters.shift();
-      if (waiter) waiter(frame);
-      else this._inbox.push(frame);
-    });
-    this.closed = new Promise((resolve) => {
-      socket.addEventListener("close", () => {
-        resolve();
-      });
-    });
-  }
-
-  /** Opens a connection to `/{path}` on the relay listening on `port`. */
-  static open(port: number, path: string): Promise<ScriptedPeer> {
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/${path}`);
-    const peer = new ScriptedPeer(socket);
-    return new Promise((resolve, reject) => {
-      socket.addEventListener("open", () => {
-        resolve(peer);
-      });
-      socket.addEventListener("error", () => {
-        reject(new Error(`could not connect to /${path}`));
-      });
-    });
-  }
-
-  /** Sends `text` as one text frame, unchanged. */
-  sendText(text: string): void {
-    this._socket.send(text);
-  }
-
-  /** Sends `message` serialized as JSON. */
-  send(message: object): void {
-    this.sendText(JSON.stringify(message));
-  }
-
-  /** Sends a binary frame. */
-  sendBinary(bytes: Uint8Array): void {
-    this._socket.send(bytes);
-  }
-
-  /** The next frame received, as text. Rejects when none arrives in time. */
-  next(): Promise<string> {
-    const queued = this._inbox.shift();
-    if (queued !== undefined) return Promise.resolve(queued);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._waiters.splice(this._waiters.indexOf(waiter), 1);
-        reject(new Error("no frame arrived"));
-      }, WAIT_MS);
-      const waiter = (frame: string) => {
-        clearTimeout(timer);
-        resolve(frame);
-      };
-      this._waiters.push(waiter);
-    });
-  }
-
-  /** The next frame received, parsed. */
-  async nextMessage(): Promise<WsMessage> {
-    return JSON.parse(await this.next()) as WsMessage;
-  }
-
-  /**
-   * Sends `session:hello` with `payload` merged over the current protocol
-   * version and returns the relay's first answer.
-   */
-  async hello(payload: Record<string, unknown> = {}): Promise<WsMessage> {
-    this.send({ type: "session:hello", id: "hello", payload: { protocolVersion: PROTOCOL_VERSION, ...payload } });
-    return this.nextMessage();
-  }
-
-  /**
-   * Round-trips a `control:ping`, asserting the next frame is its pong. Every
-   * frame this peer sent earlier has been processed by the relay once this
-   * resolves, and every frame the relay sent it earlier has been received.
-   */
-  async ping(): Promise<void> {
-    const id = `ping-${++this._pingCount}`;
-    this.send({ type: "control:ping", id });
-    assert.deepEqual(await this.nextMessage(), { type: "control:pong", id });
-  }
-
-  /** Asserts that no frame has arrived that a spec has not consumed. */
-  assertNothingReceived(): void {
-    assert.deepEqual(this._inbox, []);
-  }
-
-  /** Closes the connection and resolves once it has closed. */
-  close(): Promise<void> {
-    this._socket.close();
-    return this.closed;
-  }
-}
-
-/** Resolves when `promise` does; rejects when it has not settled in time. */
-function within<T>(promise: Promise<T>, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`timed out waiting for ${what}`));
-    }, WAIT_MS);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    clearTimeout(timer);
-  });
-}
-
-/** The status signal a member receives when its counterpart's connection closes without being superseded. */
-const COUNTERPART_AWAY = { type: "session:counterpartAway" };
-
-/** Asserts that `message` is a `session:error` carrying `SESSION_REPLACED`. */
-function assertReplaced(message: WsMessage): void {
-  assert.equal(message.type, "session:error");
-  assert.equal((message.payload as { code?: string }).code, BridgeSessionErrorCode.SESSION_REPLACED);
-}
-
-/** Welcome payload fields every spec reads. */
-interface Welcome {
-  protocolVersion: number;
-  sessionId: string;
-  joinCode: string;
-  bindingToken: string;
-}
-
-/** Asserts that `message` is a `session:joinCode`, and returns the code it carries. */
-function assertJoinCode(message: WsMessage): string {
-  assert.equal(message.type, "session:joinCode");
-  const { joinCode } = message.payload as { joinCode: string };
-  assert.match(joinCode, JOIN_CODE_SHAPE);
-  return joinCode;
-}
-
-/** Asserts that `message` is a `session:welcome` answering the hello, and returns its payload. */
-function assertWelcome(message: WsMessage): Welcome {
-  assert.equal(message.type, "session:welcome");
-  assert.equal(message.id, "hello");
-  const payload = message.payload as Welcome;
-  assert.equal(payload.protocolVersion, PROTOCOL_VERSION);
-  assert.equal(typeof payload.sessionId, "string");
-  assert.match(payload.joinCode, JOIN_CODE_SHAPE);
-  assert.equal(typeof payload.bindingToken, "string");
-  return payload;
-}
-
 describe("relay", () => {
-  let server: RelayServer;
-  const peers: ScriptedPeer[] = [];
+  let relay: TestRelay;
 
   /** Opens a scripted peer that the suite closes after each spec. */
-  async function open(path: string): Promise<ScriptedPeer> {
-    const peer = await ScriptedPeer.open(server.port, path);
-    peers.push(peer);
-    return peer;
+  function open(path: string): Promise<ScriptedPeer> {
+    return relay.connect(path);
   }
 
   /** Opens `alpha` and `beta` peers of the sample kind, paired by the join code alpha is answered with. */
@@ -206,30 +51,20 @@ describe("relay", () => {
     alphaWelcome: Welcome;
     betaWelcome: Welcome;
   }> {
-    const alpha = await open("sample/alpha");
-    const joinCode = assertJoinCode(await alpha.hello());
-    const beta = await open("sample/beta");
-    assertJoinCode(await beta.hello({ joinCode }));
-    const betaWelcome = assertWelcome(await beta.nextMessage());
-    const alphaWelcome = assertWelcome(await alpha.nextMessage());
-    return { alpha, beta, alphaWelcome, betaWelcome };
+    const pair = await relay.pair("sample/alpha", "sample/beta");
+    return { alpha: pair.first, beta: pair.second, alphaWelcome: pair.firstWelcome, betaWelcome: pair.secondWelcome };
   }
 
   before(async () => {
-    server = await startRelayServer({
-      host: "127.0.0.1",
-      port: 0,
-      bindingSecret: "spec-secret",
-      logger: pino({ level: "silent" }),
-    });
+    relay = await startTestRelay({ bindingSecret: "spec-secret" });
   });
 
   afterEach(async () => {
-    await Promise.all(peers.splice(0).map((peer) => peer.close()));
+    await relay.closePeers();
   });
 
   after(async () => {
-    await server.close();
+    await relay.close();
   });
 
   describe("establishment", () => {
@@ -271,9 +106,7 @@ describe("relay", () => {
 
         const rejection = await peer.nextMessage();
 
-        assert.equal(rejection.type, "session:error");
-        assert.equal(rejection.id, "hello");
-        assert.equal((rejection.payload as { code?: string }).code, BridgeSessionErrorCode.PROTOCOL_VERSION_MISMATCH);
+        assertVersionRejected(rejection);
         await within(peer.closed, "the rejected connection to close");
       }
     });
@@ -284,8 +117,7 @@ describe("relay", () => {
 
       const refusal = await gamma.hello({ joinCode: alphaWelcome.joinCode });
 
-      assert.equal(refusal.type, "session:error");
-      assert.equal((refusal.payload as { code?: string }).code, undefined);
+      assertSessionError(refusal, undefined);
       gamma.send({ type: "sample:document", payload: { content: "from gamma" } });
       alpha.send({ type: "sample:document", payload: { content: "to beta" } });
       assert.deepEqual(await beta.nextMessage(), { type: "sample:document", payload: { content: "to beta" } });
@@ -392,7 +224,7 @@ describe("relay", () => {
 
       assert.equal(assertJoinCode(await newBeta.hello({ joinCode: alphaWelcome.joinCode })), alphaWelcome.joinCode);
 
-      assertReplaced(await beta.nextMessage());
+      assertSessionError(await beta.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
       await within(beta.closed, "the replaced connection to close");
       await within(alpha.closed, "the peer to close");
       alpha.assertNothingReceived();
@@ -432,7 +264,7 @@ describe("relay", () => {
     it("binds a reconnect presenting its binding token back into the same session and welcomes the connected peer again", async () => {
       const { alpha, beta, alphaWelcome, betaWelcome } = await openPair();
       await alpha.close();
-      assert.deepEqual(await beta.nextMessage(), COUNTERPART_AWAY);
+      assertCounterpartAway(await beta.nextMessage());
 
       const newAlpha = await open("sample/alpha");
       assertJoinCode(await newAlpha.hello({ bindingToken: alphaWelcome.bindingToken }));
@@ -453,7 +285,7 @@ describe("relay", () => {
     it("binds a reconnect presenting only its join code back into the same session and welcomes the connected peer again", async () => {
       const { alpha, beta, alphaWelcome } = await openPair();
       await beta.close();
-      assert.deepEqual(await alpha.nextMessage(), COUNTERPART_AWAY);
+      assertCounterpartAway(await alpha.nextMessage());
 
       const newBeta = await open("sample/beta");
       assertJoinCode(await newBeta.hello({ joinCode: alphaWelcome.joinCode }));
@@ -475,7 +307,7 @@ describe("relay", () => {
       const newAlphaWelcome = assertWelcome(await newAlpha.nextMessage());
       const betaRewelcome = assertWelcome(await beta.nextMessage());
 
-      assertReplaced(await alpha.nextMessage());
+      assertSessionError(await alpha.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
       await within(alpha.closed, "the superseded connection to close");
       assert.equal(newAlphaWelcome.sessionId, alphaWelcome.sessionId);
       assert.deepEqual(betaRewelcome, betaWelcome);
@@ -491,11 +323,9 @@ describe("relay", () => {
     it("binds two reconnects presenting their binding tokens back into the same session after both members left", async () => {
       const { alpha, beta, alphaWelcome, betaWelcome } = await openPair();
       await alpha.close();
-      assert.deepEqual(await beta.nextMessage(), COUNTERPART_AWAY);
+      assertCounterpartAway(await beta.nextMessage());
       await beta.close();
-      const probe = await open("probe/witness");
-      // beta's close handshake is complete; this round trip gives the relay time to finish handling the close.
-      await probe.ping();
+      await relay.settle();
 
       const newBeta = await open("sample/beta");
       assertJoinCode(await newBeta.hello({ bindingToken: betaWelcome.bindingToken }));
@@ -516,11 +346,9 @@ describe("relay", () => {
     it("binds a reconnect presenting only its join code back into a session whose members all left", async () => {
       const { alpha, beta, alphaWelcome, betaWelcome } = await openPair();
       await alpha.close();
-      assert.deepEqual(await beta.nextMessage(), COUNTERPART_AWAY);
+      assertCounterpartAway(await beta.nextMessage());
       await beta.close();
-      const probe = await open("probe/witness");
-      // beta's close handshake is complete; this round trip gives the relay time to finish handling the close.
-      await probe.ping();
+      await relay.settle();
 
       const newBeta = await open("sample/beta");
       assert.equal(assertJoinCode(await newBeta.hello({ joinCode: alphaWelcome.joinCode })), alphaWelcome.joinCode);
@@ -535,35 +363,21 @@ describe("relay", () => {
 
 describe("session linger", () => {
   it("ends a session that has had no member for the linger time, after which its tokens open new sessions", async () => {
-    const server = await startRelayServer({
-      host: "127.0.0.1",
-      port: 0,
-      bindingSecret: "spec-secret",
-      logger: pino({ level: "silent" }),
-      lingerMs: 20,
-    });
-    const peers: ScriptedPeer[] = [];
-    const open = async (path: string) => {
-      const peer = await ScriptedPeer.open(server.port, path);
-      peers.push(peer);
-      return peer;
-    };
+    const relay = await startTestRelay({ bindingSecret: "spec-secret", lingerMs: 20 });
     try {
-      const alpha = await open("sample/alpha");
+      const alpha = await relay.connect("sample/alpha");
       const joinCode = assertJoinCode(await alpha.hello());
-      const beta = await open("sample/beta");
+      const beta = await relay.connect("sample/beta");
       assertJoinCode(await beta.hello({ joinCode }));
       const betaWelcome = assertWelcome(await beta.nextMessage());
       const alphaWelcome = assertWelcome(await alpha.nextMessage());
       await alpha.close();
       await beta.close();
-      const probe = await open("probe/witness");
-      await probe.ping();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await relay.expireLinger();
 
-      const newAlpha = await open("sample/alpha");
+      const newAlpha = await relay.connect("sample/alpha");
       const newAlphaCode = assertJoinCode(await newAlpha.hello({ bindingToken: alphaWelcome.bindingToken }));
-      const newBeta = await open("sample/beta");
+      const newBeta = await relay.connect("sample/beta");
       const newBetaCode = assertJoinCode(await newBeta.hello({ bindingToken: betaWelcome.bindingToken }));
       await newAlpha.ping();
       await newBeta.ping();
@@ -574,8 +388,7 @@ describe("session linger", () => {
       newAlpha.assertNothingReceived();
       newBeta.assertNothingReceived();
     } finally {
-      await Promise.all(peers.map((peer) => peer.close()));
-      await server.close();
+      await relay.close();
     }
   });
 });
@@ -720,7 +533,7 @@ describe("peer session across the relay", () => {
     return received;
   }
 
-  let server: RelayServer;
+  let relay: TestRelay;
   let bridgeUrl: string;
   const sessions: RelaySession[] = [];
   const endpoints: Endpoint[] = [];
@@ -796,13 +609,8 @@ describe("peer session across the relay", () => {
 
   before(async () => {
     (globalThis as Record<string, unknown>).WebSocket = RecordingWebSocket;
-    server = await startRelayServer({
-      host: "127.0.0.1",
-      port: 0,
-      bindingSecret: "spec-secret",
-      logger: pino({ level: "silent" }),
-    });
-    bridgeUrl = `127.0.0.1:${server.port}`;
+    relay = await startTestRelay({ bindingSecret: "spec-secret" });
+    bridgeUrl = relay.address;
   });
 
   afterEach(() => {
@@ -812,7 +620,7 @@ describe("peer session across the relay", () => {
 
   after(async () => {
     (globalThis as Record<string, unknown>).WebSocket = originalWebSocket;
-    await server.close();
+    await relay.close();
   });
 
   it("connects a session between endpoints arriving one after the other and carries a document byte-identically", async () => {
@@ -902,7 +710,7 @@ describe("peer session across the relay", () => {
     ]);
     const socketsAfterTakeover = RecordingWebSocket.created.length;
     // Long enough for several bridge-client reconnect attempts, whose first delay is half a second.
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await delay(2500);
 
     assert.equal(RecordingWebSocket.created.length - socketsAfterTakeover, 0);
     assert.deepEqual(firstErrors, [BridgeSessionErrorCode.SESSION_REPLACED]);
@@ -918,7 +726,7 @@ describe("peer session across the relay", () => {
     const alpha = createSession("alpha");
     const alphaEndpoint = endpoint(alpha);
     const joinCode = await within(alphaEndpoint.joinCode, "alpha's join code");
-    const displaced = await ScriptedPeer.open(server.port, "sample/beta");
+    const displaced = await relay.connect("sample/beta");
     try {
       assertJoinCode(await displaced.hello({ joinCode }));
       assertWelcome(await displaced.nextMessage());
@@ -938,7 +746,7 @@ describe("peer session across the relay", () => {
       ]);
 
       assert.equal((await displaced.nextMessage()).type, "sample:hello");
-      assertReplaced(await displaced.nextMessage());
+      assertSessionError(await displaced.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
       await within(displaced.closed, "the displaced connection to close");
       assert.deepEqual(alphaErrors, []);
       assert.notEqual(alpha.sessionId, endedSessionId);

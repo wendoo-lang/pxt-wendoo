@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, it } from "node:test";
-import { PROTOCOL_VERSION } from "@wendoo/bridge-protocol";
-import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "@wendoo/makecode-session";
-import { connectMakeCodeSession } from "@wendoo/makecode-session";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
+import {
+  assertCounterpartAway,
+  assertJoinCode,
+  assertSessionError,
+  assertVersionRejected,
+  assertWelcome,
+  delay,
+  type ScriptedPeer,
+  startTestRelay,
+  type TestRelay,
+  type Welcome,
+  within,
+} from "@wendoo/bridge/testing";
+import { BridgeSessionErrorCode, PROTOCOL_VERSION, type WsMessage } from "@wendoo/bridge-protocol";
+import {
+  MAKECODE_SESSION_PROTOCOL_VERSION,
+  MAKECODE_SESSION_ROLE_PATHS,
+  type MakeCodeSessionMessage,
+} from "@wendoo/makecode-session";
 import { SIMX_CHANNEL, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, startSimxBridge } from "./simx-bridge.js";
 
@@ -15,55 +31,77 @@ const CATALOG_TEXT =
   '{"packs":[{"name":"beacon","tiles":[{"name":"say \\"hi\\"","kind":"actuator","docs":"line\\nnext \\u00e9"}]}]}' +
   "\t\r\n\u0001 caf\u00e9 \ud83d\ude00 \\";
 
-/** How long a spec waits for the bridge client to open its next connection, or for a session to establish. */
-const WAIT_MS = 2000;
+/** The relay path of the simx role. */
+const SIMX = MAKECODE_SESSION_ROLE_PATHS.simx;
 
-/** Relay-side stand-in for one WebSocket the bridge client opens. */
-class MockWebSocket {
-  static instances: MockWebSocket[] = [];
+/** The relay path of the editor role. */
+const EDITOR = MAKECODE_SESSION_ROLE_PATHS.editor;
 
-  onopen: ((event: unknown) => void) | null = null;
-  onclose: ((event: unknown) => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onerror: ((event: unknown) => void) | null = null;
+/** The hello each party of a makecode session at this build's version sends. */
+const MAKECODE_HELLO: MakeCodeSessionMessage = {
+  type: "makecode:hello",
+  payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION },
+};
 
-  readonly url: string;
-  /** Every frame the client sent, as its JSON text. */
-  readonly sent: string[] = [];
-  /** Called with each frame the client sends. */
-  onSend: ((data: string) => void) | undefined;
+/** The `makecode:catalog` message publishing `content`. */
+function catalogMessage(content: string): MakeCodeSessionMessage {
+  return { type: "makecode:catalog", payload: { content } };
+}
 
-  constructor(url: string) {
-    this.url = url;
-    MockWebSocket.instances.push(this);
+/**
+ * A WebSocket, installed as the global WebSocket for these specs, that records
+ * every instance created and every text frame each one sends and receives.
+ */
+class RecordingWebSocket extends WebSocket {
+  /** Every socket created, in creation order. */
+  static readonly created: RecordingWebSocket[] = [];
+
+  /** The type of every text frame this socket sent and received, in order, as `out:<type>` or `in:<type>`. */
+  readonly traffic: string[] = [];
+  /** Resolves when the connection has closed, from either side. */
+  readonly closed: Promise<void>;
+  private readonly _received: WsMessage[] = [];
+  private readonly _arrivals = new Set<() => void>();
+
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols);
+    RecordingWebSocket.created.push(this);
+    this.closed = new Promise((resolve) => {
+      this.addEventListener("close", () => {
+        resolve();
+      });
+    });
+    this.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as WsMessage;
+      this._received.push(message);
+      this.traffic.push(`in:${message.type}`);
+      for (const arrival of this._arrivals) arrival();
+    });
   }
 
-  send(data: string): void {
-    this.sent.push(data);
-    this.onSend?.(data);
+  override send(data: Parameters<WebSocket["send"]>[0]): void {
+    if (typeof data === "string") {
+      this.traffic.push(`out:${(JSON.parse(data) as WsMessage).type}`);
+    }
+    super.send(data);
   }
 
-  close(): void {}
-
-  /** The relay accepting the connection and welcoming its hello. */
-  open(): void {
-    this.onopen?.({});
-    this.receive({ type: "session:welcome", payload: { protocolVersion: PROTOCOL_VERSION, sessionId: "pairing-1" } });
-  }
-
-  /** The relay sending `message` to the client. */
-  receive(message: object): void {
-    this.onmessage?.({ data: JSON.stringify(message) });
-  }
-
-  /** The relay closing the connection. */
-  drop(): void {
-    this.onclose?.({});
-  }
-
-  /** The types of the frames the client sent. */
-  sentTypes(): string[] {
-    return this.sent.map((data) => (JSON.parse(data) as { type: string }).type);
+  /** Resolves with the first frame of `type` this socket received, once it has arrived. */
+  firstReceived(type: string): Promise<WsMessage> {
+    const find = () => this._received.find((message) => message.type === type);
+    return within(
+      new Promise((resolve) => {
+        const arrival = () => {
+          const found = find();
+          if (found === undefined) return;
+          this._arrivals.delete(arrival);
+          resolve(found);
+        };
+        this._arrivals.add(arrival);
+        arrival();
+      }),
+      `a ${type} frame`
+    );
   }
 }
 
@@ -102,147 +140,231 @@ class FakeFrame implements SimxFrame {
 }
 
 /**
- * The editor's end of a JSON wire through the relay over `socket`: payload
- * frames the client sends reach the port's listeners, and messages posted on
- * the port reach the client as JSON text, each in a later microtask.
+ * Runs the editor's side of the makecode handshake after a welcome, as an
+ * editor endpoint does: sends the editor's hello, then asserts that the next
+ * frame the editor receives is the simx's hello.
  */
-function editorPortOver(socket: MockWebSocket): MakeCodeSessionPort {
-  const listeners = new Set<(message: MakeCodeSessionMessage) => void>();
-  socket.onSend = (data) => {
-    const message = JSON.parse(data) as { type: string };
-    if (!message.type.startsWith("makecode:")) {
-      return;
-    }
-    queueMicrotask(() => {
-      for (const listener of listeners) {
-        listener(JSON.parse(data) as MakeCodeSessionMessage);
-      }
-    });
-  };
-  return {
-    postMessage(message) {
-      const wire = JSON.stringify(message);
-      queueMicrotask(() => {
-        socket.receive(JSON.parse(wire) as object);
-      });
-    },
-    onMessage(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
+async function handshake(editor: ScriptedPeer): Promise<void> {
+  editor.send(MAKECODE_HELLO);
+  assert.deepEqual(await editor.nextMessage(), MAKECODE_HELLO);
 }
 
-/**
- * Open the relay's connection `socket` and establish an editor session with
- * the bridge over it, both hellos crossing once the connection is open.
- */
-async function connectEditor(socket: MockWebSocket): Promise<MakeCodeSession> {
-  const editor = connectMakeCodeSession({ port: editorPortOver(socket) });
-  socket.open();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("the editor session was not established")), WAIT_MS);
-  });
-  try {
-    return await Promise.race([editor, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** Catalogs the editor session receives, in arrival order. */
-function receivedCatalogs(editor: MakeCodeSession): string[] {
-  const received: string[] = [];
-  editor.onCatalog((catalog) => {
-    received.push(catalog);
-  });
-  return received;
-}
-
-/** Settle every pending microtask and macrotask of the wire. */
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/** The socket the bridge client opens after `count` sockets, once it exists. */
-async function nextSocket(count: number): Promise<MockWebSocket> {
-  const deadline = Date.now() + WAIT_MS;
-  while (MockWebSocket.instances.length <= count) {
-    assert.ok(Date.now() < deadline, "the bridge client opened no new connection");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return MockWebSocket.instances[count];
-}
-
-describe("simx bridge", () => {
-  const realWebSocket = globalThis.WebSocket;
+describe("simx bridge on the relay", () => {
+  const originalWebSocket = globalThis.WebSocket;
+  let relay: TestRelay;
   let frame: FakeFrame;
-  let bridge: SimxBridge;
+  let bridge: SimxBridge | undefined;
+
+  /** The sockets the simx role path has been connected on, in creation order. */
+  function simxSockets(): RecordingWebSocket[] {
+    return RecordingWebSocket.created.filter((socket) => socket.url.endsWith(`/${SIMX}`));
+  }
+
+  /**
+   * Starts the simx bridge against the relay, the program posting `catalog`
+   * before the bridge's connection opens when one is given, and resolves once
+   * the relay has answered the bridge's hello, with its connection and the
+   * join code it was answered with.
+   */
+  async function startSimx(catalog?: string): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address });
+    if (catalog !== undefined) frame.programPosts(catalog);
+    const socket = simxSockets().at(-1);
+    assert.ok(socket);
+    const joinCode = assertJoinCode(await socket.firstReceived("session:joinCode"));
+    return { socket, joinCode };
+  }
+
+  before(async () => {
+    (globalThis as Record<string, unknown>).WebSocket = RecordingWebSocket;
+    relay = await startTestRelay();
+  });
 
   beforeEach(() => {
-    MockWebSocket.instances = [];
-    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    RecordingWebSocket.created.length = 0;
     frame = new FakeFrame();
-    bridge = startSimxBridge({ frame, bridgeUrl: "localhost:6464" });
   });
 
-  afterEach(() => {
-    bridge.dispose();
-    globalThis.WebSocket = realWebSocket;
+  afterEach(async () => {
+    bridge?.dispose();
+    bridge = undefined;
+    await relay.closePeers();
   });
 
-  it("connects at the makecode simx role path and asks the program for its catalog", () => {
-    assert.equal(MockWebSocket.instances.length, 1);
-    assert.equal(MockWebSocket.instances[0].url, "ws://localhost:6464/makecode/simx");
+  after(async () => {
+    await relay.close();
+    (globalThis as Record<string, unknown>).WebSocket = originalWebSocket;
+  });
+
+  /**
+   * Connects a scripted editor presenting `joinCode`, runs its handshake with
+   * the simx on the welcome, and resolves once the editor has received
+   * `catalog`, with the editor and its welcome.
+   */
+  async function joinEditor(joinCode: string, catalog: string): Promise<{ editor: ScriptedPeer; welcome: Welcome }> {
+    const editor = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await editor.hello({ joinCode })), joinCode);
+    const welcome = assertWelcome(await editor.nextMessage());
+    await handshake(editor);
+    assert.deepEqual(await editor.nextMessage(), catalogMessage(catalog));
+    return { editor, welcome };
+  }
+
+  it("connects at the makecode simx role path and asks the program for its catalog", async () => {
+    const { socket } = await startSimx();
+
+    assert.equal(socket.url, `ws://${relay.address}/${SIMX}`);
     assert.deepEqual(frame.posted, [{ type: "messagepacket", channel: SIMX_CHANNEL, data: new Uint8Array(0) }]);
   });
 
-  it("publishes each catalog the program posts to the editor byte-verbatim, ignoring other channels", async () => {
-    const editor = await connectEditor(MockWebSocket.instances[0]);
-    const received = receivedCatalogs(editor);
+  it("pairs simx-first: an editor joining by the simx's join code completes the handshake and receives the catalog byte-verbatim", async () => {
+    const { joinCode } = await startSimx(CATALOG_TEXT);
 
+    const editor = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await editor.hello({ joinCode })), joinCode);
+    assertWelcome(await editor.nextMessage());
+    await handshake(editor);
+
+    assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
     frame.programPosts("not a catalog", "other/channel");
-    frame.programPosts(CATALOG_TEXT);
     frame.programPosts("{}");
-    await settle();
-
-    assert.deepEqual(received, [CATALOG_TEXT, "{}"]);
-    editor.dispose();
+    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
   });
 
-  it("publishes a catalog posted before the connection opened once the session is established", async () => {
-    frame.programPosts(CATALOG_TEXT);
+  it("pairs editor-first after a relay restart: the editor re-forms the session under the join code and the reconnecting simx completes the handshake", async () => {
+    const { joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
 
-    const editor = await connectEditor(MockWebSocket.instances[0]);
-    const received = receivedCatalogs(editor);
-    await settle();
+    await relay.restart();
+    await within(editor.closed, "the editor's connection to close");
+    const returned = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await returned.hello({ joinCode })), joinCode);
+    assert.equal(simxSockets().length, 1, "the editor must bind before the simx reconnects");
+    const returnedWelcome = assertWelcome(await returned.nextMessage());
+    await handshake(returned);
 
-    assert.deepEqual(received, [CATALOG_TEXT]);
-    editor.dispose();
+    assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+    assert.equal(simxSockets().length, 2);
+    assert.notEqual(returnedWelcome.sessionId, welcome.sessionId);
+    assert.equal(returnedWelcome.joinCode, joinCode);
   });
 
-  it("opens a new session on each connection and leaves the closed connection's session", async () => {
-    const first = MockWebSocket.instances[0];
-    const firstEditor = await connectEditor(first);
-    const firstReceived = receivedCatalogs(firstEditor);
+  it("opens a fresh session when the editor returns and publishes the latest catalog into it", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+    await editor.close();
+    assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
     frame.programPosts("{}");
-    await settle();
+    const returned = await relay.connect(EDITOR);
+    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
+    const returnedWelcome = assertWelcome(await returned.nextMessage());
+    await handshake(returned);
 
-    first.drop();
-    frame.programPosts(CATALOG_TEXT);
-    const second = await nextSocket(1);
-    const secondEditor = await connectEditor(second);
-    const secondReceived = receivedCatalogs(secondEditor);
-    await settle();
+    assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
+    assert.equal(returnedWelcome.sessionId, welcome.sessionId);
+    assert.equal(simxSockets().length, 1);
+  });
 
-    assert.deepEqual(firstReceived, ["{}"]);
-    assert.deepEqual(first.sentTypes(), ["session:hello", "makecode:hello", "makecode:catalog"]);
-    assert.deepEqual(secondReceived, [CATALOG_TEXT]);
-    assert.deepEqual(second.sentTypes(), ["session:hello", "makecode:hello", "makecode:catalog"]);
-    firstEditor.dispose();
-    secondEditor.dispose();
+  it("publishes once, into the newest session only, when the editor drops before answering the simx's hello and returns", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const editor = await relay.connect(EDITOR);
+    assertJoinCode(await editor.hello({ joinCode }));
+    const welcome = assertWelcome(await editor.nextMessage());
+    assert.deepEqual(await editor.nextMessage(), MAKECODE_HELLO);
+
+    await editor.close();
+    assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
+    const returned = await relay.connect(EDITOR);
+    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
+    assertWelcome(await returned.nextMessage());
+    await handshake(returned);
+
+    assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+    await returned.ping();
+    returned.assertNothingReceived();
+  });
+
+  it("opens a fresh session on a new connection when the simx's connection drops and it reconnects", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+    socket.close();
+    assertCounterpartAway(await editor.nextMessage());
+    frame.programPosts("{}");
+    const rewelcome = assertWelcome(await editor.nextMessage());
+    await handshake(editor);
+
+    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+    assert.deepEqual(rewelcome, welcome);
+    assert.equal(simxSockets().length, 2);
+  });
+
+  it("holds without reconnecting when a new claimant of the simx role replaces it, while the editor heals by join code", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+    const claimant = await relay.connect(SIMX);
+    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    assertSessionError(await socket.firstReceived("session:error"), BridgeSessionErrorCode.SESSION_REPLACED);
+    await within(socket.closed, "the replaced connection to close");
+    assert.doesNotThrow(() => {
+      frame.programPosts("{}");
+    });
+    await within(editor.closed, "the editor's connection to close");
+    editor.assertNothingReceived();
+    const healed = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await healed.hello({ joinCode })), joinCode);
+    const healedWelcome = assertWelcome(await healed.nextMessage());
+    assert.equal(assertWelcome(await claimant.nextMessage()).sessionId, healedWelcome.sessionId);
+    const socketsAfterReplacement = simxSockets().length;
+    // Waits out the bridge client's first reconnect attempt.
+    await delay(1200);
+
+    assert.notEqual(healedWelcome.sessionId, welcome.sessionId);
+    assert.equal(simxSockets().length, socketsAfterReplacement);
+  });
+
+  it("stays open for a correct editor after the relay rejects an editor declaring a newer bridge protocol", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+
+    const newer = await relay.connect(EDITOR);
+    assertVersionRejected(await newer.hello({ joinCode, protocolVersion: PROTOCOL_VERSION + 1 }));
+    await within(newer.closed, "the rejected connection to close");
+    assert.ok(!socket.traffic.includes("in:session:welcome"));
+
+    await joinEditor(joinCode, CATALOG_TEXT);
+  });
+
+  describe("before pairing", () => {
+    it("drops a makecode hello sent by an unpaired member: the editor that pairs afterwards never receives it", async () => {
+      const early = await relay.connect(SIMX);
+      const joinCode = assertJoinCode(await early.hello());
+      early.send(MAKECODE_HELLO);
+      await early.ping();
+
+      const editor = await relay.connect(EDITOR);
+      assertJoinCode(await editor.hello({ joinCode }));
+      assertWelcome(await editor.nextMessage());
+      assertWelcome(await early.nextMessage());
+      await editor.ping();
+
+      editor.assertNothingReceived();
+    });
+
+    it("sends nothing but its session hello until it is welcomed", async () => {
+      const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+      const editor = await relay.connect(EDITOR);
+      assertJoinCode(await editor.hello({ joinCode }));
+      assertWelcome(await editor.nextMessage());
+      await socket.firstReceived("session:welcome");
+
+      assert.deepEqual(socket.traffic.slice(0, socket.traffic.indexOf("in:session:welcome")), [
+        "out:session:hello",
+        "in:session:joinCode",
+      ]);
+      await handshake(editor);
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+    });
   });
 });

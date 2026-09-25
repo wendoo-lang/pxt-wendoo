@@ -6,6 +6,12 @@
   "type": "module",
   "author": "wendoo-lang",
   "license": "MIT",
+  "exports": {
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
   "wendooBuild": {
     "script": "build:prod",
     "outputs": [

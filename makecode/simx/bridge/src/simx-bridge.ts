@@ -25,16 +25,16 @@ export interface SimxBridge {
 }
 
 /**
- * The makecode session carried by one connection to the bridge service. It
- * opens as soon as the connection does and publishes the latest catalog once
- * the peer's hello establishes it.
+ * The makecode session with the counterpart the bridge service has just
+ * welcomed this connection to. It sends this side's hello at once and
+ * publishes the latest catalog once the counterpart's hello establishes it.
  */
-class ConnectionSession {
+class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
   private _session: MakeCodeSession | undefined;
 
   /**
-   * @param relay - The bridge connection, just connected.
+   * @param relay - The bridge connection, just welcomed.
    * @param latestCatalog - The latest catalog the program posted, if any.
    */
   constructor(relay: ProjectSession<WsMessage, WsMessage>, latestCatalog: () => string | undefined) {
@@ -62,7 +62,7 @@ class ConnectionSession {
         }
       },
       () => {
-        // The peer declared a newer protocol version; this connection carries no session.
+        // The counterpart declared a newer protocol version; no session until the next welcome.
       }
     );
   }
@@ -85,26 +85,33 @@ class ConnectionSession {
 /**
  * Join the MakeCode program running beside this simulator extension to the
  * Wendoo editor. Connects to the bridge service at the makecode session's
- * simx role path and asks the program for its catalog. Every connection the
- * bridge client opens -- the first, and each reconnect after the bridge closed
- * the previous one -- carries a new makecode session; the session of a closed
- * connection is disposed. The latest catalog the program posted is published
- * into each session once it is established, and every later catalog into the
- * current one.
+ * simx role path and asks the program for its catalog. Every welcome the
+ * bridge service sends -- when the editor first pairs, and again whenever
+ * either side reconnects -- opens a new makecode session with the counterpart
+ * and disposes the previous one; a connection that closes disposes its
+ * session. The latest catalog the program posted is published into each
+ * session once it is established, and every later catalog into the current
+ * one. When the bridge service reports that another connection has replaced
+ * this one, the bridge stays disconnected.
  */
 export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const channel = connectSimChannel(options.frame);
   const relay = new ProjectSession<WsMessage, WsMessage>(MAKECODE_SESSION_ROLE_PATHS.simx, options.bridgeUrl, {});
   let catalog: string | undefined;
-  let connection: ConnectionSession | undefined;
+  let counterpart: CounterpartSession | undefined;
 
+  const unsubscribeWelcome = relay.on("session:welcome", () => {
+    counterpart?.close();
+    counterpart = new CounterpartSession(relay, () => catalog);
+  });
   const unsubscribeStatus = relay.addEventListener("status", (status) => {
-    connection?.close();
-    connection = status === "connected" ? new ConnectionSession(relay, () => catalog) : undefined;
+    if (status === "connected") return;
+    counterpart?.close();
+    counterpart = undefined;
   });
   const unsubscribeCatalog = channel.onCatalog((posted) => {
     catalog = posted;
-    connection?.publish(posted);
+    counterpart?.publish(posted);
   });
 
   relay.start();
@@ -112,10 +119,11 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
 
   return {
     dispose() {
+      unsubscribeWelcome();
       unsubscribeStatus();
       unsubscribeCatalog();
-      connection?.close();
-      connection = undefined;
+      counterpart?.close();
+      counterpart = undefined;
       relay.stop();
       channel.dispose();
     },
