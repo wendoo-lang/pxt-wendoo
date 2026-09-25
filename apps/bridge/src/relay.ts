@@ -10,9 +10,9 @@ import {
   type SessionHelloPayload,
   sessionHelloPayloadSchema,
 } from "@wendoo/bridge-protocol";
+import { generateTriplet } from "@wendoo/join-codes";
 import type { Logger } from "pino";
 import { BindingTokens } from "./binding-token.js";
-import { generateJoinCode } from "./join-code.js";
 
 /**
  * Namespaces of the message types the relay handles itself, except a reply
@@ -396,7 +396,7 @@ export class Relay {
 
   private unusedJoinCode(kind: string): string {
     for (;;) {
-      const joinCode = generateJoinCode();
+      const joinCode = generateTriplet();
       if (this.find(kind, (pairing) => pairing.joinCode === joinCode) === undefined) return joinCode;
     }
   }

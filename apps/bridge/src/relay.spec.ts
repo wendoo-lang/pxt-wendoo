@@ -11,6 +11,9 @@ import { type RelayServer, startRelayServer } from "./server.js";
 /** How long a spec waits for an expected frame or close before failing. */
 const WAIT_MS = 2000;
 
+/** The shape of a join code the relay generates: three words of lowercase letters joined by `-`. */
+const JOIN_CODE_SHAPE = /^[a-z]+-[a-z]+-[a-z]+$/;
+
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
  * backslashes, escape sequences written as text, control characters, and
@@ -169,7 +172,7 @@ interface Welcome {
 function assertJoinCode(message: WsMessage): string {
   assert.equal(message.type, "session:joinCode");
   const { joinCode } = message.payload as { joinCode: string };
-  assert.equal(typeof joinCode, "string");
+  assert.match(joinCode, JOIN_CODE_SHAPE);
   return joinCode;
 }
 
@@ -180,7 +183,7 @@ function assertWelcome(message: WsMessage): Welcome {
   const payload = message.payload as Welcome;
   assert.equal(payload.protocolVersion, PROTOCOL_VERSION);
   assert.equal(typeof payload.sessionId, "string");
-  assert.equal(typeof payload.joinCode, "string");
+  assert.match(payload.joinCode, JOIN_CODE_SHAPE);
   assert.equal(typeof payload.bindingToken, "string");
   return payload;
 }
