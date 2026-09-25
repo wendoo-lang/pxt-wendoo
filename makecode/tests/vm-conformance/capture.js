@@ -31,13 +31,19 @@ const RUNNER = path.resolve(
  * @param binaryPath Built `binary.js` of a pxt project.
  * @param logPath File the captured bytes are written to.
  * @param options `expect` names the case the runner's verdict looks for;
- *   `timeoutSec` bounds the run.
+ *   `timeoutSec` bounds the run; `simxLogPath` names a file every message the
+ *   program posts on a simulator message channel is written to, one JSON line
+ *   `{"channel", "data"}` each with the bytes in base64; `simxRequest` names a
+ *   channel one empty message is delivered to the program on once its
+ *   top-level code has finished, the run then ending at its answer.
  * @returns `{ code, stdout, stderr }` of the capture process.
  */
 function capture(binaryPath, logPath, options) {
   const args = [RUNNER, binaryPath, logPath];
   if (options?.expect) args.push("--expect", options.expect);
   if (options?.timeoutSec) args.push("--timeout", String(options.timeoutSec));
+  if (options?.simxLogPath) args.push("--simx-log", options.simxLogPath);
+  if (options?.simxRequest) args.push("--simx-request", options.simxRequest);
   const run = spawnSync(process.execPath, args, { encoding: "utf8" });
   return { code: run.status, stdout: run.stdout || "", stderr: run.stderr || "" };
 }

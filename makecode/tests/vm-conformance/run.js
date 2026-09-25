@@ -11,11 +11,16 @@
  * not fail the run. A case that is not skipped is held to the golden in full:
  * hitting the extension's unimplemented-opcode fault still fails it, and so
  * does a replay that reports a registration diagnostic -- the corpus
- * vocabulary registers cleanly.
+ * vocabulary registers cleanly -- or that does not post exactly one message,
+ * its catalog, on the conformance simulator message channel.
  *
- * Each target also builds and captures the catalog project twice, holding the
- * serialized conformance catalog to its expected entries and byte-identical
- * across the captures. A `--case` filter skips the catalog capture.
+ * Each target also builds and captures the catalog project twice. Each
+ * capture delivers one request on the conformance channel once the program's
+ * top-level code has finished, and must post exactly two messages on it: the
+ * catalog published after the drain, and the catalog answering the request.
+ * Both must be the bytes of the `CATALOG` line the run prints; that payload is
+ * held to its expected entries and must be byte-identical across the
+ * captures. A `--case` filter skips the catalog capture.
  *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
@@ -36,6 +41,9 @@ const DIAG_PREFIX = "DIAG ";
 
 /** Diagnostic prefix a replay reports a registration problem under. */
 const REGISTRATION_DIAG_PREFIX = "registration ";
+
+/** Simulator message channel the conformance driver publishes the catalog on (`CONFORMANCE_SIMX_CHANNEL`). */
+const CONFORMANCE_SIMX_CHANNEL = "wendoo-vm-conformance";
 
 /** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
 const UNSUPPORTED_OPCODES_PATH = path.join(__dirname, "unsupported-opcodes.json");
@@ -222,11 +230,28 @@ function runCatalogCheck(targetDir, targetName, options) {
   const payloads = [];
   for (let r = 1; r <= CATALOG_RUNS; r++) {
     const logPath = path.join(project.dir, "built", `capture-run${r}.log`);
-    const captured = capture.capture(binary, logPath, { expect: project.id, timeoutSec: 120 });
+    const simxLogPath = path.join(project.dir, "built", `capture-run${r}.simx.log`);
+    const captured = capture.capture(binary, logPath, {
+      expect: project.id,
+      timeoutSec: 120,
+      simxLogPath,
+      simxRequest: CONFORMANCE_SIMX_CHANNEL,
+    });
     const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
     const payload = catalog.payloadOf(log);
     payloads.push(payload);
-    record.runs.push({ run: r, exit: captured.code, sha256: payload === null ? null : sha256(payload) });
+    const posted = conformanceChannelMessages(simxLogPath);
+    record.runs.push({
+      run: r,
+      exit: captured.code,
+      sha256: payload === null ? null : sha256(payload),
+      channelSha256: posted.map(sha256),
+    });
+    if (posted.length !== 2) {
+      record.problems.push(`capture ${r} posted ${posted.length} messages on the conformance channel, expected 2`);
+    } else if (posted.some((text) => text !== payload)) {
+      record.problems.push(`capture ${r} posted a channel message other than its CATALOG payload`);
+    }
   }
 
   if (payloads.some((payload) => payload === null)) {
@@ -239,11 +264,27 @@ function runCatalogCheck(targetDir, targetName, options) {
   record.verdict = record.problems.length ? "STOPPED" : "PASS";
 
   const shas = record.runs.map((run) => (run.sha256 || "<no payload>").slice(0, 16)).join(" ");
-  process.stdout.write(`${targetName}/${record.case}: ${record.verdict}  sha256[0:16]=${shas}\n`);
+  const channelShas = record.runs.map((run) => run.channelSha256.map((sha) => sha.slice(0, 16)).join("+")).join(" ");
+  process.stdout.write(
+    `${targetName}/${record.case}: ${record.verdict}  sha256[0:16]=${shas}  channel sha256[0:16]=${channelShas}\n`
+  );
   for (const problem of record.problems) {
     process.stdout.write(`    problem: ${problem}\n`);
   }
   return record;
+}
+
+/**
+ * The texts of the messages a capture posted on the conformance channel, in
+ * posting order, read from its simulator message log; empty when the log is
+ * absent.
+ */
+function conformanceChannelMessages(simxLogPath) {
+  const simxLog = fs.existsSync(simxLogPath) ? fs.readFileSync(simxLogPath, "utf8") : "";
+  return catalog
+    .channelMessages(simxLog)
+    .filter((message) => message.channel === CONFORMANCE_SIMX_CHANNEL)
+    .map((message) => message.text);
 }
 
 /** The first line where `actual` and `expected` differ, or null when they match. */
@@ -280,7 +321,15 @@ function main() {
     for (const entry of wanted) {
       const projectDir = byId.get(entry.id);
       if (!projectDir) continue;
-      const record = { target: targetName, case: entry.id, runs: [], verdict: "", diagnostics: [], unsupported: [] };
+      const record = {
+        target: targetName,
+        case: entry.id,
+        runs: [],
+        verdict: "",
+        diagnostics: [],
+        unsupported: [],
+        channelMessages: [],
+      };
       results.push(record);
 
       record.unsupported = unsupportedOpcodesOfCase(entry.id, unsupported);
@@ -309,8 +358,10 @@ function main() {
 
       for (let r = 1; r <= options.runs; r++) {
         const logPath = path.join(projectDir, "built", `capture-run${r}.log`);
-        const captured = capture.capture(binary, logPath, { expect: entry.id, timeoutSec: 120 });
+        const simxLogPath = path.join(projectDir, "built", `capture-run${r}.simx.log`);
+        const captured = capture.capture(binary, logPath, { expect: entry.id, timeoutSec: 120, simxLogPath });
         const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+        record.channelMessages.push(conformanceChannelMessages(simxLogPath).length);
         const body = traceBody(log, entry.id);
         const run = {
           run: r,
@@ -327,7 +378,8 @@ function main() {
       }
 
       const registrationDiagnosed = record.diagnostics.some((diag) => diag.startsWith(REGISTRATION_DIAG_PREFIX));
-      record.verdict = allMatch && !registrationDiagnosed ? "PASS" : "STOPPED";
+      const catalogPublished = record.channelMessages.every((count) => count === 1);
+      record.verdict = allMatch && !registrationDiagnosed && catalogPublished ? "PASS" : "STOPPED";
       if (!allMatch && firstBody !== null) {
         record.divergence = firstDivergence(firstBody, golden);
       }
@@ -355,6 +407,11 @@ function reportCase(record) {
   process.stdout.write(`${record.target}/${record.case}: ${record.verdict}  sha256[0:16]=${shas}\n`);
   for (const diag of record.diagnostics) {
     process.stdout.write(`    diag: ${diag}\n`);
+  }
+  if (record.channelMessages.some((count) => count !== 1)) {
+    process.stdout.write(
+      `    conformance channel messages per capture: ${record.channelMessages.join(" ")}, expected 1 each\n`
+    );
   }
   if (record.divergence) {
     process.stdout.write(

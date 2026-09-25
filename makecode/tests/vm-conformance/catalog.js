@@ -1,7 +1,8 @@
 /*
  * Reads the serialized catalog out of a capture and compares payloads: the
- * `CATALOG <payload>` line a run prints, and a canonical form under which two
- * parsed payloads can be compared field for field.
+ * `CATALOG <payload>` line a run prints, the messages it posts on a simulator
+ * message channel, and a canonical form under which two parsed payloads can be
+ * compared field for field.
  */
 
 /** Line prefix a run prints its serialized catalog under. */
@@ -17,6 +18,24 @@ function payloadOf(log) {
   const lines = log.split("\n").filter((line) => line.startsWith(CATALOG_PREFIX));
   if (lines.length !== 1) return null;
   return lines[0].slice(CATALOG_PREFIX.length);
+}
+
+/**
+ * The messages a run posted on simulator message channels, in posting order,
+ * read from the capture's simulator message log: one `{channel, data}` JSON
+ * line per message, `data` the message bytes in base64.
+ *
+ * @param simxLog The text of the simulator message log.
+ * @returns One `{ channel, text }` per message, `text` its bytes read as UTF-8.
+ */
+function channelMessages(simxLog) {
+  return simxLog
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const message = JSON.parse(line);
+      return { channel: message.channel, text: Buffer.from(message.data, "base64").toString("utf8") };
+    });
 }
 
 /**
@@ -43,4 +62,4 @@ function sameJson(actual, expected) {
   return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
 }
 
-module.exports = { CATALOG_PREFIX, payloadOf, canonical, sameJson };
+module.exports = { CATALOG_PREFIX, payloadOf, channelMessages, canonical, sameJson };

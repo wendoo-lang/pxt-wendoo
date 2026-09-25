@@ -338,4 +338,25 @@ namespace wendoo {
     writeCatalogEntries(catalog);
     return catalog.render();
   }
+
+  /**
+   * Post the catalog payload of the current registration set, as its UTF-8
+   * bytes, on the simulator message channel `channel`, and from then on
+   * answer every message the channel delivers by posting a freshly
+   * serialized catalog the same way. Call it once, right after the
+   * registration drain. In the simulator only; on hardware it does nothing.
+   *
+   * @param icons - Icon encoder of the host target.
+   * @param channel - Simulator message channel of the simulator extension that receives the catalog.
+   */
+  //% shim=TD_NOOP
+  export function publishCatalog(icons: CatalogIconEncoder, channel: string): void {
+    const post = () => {
+      control.simmessages.send(channel, Buffer.fromUTF8(serializeCatalog(icons)), false);
+    };
+    post();
+    control.simmessages.onReceived(channel, (request: Buffer) => {
+      post();
+    });
+  }
 }

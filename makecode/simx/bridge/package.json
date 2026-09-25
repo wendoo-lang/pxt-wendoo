@@ -1,0 +1,66 @@
+{
+  "name": "@wendoo/makecode-simx-bridge",
+  "description": "MakeCode simulator extension joining a running MakeCode project to the Wendoo editor through the bridge service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "author": "wendoo-lang",
+  "license": "MIT",
+  "wendooBuild": {
+    "script": "build:prod",
+    "outputs": [
+      "dist"
+    ],
+    "postProcessed": true
+  },
+  "scripts": {
+    "predev": "npm run build:deps",
+    "dev": "vite --config vite/config.dev.mjs --force",
+    "prebuild": "npm run build:deps",
+    "build": "vite build --config vite/config.prod.mjs",
+    "build:prod": "wireit",
+    "build:deps": "node ../../../external/wendoo-lang/scripts/build-packages.js .",
+    "check:only": "biome check ./src",
+    "check": "biome check ./src --write",
+    "pretypecheck": "npm run build:deps",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json",
+    "pretest": "npm run build:deps",
+    "test": "tsx --tsconfig tsconfig.spec.json --test $(find src -name '*.spec.ts')"
+  },
+  "wireit": {
+    "build:prod": {
+      "command": "vite build --config vite/config.prod.mjs",
+      "dependencies": [
+        "../../../packages/protocol:build:prod",
+        "../../../external/wendoo-lang/packages/bridge-client:build:prod"
+      ],
+      "files": [
+        "src/**",
+        "!src/**/*.spec.ts",
+        "index.html",
+        "vite/config.prod.mjs",
+        "tsconfig.json",
+        "tsconfig.app.json",
+        "package-lock.json"
+      ],
+      "output": [
+        "dist/**"
+      ],
+      "clean": true,
+      "packageLocks": []
+    }
+  },
+  "dependencies": {
+    "@wendoo/bridge-client": "file:../../../external/wendoo-lang/packages/bridge-client",
+    "@wendoo/bridge-protocol": "file:../../../external/wendoo-lang/packages/bridge-protocol",
+    "@wendoo/makecode-session": "file:../../../packages/protocol"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.15",
+    "@types/node": "^25.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vite": "^6.3.1",
+    "wireit": "^0.14.13"
+  }
+}

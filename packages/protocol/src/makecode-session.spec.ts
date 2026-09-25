@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { PeerSessionError, PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
-import { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./makecode-session.js";
+import {
+  connectMakeCodeSession,
+  MAKECODE_SESSION_PROTOCOL_VERSION,
+  MAKECODE_SESSION_ROLE_PATHS,
+} from "./makecode-session.js";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
@@ -140,6 +144,32 @@ describe("makecode session catalog", () => {
     });
 
     assert.deepEqual(received, [CATALOG_TEXT]);
+    session.dispose();
+  });
+});
+
+describe("makecode session role paths", () => {
+  it("names the editor and simx roles under the kind", () => {
+    assert.deepEqual(MAKECODE_SESSION_ROLE_PATHS, { editor: "makecode/editor", simx: "makecode/simx" });
+  });
+
+  it("puts each role under the kind whose hello the session sends", async () => {
+    const sent: MakeCodeSessionMessage[] = [];
+    const peer = scriptedPeer([{ type: "makecode:hello", payload: { protocolVersion: 1 } }]);
+    const port: MakeCodeSessionPort = {
+      postMessage(message) {
+        sent.push(message);
+        peer.postMessage(message);
+      },
+      onMessage: (listener) => peer.onMessage(listener),
+    };
+
+    const session = await connectMakeCodeSession({ port });
+
+    const helloKind = sent[0].type.split(":", 1)[0];
+    for (const path of Object.values(MAKECODE_SESSION_ROLE_PATHS)) {
+      assert.equal(path.split("/", 1)[0], helloKind);
+    }
     session.dispose();
   });
 });

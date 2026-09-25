@@ -83,7 +83,8 @@
  * Every registration above is made by name from this file's top-level code,
  * through the pack surface, and the ids the corpus pins are recorded in the
  * profile's own name-to-id mapping; replaying a case drains that mapping into
- * the registries before it decodes the program. Each registration also
+ * the registries before it decodes the program, then publishes the profile's
+ * catalog on {@link CONFORMANCE_SIMX_CHANNEL}. Each registration also
  * carries its declared shape -- kind, argument slots, returns, label -- and
  * `runConformanceCatalog` serializes the profile's catalog from it for the
  * harness to assert.
@@ -1074,6 +1075,9 @@ namespace wendoo {
   /** Line that closes the trace body of a replayed case. */
   export const CONFORMANCE_TRACE_END = "SIMCAP TRACE-END";
 
+  /** Simulator message channel every replay publishes the profile's catalog on. */
+  export const CONFORMANCE_SIMX_CHANNEL = "wendoo-vm-conformance";
+
   /** The registries of one replay: host functions, host actions, and struct types. */
   class ConformanceRegistries {
     /** Host functions, carrying the core set and the profile's operator overloads. */
@@ -1091,8 +1095,9 @@ namespace wendoo {
   }
 
   /**
-   * Construct one replay's registries, seed them with the core sets, and
-   * drain the profile's registrations into them under its pinned ids.
+   * Construct one replay's registries, seed them with the core sets, drain
+   * the profile's registrations into them under its pinned ids, and publish
+   * the profile's catalog on {@link CONFORMANCE_SIMX_CHANNEL}.
    */
   function drainConformanceRegistrations(): ConformanceRegistries {
     const functions = new HostFunctionRegistry();
@@ -1101,6 +1106,7 @@ namespace wendoo {
     registerCoreHostActions(actions);
     const types = new StructTypeRegistry();
     applyPendingRegistrations(conformanceIds, functions, actions, types);
+    publishCatalog(new CatalogIconEncoder(), CONFORMANCE_SIMX_CHANNEL);
     return new ConformanceRegistries(functions, actions, types);
   }
 
