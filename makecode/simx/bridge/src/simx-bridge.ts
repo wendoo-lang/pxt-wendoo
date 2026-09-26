@@ -1,8 +1,8 @@
 import { ProjectSession } from "@wendoo/bridge-client";
 import {
-  type AppSessionJoinCodeMessage,
-  type AppSessionWelcomeMessage,
   BridgeSessionErrorCode,
+  type SessionJoinCodeMessage,
+  type SessionWelcomeMessage,
   type WsMessage,
 } from "@wendoo/bridge-protocol";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "@wendoo/makecode-session";
@@ -11,7 +11,7 @@ import type { BindingTokenStore } from "./binding-token-store.js";
 import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 
 /** Messages the bridge service sends that the simulator extension reads. */
-type RelayMessage = AppSessionWelcomeMessage | AppSessionJoinCodeMessage;
+type RelayMessage = SessionWelcomeMessage | SessionJoinCodeMessage;
 
 /** Where the simulator extension writes its log lines for developers. */
 export interface SimxLog {

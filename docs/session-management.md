@@ -135,7 +135,7 @@ is vacant, and the relay sends it to whichever side is connected:
   entering that code fills the editor role, and the code leaves
   service at that moment. While both sides are connected, the
   session holds no code, and neither side shows one: the welcome
-  carries the code just spent, and no display renders it.
+  carries no code.
 - When a side drops -- routinely the simx, as MakeCode reallocates
   its frame -- the other side is told its counterpart is away and
   receives a freshly minted code, the only one that joins the
@@ -198,9 +198,11 @@ it keys on a session id.
   connection is down or stopped, or the counterpart is away).
 - ENTRY reports the progress of the code a person entered while a
   connection presents it and no welcome has come: `submitted` until
-  the relay answers the hello, then `accepted` -- the code joined the
-  editor role of a session whose other side is not connected yet.
-  The welcome spends the code and clears the entry; a refusal clears
+  the relay answers the hello. When the MakeCode side is connected,
+  the welcome itself is the answer; otherwise the relay answers with
+  the session's code and the entry becomes `accepted` -- the code
+  joined the editor role of a session whose other side is not
+  connected yet. The welcome spends the code and clears the entry; a refusal clears
   it with `JOIN_CODE_UNKNOWN`. There is no timeout: a refusal is loud,
   and each wait is named on screen.
 - The state also carries the code for the session's vacant role

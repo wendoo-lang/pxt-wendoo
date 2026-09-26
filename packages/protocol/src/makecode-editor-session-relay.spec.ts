@@ -315,8 +315,10 @@ describe("makecode editor session on the relay", () => {
     assert.deepEqual(away, { status: "disconnected", entry: undefined, joinCode: vacancyCode, errorCode: undefined });
     const returned = await relay.connect(SIMX);
     const received = nextCatalog(session);
-    assert.equal(assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken })), vacancyCode);
-    assert.equal(assertWelcome(await returned.nextMessage()).sessionId, welcome.sessionId);
+    assert.equal(
+      assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken })).sessionId,
+      welcome.sessionId
+    );
     await simxHandshake(returned, "[]");
 
     assert.equal(await received, "[]");
@@ -478,7 +480,7 @@ describe("makecode editor session on the relay", () => {
     const { simx, session, welcome, saved } = await formSession("{}");
 
     const newer = await relay.connect(EDITOR);
-    assertJoinCode(await newer.hello({ bindingToken: welcome.bindingToken }));
+    assert.equal(assertWelcome(await newer.hello({ bindingToken: welcome.bindingToken })).sessionId, welcome.sessionId);
     await until(
       session,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
@@ -491,7 +493,6 @@ describe("makecode editor session on the relay", () => {
       errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
     });
     assert.equal(assertWelcome(await simx.nextMessage()).sessionId, welcome.sessionId);
-    assert.equal(assertWelcome(await newer.nextMessage()).sessionId, welcome.sessionId);
     const socketsAfterSupersession = editorSockets().length;
     // Waits out the bridge client's first reconnect attempt.
     await delay(1200);
@@ -529,7 +530,7 @@ describe("makecode editor session on the relay", () => {
     assert.equal(await received, "{}");
 
     const newer = await relay.connect(EDITOR);
-    assertJoinCode(await newer.hello({ bindingToken: welcome.bindingToken }));
+    assertWelcome(await newer.hello({ bindingToken: welcome.bindingToken }));
     await until(
       session,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
@@ -592,10 +593,9 @@ describe("makecode editor session on the relay", () => {
       sessions.push(session);
       const received = nextCatalog(session);
       session.start();
-      const welcome = assertWelcome(await simx.nextMessage());
+      assertWelcome(await simx.nextMessage());
       await simxHandshake(simx, "{}");
       assert.equal(await received, "{}");
-      assert.equal(welcome.joinCode, rotated);
       assert.deepEqual(session.state, {
         status: "connected",
         entry: undefined,

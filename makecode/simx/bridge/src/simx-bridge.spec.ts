@@ -260,8 +260,7 @@ describe("simx bridge on the relay", () => {
    */
   async function joinEditor(joinCode: string, catalog: string): Promise<{ editor: ScriptedPeer; welcome: Welcome }> {
     const editor = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await editor.hello({ joinCode })), joinCode);
-    const welcome = assertWelcome(await editor.nextMessage());
+    const welcome = assertWelcome(await editor.hello({ joinCode }));
     await handshake(editor);
     assert.deepEqual(await editor.nextMessage(), catalogMessage(catalog));
     return { editor, welcome };
@@ -278,8 +277,7 @@ describe("simx bridge on the relay", () => {
     const { joinCode } = await startSimx(CATALOG_TEXT);
 
     const editor = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await editor.hello({ joinCode })), joinCode);
-    assertWelcome(await editor.nextMessage());
+    assertWelcome(await editor.hello({ joinCode }));
     await handshake(editor);
 
     assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
@@ -303,15 +301,13 @@ describe("simx bridge on the relay", () => {
     assert.equal(simxSockets().length, 2);
     const renewed = assertJoinCode(await simxSockets()[1].firstReceived("session:joinCode"));
     const returned = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken })), renewed);
-    const rewelcome = assertWelcome(await returned.nextMessage());
+    const rewelcome = assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
     await handshake(returned);
 
     assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
     assert.notEqual(renewed, joinCode);
     assert.equal(bridge?.joinCode, undefined);
     assert.ok(log.infos.some((line) => line.includes(renewed)));
-    assert.equal(rewelcome.joinCode, renewed);
     assert.notEqual(rewelcome.sessionId, welcome.sessionId);
     assert.equal(tokens.load(), welcome.bindingToken);
   });
@@ -326,8 +322,7 @@ describe("simx bridge on the relay", () => {
     assert.equal(bridge?.counterpartAway, true);
     frame.programPosts("{}");
     const returned = await relay.connect(EDITOR);
-    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
-    const returnedWelcome = assertWelcome(await returned.nextMessage());
+    const returnedWelcome = assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
     await handshake(returned);
 
     assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
@@ -336,7 +331,7 @@ describe("simx bridge on the relay", () => {
     assert.equal(bridge?.counterpartAway, false);
   });
 
-  it("rejoins the session the editor holds by its saved binding token when its frame reloads", async () => {
+  it("rejoins the session the editor holds by its saved binding token when its frame reloads, logging no join code", async () => {
     const { joinCode } = await startSimx(CATALOG_TEXT);
     const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
     assert.equal(tokens.load(), welcome.bindingToken);
@@ -354,6 +349,7 @@ describe("simx bridge on the relay", () => {
     assert.equal(rewelcome.sessionId, welcome.sessionId);
     assert.equal(bridge.joinCode, undefined);
     assert.notEqual(vacancyCode, joinCode);
+    assert.ok(!log.infos.some((line) => line.includes(vacancyCode)));
     assert.equal(simxSockets().length, 2);
   });
 
@@ -368,8 +364,7 @@ describe("simx bridge on the relay", () => {
     );
     assert.equal(bridge?.joinCode, vacancyCode);
     const returned = await relay.connect(EDITOR);
-    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
-    assertWelcome(await returned.nextMessage());
+    assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
     await handshake(returned);
     assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
 
@@ -399,8 +394,7 @@ describe("simx bridge on the relay", () => {
     frame.programPosts("{}", SIMX_CHANNEL, SIM_CHANNEL_VERSION + 1);
     frame.programPostsText("{}");
     const editor = await relay.connect(EDITOR);
-    assertJoinCode(await editor.hello({ joinCode }));
-    assertWelcome(await editor.nextMessage());
+    assertWelcome(await editor.hello({ joinCode }));
     await handshake(editor);
     await editor.ping();
 
@@ -415,15 +409,13 @@ describe("simx bridge on the relay", () => {
   it("publishes once, into the newest session only, when the editor drops before answering the simx's hello and returns", async () => {
     const { socket, joinCode } = await startSimx(CATALOG_TEXT);
     const editor = await relay.connect(EDITOR);
-    assertJoinCode(await editor.hello({ joinCode }));
-    const welcome = assertWelcome(await editor.nextMessage());
+    const welcome = assertWelcome(await editor.hello({ joinCode }));
     assert.deepEqual(await editor.nextMessage(), MAKECODE_HELLO);
 
     await editor.close();
     assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
     const returned = await relay.connect(EDITOR);
-    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
-    assertWelcome(await returned.nextMessage());
+    assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
     await handshake(returned);
 
     assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
@@ -431,7 +423,7 @@ describe("simx bridge on the relay", () => {
     returned.assertNothingReceived();
   });
 
-  it("opens a fresh session on a new connection when the simx's connection drops and it reconnects", async () => {
+  it("opens a fresh session on a new connection when the simx's connection drops and it reconnects, logging no join code", async () => {
     const { socket, joinCode } = await startSimx(CATALOG_TEXT);
     const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
 
@@ -443,7 +435,8 @@ describe("simx bridge on the relay", () => {
     await handshake(editor);
 
     assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
-    assert.deepEqual(rewelcome, { ...welcome, joinCode: vacancyCode });
+    assert.deepEqual(rewelcome, welcome);
+    assert.ok(!log.infos.some((line) => line.includes(vacancyCode)));
     assert.equal(simxSockets().length, 2);
   });
 
@@ -519,8 +512,7 @@ describe("simx bridge on the relay", () => {
       await early.ping();
 
       const editor = await relay.connect(EDITOR);
-      assertJoinCode(await editor.hello({ joinCode }));
-      assertWelcome(await editor.nextMessage());
+      assertWelcome(await editor.hello({ joinCode }));
       assertWelcome(await early.nextMessage());
       await editor.ping();
 
@@ -530,8 +522,7 @@ describe("simx bridge on the relay", () => {
     it("sends nothing but its session hello until it is welcomed", async () => {
       const { socket, joinCode } = await startSimx(CATALOG_TEXT);
       const editor = await relay.connect(EDITOR);
-      assertJoinCode(await editor.hello({ joinCode }));
-      assertWelcome(await editor.nextMessage());
+      assertWelcome(await editor.hello({ joinCode }));
       await socket.firstReceived("session:welcome");
 
       assert.deepEqual(socket.traffic.slice(0, socket.traffic.indexOf("in:session:welcome")), [

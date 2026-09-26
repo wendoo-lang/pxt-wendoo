@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
-import { assertJoinCode, delay, startTestRelay, type TestRelay } from "@wendoo/bridge-session/testing";
+import { assertWelcome, delay, startTestRelay, type TestRelay } from "@wendoo/bridge-session/testing";
 import { MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
 import {
   type BindingTokenStore,
@@ -311,7 +311,7 @@ describe("editor session store with the simx module on the relay", () => {
     const { store, joinCode } = await formSession();
 
     const newer = await relay.connect(EDITOR);
-    assertJoinCode(await newer.hello({ bindingToken: editorTokens.get("token") }));
+    assertWelcome(await newer.hello({ bindingToken: editorTokens.get("token") }));
     const held = await until(
       store,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
