@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
+import { BridgeSessionErrorCode, PROTOCOL_VERSION, type WsMessage } from "@wendoo/bridge-protocol";
 import {
   assertCounterpartAway,
   assertJoinCode,
@@ -12,8 +13,7 @@ import {
   type TestRelay,
   type Welcome,
   within,
-} from "@wendoo/bridge/testing";
-import { BridgeSessionErrorCode, PROTOCOL_VERSION, type WsMessage } from "@wendoo/bridge-protocol";
+} from "@wendoo/bridge-session/testing";
 import {
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,

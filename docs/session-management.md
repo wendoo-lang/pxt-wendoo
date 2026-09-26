@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Session Management in pxt-wendoo
@@ -67,11 +67,16 @@ The four-hop path assigns the session parts as follows.
   connects at the simx role path, opens or refreshes its
   connection-scoped handshake on every welcome, and publishes the
   current catalog into the session.
-- `apps/bridge` is the relay: the engine's opaque adapter plus a
-  deployment. It parses only the control envelope, forwards
-  everything else byte-verbatim, and is kind-blind -- it contains no
-  MakeCode knowledge, and adding session kinds or payload types
-  never requires deploying it.
+- `apps/bridge` is the relay service: an adapter plus a deployment
+  identity over the upstream session engine,
+  `@wendoo/bridge-session`, which holds every session rule. The
+  service owns the WebSocket route surface (`/{kind}/{role}`, each
+  connection handed to the engine through its adapter interface),
+  its configuration (listen address, log level, binding secret),
+  and its process lifecycle. Through the engine it parses only the
+  control envelope, forwards everything else byte-verbatim, and is
+  kind-blind -- it contains no MakeCode knowledge, and adding
+  session kinds or payload types never requires deploying it.
 - The VM EXTENSION (`makecode/extensions/vm`) is NOT a session
   party. It participates through the sim-message channel only (the
   extension channel, below). It is MakeCode-target-agnostic and receives its channel
@@ -154,6 +159,42 @@ it keys on a session id.
   never reaches the successor, and the way back is a person entering
   the join code. The version codes hold and name their remedy -- update
   the outdated side, which for the editor means reloading it.
+- FORGET is the escape hatch the in-page rule requires. `forget()`
+  closes the connection, drops the binding token and the join code,
+  clears the token persisted through the caller's `clearBindingToken`
+  hook, and returns the state to `none`. It is how an editor holding
+  a token with no live way back -- a stale token and no code to
+  enter -- returns to code entry in place.
+
+## The editor webapp on this object
+
+`apps/editor` consumes the session object through one store
+(`EditorSessionStore`), and its two views follow the state:
+
+- The CONNECT PAGE shows while the status is `none`: a join-code
+  entry whose submission creates the session with the entered code.
+  With a token persisted from an earlier page load, the app resumes
+  the session on load and skips this page.
+- The SESSION VIEW shows once a session exists: the join code with
+  a copy affordance, live-updating as the relay pushes newer codes,
+  and the catalog panel rendering the latest catalog. The catalog
+  stays rendered while disconnected -- status gates delivery, never
+  what is already shown.
+- The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
+  routinely, so a brief disconnect is the common case. The
+  disconnected indicator renders only once a disconnection outlasts
+  `DISCONNECT_GRACE_MS` (a few seconds), and then offers `forget()`.
+  The session object stays truthful; the grace lives in the
+  editor's view-model only.
+- RECOVERY AFFORDANCES leave no dead ends: `SESSION_REPLACED` shows
+  a held-state notice at once, with a reconnect action (`start()`)
+  and a start-over action (`forget()`, back to the connect page).
+  An overflow recovers automatically and surfaces only as transient
+  status. A version rejection shows its remedy -- reload the editor
+  -- the one ruled exception to in-page recovery.
+- The binding token persists in `localStorage` through a small
+  persistence module (load/save/clear/has) wired into the session's
+  token hooks; the store owns nothing else durable.
 
 ## The extension channel
 
@@ -198,9 +239,27 @@ those decisions.
 
 ## Local development
 
-The full stack runs locally: MakeCode served from a dev target fork
-with the simx registered by localdev URL and loaded via the
-`simxdev` parameter, the relay and editor on their dev servers. The
-harness exercises the extension's emission headlessly on both
-provisioned targets; the composed integration tiers and the live
-run-through are described in the workstream's P2b notes.
+The full stack runs locally, with no configuration surface: a page
+served from a loopback host connects to the local relay at
+`localhost:6465` (the relay's default dev port; the vscode-bridge
+relay's is 6464, so both Wendoo relays can run on one dev machine)
+instead of the deployed service. The rule lives in each composition
+root (`apps/editor/src/main.tsx`, `makecode/simx/bridge/src/main.ts`);
+a deployed build, served from a real host, uses the deployed
+service.
+
+- The relay: `npm run dev` in `apps/bridge` (port 6465). Set
+  `BRIDGE_BINDING_SECRET` to keep sessions healing across relay
+  restarts; without it, every restart ends every session.
+- The simx: `npm run dev` in `makecode/simx/bridge` (port 5173).
+- The editor: `npm run dev` in `apps/editor`.
+- MakeCode: `pxt serve` from a dev target checkout, with the simx
+  registered by localdev URL (an `approvedRepoLib` entry carrying
+  `devUrl`) and loaded via the `simxdev` URL parameter.
+
+The dated all-local run-through in `generated-docs/` records the
+exact invocations. The harness exercises the extension's emission
+headlessly on both provisioned targets, and the composed acceptance
+tier drives the editor's service layer and the simx module against
+the engine's in-process testkit, `@wendoo/bridge-session/testing`
+(`apps/editor/src/services/editor-session-store-relay.spec.ts`).

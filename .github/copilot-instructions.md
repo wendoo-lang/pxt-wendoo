@@ -96,9 +96,10 @@ side.
 ### Bridge Service (`apps/bridge`)
 
 - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects to.
-- The bridge wire protocol is upstream (`packages/bridge-protocol`,
-  `packages/bridge-client`, `packages/bridge-app`). Consume it; do not fork
-  message shapes locally.
+- The bridge wire protocol and the session engine are upstream
+  (`packages/bridge-protocol`, `packages/bridge-client`, `packages/bridge-app`,
+  `packages/bridge-session`). Consume them; do not fork message shapes or
+  session rules locally.
 
 ### VM Contract
 

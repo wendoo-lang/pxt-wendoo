@@ -17,7 +17,7 @@ import {
   type TestRelay,
   type Welcome,
   within,
-} from "./testing/index.js";
+} from "@wendoo/bridge-session/testing";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,

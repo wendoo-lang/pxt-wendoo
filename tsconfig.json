@@ -36,9 +36,9 @@
     { "path": "./packages/protocol/tsconfig.spec.json" },
     { "path": "./apps/bridge/tsconfig.json" },
     { "path": "./apps/bridge/tsconfig.spec.json" },
-    { "path": "./apps/editor/tsconfig.json" },
-    { "path": "./apps/editor/tsconfig.spec.json" },
     { "path": "./makecode/simx/bridge/tsconfig.json" },
-    { "path": "./makecode/simx/bridge/tsconfig.spec.json" }
+    { "path": "./makecode/simx/bridge/tsconfig.spec.json" },
+    { "path": "./apps/editor/tsconfig.json" },
+    { "path": "./apps/editor/tsconfig.spec.json" }
   ]
 }

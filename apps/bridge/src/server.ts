@@ -1,8 +1,8 @@
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
+import { Relay, type RelayConnection } from "@wendoo/bridge-session";
 import { Hono } from "hono";
 import type { Logger } from "pino";
-import { Relay, type RelayConnection } from "./relay.js";
 
 /** Options for {@link startRelayServer}. */
 export interface RelayServerOptions {

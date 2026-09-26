@@ -78,6 +78,12 @@ export interface MakeCodeEditorSessionOptions {
   loadBindingToken?: () => string | undefined;
   /** Stores `token`, the session's newest binding token, for {@link loadBindingToken} to return. */
   saveBindingToken?: (token: string) => void;
+  /**
+   * Removes the token {@link saveBindingToken} stored, so
+   * {@link loadBindingToken} returns none. Called by
+   * {@link MakeCodeEditorSession.forget}.
+   */
+  clearBindingToken?: () => void;
 }
 
 /**
@@ -114,6 +120,13 @@ export interface MakeCodeEditorSession {
   start(): void;
   /** Close the connection. The session, its join code, and its binding token are kept. */
   stop(): void;
+  /**
+   * Close the connection and forget the session: drops the binding token,
+   * the join code, and the error code, clears the token persisted through
+   * the `clearBindingToken` option, and returns the state to `none`. The
+   * way into a session afterwards is a person entering a join code.
+   */
+  forget(): void;
 }
 
 /**
@@ -205,6 +218,7 @@ class EditorSession implements MakeCodeEditorSession {
   private readonly _bridgeUrl: string;
   private readonly _createBridge: (options: AppBridgeOptions) => AppBridge;
   private readonly _saveBindingToken: ((token: string) => void) | undefined;
+  private readonly _clearBindingToken: (() => void) | undefined;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
   /** The join code the state shows. */
@@ -227,6 +241,7 @@ class EditorSession implements MakeCodeEditorSession {
     this._bridgeUrl = options.bridgeUrl ?? DEFAULT_MAKECODE_BRIDGE_URL;
     this._createBridge = createBridge;
     this._saveBindingToken = options.saveBindingToken;
+    this._clearBindingToken = options.clearBindingToken;
     this._joinCode = options.joinCode;
     this._entryCode = options.joinCode;
     this._bindingToken = options.loadBindingToken?.();
@@ -262,6 +277,17 @@ class EditorSession implements MakeCodeEditorSession {
   stop(): void {
     this._running = false;
     this.release();
+    this.update();
+  }
+
+  forget(): void {
+    this._running = false;
+    this.release();
+    this._bindingToken = undefined;
+    this._entryCode = undefined;
+    this._joinCode = undefined;
+    this._errorCode = undefined;
+    this._clearBindingToken?.();
     this.update();
   }
 

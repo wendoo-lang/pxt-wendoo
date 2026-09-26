@@ -141,8 +141,10 @@ Be critical about where code belongs.
 
 `apps/bridge` owns:
 
-- The bridge service and its relay behavior.
-- Nothing about the wire protocol itself, which is upstream.
+- The bridge service: its route surface, configuration, and deployment.
+- Nothing about the session rules, which the upstream session engine
+  (`@wendoo/bridge-session`) owns, and nothing about the wire protocol itself,
+  which is upstream.
 
 Shared Wendoo packages own:
 

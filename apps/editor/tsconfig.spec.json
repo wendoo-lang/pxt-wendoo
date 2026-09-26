@@ -5,6 +5,16 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/vite-env.d.ts", "src/**/*.spec.ts"],
+  /* A spec's JSX is transformed under these options only where the file is included, so every
+     source a spec renders is listed. */
+  "include": [
+    "src/vite-env.d.ts",
+    "src/**/*.spec.ts",
+    "src/components/CatalogPanel.tsx",
+    "src/components/ConnectPage.tsx",
+    "src/components/SessionView.tsx",
+    "src/components/VersionNotice.tsx",
+    "src/contexts/editor-session.tsx"
+  ],
   "exclude": ["node_modules", "dist"]
 }

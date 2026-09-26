@@ -7,7 +7,7 @@ const configSchema = z.object({
   /** Host name or address the service listens on, without a scheme. */
   HOST: z.string().min(1).default("localhost"),
   /** TCP port the service listens on. */
-  PORT: z.coerce.number().int().min(0).max(65535).default(6464),
+  PORT: z.coerce.number().int().min(0).max(65535).default(6465),
   /** Minimum level of the log records the service writes. */
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   /**

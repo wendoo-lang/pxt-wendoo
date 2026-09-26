@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
+import { type AppBridge, BridgeSessionErrorCode, createAppBridge, PeerSessionErrorCode } from "@wendoo/bridge-app";
 import {
   assertCounterpartAway,
   assertJoinCode,
@@ -11,8 +12,7 @@ import {
   type TestRelay,
   type Welcome,
   within,
-} from "@wendoo/bridge/testing";
-import { type AppBridge, BridgeSessionErrorCode, createAppBridge, PeerSessionErrorCode } from "@wendoo/bridge-app";
+} from "@wendoo/bridge-session/testing";
 import {
   createEditorSessionOver,
   createMakeCodeEditorSession,
@@ -373,6 +373,58 @@ describe("makecode editor session on the relay", () => {
     await simx.ping();
     simx.assertNothingReceived();
     assert.ok(!statuses.includes("connected"));
+  });
+
+  it("forgets a replaced session and joins the successor by code alone, persisting the successor's token", async () => {
+    const store = new Map<string, string>();
+    const hooks: MakeCodeEditorSessionOptions = {
+      loadBindingToken: () => store.get("token"),
+      saveBindingToken: (token) => {
+        store.set("token", token);
+      },
+      clearBindingToken: () => {
+        store.delete("token");
+      },
+    };
+    const { simx, joinCode } = await connectSimx();
+    const session = editorSession({ joinCode, ...hooks });
+    const received = nextCatalog(session);
+    session.start();
+    const welcome = assertWelcome(await simx.nextMessage());
+    await simxHandshake(simx, "{}");
+    assert.equal(await received, "{}");
+
+    const claimant = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    await until(
+      session,
+      (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
+      "the session to report its replacement"
+    );
+    const migrated = assertWelcome(await simx.nextMessage());
+    assertWelcome(await claimant.nextMessage());
+
+    session.forget();
+
+    assert.deepEqual(session.state, { status: "none", joinCode: undefined, errorCode: undefined });
+    assert.equal(store.size, 0);
+
+    await claimant.close();
+    assertCounterpartAway(await simx.nextMessage());
+    const rejoined = editorSession({ joinCode, ...hooks });
+    const redelivered = nextCatalog(rejoined);
+    rejoined.start();
+    const rewelcome = assertWelcome(await simx.nextMessage());
+    await simxHandshake(simx, "[]");
+
+    assert.equal(await redelivered, "[]");
+    assert.deepEqual(rejoined.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.equal(rewelcome.sessionId, migrated.sessionId);
+    assert.notEqual(rewelcome.sessionId, welcome.sessionId);
+    assert.equal(store.get("token"), migrated.bindingToken);
+    assert.notEqual(store.get("token"), welcome.bindingToken);
+    assert.equal(lastEditorHello()?.joinCode, joinCode);
+    assert.equal(lastEditorHello()?.bindingToken, undefined);
   });
 
   it("is carried into the session a new simx claimant opens, on its open connection with a fresh handshake and token", async () => {

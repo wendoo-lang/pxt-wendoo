@@ -363,6 +363,46 @@ describe("makecode editor session", () => {
     assert.deepEqual(session.state, { status: "connected", joinCode: "apple-bird-cloud", errorCode: undefined });
   });
 
+  it("forgets the session: closes the connection, clears the persisted token, and returns the state to none", () => {
+    let cleared = 0;
+    const { session, states } = openSession({
+      joinCode: "apple-bird-cloud",
+      clearBindingToken: () => {
+        cleared += 1;
+      },
+    });
+    session.start();
+    const bridge = lastBridge();
+    bridge.welcome("apple-bird-cloud", "token-1");
+
+    session.forget();
+    bridge.welcome("apple-bird-cloud", "token-2");
+
+    assert.equal(bridge.stopped, true);
+    assert.equal(cleared, 1);
+    assert.deepEqual(states.at(-1), { status: "none", joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(session.state, { status: "none", joinCode: undefined, errorCode: undefined });
+  });
+
+  it("forgets a session held disconnected after its replacement, without reconnecting", async () => {
+    let cleared = 0;
+    const { session } = openSession({
+      loadBindingToken: () => "token-1",
+      clearBindingToken: () => {
+        cleared += 1;
+      },
+    });
+    session.start();
+    lastBridge().fail(BridgeSessionErrorCode.SESSION_REPLACED);
+
+    session.forget();
+    await microtasks();
+
+    assert.equal(bridges.length, 1);
+    assert.equal(cleared, 1);
+    assert.deepEqual(session.state, { status: "none", joinCode: undefined, errorCode: undefined });
+  });
+
   it("closes its connection when stopped and ignores the connection afterwards", () => {
     const { session } = openSession();
     session.start();

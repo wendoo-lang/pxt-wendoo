@@ -10,7 +10,7 @@
     "install:packages": "npm --prefix packages install",
     "install:simx": "npm --prefix makecode/simx install",
     "install:apps": "npm --prefix apps install",
-    "build:deps": "npm --prefix packages run build:deps && npm --prefix apps run build:deps",
+    "build:deps": "npm --prefix packages run build:deps && npm --prefix makecode/simx run build:deps && npm --prefix apps run build:deps",
     "test": "node --test scripts/*.spec.js"
   },
   "devDependencies": {
