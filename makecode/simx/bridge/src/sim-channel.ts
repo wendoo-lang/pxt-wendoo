@@ -6,6 +6,29 @@
 export const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
 
 /**
+ * Newest version of the channel framing this simulator extension reads. The
+ * program's Wendoo extension declares the version it speaks in every message
+ * it posts; a message declaring this version or an older one is read, and a
+ * newer one is rejected with {@link SimChannelErrorCode.VERSION_NEWER}.
+ */
+export const SIM_CHANNEL_VERSION = 1;
+
+/** Stable codes of the messages from the program that {@link connectSimChannel} rejects. */
+export const SimChannelErrorCode = {
+  /**
+   * The message declared a channel version newer than
+   * {@link SIM_CHANNEL_VERSION}. The remedy is updating this simulator
+   * extension.
+   */
+  VERSION_NEWER: "SIM_CHANNEL_VERSION_NEWER",
+  /** The message does not begin with a channel version declaration. */
+  FRAME_MALFORMED: "SIM_CHANNEL_FRAME_MALFORMED",
+} as const;
+
+/** Union of all {@link SimChannelErrorCode} values. */
+export type SimChannelErrorCode = (typeof SimChannelErrorCode)[keyof typeof SimChannelErrorCode];
+
+/**
  * One message on a simulator message channel, as MakeCode carries it between
  * the running program and a simulator extension frame.
  */
@@ -16,6 +39,9 @@ interface MessagePacket {
   /** Message bytes. */
   data: Uint8Array;
 }
+
+/** A channel version declaration: a decimal integer from 1, without leading zeros. */
+const VERSION_DECLARATION = /^[1-9][0-9]*$/;
 
 /**
  * The window this simulator extension runs in: the message events MakeCode
@@ -29,15 +55,21 @@ export interface SimxFrame {
 
 /**
  * The conversation with the running MakeCode program over {@link SIMX_CHANNEL}.
- * Every message the program posts is a serialized tile catalog; every
- * message posted to the program is a request for one.
+ *
+ * Every message the program posts is one frame, read as UTF-8 text: the
+ * channel version its Wendoo extension declares in decimal, a line feed, then
+ * the serialized tile catalog. Every message posted to the program is a
+ * request for one, and carries no bytes.
  */
 export interface SimChannel {
   /**
-   * Subscribe to catalogs the program posts, each delivered as the text of the
-   * message's UTF-8 bytes. Returns an unsubscribe function.
+   * Subscribe to catalogs the program posts in frames this extension reads,
+   * each delivered with the channel version its frame declared. Returns an
+   * unsubscribe function.
    */
-  onCatalog(listener: (catalog: string) => void): () => void;
+  onCatalog(listener: (catalog: string, version: number) => void): () => void;
+  /** Subscribe to the frames this extension rejects, each reported by its code. Returns an unsubscribe function. */
+  onRejected(listener: (code: SimChannelErrorCode) => void): () => void;
   /** Ask the program to post its catalog. A program whose vocabulary is not registered yet answers once it is. */
   requestCatalog(): void;
   /** Stop listening to `frame`. */
@@ -49,25 +81,49 @@ export interface SimChannel {
  * Messages on channels other than {@link SIMX_CHANNEL} are ignored.
  */
 export function connectSimChannel(frame: SimxFrame): SimChannel {
-  const listeners = new Set<(catalog: string) => void>();
+  const catalogListeners = new Set<(catalog: string, version: number) => void>();
+  const rejectionListeners = new Set<(code: SimChannelErrorCode) => void>();
   const decoder = new TextDecoder();
+  const reject = (code: SimChannelErrorCode): void => {
+    for (const listener of rejectionListeners) {
+      listener(code);
+    }
+  };
   const receive = (event: { data: unknown }): void => {
     const packet = event.data as Partial<MessagePacket> | null;
     if (packet?.type !== "messagepacket" || packet.channel !== SIMX_CHANNEL) {
       return;
     }
-    const catalog = decoder.decode(packet.data);
-    for (const listener of listeners) {
-      listener(catalog);
+    const text = decoder.decode(packet.data);
+    const lineEnd = text.indexOf("\n");
+    const declaration = lineEnd < 0 ? "" : text.slice(0, lineEnd);
+    if (!VERSION_DECLARATION.test(declaration)) {
+      reject(SimChannelErrorCode.FRAME_MALFORMED);
+      return;
+    }
+    const version = Number(declaration);
+    if (version > SIM_CHANNEL_VERSION) {
+      reject(SimChannelErrorCode.VERSION_NEWER);
+      return;
+    }
+    const catalog = text.slice(lineEnd + 1);
+    for (const listener of catalogListeners) {
+      listener(catalog, version);
     }
   };
   frame.addEventListener("message", receive);
 
   return {
     onCatalog(listener) {
-      listeners.add(listener);
+      catalogListeners.add(listener);
       return () => {
-        listeners.delete(listener);
+        catalogListeners.delete(listener);
+      };
+    },
+    onRejected(listener) {
+      rejectionListeners.add(listener);
+      return () => {
+        rejectionListeners.delete(listener);
       };
     },
     requestCatalog() {

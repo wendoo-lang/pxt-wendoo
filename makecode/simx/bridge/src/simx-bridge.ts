@@ -1,14 +1,18 @@
 import { ProjectSession } from "@wendoo/bridge-client";
-import type { WsMessage } from "@wendoo/bridge-protocol";
+import type { AppSessionJoinCodeMessage, AppSessionWelcomeMessage, WsMessage } from "@wendoo/bridge-protocol";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "@wendoo/makecode-session";
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
-import { connectSimChannel, type SimxFrame } from "./sim-channel.js";
+import type { BindingTokenStore } from "./binding-token-store.js";
+import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 
-/**
- * Default address of the bridge service the simulator extension connects
- * to: a bare host with an optional port, without a scheme.
- */
-export const DEFAULT_MAKECODE_BRIDGE_URL = "makecode-bridge.playwendoo.com";
+/** Messages the bridge service sends that the simulator extension reads. */
+type RelayMessage = AppSessionWelcomeMessage | AppSessionJoinCodeMessage;
+
+/** Where the simulator extension writes its log lines for developers. */
+export interface SimxLog {
+  info(message: string): void;
+  error(message: string): void;
+}
 
 /** Options for {@link startSimxBridge}. */
 export interface SimxBridgeOptions {
@@ -16,13 +20,34 @@ export interface SimxBridgeOptions {
   frame: SimxFrame;
   /** Address of the bridge service, as a host with an optional port. */
   bridgeUrl: string;
+  /** Keeps the bridge session's binding token across reloads of the frame. */
+  tokens: BindingTokenStore;
+  /** Receives the join code each time it changes, and every message from the program that was rejected, by its code. */
+  log: SimxLog;
 }
 
 /** A running simulator extension bridge. */
 export interface SimxBridge {
+  /** The join code the bridge service sent last, or `undefined` before the first. */
+  readonly joinCode: string | undefined;
+  /**
+   * `true` while the bridge service reports the session's counterpart
+   * disconnected: from its `session:counterpartAway` until the next welcome
+   * or until this side's own connection drops.
+   */
+  readonly counterpartAway: boolean;
+  /** The channel version the program's latest catalog message declared, or `undefined` before the first. */
+  readonly channelVersion: number | undefined;
   /** Close the bridge connection and stop listening to the program. */
   dispose(): void;
 }
+
+/** What the log says about a message from the program rejected for each code. */
+const REJECTION_EXPLANATIONS: Record<SimChannelErrorCode, string> = {
+  [SimChannelErrorCode.VERSION_NEWER]: `the program's Wendoo extension speaks a channel version newer than ${SIM_CHANNEL_VERSION}; update this simulator extension to read its catalog.`,
+  [SimChannelErrorCode.FRAME_MALFORMED]:
+    "a message from the program declares no channel version; its catalog was not read.",
+};
 
 /**
  * The makecode session with the counterpart the bridge service has just
@@ -37,7 +62,7 @@ class CounterpartSession {
    * @param relay - The bridge connection, just welcomed.
    * @param latestCatalog - The latest catalog the program posted, if any.
    */
-  constructor(relay: ProjectSession<WsMessage, WsMessage>, latestCatalog: () => string | undefined) {
+  constructor(relay: ProjectSession<WsMessage, RelayMessage>, latestCatalog: () => string | undefined) {
     const port: MakeCodeSessionPort = {
       postMessage(message) {
         relay.sendPayload(message);
@@ -85,43 +110,87 @@ class CounterpartSession {
 /**
  * Join the MakeCode program running beside this simulator extension to the
  * Wendoo editor. Connects to the bridge service at the makecode session's
- * simx role path and asks the program for its catalog. Every welcome the
- * bridge service sends -- when the editor first pairs, and again whenever
- * either side reconnects -- opens a new makecode session with the counterpart
- * and disposes the previous one; a connection that closes disposes its
- * session. The latest catalog the program posted is published into each
- * session once it is established, and every later catalog into the current
- * one. When the bridge service reports that another connection has replaced
- * this one, the bridge stays disconnected.
+ * simx role path, presenting the binding token `tokens` holds, and asks the
+ * program for its catalog. Every welcome the bridge service sends -- when the
+ * editor first pairs, and again whenever either side reconnects -- opens a
+ * new makecode session with the counterpart and disposes the previous one,
+ * and its binding token is saved to `tokens`; a connection that closes
+ * disposes its session. The latest catalog the program posted is published
+ * into each session once it is established, and every later catalog into the
+ * current one. A rejected message from the program is logged by its code and
+ * discards the latest catalog, so no session receives a catalog older than
+ * the program's newest. When the bridge service reports that another
+ * connection has replaced this one, the bridge stays disconnected.
  */
 export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
+  const { tokens, log } = options;
   const channel = connectSimChannel(options.frame);
-  const relay = new ProjectSession<WsMessage, WsMessage>(MAKECODE_SESSION_ROLE_PATHS.simx, options.bridgeUrl, {});
+  const relay = new ProjectSession<WsMessage, RelayMessage>(MAKECODE_SESSION_ROLE_PATHS.simx, options.bridgeUrl, {
+    bindingToken: tokens.load(),
+  });
   let catalog: string | undefined;
   let counterpart: CounterpartSession | undefined;
+  let joinCode: string | undefined;
+  let counterpartAway = false;
+  let channelVersion: number | undefined;
 
-  const unsubscribeWelcome = relay.on("session:welcome", () => {
-    counterpart?.close();
-    counterpart = new CounterpartSession(relay, () => catalog);
-  });
-  const unsubscribeStatus = relay.addEventListener("status", (status) => {
-    if (status === "connected") return;
-    counterpart?.close();
-    counterpart = undefined;
-  });
-  const unsubscribeCatalog = channel.onCatalog((posted) => {
-    catalog = posted;
-    counterpart?.publish(posted);
-  });
+  const adoptJoinCode = (received: string): void => {
+    if (received === joinCode) return;
+    joinCode = received;
+    log.info(`Wendoo join code: ${received}`);
+  };
+
+  const unsubscribes = [
+    relay.on("session:welcome", (message) => {
+      const { bindingToken } = message.payload;
+      adoptJoinCode(message.payload.joinCode);
+      if (bindingToken !== undefined && bindingToken !== tokens.load()) {
+        tokens.save(bindingToken);
+      }
+      counterpartAway = false;
+      counterpart?.close();
+      counterpart = new CounterpartSession(relay, () => catalog);
+    }),
+    relay.on("session:joinCode", (message) => {
+      adoptJoinCode(message.payload.joinCode);
+    }),
+    relay.addEventListener("counterpartAway", () => {
+      counterpartAway = true;
+    }),
+    relay.addEventListener("status", (status) => {
+      if (status === "connected") return;
+      counterpartAway = false;
+      counterpart?.close();
+      counterpart = undefined;
+    }),
+    channel.onCatalog((posted, version) => {
+      catalog = posted;
+      channelVersion = version;
+      counterpart?.publish(posted);
+    }),
+    channel.onRejected((code) => {
+      catalog = undefined;
+      log.error(`${code}: ${REJECTION_EXPLANATIONS[code]}`);
+    }),
+  ];
 
   relay.start();
   channel.requestCatalog();
 
   return {
+    get joinCode() {
+      return joinCode;
+    },
+    get counterpartAway() {
+      return counterpartAway;
+    },
+    get channelVersion() {
+      return channelVersion;
+    },
     dispose() {
-      unsubscribeWelcome();
-      unsubscribeStatus();
-      unsubscribeCatalog();
+      for (const unsubscribe of unsubscribes) {
+        unsubscribe();
+      }
       counterpart?.close();
       counterpart = undefined;
       relay.stop();

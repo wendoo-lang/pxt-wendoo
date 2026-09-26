@@ -1,5 +1,5 @@
-import type { PeerSessionHelloMessage, PeerSessionKind, PeerSessionPort } from "@wendoo/bridge-app";
-import { connectPeerSession } from "@wendoo/bridge-app";
+import type { PeerSessionHelloMessage, PeerSessionKind, PeerSessionPort } from "@wendoo/bridge-app/peer-session";
+import { connectPeerSession } from "@wendoo/bridge-app/peer-session";
 
 /** Newest version of the makecode-session protocol this build speaks. */
 export const MAKECODE_SESSION_PROTOCOL_VERSION = 1;

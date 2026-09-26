@@ -18,9 +18,12 @@
  * capture delivers one request on the conformance channel once the program's
  * top-level code has finished, and must post exactly two messages on it: the
  * catalog published after the drain, and the catalog answering the request.
- * Both must be the bytes of the `CATALOG` line the run prints; that payload is
- * held to its expected entries and must be byte-identical across the
- * captures. A `--case` filter skips the catalog capture.
+ * Each message must be a channel frame declaring the channel version the
+ * simulator extension reads (`SIM_CHANNEL_VERSION` in
+ * `makecode/simx/bridge/src/sim-channel.ts`), and carrying the bytes of the
+ * `CATALOG` line the run prints as its payload; that payload is held to its
+ * expected entries and must be byte-identical across the captures. A `--case`
+ * filter skips the catalog capture.
  *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
@@ -44,6 +47,9 @@ const REGISTRATION_DIAG_PREFIX = "registration ";
 
 /** Simulator message channel the conformance driver publishes the catalog on (`CONFORMANCE_SIMX_CHANNEL`). */
 const CONFORMANCE_SIMX_CHANNEL = "wendoo-vm-conformance";
+
+/** Source file declaring the channel version the simulator extension reads, as `SIM_CHANNEL_VERSION`. */
+const SIMX_CHANNEL_SOURCE_PATH = path.join(__dirname, "..", "..", "simx", "bridge", "src", "sim-channel.ts");
 
 /** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
 const UNSUPPORTED_OPCODES_PATH = path.join(__dirname, "unsupported-opcodes.json");
@@ -132,6 +138,13 @@ function unsupportedOpcodesOfCase(caseId, unsupported) {
     }
   }
   return [...hit].sort((a, b) => a - b).map((op) => unsupported.get(op));
+}
+
+/** The channel version the simulator extension reads, as its source declares it. */
+function simxChannelVersion() {
+  const declared = /export const SIM_CHANNEL_VERSION = (\d+);/.exec(fs.readFileSync(SIMX_CHANNEL_SOURCE_PATH, "utf8"));
+  if (!declared) throw new Error(`no SIM_CHANNEL_VERSION declaration in ${SIMX_CHANNEL_SOURCE_PATH}`);
+  return Number(declared[1]);
 }
 
 /** How many captures of the catalog project one harness run compares. */
@@ -227,6 +240,7 @@ function runCatalogCheck(targetDir, targetName, options) {
   }
 
   const binary = path.join(project.dir, "built", "debug", "binary.js");
+  const channelVersion = simxChannelVersion();
   const payloads = [];
   for (let r = 1; r <= CATALOG_RUNS; r++) {
     const logPath = path.join(project.dir, "built", `capture-run${r}.log`);
@@ -247,10 +261,23 @@ function runCatalogCheck(targetDir, targetName, options) {
       sha256: payload === null ? null : sha256(payload),
       channelSha256: posted.map(sha256),
     });
+    const frames = posted.map(catalog.frameOf);
     if (posted.length !== 2) {
       record.problems.push(`capture ${r} posted ${posted.length} messages on the conformance channel, expected 2`);
-    } else if (posted.some((text) => text !== payload)) {
-      record.problems.push(`capture ${r} posted a channel message other than its CATALOG payload`);
+    } else if (frames.some((frame) => frame === null)) {
+      record.problems.push(`capture ${r} posted a channel message that declares no channel version`);
+    } else {
+      for (const frame of frames) {
+        if (frame.version !== channelVersion) {
+          record.problems.push(
+            `capture ${r} posted a channel message declaring channel version ${frame.version}, ` +
+              `the simulator extension reads ${channelVersion}`
+          );
+        }
+      }
+      if (frames.some((frame) => frame.payload !== payload)) {
+        record.problems.push(`capture ${r} posted a channel message other than its CATALOG payload`);
+      }
     }
   }
 

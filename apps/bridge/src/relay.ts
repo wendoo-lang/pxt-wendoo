@@ -102,10 +102,22 @@ interface Envelope {
  * A connection names its kind and role when it opens, then sends
  * `session:hello`. A hello presenting a join code joins the pairing of the
  * connection's kind with that code; otherwise one presenting a valid binding
- * token joins the pairing that token names; otherwise the hello opens a new
- * pairing, which keeps the presented join code when there is one. The relay
- * answers an accepted hello with `session:joinCode`, carrying the pairing's
- * join code.
+ * token joins the pairing of the binding id that token names, and when no
+ * pairing of the kind holds that binding id, opens a new pairing under it,
+ * with a new session id and join code; otherwise the hello opens a new
+ * pairing under a new binding id, which keeps the presented join code when
+ * there is one. The relay answers an accepted hello with `session:joinCode`,
+ * carrying the pairing's join code.
+ *
+ * A binding token carries no expiry and stays valid for as long as the
+ * relay's binding secret is unchanged, so a binding outlives its pairing:
+ * after the relay restarts under the same secret, or after a pairing lingers
+ * out, the first member presenting its token opens a new pairing under the
+ * binding id, the other member's token joins it, and both are welcomed with
+ * the new session id and join code and a binding token equal to the one each
+ * presented. A relay started under a new secret verifies no earlier token, so
+ * after such a restart each member's token opens a separate new pairing under
+ * a new binding id.
  *
  * A pairing is the session: the binding of its two members, identified by
  * its session id and by the binding tokens that name it. A member leaving and
@@ -128,13 +140,15 @@ interface Envelope {
  * that pairing, the member is returning to the same session: the relay
  * closes only the connection it held before, and a connected peer stays
  * connected and is welcomed again. Otherwise the hello is a new claimant,
- * which ends the session: the relay closes the connection of every member,
- * the peer's without a code, and opens a new session under the same join
- * code, with a new session id and binding id, whose only member is the
- * newcomer. Tokens naming the ended session match nothing. The ended
- * session's other-role member joins the new session by presenting the join
- * code; a connection presenting it for the newcomer's role is itself a new
- * claimant.
+ * which ends the session: the relay opens a new session under the same join
+ * code, with a new session id and binding id, and moves the other role's
+ * member, when one is bound, into it on its open connection. That member and
+ * the newcomer are then both welcomed, each welcome carrying the new session
+ * id and a binding token for the new session. Tokens naming the ended
+ * session never reach the successor, so a member of the other role that was
+ * away at the replacement does not return by its token: presenting it opens
+ * a new session under the ended session's binding id, and the member joins
+ * the successor only by a hello presenting the join code.
  *
  * Messages in {@link RELAY_CONTROL_NAMESPACES} are handled by the relay,
  * except a reply carrying the id of a message the relay forwarded, which goes
@@ -258,7 +272,7 @@ export class Relay {
     let pairing =
       this.find(kind, (candidate) => candidate.joinCode === hello.joinCode) ??
       this.find(kind, (candidate) => candidate.bindingId === bindingId) ??
-      this.open(kind, hello.joinCode);
+      (bindingId === undefined ? this.open(kind, hello.joinCode) : this.adopt(kind, bindingId));
 
     const holder = pairing.members.get(role);
     if (holder !== undefined && bindingId === pairing.bindingId) {
@@ -309,20 +323,26 @@ export class Relay {
   }
 
   /**
-   * Ends `pairing` for a new claimant of `role`, closing the connection of
-   * every member, and returns the empty pairing that succeeds it under the same
-   * join code with a new session id and binding id. The member holding `role`
-   * is displaced; its peer's connection closes without a code.
+   * Ends `pairing` for a new claimant of `role` and returns the pairing that
+   * succeeds it under the same join code, with a new session id and binding
+   * id. The member holding `role` is displaced. The other member, if bound,
+   * moves into the successor on its open connection. Sends no welcome; the
+   * caller welcomes the successor's members.
    */
   private replace(pairing: Pairing, role: string): Pairing {
     this._logger.info({ kind: pairing.kind, pairingId: pairing.id }, "session ended by a new claimant");
-    for (const member of pairing.members.values()) {
-      if (member.role === role) this.displace(member);
-      else this.detach(member);
-    }
     clearTimeout(pairing.expiry);
     this._pairings.delete(pairing);
-    return this.open(pairing.kind, pairing.joinCode);
+    const successor = this.open(pairing.kind, pairing.joinCode);
+    for (const member of pairing.members.values()) {
+      if (member.role === role) {
+        this.displace(member);
+      } else {
+        successor.members.set(member.role, member);
+        member.pairing = successor;
+      }
+    }
+    return successor;
   }
 
   /**
@@ -339,11 +359,6 @@ export class Relay {
       },
     };
     member.socket.send(JSON.stringify(replaced));
-    this.detach(member);
-  }
-
-  /** Removes `member` from its pairing and closes its connection. */
-  private detach(member: Member): void {
     member.pairing?.members.delete(member.role);
     member.pairing = undefined;
     member.socket.close();
@@ -377,16 +392,26 @@ export class Relay {
   }
 
   /**
-   * Opens an empty pairing of `kind` with a new binding id. The caller
-   * guarantees that no pairing of `kind` holds `joinCode`; an absent one is
-   * generated.
+   * Opens an empty pairing of `kind` under `bindingId`, which no pairing of
+   * `kind` holds, with a new session id and a generated join code.
    */
-  private open(kind: string, joinCode: string | undefined): Pairing {
+  private adopt(kind: string, bindingId: string): Pairing {
+    const pairing = this.open(kind, undefined, bindingId);
+    this._logger.info({ kind, pairingId: pairing.id }, "session rebuilt from a binding token");
+    return pairing;
+  }
+
+  /**
+   * Opens an empty pairing of `kind` under `bindingId`, a new binding id when
+   * omitted. The caller guarantees that no pairing of `kind` holds `joinCode`
+   * or `bindingId`; an absent join code is generated.
+   */
+  private open(kind: string, joinCode: string | undefined, bindingId: string = randomUUID()): Pairing {
     const pairing: Pairing = {
       id: randomUUID(),
       kind,
       joinCode: joinCode ?? this.unusedJoinCode(kind),
-      bindingId: randomUUID(),
+      bindingId,
       members: new Map(),
       expiry: undefined,
     };

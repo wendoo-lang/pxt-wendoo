@@ -1,4 +1,12 @@
 export type {
+  MakeCodeEditorSession,
+  MakeCodeEditorSessionErrorCode,
+  MakeCodeEditorSessionOptions,
+  MakeCodeEditorSessionState,
+  MakeCodeEditorSessionStatus,
+} from "./makecode-editor-session.js";
+export { createMakeCodeEditorSession, DEFAULT_MAKECODE_BRIDGE_URL } from "./makecode-editor-session.js";
+export type {
   MakeCodeCatalogMessage,
   MakeCodeCatalogPayload,
   MakeCodeHelloMessage,

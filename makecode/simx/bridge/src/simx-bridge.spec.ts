@@ -19,8 +19,9 @@ import {
   MAKECODE_SESSION_ROLE_PATHS,
   type MakeCodeSessionMessage,
 } from "@wendoo/makecode-session";
-import { SIMX_CHANNEL, type SimxFrame } from "./sim-channel.js";
-import { type SimxBridge, startSimxBridge } from "./simx-bridge.js";
+import { type BindingTokenStore, openBindingTokenStore, type TokenStorage } from "./binding-token-store.js";
+import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
+import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
@@ -124,8 +125,17 @@ class FakeFrame implements SimxFrame {
     this._listeners.delete(listener);
   }
 
+  /**
+   * MakeCode delivering the catalog message the running program posted on
+   * `channel`: `catalog` framed under channel version `version`, as UTF-8
+   * bytes.
+   */
+  programPosts(catalog: string, channel = SIMX_CHANNEL, version = SIM_CHANNEL_VERSION): void {
+    this.programPostsText(`${version}\n${catalog}`, channel);
+  }
+
   /** MakeCode delivering a message the running program posted on `channel` with `text` as its UTF-8 bytes. */
-  programPosts(text: string, channel = SIMX_CHANNEL): void {
+  programPostsText(text: string, channel = SIMX_CHANNEL): void {
     const packet = {
       type: "messagepacket",
       broadcast: true,
@@ -136,6 +146,33 @@ class FakeFrame implements SimxFrame {
     for (const listener of this._listeners) {
       listener({ data: packet });
     }
+  }
+}
+
+/** Web storage holding its items in memory. */
+class MemoryStorage implements TokenStorage {
+  readonly items = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.items.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.items.set(key, value);
+  }
+}
+
+/** A log recording every line written to it, by level. */
+class RecordingLog implements SimxLog {
+  readonly infos: string[] = [];
+  readonly errors: string[] = [];
+
+  info(message: string): void {
+    this.infos.push(message);
+  }
+
+  error(message: string): void {
+    this.errors.push(message);
   }
 }
 
@@ -153,6 +190,8 @@ describe("simx bridge on the relay", () => {
   const originalWebSocket = globalThis.WebSocket;
   let relay: TestRelay;
   let frame: FakeFrame;
+  let tokens: BindingTokenStore;
+  let log: RecordingLog;
   let bridge: SimxBridge | undefined;
 
   /** The sockets the simx role path has been connected on, in creation order. */
@@ -167,7 +206,7 @@ describe("simx bridge on the relay", () => {
    * join code it was answered with.
    */
   async function startSimx(catalog?: string): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
     if (catalog !== undefined) frame.programPosts(catalog);
     const socket = simxSockets().at(-1);
     assert.ok(socket);
@@ -177,12 +216,14 @@ describe("simx bridge on the relay", () => {
 
   before(async () => {
     (globalThis as Record<string, unknown>).WebSocket = RecordingWebSocket;
-    relay = await startTestRelay();
+    relay = await startTestRelay({ bindingSecret: "spec-secret" });
   });
 
   beforeEach(() => {
     RecordingWebSocket.created.length = 0;
     frame = new FakeFrame();
+    tokens = openBindingTokenStore(() => new MemoryStorage());
+    log = new RecordingLog();
   });
 
   afterEach(async () => {
@@ -229,32 +270,44 @@ describe("simx bridge on the relay", () => {
     frame.programPosts("not a catalog", "other/channel");
     frame.programPosts("{}");
     assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+    assert.equal(bridge?.joinCode, joinCode);
+    assert.ok(log.infos.some((line) => line.includes(joinCode)));
+    assert.equal(bridge?.channelVersion, SIM_CHANNEL_VERSION);
+    assert.deepEqual(log.errors, []);
   });
 
-  it("pairs editor-first after a relay restart: the editor re-forms the session under the join code and the reconnecting simx completes the handshake", async () => {
+  it("rebuilds its session by its saved binding token after a relay restart, logging the new join code, and publishes the catalog to the editor returning by its token", async () => {
     const { joinCode } = await startSimx(CATALOG_TEXT);
     const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
 
     await relay.restart();
     await within(editor.closed, "the editor's connection to close");
+    // Waits out the bridge client's first reconnect attempt.
+    await delay(1200);
+    assert.equal(simxSockets().length, 2);
+    const renewed = assertJoinCode(await simxSockets()[1].firstReceived("session:joinCode"));
     const returned = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await returned.hello({ joinCode })), joinCode);
-    assert.equal(simxSockets().length, 1, "the editor must bind before the simx reconnects");
-    const returnedWelcome = assertWelcome(await returned.nextMessage());
+    assert.equal(assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken })), renewed);
+    const rewelcome = assertWelcome(await returned.nextMessage());
     await handshake(returned);
 
     assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
-    assert.equal(simxSockets().length, 2);
-    assert.notEqual(returnedWelcome.sessionId, welcome.sessionId);
-    assert.equal(returnedWelcome.joinCode, joinCode);
+    assert.notEqual(renewed, joinCode);
+    assert.equal(bridge?.joinCode, renewed);
+    assert.ok(log.infos.some((line) => line.includes(renewed)));
+    assert.equal(rewelcome.joinCode, renewed);
+    assert.notEqual(rewelcome.sessionId, welcome.sessionId);
+    assert.equal(tokens.load(), welcome.bindingToken);
   });
 
   it("opens a fresh session when the editor returns and publishes the latest catalog into it", async () => {
     const { socket, joinCode } = await startSimx(CATALOG_TEXT);
     const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
 
+    assert.equal(bridge?.counterpartAway, false);
     await editor.close();
     assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
+    assert.equal(bridge?.counterpartAway, true);
     frame.programPosts("{}");
     const returned = await relay.connect(EDITOR);
     assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
@@ -264,6 +317,45 @@ describe("simx bridge on the relay", () => {
     assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
     assert.equal(returnedWelcome.sessionId, welcome.sessionId);
     assert.equal(simxSockets().length, 1);
+    assert.equal(bridge?.counterpartAway, false);
+  });
+
+  it("rejoins the session the editor holds by its saved binding token when its frame reloads", async () => {
+    const { joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+    assert.equal(tokens.load(), welcome.bindingToken);
+
+    bridge?.dispose();
+    assertCounterpartAway(await editor.nextMessage());
+    frame = new FakeFrame();
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+    frame.programPosts("{}");
+    const rewelcome = assertWelcome(await editor.nextMessage());
+    await handshake(editor);
+
+    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+    assert.equal(rewelcome.sessionId, welcome.sessionId);
+    assert.equal(bridge.joinCode, joinCode);
+    assert.equal(simxSockets().length, 2);
+  });
+
+  it("logs a message from the program declaring a newer channel version or none by its code, and publishes no catalog older than it", async () => {
+    const { joinCode } = await startSimx(CATALOG_TEXT);
+
+    frame.programPosts("{}", SIMX_CHANNEL, SIM_CHANNEL_VERSION + 1);
+    frame.programPostsText("{}");
+    const editor = await relay.connect(EDITOR);
+    assertJoinCode(await editor.hello({ joinCode }));
+    assertWelcome(await editor.nextMessage());
+    await handshake(editor);
+    await editor.ping();
+
+    editor.assertNothingReceived();
+    assert.equal(log.errors.length, 2);
+    assert.ok(log.errors[0].startsWith(SimChannelErrorCode.VERSION_NEWER));
+    assert.ok(log.errors[1].startsWith(SimChannelErrorCode.FRAME_MALFORMED));
+    frame.programPosts("{}");
+    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
   });
 
   it("publishes once, into the newest session only, when the editor drops before answering the simx's hello and returns", async () => {
@@ -300,7 +392,7 @@ describe("simx bridge on the relay", () => {
     assert.equal(simxSockets().length, 2);
   });
 
-  it("holds without reconnecting when a new claimant of the simx role replaces it, while the editor heals by join code", async () => {
+  it("holds without reconnecting when a new claimant of the simx role replaces it, while the editor is carried to the claimant", async () => {
     const { socket, joinCode } = await startSimx(CATALOG_TEXT);
     const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
 
@@ -311,18 +403,36 @@ describe("simx bridge on the relay", () => {
     assert.doesNotThrow(() => {
       frame.programPosts("{}");
     });
-    await within(editor.closed, "the editor's connection to close");
-    editor.assertNothingReceived();
-    const healed = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await healed.hello({ joinCode })), joinCode);
-    const healedWelcome = assertWelcome(await healed.nextMessage());
-    assert.equal(assertWelcome(await claimant.nextMessage()).sessionId, healedWelcome.sessionId);
+    const carried = assertWelcome(await editor.nextMessage());
+    assert.equal(assertWelcome(await claimant.nextMessage()).sessionId, carried.sessionId);
     const socketsAfterReplacement = simxSockets().length;
     // Waits out the bridge client's first reconnect attempt.
     await delay(1200);
 
-    assert.notEqual(healedWelcome.sessionId, welcome.sessionId);
+    assert.notEqual(carried.sessionId, welcome.sessionId);
+    assert.equal(carried.joinCode, joinCode);
     assert.equal(simxSockets().length, socketsAfterReplacement);
+  });
+
+  it("is carried into the session a new editor claimant opens, on its open connection: saves the new token and publishes the latest catalog", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+    frame.programPosts("{}");
+    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+
+    const claimant = await relay.connect(EDITOR);
+    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    assertSessionError(await editor.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
+    const claimantWelcome = assertWelcome(await claimant.nextMessage());
+    await handshake(claimant);
+
+    assert.deepEqual(await claimant.nextMessage(), catalogMessage("{}"));
+    assert.notEqual(claimantWelcome.sessionId, welcome.sessionId);
+    assert.equal(tokens.load(), claimantWelcome.bindingToken);
+    assert.notEqual(claimantWelcome.bindingToken, welcome.bindingToken);
+    assert.equal(bridge?.joinCode, joinCode);
+    assert.equal(socket.readyState, WebSocket.OPEN);
+    assert.equal(simxSockets().length, 1);
   });
 
   it("stays open for a correct editor after the relay rejects an editor declaring a newer bridge protocol", async () => {

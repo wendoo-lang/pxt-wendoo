@@ -218,7 +218,7 @@ describe("relay", () => {
       stranger.assertNothingReceived();
     });
 
-    it("ends the session when a new claimant takes an occupied role, opening a new session under the same join code", async () => {
+    it("ends the session when a new claimant takes an occupied role, carrying the other member into the new one on its open connection", async () => {
       const { alpha, beta, alphaWelcome } = await openPair();
       const newBeta = await open("sample/beta");
 
@@ -226,39 +226,74 @@ describe("relay", () => {
 
       assertSessionError(await beta.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
       await within(beta.closed, "the replaced connection to close");
-      await within(alpha.closed, "the peer to close");
-      alpha.assertNothingReceived();
-      await newBeta.ping();
-      newBeta.assertNothingReceived();
-
-      const staleOnly = await open("sample/alpha");
-      assert.notEqual(
-        assertJoinCode(await staleOnly.hello({ bindingToken: alphaWelcome.bindingToken })),
-        alphaWelcome.joinCode
-      );
-      await staleOnly.close();
-
-      const newAlpha = await open("sample/alpha");
-      assert.equal(
-        assertJoinCode(
-          await newAlpha.hello({ bindingToken: alphaWelcome.bindingToken, joinCode: alphaWelcome.joinCode })
-        ),
-        alphaWelcome.joinCode
-      );
-      const newAlphaWelcome = assertWelcome(await newAlpha.nextMessage());
+      const carriedWelcome = assertWelcome(await alpha.nextMessage());
       const newBetaWelcome = assertWelcome(await newBeta.nextMessage());
-
-      assert.equal(newAlphaWelcome.sessionId, newBetaWelcome.sessionId);
-      assert.notEqual(newAlphaWelcome.sessionId, alphaWelcome.sessionId);
-      assert.equal(newAlphaWelcome.joinCode, alphaWelcome.joinCode);
-      assert.notEqual(newAlphaWelcome.bindingToken, alphaWelcome.bindingToken);
-      newAlpha.send({ type: "sample:document", payload: { content: "to the newcomer" } });
+      assert.equal(carriedWelcome.sessionId, newBetaWelcome.sessionId);
+      assert.notEqual(carriedWelcome.sessionId, alphaWelcome.sessionId);
+      assert.equal(carriedWelcome.joinCode, alphaWelcome.joinCode);
+      assert.equal(newBetaWelcome.joinCode, alphaWelcome.joinCode);
+      assert.notEqual(carriedWelcome.bindingToken, alphaWelcome.bindingToken);
+      alpha.send({ type: "sample:document", payload: { content: "to the newcomer" } });
       assert.deepEqual(await newBeta.nextMessage(), {
         type: "sample:document",
         payload: { content: "to the newcomer" },
       });
       newBeta.send({ type: "sample:document", payload: { content: "back" } });
-      assert.deepEqual(await newAlpha.nextMessage(), { type: "sample:document", payload: { content: "back" } });
+      assert.deepEqual(await alpha.nextMessage(), { type: "sample:document", payload: { content: "back" } });
+      await alpha.ping();
+      alpha.assertNothingReceived();
+    });
+
+    it("matches nothing with a token naming a session a new claimant ended, and binds the carried member back by its new token", async () => {
+      const { alpha, alphaWelcome } = await openPair();
+      const { joinCode } = alphaWelcome;
+      const newBeta = await open("sample/beta");
+      assertJoinCode(await newBeta.hello({ joinCode }));
+      const carriedWelcome = assertWelcome(await alpha.nextMessage());
+      assertWelcome(await newBeta.nextMessage());
+      await alpha.close();
+      assertCounterpartAway(await newBeta.nextMessage());
+
+      const stale = await open("sample/alpha");
+      assert.notEqual(
+        assertJoinCode(
+          await stale.hello({ bindingToken: alphaWelcome.bindingToken, sessionId: alphaWelcome.sessionId })
+        ),
+        joinCode
+      );
+      await stale.ping();
+      stale.assertNothingReceived();
+      await newBeta.ping();
+      newBeta.assertNothingReceived();
+
+      const returned = await open("sample/alpha");
+      assert.equal(assertJoinCode(await returned.hello({ bindingToken: carriedWelcome.bindingToken })), joinCode);
+      assert.deepEqual(assertWelcome(await returned.nextMessage()), carriedWelcome);
+      assert.equal(assertWelcome(await newBeta.nextMessage()).sessionId, carriedWelcome.sessionId);
+    });
+
+    it("leaves a member absent at a replacement out of the new session: its token opens another, and entering the join code joins", async () => {
+      const { alpha, beta, alphaWelcome } = await openPair();
+      const { joinCode } = alphaWelcome;
+      await alpha.close();
+      assertCounterpartAway(await beta.nextMessage());
+      const newBeta = await open("sample/beta");
+
+      assert.equal(assertJoinCode(await newBeta.hello({ joinCode })), joinCode);
+      assertSessionError(await beta.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
+      await within(beta.closed, "the replaced connection to close");
+      const returned = await open("sample/alpha");
+      assert.notEqual(assertJoinCode(await returned.hello({ bindingToken: alphaWelcome.bindingToken })), joinCode);
+      await returned.ping();
+      returned.assertNothingReceived();
+      await newBeta.ping();
+      newBeta.assertNothingReceived();
+
+      const entered = await open("sample/alpha");
+      assert.equal(assertJoinCode(await entered.hello({ joinCode })), joinCode);
+      const enteredWelcome = assertWelcome(await entered.nextMessage());
+      assert.equal(assertWelcome(await newBeta.nextMessage()).sessionId, enteredWelcome.sessionId);
+      assert.notEqual(enteredWelcome.sessionId, alphaWelcome.sessionId);
     });
 
     it("binds a reconnect presenting its binding token back into the same session and welcomes the connected peer again", async () => {
@@ -362,7 +397,7 @@ describe("relay", () => {
 });
 
 describe("session linger", () => {
-  it("ends a session that has had no member for the linger time, after which its tokens open new sessions", async () => {
+  it("ends a session that has had no member for the linger time, after which its tokens rebuild the binding under a new session id and join code", async () => {
     const relay = await startTestRelay({ bindingSecret: "spec-secret", lingerMs: 20 });
     try {
       const alpha = await relay.connect("sample/alpha");
@@ -377,16 +412,139 @@ describe("session linger", () => {
 
       const newAlpha = await relay.connect("sample/alpha");
       const newAlphaCode = assertJoinCode(await newAlpha.hello({ bindingToken: alphaWelcome.bindingToken }));
-      const newBeta = await relay.connect("sample/beta");
-      const newBetaCode = assertJoinCode(await newBeta.hello({ bindingToken: betaWelcome.bindingToken }));
       await newAlpha.ping();
-      await newBeta.ping();
+      newAlpha.assertNothingReceived();
+      const newBeta = await relay.connect("sample/beta");
+      assert.equal(assertJoinCode(await newBeta.hello({ bindingToken: betaWelcome.bindingToken })), newAlphaCode);
+      const newBetaWelcome = assertWelcome(await newBeta.nextMessage());
+      const newAlphaWelcome = assertWelcome(await newAlpha.nextMessage());
 
       assert.notEqual(newAlphaCode, joinCode);
-      assert.notEqual(newBetaCode, joinCode);
-      assert.notEqual(newBetaCode, newAlphaCode);
-      newAlpha.assertNothingReceived();
-      newBeta.assertNothingReceived();
+      assert.equal(newAlphaWelcome.sessionId, newBetaWelcome.sessionId);
+      assert.notEqual(newAlphaWelcome.sessionId, alphaWelcome.sessionId);
+      assert.equal(newAlphaWelcome.bindingToken, alphaWelcome.bindingToken);
+    } finally {
+      await relay.close();
+    }
+  });
+
+  it("keeps a session rebuilt from a binding token past the linger time while it has a member", async () => {
+    const relay = await startTestRelay({ bindingSecret: "spec-secret", lingerMs: 20 });
+    try {
+      const { first, second, firstWelcome, secondWelcome } = await relay.pair("sample/alpha", "sample/beta");
+      await relay.restart();
+      await within(first.closed, "alpha's connection to close");
+      await within(second.closed, "beta's connection to close");
+      const alpha = await relay.connect("sample/alpha");
+      const rebuiltCode = assertJoinCode(await alpha.hello({ bindingToken: firstWelcome.bindingToken }));
+      await relay.expireLinger();
+
+      const beta = await relay.connect("sample/beta");
+      assert.equal(assertJoinCode(await beta.hello({ bindingToken: secondWelcome.bindingToken })), rebuiltCode);
+      const betaWelcome = assertWelcome(await beta.nextMessage());
+      const alphaWelcome = assertWelcome(await alpha.nextMessage());
+
+      assert.equal(alphaWelcome.sessionId, betaWelcome.sessionId);
+      assert.equal(betaWelcome.joinCode, rebuiltCode);
+    } finally {
+      await relay.close();
+    }
+  });
+});
+
+describe("relay restart", () => {
+  it("rebuilds a session from its members' binding tokens under the same binding, with a new session id and join code, welcoming both", async () => {
+    const relay = await startTestRelay({ bindingSecret: "spec-secret" });
+    try {
+      const { first, second, firstWelcome, secondWelcome } = await relay.pair("sample/alpha", "sample/beta");
+
+      await relay.restart();
+      await within(first.closed, "alpha's connection to close");
+      await within(second.closed, "beta's connection to close");
+      const alpha = await relay.connect("sample/alpha");
+      const rebuiltCode = assertJoinCode(await alpha.hello({ bindingToken: firstWelcome.bindingToken }));
+      await alpha.ping();
+      alpha.assertNothingReceived();
+      const beta = await relay.connect("sample/beta");
+      assert.equal(assertJoinCode(await beta.hello({ bindingToken: secondWelcome.bindingToken })), rebuiltCode);
+      const betaWelcome = assertWelcome(await beta.nextMessage());
+      const alphaWelcome = assertWelcome(await alpha.nextMessage());
+
+      assert.notEqual(rebuiltCode, firstWelcome.joinCode);
+      assert.equal(alphaWelcome.sessionId, betaWelcome.sessionId);
+      assert.notEqual(alphaWelcome.sessionId, firstWelcome.sessionId);
+      assert.equal(alphaWelcome.joinCode, rebuiltCode);
+      assert.equal(betaWelcome.joinCode, rebuiltCode);
+      assert.equal(alphaWelcome.bindingToken, firstWelcome.bindingToken);
+      assert.equal(betaWelcome.bindingToken, secondWelcome.bindingToken);
+      alpha.send({ type: "sample:document", payload: { content: "after the restart" } });
+      assert.deepEqual(await beta.nextMessage(), {
+        type: "sample:document",
+        payload: { content: "after the restart" },
+      });
+      beta.send({ type: "sample:document", payload: { content: "and back" } });
+      assert.deepEqual(await alpha.nextMessage(), { type: "sample:document", payload: { content: "and back" } });
+    } finally {
+      await relay.close();
+    }
+  });
+
+  it("pairs, welcomes, and replaces in a session rebuilt from one member's token as in any other", async () => {
+    const relay = await startTestRelay({ bindingSecret: "spec-secret" });
+    try {
+      const { first, second, firstWelcome } = await relay.pair("sample/alpha", "sample/beta");
+      await relay.restart();
+      await within(first.closed, "alpha's connection to close");
+      await within(second.closed, "beta's connection to close");
+
+      const alpha = await relay.connect("sample/alpha");
+      const rebuiltCode = assertJoinCode(await alpha.hello({ bindingToken: firstWelcome.bindingToken }));
+      const entered = await relay.connect("sample/beta");
+      assert.equal(assertJoinCode(await entered.hello({ joinCode: rebuiltCode })), rebuiltCode);
+      const enteredWelcome = assertWelcome(await entered.nextMessage());
+      const alphaWelcome = assertWelcome(await alpha.nextMessage());
+      assert.equal(enteredWelcome.sessionId, alphaWelcome.sessionId);
+      assert.equal(alphaWelcome.bindingToken, firstWelcome.bindingToken);
+
+      const claimant = await relay.connect("sample/beta");
+      assert.equal(assertJoinCode(await claimant.hello({ joinCode: rebuiltCode })), rebuiltCode);
+      assertSessionError(await entered.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
+      await within(entered.closed, "the replaced connection to close");
+      const carriedWelcome = assertWelcome(await alpha.nextMessage());
+      const claimantWelcome = assertWelcome(await claimant.nextMessage());
+
+      assert.equal(carriedWelcome.sessionId, claimantWelcome.sessionId);
+      assert.notEqual(carriedWelcome.sessionId, alphaWelcome.sessionId);
+      assert.equal(carriedWelcome.joinCode, rebuiltCode);
+      assert.notEqual(carriedWelcome.bindingToken, firstWelcome.bindingToken);
+      alpha.send({ type: "sample:document", payload: { content: "to the claimant" } });
+      assert.deepEqual(await claimant.nextMessage(), {
+        type: "sample:document",
+        payload: { content: "to the claimant" },
+      });
+    } finally {
+      await relay.close();
+    }
+  });
+
+  it("ends every session when it restarts under a new binding secret: tokens issued before it open separate new sessions", async () => {
+    const relay = await startTestRelay();
+    try {
+      const { first, second, firstWelcome, secondWelcome } = await relay.pair("sample/alpha", "sample/beta");
+
+      await relay.restart();
+      await within(first.closed, "alpha's connection to close");
+      await within(second.closed, "beta's connection to close");
+      const alpha = await relay.connect("sample/alpha");
+      const alphaCode = assertJoinCode(await alpha.hello({ bindingToken: firstWelcome.bindingToken }));
+      const beta = await relay.connect("sample/beta");
+      const betaCode = assertJoinCode(await beta.hello({ bindingToken: secondWelcome.bindingToken }));
+      await alpha.ping();
+      await beta.ping();
+
+      assert.notEqual(betaCode, alphaCode);
+      alpha.assertNothingReceived();
+      beta.assertNothingReceived();
     } finally {
       await relay.close();
     }
@@ -722,9 +880,11 @@ describe("peer session across the relay", () => {
     assert.equal(await carry(betaSession, secondSession, CATALOG_TEXT), CATALOG_TEXT);
   });
 
-  it("heals the pair when a new claimant ends the session: the alpha endpoint rejoins by join code", async () => {
-    const alpha = createSession("alpha");
+  it("carries the alpha endpoint into the session a new claimant opens, on its open connection with a fresh handshake and token", async () => {
+    const alphaMeta: { bindingToken?: string } = {};
+    const alpha = createSession("alpha", undefined, alphaMeta);
     const alphaEndpoint = endpoint(alpha);
+    const alphaSocket = lastSocket();
     const joinCode = await within(alphaEndpoint.joinCode, "alpha's join code");
     const displaced = await relay.connect("sample/beta");
     try {
@@ -733,10 +893,17 @@ describe("peer session across the relay", () => {
       displaced.send({ type: "sample:hello", payload: { protocolVersion: 1 } });
       await alphaEndpoint.peerSession(0);
       const endedSessionId = alpha.sessionId;
+      const endedToken = alphaMeta.bindingToken;
       const alphaErrors: string[] = [];
       alpha.addEventListener("error", (code) => {
         alphaErrors.push(code);
       });
+      const alphaStatuses: string[] = [];
+      alpha.addEventListener("status", (status) => {
+        alphaStatuses.push(status);
+      });
+      const alphaSignals = recordSignals(alpha);
+      const socketsBeforeClaimant = RecordingWebSocket.created.length;
 
       const claimant = createSession("beta", joinCode);
       const claimantEndpoint = endpoint(claimant);
@@ -749,9 +916,16 @@ describe("peer session across the relay", () => {
       assertSessionError(await displaced.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
       await within(displaced.closed, "the displaced connection to close");
       assert.deepEqual(alphaErrors, []);
+      assert.deepEqual(alphaStatuses, []);
+      assert.deepEqual(alphaSignals, ["welcome"]);
+      assert.equal(alphaSocket.readyState, WebSocket.OPEN);
+      assert.equal(RecordingWebSocket.created.length - socketsBeforeClaimant, 1);
       assert.notEqual(alpha.sessionId, endedSessionId);
       assert.equal(claimant.sessionId, alpha.sessionId);
+      assert.equal(typeof alphaMeta.bindingToken, "string");
+      assert.notEqual(alphaMeta.bindingToken, endedToken);
       assert.equal(await carry(claimantSession, alphaSession, CATALOG_TEXT), CATALOG_TEXT);
+      assert.equal(await carry(alphaSession, claimantSession, "and back"), "and back");
     } finally {
       await displaced.close();
     }

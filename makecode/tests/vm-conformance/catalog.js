@@ -1,8 +1,8 @@
 /*
  * Reads the serialized catalog out of a capture and compares payloads: the
- * `CATALOG <payload>` line a run prints, the messages it posts on a simulator
- * message channel, and a canonical form under which two parsed payloads can be
- * compared field for field.
+ * `CATALOG <payload>` line a run prints, the framed messages it posts on a
+ * simulator message channel, and a canonical form under which two parsed
+ * payloads can be compared field for field.
  */
 
 /** Line prefix a run prints its serialized catalog under. */
@@ -38,6 +38,24 @@ function channelMessages(simxLog) {
     });
 }
 
+/** A channel version declaration: a decimal integer from 1, without leading zeros. */
+const VERSION_DECLARATION = /^[1-9][0-9]*$/;
+
+/**
+ * The parts of one message the extension posts on a simulator message
+ * channel: the channel version its first line declares, and the catalog
+ * payload after that line.
+ *
+ * @param text The message's bytes read as UTF-8.
+ * @returns `{ version, payload }`, or null when `text` does not begin with a
+ *   version declaration line.
+ */
+function frameOf(text) {
+  const lineEnd = text.indexOf("\n");
+  if (lineEnd < 0 || !VERSION_DECLARATION.test(text.slice(0, lineEnd))) return null;
+  return { version: Number(text.slice(0, lineEnd)), payload: text.slice(lineEnd + 1) };
+}
+
 /**
  * The canonical form of a parsed JSON value: every object's keys sorted, so
  * two values serialize identically exactly when they hold the same fields.
@@ -62,4 +80,4 @@ function sameJson(actual, expected) {
   return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
 }
 
-module.exports = { CATALOG_PREFIX, payloadOf, channelMessages, canonical, sameJson };
+module.exports = { CATALOG_PREFIX, payloadOf, channelMessages, frameOf, canonical, sameJson };
