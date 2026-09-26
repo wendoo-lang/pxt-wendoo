@@ -1,5 +1,6 @@
 import type {
   MakeCodeEditorSession,
+  MakeCodeEditorSessionEntry,
   MakeCodeEditorSessionErrorCode,
   MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionStatus,
@@ -34,7 +35,17 @@ export interface EditorSessionViewState {
   readonly view: "connect" | "session";
   /** The session's connectivity, exactly as the session reports it. */
   readonly status: MakeCodeEditorSessionStatus;
-  /** The join code to show, live-updated as the bridge service sends newer ones. */
+  /**
+   * Progress of the join code entered on the connect page, exactly as the
+   * session reports it: `submitted`, then `accepted`, until a welcome
+   * connects the session; `undefined` when no entered code is pending.
+   */
+  readonly entry: MakeCodeEditorSessionEntry | undefined;
+  /**
+   * The code a person enters on the MakeCode side to join the session's
+   * vacant role, live-updated as the bridge service sends newer ones;
+   * `undefined` while both roles are bound.
+   */
   readonly joinCode: string | undefined;
   /** Stable code of the failure that ended the latest connection, or `undefined` when none did. */
   readonly errorCode: MakeCodeEditorSessionErrorCode | undefined;
@@ -45,8 +56,8 @@ export interface EditorSessionViewState {
   readonly disconnectedBeyondGrace: boolean;
   /**
    * The latest tile catalog the MakeCode side published, as its serialized
-   * text. Kept while disconnected; dropped by
-   * {@link EditorSessionStore.forget}.
+   * text. Kept while disconnected; dropped whenever no session exists -- by
+   * {@link EditorSessionStore.forget}, and when the session ends.
    */
   readonly catalogText: string | undefined;
 }
@@ -122,9 +133,11 @@ export class EditorSessionStore {
   }
 
   /**
-   * Forgets the session: drops its binding token, held and persisted, and
-   * the catalog, returning the editor to the connect page. The way back into
-   * a session is entering a join code.
+   * Forgets the session: ends it over a live connection, so the MakeCode
+   * side is told it ended, then drops its binding token, held and persisted,
+   * and the catalog, returning the editor to the connect page. With no live
+   * connection this is a local clear. The way back into a session is
+   * entering a join code.
    */
   forget(): void {
     this._catalogText = undefined;
@@ -170,9 +183,10 @@ export class EditorSessionStore {
     this.sessionChanged();
   }
 
-  /** Tracks the session's connectivity into the grace bookkeeping, then publishes. */
+  /** Tracks the session's connectivity into the grace bookkeeping, drops the catalog when no session exists, then publishes. */
   private sessionChanged(): void {
     const status = this._session?.state.status ?? "none";
+    if (status === "none") this._catalogText = undefined;
     if (status === "disconnected") {
       if (this._graceTimer === undefined && !this._beyondGrace) {
         this._graceTimer = setTimeout(() => {
@@ -197,6 +211,7 @@ export class EditorSessionStore {
     return {
       view: status === "none" ? "connect" : "session",
       status,
+      entry: sessionState?.entry,
       joinCode: sessionState?.joinCode,
       errorCode: sessionState?.errorCode,
       disconnectedBeyondGrace: this._beyondGrace,
@@ -211,6 +226,7 @@ export class EditorSessionStore {
     if (
       next.view === last.view &&
       next.status === last.status &&
+      next.entry === last.entry &&
       next.joinCode === last.joinCode &&
       next.errorCode === last.errorCode &&
       next.disconnectedBeyondGrace === last.disconnectedBeyondGrace &&

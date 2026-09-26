@@ -2,7 +2,7 @@
 export const BINDING_TOKEN_STORAGE_KEY = "wendoo-simx-bridge:bindingToken";
 
 /** The part of the Web Storage API a {@link BindingTokenStore} writes through to. */
-export type TokenStorage = Pick<Storage, "getItem" | "setItem">;
+export type TokenStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /** Keeps the binding token of this simulator extension's bridge session. */
 export interface BindingTokenStore {
@@ -16,6 +16,8 @@ export interface BindingTokenStore {
   load(): string | undefined;
   /** Save `token`, replacing any saved before. */
   save(token: string): void;
+  /** Remove the saved token, so {@link load} returns `undefined`. */
+  clear(): void;
 }
 
 /**
@@ -47,6 +49,14 @@ export function openBindingTokenStore(openStorage: () => TokenStorage): BindingT
         storage?.setItem(BINDING_TOKEN_STORAGE_KEY, token);
       } catch {
         // The token stays in memory for the rest of the frame.
+      }
+    },
+    clear() {
+      saved = undefined;
+      try {
+        storage?.removeItem(BINDING_TOKEN_STORAGE_KEY);
+      } catch {
+        // The token is gone from memory; the storage keeps it until it next accepts a write.
       }
     },
   };

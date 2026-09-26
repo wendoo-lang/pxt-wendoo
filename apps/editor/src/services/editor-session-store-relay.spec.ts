@@ -91,6 +91,10 @@ class MemoryStorage implements TokenStorage {
   setItem(key: string, value: string): void {
     this._items.set(key, value);
   }
+
+  removeItem(key: string): void {
+    this._items.delete(key);
+  }
 }
 
 /** A simx log keeping its lines out of the test output. */
@@ -182,6 +186,16 @@ describe("editor session store with the simx module on the relay", () => {
     return bridge.joinCode;
   }
 
+  /** Resolves with the join code the simx module shows once it differs from `shown`. */
+  async function nextSimxCode(shown: string): Promise<string> {
+    const deadline = Date.now() + 2000;
+    while (bridges[0].joinCode === shown || bridges[0].joinCode === undefined) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the simx's next join code");
+      await delay(10);
+    }
+    return bridges[0].joinCode;
+  }
+
   /** Creates a store over the spec's persistence, stopped by the spec's cleanup. */
   function editorStore(): EditorSessionStore {
     const store = new EditorSessionStore({ bridgeUrl: relay.address, persistence });
@@ -207,13 +221,14 @@ describe("editor session store with the simx module on the relay", () => {
     return { store, joinCode };
   }
 
-  it("joins by code: the store connects, shows the code, and renders each catalog the program posts", async () => {
+  it("joins by code: the store connects, holds no spent code, and renders each catalog the program posts", async () => {
     const joinCode = await startSimx();
     frame.programPosts(CATALOG);
     const store = editorStore();
     assert.equal(store.getSnapshot().view, "connect");
 
     store.connect(joinCode);
+    assert.equal(store.getSnapshot().entry, "submitted");
     const state = await until(
       store,
       (s) => s.status === "connected" && s.catalogText !== undefined,
@@ -221,7 +236,9 @@ describe("editor session store with the simx module on the relay", () => {
     );
 
     assert.equal(state.view, "session");
-    assert.equal(state.joinCode, joinCode);
+    assert.equal(state.entry, undefined);
+    assert.equal(state.joinCode, undefined);
+    assert.equal(bridges[0].joinCode, undefined);
     assert.equal(state.catalogText, CATALOG);
     assert.equal(editorTokens.size, 1);
 
@@ -230,7 +247,7 @@ describe("editor session store with the simx module on the relay", () => {
   });
 
   it("resumes by the persisted token on a fresh page load, presenting no code", async () => {
-    const { store, joinCode } = await formSession();
+    const { store } = await formSession();
     store.stop();
 
     const reloaded = editorStore();
@@ -242,7 +259,8 @@ describe("editor session store with the simx module on the relay", () => {
       "the reloaded editor to resume the session"
     );
 
-    assert.equal(state.joinCode, joinCode);
+    assert.equal(state.joinCode, undefined);
+    assert.equal(bridges[0].joinCode, undefined);
     assert.equal(lastEditorHello()?.joinCode, undefined);
     assert.equal(lastEditorHello()?.bindingToken, editorTokens.get("token"));
   });
@@ -271,33 +289,33 @@ describe("editor session store with the simx module on the relay", () => {
   });
 
   it("heals across a relay restart by tokens alone, following the join code the restarted relay mints", async () => {
-    const { store, joinCode } = await formSession();
+    const { store } = await formSession();
     const token = editorTokens.get("token");
 
     await relay.restart();
     frame.programPosts(NEWER_CATALOG);
     const state = await until(
       store,
-      (s) => s.status === "connected" && s.joinCode !== joinCode && s.catalogText === NEWER_CATALOG,
+      (s) => s.status === "connected" && s.catalogText === NEWER_CATALOG,
       "the session to heal across the restart under a new code",
       8000
     );
 
-    assert.notEqual(state.joinCode, undefined);
+    assert.equal(state.joinCode, undefined);
     assert.equal(editorTokens.get("token"), token);
     assert.equal(lastEditorHello()?.joinCode, undefined);
     assert.equal(lastEditorHello()?.bindingToken, token);
   });
 
-  it("holds on replacement, and forget-and-rejoin reaches the successor session by code alone", async () => {
+  it("holds when a newer connection presenting its token supersedes it, and forget-and-rejoin enters the code the simx then shows", async () => {
     const { store, joinCode } = await formSession();
 
-    const claimant = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    const newer = await relay.connect(EDITOR);
+    assertJoinCode(await newer.hello({ bindingToken: editorTokens.get("token") }));
     const held = await until(
       store,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
-      "the store to report the replacement hold"
+      "the store to report the supersession hold"
     );
     assert.equal(held.view, "session");
     assert.equal(held.status, "disconnected");
@@ -308,18 +326,64 @@ describe("editor session store with the simx module on the relay", () => {
     assert.equal(store.getSnapshot().view, "connect");
     assert.equal(editorTokens.size, 0);
 
-    await claimant.close();
+    await newer.close();
+    const vacancyCode = await nextSimxCode(joinCode);
     frame.programPosts(NEWER_CATALOG);
-    store.connect(joinCode);
+    store.connect(vacancyCode);
     const state = await until(
       store,
       (s) => s.status === "connected" && s.catalogText === NEWER_CATALOG,
       "the rejoined session to form"
     );
 
-    assert.equal(state.joinCode, joinCode);
+    assert.equal(state.joinCode, undefined);
     assert.equal(editorTokens.size, 1);
-    assert.equal(lastEditorHello()?.joinCode, joinCode);
+    assert.equal(lastEditorHello()?.joinCode, vacancyCode);
     assert.equal(lastEditorHello()?.bindingToken, undefined);
+  });
+
+  it("returns to the connect page with the refusal's code when the relay does not recognize the entered code", async () => {
+    await startSimx();
+    const store = editorStore();
+
+    store.connect("no-such-code");
+    const state = await until(
+      store,
+      (s) => s.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+      "the store to report the refusal"
+    );
+
+    assert.equal(state.view, "connect");
+    assert.equal(state.entry, undefined);
+    assert.equal(editorTokens.size, 0);
+  });
+
+  it("ends a live session when forgotten: the simx is told it ended and forgets its token, so its restart forms a new session", async () => {
+    const { store } = await formSession();
+    assert.notEqual(simxTokens.load(), undefined);
+
+    store.forget();
+    assert.equal(store.getSnapshot().view, "connect");
+    assert.equal(editorTokens.size, 0);
+    const deadline = Date.now() + 2000;
+    while (simxTokens.load() !== undefined) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the simx to forget its token");
+      await delay(10);
+    }
+
+    bridges[0].dispose();
+    frame = new FakeFrame();
+    const restartedCode = await startSimx();
+    frame.programPosts(NEWER_CATALOG);
+    store.connect(restartedCode);
+    const state = await until(
+      store,
+      (s) => s.status === "connected" && s.catalogText === NEWER_CATALOG,
+      "a new session to form with the restarted simx"
+    );
+
+    assert.equal(state.view, "session");
+    assert.equal(lastEditorHello()?.bindingToken, undefined);
+    assert.equal(lastEditorHello()?.joinCode, restartedCode);
   });
 });

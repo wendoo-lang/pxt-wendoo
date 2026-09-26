@@ -1,5 +1,6 @@
 export type {
   MakeCodeEditorSession,
+  MakeCodeEditorSessionEntry,
   MakeCodeEditorSessionErrorCode,
   MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,

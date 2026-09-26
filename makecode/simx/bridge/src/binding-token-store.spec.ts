@@ -15,6 +15,10 @@ class MemoryStorage implements TokenStorage {
     if (this.failWrites) throw new Error("storage write refused");
     this.items.set(key, value);
   }
+
+  removeItem(key: string): void {
+    this.items.delete(key);
+  }
 }
 
 describe("binding token store", () => {
@@ -28,6 +32,18 @@ describe("binding token store", () => {
 
     assert.equal(storage.items.get(BINDING_TOKEN_STORAGE_KEY), "token-1");
     assert.equal(openBindingTokenStore(() => storage).load(), "token-1");
+  });
+
+  it("clears the saved token from memory and the storage, where a store opened later finds none", () => {
+    const storage = new MemoryStorage();
+    const store = openBindingTokenStore(() => storage);
+    store.save("token-1");
+
+    store.clear();
+
+    assert.equal(store.load(), undefined);
+    assert.equal(storage.items.has(BINDING_TOKEN_STORAGE_KEY), false);
+    assert.equal(openBindingTokenStore(() => storage).load(), undefined);
   });
 
   it("holds tokens in memory, not persistent, when the storage cannot be opened", () => {

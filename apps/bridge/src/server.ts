@@ -1,11 +1,14 @@
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Relay, type RelayConnection } from "@wendoo/bridge-session";
+import { Relay, type RelayConnection, type RelayTimings } from "@wendoo/bridge-session";
 import { Hono } from "hono";
 import type { Logger } from "pino";
 
-/** Options for {@link startRelayServer}. */
-export interface RelayServerOptions {
+/**
+ * Options for {@link startRelayServer}. The session engine timings default
+ * to the engine's own.
+ */
+export interface RelayServerOptions extends RelayTimings {
   /** Host name or address to listen on. */
   host: string;
   /** TCP port to listen on; `0` picks a free one. */
@@ -14,8 +17,6 @@ export interface RelayServerOptions {
   bindingSecret: string;
   /** Destination of the server's log records. */
   logger: Logger;
-  /** How long a session with no bound member lasts before it ends, in milliseconds. Defaults to five minutes. */
-  lingerMs?: number;
 }
 
 /** A running relay server. */
@@ -33,8 +34,9 @@ export interface RelayServer {
  * are dropped. Resolves once the server is listening.
  */
 export function startRelayServer(options: RelayServerOptions): Promise<RelayServer> {
-  const { logger } = options;
-  const relay = new Relay({ bindingSecret: options.bindingSecret, logger, lingerMs: options.lingerMs });
+  const { host, port, ...relayOptions } = options;
+  const { logger } = relayOptions;
+  const relay = new Relay(relayOptions);
   const app = new Hono();
   const { upgradeWebSocket, injectWebSocket, wss } = createNodeWebSocket({ app });
 
@@ -72,7 +74,7 @@ export function startRelayServer(options: RelayServerOptions): Promise<RelayServ
   );
 
   return new Promise((resolve) => {
-    const server = serve({ fetch: app.fetch, hostname: options.host, port: options.port }, (info) => {
+    const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
       resolve({
         port: info.port,
         close: () =>

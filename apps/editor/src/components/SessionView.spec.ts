@@ -14,6 +14,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
   return {
     view: "session",
     status: "connected",
+    entry: undefined,
     joinCode: "apple-bird-cloud",
     errorCode: undefined,
     disconnectedBeyondGrace: false,
@@ -32,11 +33,12 @@ function render(state: EditorSessionViewState): string {
 }
 
 describe("SessionView", () => {
-  it("shows the join code with a copy affordance and the catalog while connected, with no notices", () => {
+  it("shows the catalog while connected, with no join code, even one the store holds, and no notices", () => {
     const markup = render(stateWith({}));
 
-    assert.match(markup, /data-testid="join-code"[^>]*>apple-bird-cloud</);
-    assert.match(markup, /data-testid="copy-join-code"/);
+    assert.doesNotMatch(markup, /data-testid="join-code"/);
+    assert.doesNotMatch(markup, /apple-bird-cloud/);
+    assert.doesNotMatch(markup, /data-testid="copy-join-code"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);

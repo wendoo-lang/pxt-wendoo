@@ -35,20 +35,44 @@ export type MakeCodeEditorSessionStatus = "none" | "connected" | "disconnected";
  */
 export type MakeCodeEditorSessionErrorCode = BridgeSessionErrorCode | PeerSessionErrorCode;
 
+/**
+ * Progress of the join code a person entered, while it is presented and not
+ * yet welcomed:
+ *
+ * - `submitted` -- presented to the bridge service, which has not answered;
+ * - `accepted` -- the bridge service accepted it and joined this side to the
+ *   session, whose counterpart is not connected yet.
+ */
+export type MakeCodeEditorSessionEntry = "submitted" | "accepted";
+
 /** One reading of a {@link MakeCodeEditorSession}'s state. */
 export interface MakeCodeEditorSessionState {
   /** Whether a session exists and whether it is connected. */
   readonly status: MakeCodeEditorSessionStatus;
   /**
-   * The session's join code, for showing: the one it was created with,
-   * replaced by every newer code the bridge service sends. `undefined` until
-   * it has one.
+   * Progress of the join code the session was created with, while a
+   * connection presents it and no welcome has arrived; `undefined` otherwise
+   * -- no code was entered, a welcome spent it, the bridge service refused
+   * it (see {@link errorCode}), or no connection is open.
+   */
+  readonly entry: MakeCodeEditorSessionEntry | undefined;
+  /**
+   * The code a person enters on the MakeCode side to join the session: the
+   * latest code the bridge service sent while one of the session's roles is
+   * vacant. `undefined` before the first, from each welcome until the next
+   * code arrives, and after the session is forgotten or ended.
    */
   readonly joinCode: string | undefined;
   /**
    * Stable code of the failure that ended this side's latest connection, or
    * `undefined` when none did. Cleared when the session is connected again
    * and when {@link MakeCodeEditorSession.start} is called.
+   *
+   * `BridgeSessionErrorCode.JOIN_CODE_UNKNOWN` means the entered code opened
+   * no vacant role, and `BridgeSessionErrorCode.SESSION_ENDED` that the
+   * session was ended on purpose; the session then holds no binding token,
+   * so the status is `none`, and the way into a session is a person entering
+   * a current code.
    *
    * The version codes -- `BridgeSessionErrorCode.PROTOCOL_VERSION_MISMATCH`
    * and `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER` -- mean this side and
@@ -81,7 +105,8 @@ export interface MakeCodeEditorSessionOptions {
   /**
    * Removes the token {@link saveBindingToken} stored, so
    * {@link loadBindingToken} returns none. Called by
-   * {@link MakeCodeEditorSession.forget}.
+   * {@link MakeCodeEditorSession.forget}, and when the bridge service reports
+   * the session ended.
    */
   clearBindingToken?: () => void;
 }
@@ -118,13 +143,19 @@ export interface MakeCodeEditorSession {
    * disconnected until this is called.
    */
   start(): void;
-  /** Close the connection. The session, its join code, and its binding token are kept. */
+  /**
+   * Close the connection. The session, its join code, and its binding token
+   * are kept, and the session lives on at the bridge service.
+   */
   stop(): void;
   /**
-   * Close the connection and forget the session: drops the binding token,
-   * the join code, and the error code, clears the token persisted through
-   * the `clearBindingToken` option, and returns the state to `none`. The
-   * way into a session afterwards is a person entering a join code.
+   * Forget the session: on an open connection, end the session on purpose,
+   * which the counterpart is told as `BridgeSessionErrorCode.SESSION_ENDED`;
+   * then close the connection, drop the binding token, the join code, and
+   * the error code, clear the token persisted through the
+   * `clearBindingToken` option, and return the state to `none`. With no open
+   * connection nothing reaches the bridge service. The way into a session
+   * afterwards is a person entering a join code.
    */
   forget(): void;
 }
@@ -229,6 +260,8 @@ class EditorSession implements MakeCodeEditorSession {
   private _errorCode: MakeCodeEditorSessionErrorCode | undefined;
   /** Whether the bridge service has welcomed the open connection and the counterpart has not left since. */
   private _welcomed = false;
+  /** Whether the bridge service has answered the open connection's hello presenting the entry join code. */
+  private _entryAccepted = false;
   /** Whether the session is to be connected: set by `start()`, cleared by `stop()` and by a failure it holds on. */
   private _running = false;
   /** The open connection, if any. */
@@ -242,7 +275,6 @@ class EditorSession implements MakeCodeEditorSession {
     this._createBridge = createBridge;
     this._saveBindingToken = options.saveBindingToken;
     this._clearBindingToken = options.clearBindingToken;
-    this._joinCode = options.joinCode;
     this._entryCode = options.joinCode;
     this._bindingToken = options.loadBindingToken?.();
     this._state = this.readState();
@@ -282,12 +314,9 @@ class EditorSession implements MakeCodeEditorSession {
 
   forget(): void {
     this._running = false;
-    this.release();
-    this._bindingToken = undefined;
-    this._entryCode = undefined;
-    this._joinCode = undefined;
+    this.release(true);
+    this.dropBinding();
     this._errorCode = undefined;
-    this._clearBindingToken?.();
     this.update();
   }
 
@@ -299,31 +328,51 @@ class EditorSession implements MakeCodeEditorSession {
       filesystem: createInMemoryProjectFileSystem(),
       joinCode: this._entryCode,
       bindingToken: this._bindingToken,
-      // Called on every welcome the bridge accepts: the session's welcome signal.
-      onBindingTokenChange: (token) => {
-        if (bridge === this._bridge) this.welcome(bridge, token);
-      },
     });
     this._bridge = bridge;
-    this._bridgeUnsubscribe = bridge.onStateChange(() => {
-      if (bridge === this._bridge) this.bridgeChanged(bridge);
-    });
+    this._entryAccepted = false;
+    const unsubscribes = [
+      bridge.onStateChange(() => {
+        if (bridge === this._bridge) this.bridgeChanged(bridge);
+      }),
+      bridge.onWelcome((welcome) => {
+        if (bridge === this._bridge) this.welcome(bridge, welcome.bindingToken);
+      }),
+    ];
+    this._bridgeUnsubscribe = () => {
+      for (const unsubscribe of unsubscribes) unsubscribe();
+    };
     bridge.start();
   }
 
-  /** Closes the open connection, if any, and the handshake it carries. */
-  private release(): void {
+  /**
+   * Closes the open connection, if any, and the handshake it carries; with
+   * `end`, ends the session on purpose over the connection first.
+   */
+  private release(end = false): void {
     const bridge = this._bridge;
     this.leaveCounterpart();
     this._bridgeUnsubscribe?.();
     this._bridgeUnsubscribe = undefined;
     this._bridge = undefined;
-    bridge?.stop();
+    if (end) {
+      bridge?.end();
+    } else {
+      bridge?.stop();
+    }
   }
 
-  private welcome(bridge: AppBridge, token: string): void {
+  /** Drops the binding token, held and persisted, the entry join code, and the join code. */
+  private dropBinding(): void {
+    this._bindingToken = undefined;
     this._entryCode = undefined;
-    if (token !== this._bindingToken) {
+    this._joinCode = undefined;
+    this._clearBindingToken?.();
+  }
+
+  private welcome(bridge: AppBridge, token: string | undefined): void {
+    this._entryCode = undefined;
+    if (token !== undefined && token !== this._bindingToken) {
       this._bindingToken = token;
       this._saveBindingToken?.(token);
     }
@@ -344,19 +393,29 @@ class EditorSession implements MakeCodeEditorSession {
 
   private bridgeChanged(bridge: AppBridge): void {
     const snapshot = bridge.snapshot();
-    if (snapshot.joinCode !== undefined) this._joinCode = snapshot.joinCode;
     if (snapshot.errorCode !== undefined) {
       this.fail(snapshot.errorCode);
       return;
     }
+    if (snapshot.status !== "connected") {
+      this._entryAccepted = false;
+    } else if (snapshot.joinCode !== undefined && snapshot.joinCode !== this._joinCode) {
+      // A code arriving on the open connection answers the hello, or follows the answer.
+      this._entryAccepted = true;
+    }
+    this._joinCode = snapshot.joinCode;
     if (snapshot.status !== "connected" || snapshot.counterpartAway) this.leaveCounterpart();
     this.update();
   }
 
-  /** Ends the open connection for `code`, then reconnects at once when the code calls for it. */
+  /**
+   * Ends the open connection for `code`, dropping the binding when the
+   * session was ended, then reconnects at once when the code calls for it.
+   */
   private fail(code: MakeCodeEditorSessionErrorCode): void {
     this.release();
     this._errorCode = code;
+    if (code === BridgeSessionErrorCode.SESSION_ENDED) this.dropBinding();
     if (code !== BridgeSessionErrorCode.OUTBOUND_QUEUE_OVERFLOW) this._running = false;
     this.update();
     if (this._running) {
@@ -374,8 +433,10 @@ class EditorSession implements MakeCodeEditorSession {
   }
 
   private readState(): MakeCodeEditorSessionState {
+    const entryPending = this._entryCode !== undefined && this._bridge !== undefined;
     return {
       status: this._welcomed ? "connected" : this._bindingToken === undefined ? "none" : "disconnected",
+      entry: entryPending ? (this._entryAccepted ? "accepted" : "submitted") : undefined,
       joinCode: this._joinCode,
       errorCode: this._errorCode,
     };
@@ -385,7 +446,14 @@ class EditorSession implements MakeCodeEditorSession {
   private update(): void {
     const next = this.readState();
     const last = this._state;
-    if (next.status === last.status && next.joinCode === last.joinCode && next.errorCode === last.errorCode) return;
+    if (
+      next.status === last.status &&
+      next.entry === last.entry &&
+      next.joinCode === last.joinCode &&
+      next.errorCode === last.errorCode
+    ) {
+      return;
+    }
     this._state = next;
     for (const listener of this._stateListeners) listener(next);
   }

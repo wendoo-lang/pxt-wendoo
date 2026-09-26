@@ -43,6 +43,9 @@ function catalogMessage(content: string): MakeCodeSessionMessage {
   return { type: "makecode:catalog", payload: { content } };
 }
 
+/** Join-code rotation interval of the relay the rotation spec starts, in milliseconds. */
+const ROTATION_MS = 1000;
+
 /** How many payload messages overflow an app bridge's outbound queue while its connection is down. */
 const QUEUE_OVERFLOW_COUNT = 1001;
 
@@ -138,6 +141,12 @@ function nextCatalog(session: MakeCodeEditorSession): Promise<string> {
   );
 }
 
+/** Asserts that `message` is the `session:error` refusing a hello's join code, answering the hello. */
+function assertJoinCodeUnknown(message: Parameters<typeof assertSessionError>[0]): void {
+  assertSessionError(message, BridgeSessionErrorCode.JOIN_CODE_UNKNOWN);
+  assert.equal(message.id, "hello");
+}
+
 /**
  * Runs the simx's side of the makecode handshake after a welcome, as the simx
  * endpoint does: sends the simx's hello, asserts that the next frame the simx
@@ -225,7 +234,7 @@ describe("makecode editor session on the relay", () => {
         saved.push(token);
       },
     });
-    assert.deepEqual(session.state, { status: "none", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
     const received = nextCatalog(session);
 
     session.start();
@@ -233,61 +242,93 @@ describe("makecode editor session on the relay", () => {
     await simxHandshake(simx, "{}");
 
     assert.equal(await received, "{}");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     assert.deepEqual(saved, [welcome.bindingToken]);
     assert.equal(editorSockets()[0].url, `ws://${relay.address}/${EDITOR}`);
   });
 
   it("reclaims the session by its binding token when its own connection drops, with a fresh handshake", async () => {
-    const { simx, session, joinCode, welcome } = await formSession("{}");
+    const { simx, session, welcome } = await formSession("{}");
 
     editorSockets()[0].close();
     await until(session, (state) => state.status === "disconnected", "the session to be disconnected");
     assertCounterpartAway(await simx.nextMessage());
+    assertJoinCode(await simx.nextMessage());
     const received = nextCatalog(session);
     const rewelcome = assertWelcome(await simx.nextMessage());
     await simxHandshake(simx, "[]");
 
     assert.equal(await received, "[]");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     assert.equal(rewelcome.sessionId, welcome.sessionId);
     assert.equal(lastEditorHello()?.bindingToken, welcome.bindingToken);
   });
 
   it("reclaims the session in a new session object by the saved binding token alone", async () => {
-    const { simx, session, joinCode, welcome, saved } = await formSession("{}");
+    const { simx, session, welcome, saved } = await formSession("{}");
     session.stop();
     assertCounterpartAway(await simx.nextMessage());
+    assertJoinCode(await simx.nextMessage());
 
     const reloaded = editorSession({ loadBindingToken: () => saved.at(-1) });
-    assert.deepEqual(reloaded.state, { status: "disconnected", joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(reloaded.state, {
+      status: "disconnected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     const received = nextCatalog(reloaded);
     reloaded.start();
     const rewelcome = assertWelcome(await simx.nextMessage());
     await simxHandshake(simx, "[]");
 
     assert.equal(await received, "[]");
-    assert.deepEqual(reloaded.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(reloaded.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     assert.equal(rewelcome.sessionId, welcome.sessionId);
   });
 
   it("opens a fresh handshake on the re-welcome when the counterpart returns", async () => {
-    const { simx, session, joinCode, welcome } = await formSession("{}");
+    const { simx, session, welcome } = await formSession("{}");
 
     await simx.close();
-    await until(session, (state) => state.status === "disconnected", "the session to be disconnected");
-    assert.deepEqual(session.state, { status: "disconnected", joinCode, errorCode: undefined });
+    const away = await until(
+      session,
+      (state) => state.status === "disconnected" && state.joinCode !== undefined,
+      "the session to be disconnected, showing the code minted for the vacant role"
+    );
+    const vacancyCode = away.joinCode;
+    assert.deepEqual(away, { status: "disconnected", entry: undefined, joinCode: vacancyCode, errorCode: undefined });
     const returned = await relay.connect(SIMX);
     const received = nextCatalog(session);
-    assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken }));
+    assert.equal(assertJoinCode(await returned.hello({ bindingToken: welcome.bindingToken })), vacancyCode);
     assert.equal(assertWelcome(await returned.nextMessage()).sessionId, welcome.sessionId);
     await simxHandshake(returned, "[]");
 
     assert.equal(await received, "[]");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
   });
 
-  it("heals across a relay restart by its binding token alone, showing the join code the restarted relay mints", async () => {
+  it("heals across a relay restart by its binding token alone, under the join code the restarted relay mints", async () => {
     const { simx, session, joinCode, welcome, saved } = await formSession("{}");
     const statuses: string[] = [];
     session.onStateChange((state) => {
@@ -304,7 +345,12 @@ describe("makecode editor session on the relay", () => {
     await simxHandshake(returned, "[]");
 
     assert.equal(await received, "[]");
-    assert.deepEqual(session.state, { status: "connected", joinCode: rebuiltCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     assert.deepEqual(statuses, ["disconnected", "connected"]);
     assert.notEqual(rebuiltCode, joinCode);
     assert.notEqual(rewelcome.sessionId, welcome.sessionId);
@@ -314,68 +360,156 @@ describe("makecode editor session on the relay", () => {
     assert.equal(lastEditorHello()?.bindingToken, welcome.bindingToken);
   });
 
-  it("shows the join code the relay pushes and does not present it when it connects again", async () => {
+  it("does not present a join code the relay sent when it connects again, nor show one once welcomed", async () => {
+    const { simx, session, saved } = await formSession("{}");
+    session.stop();
+    assertCounterpartAway(await simx.nextMessage());
+    const firstVacancy = assertJoinCode(await simx.nextMessage());
+
+    const rejoined = editorSession({ loadBindingToken: () => saved.at(-1) });
+    rejoined.start();
+    await until(rejoined, (state) => state.status === "connected", "the rejoined session to connect");
+    assertWelcome(await simx.nextMessage());
+    assert.deepEqual(await simx.nextMessage(), MAKECODE_HELLO);
+    rejoined.stop();
+    assertCounterpartAway(await simx.nextMessage());
+    const secondVacancy = assertJoinCode(await simx.nextMessage());
+    rejoined.start();
+    assertWelcome(await simx.nextMessage());
+    await until(rejoined, (state) => state.status === "connected", "the rejoined session to connect again");
+
+    assert.equal(rejoined.state.joinCode, undefined);
+    assert.notEqual(secondVacancy, firstVacancy);
+    assert.equal(lastEditorHello()?.joinCode, undefined);
+    assert.equal(lastEditorHello()?.bindingToken, saved.at(-1));
+  });
+
+  it("holds on JOIN_CODE_UNKNOWN when it enters a code no session holds, though it also holds a saved token", async () => {
     const { simx, session, joinCode, saved } = await formSession("{}");
     session.stop();
     assertCounterpartAway(await simx.nextMessage());
+    assertJoinCode(await simx.nextMessage());
 
-    const rejoined = editorSession({ joinCode: "stale-join-code", loadBindingToken: () => saved.at(-1) });
-    rejoined.start();
-    await until(rejoined, (state) => state.joinCode === joinCode, "the pushed join code");
-    assertWelcome(await simx.nextMessage());
-    assert.deepEqual(await simx.nextMessage(), MAKECODE_HELLO);
-    assert.equal(lastEditorHello()?.joinCode, "stale-join-code");
-    rejoined.stop();
-    assertCounterpartAway(await simx.nextMessage());
-    rejoined.start();
-    assertWelcome(await simx.nextMessage());
+    const entered = editorSession({ joinCode, loadBindingToken: () => saved.at(-1) });
+    entered.start();
+    const held = await until(
+      entered,
+      (state) => state.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+      "the session to report the unknown code"
+    );
+    const socketsAfterRefusal = editorSockets().length;
+    // Waits out the bridge client's first reconnect attempt.
+    await delay(1200);
 
-    assert.equal(rejoined.state.joinCode, joinCode);
-    assert.equal(lastEditorHello()?.joinCode, undefined);
-    assert.equal(lastEditorHello()?.bindingToken, saved.at(-1));
+    assert.equal(held.status, "disconnected");
+    assert.equal(editorSockets().length, socketsAfterRefusal);
+    assert.equal(lastEditorHello()?.joinCode, joinCode);
+    await simx.ping();
+    simx.assertNothingReceived();
   });
 
-  it("holds without reconnecting when replaced while the simx is carried to the claimant, and started again reaches no session with its token", async () => {
-    const { simx, session, joinCode, welcome, saved } = await formSession("{}");
+  it("holds with no session on JOIN_CODE_UNKNOWN when the code it presents opens no vacant role", async () => {
+    const entered = editorSession({ joinCode: "no-such-code" });
+    entered.start();
+    assert.equal(entered.state.entry, "submitted");
 
-    const claimant = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    const held = await until(
+      entered,
+      (state) => state.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+      "the session to report the unknown code"
+    );
+
+    assert.deepEqual(held, {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+    });
+  });
+
+  it("forgets a live session by ending it, which the simx is told as SESSION_ENDED", async () => {
+    const { simx, session } = await formSession("{}");
+
+    session.forget();
+
+    assertSessionError(await simx.nextMessage(), BridgeSessionErrorCode.SESSION_ENDED);
+    await within(simx.closed, "the simx's connection to close");
+    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
+  });
+
+  it("respects an end the simx asks for: drops its binding token and holds with no session", async () => {
+    const store = new Map<string, string>();
+    const { simx, joinCode } = await connectSimx();
+    const session = editorSession({
+      joinCode,
+      loadBindingToken: () => store.get("token"),
+      saveBindingToken: (token) => {
+        store.set("token", token);
+      },
+      clearBindingToken: () => {
+        store.delete("token");
+      },
+    });
+    session.start();
+    assertWelcome(await simx.nextMessage());
+    await until(session, (state) => state.status === "connected", "the session to connect");
+
+    simx.send({ type: "session:goodbye" });
+    const ended = await until(
+      session,
+      (state) => state.errorCode === BridgeSessionErrorCode.SESSION_ENDED,
+      "the session to report its end"
+    );
+    const socketsAfterEnd = editorSockets().length;
+    // Waits out the bridge client's first reconnect attempt.
+    await delay(1200);
+
+    assert.deepEqual(ended, {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: BridgeSessionErrorCode.SESSION_ENDED,
+    });
+    assert.equal(store.size, 0);
+    assert.equal(editorSockets().length, socketsAfterEnd);
+  });
+
+  it("holds without reconnecting when a newer connection presenting its token supersedes it, and started again takes the session back", async () => {
+    const { simx, session, welcome, saved } = await formSession("{}");
+
+    const newer = await relay.connect(EDITOR);
+    assertJoinCode(await newer.hello({ bindingToken: welcome.bindingToken }));
     await until(
       session,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
-      "the session to report its replacement"
+      "the session to report its supersession"
     );
     assert.deepEqual(session.state, {
       status: "disconnected",
-      joinCode,
+      entry: undefined,
+      joinCode: undefined,
       errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
     });
-    const carried = assertWelcome(await simx.nextMessage());
-    assert.equal(assertWelcome(await claimant.nextMessage()).sessionId, carried.sessionId);
-    assert.notEqual(carried.sessionId, welcome.sessionId);
-    const socketsAfterReplacement = editorSockets().length;
+    assert.equal(assertWelcome(await simx.nextMessage()).sessionId, welcome.sessionId);
+    assert.equal(assertWelcome(await newer.nextMessage()).sessionId, welcome.sessionId);
+    const socketsAfterSupersession = editorSockets().length;
     // Waits out the bridge client's first reconnect attempt.
     await delay(1200);
-    assert.equal(editorSockets().length, socketsAfterReplacement);
+    assert.equal(editorSockets().length, socketsAfterSupersession);
 
-    const statuses: string[] = [];
-    session.onStateChange((state) => {
-      statuses.push(state.status);
-    });
+    const received = nextCatalog(session);
     session.start();
-    assert.deepEqual(session.state, { status: "disconnected", joinCode, errorCode: undefined });
-    await editorSockets().at(-1)?.received("session:joinCode");
+    assertSessionError(await newer.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
+    assert.equal(assertWelcome(await simx.nextMessage()).sessionId, welcome.sessionId);
+    await simxHandshake(simx, "[]");
 
+    assert.equal(await received, "[]");
+    assert.equal(session.state.status, "connected");
     assert.equal(lastEditorHello()?.joinCode, undefined);
     assert.equal(lastEditorHello()?.bindingToken, saved.at(-1));
-    await claimant.ping();
-    claimant.assertNothingReceived();
-    await simx.ping();
-    simx.assertNothingReceived();
-    assert.ok(!statuses.includes("connected"));
   });
 
-  it("forgets a replaced session and joins the successor by code alone, persisting the successor's token", async () => {
+  it("forgets a superseded session and joins by a code alone, persisting the token it is welcomed with", async () => {
     const store = new Map<string, string>();
     const hooks: MakeCodeEditorSessionOptions = {
       loadBindingToken: () => store.get("token"),
@@ -394,55 +528,96 @@ describe("makecode editor session on the relay", () => {
     await simxHandshake(simx, "{}");
     assert.equal(await received, "{}");
 
-    const claimant = await relay.connect(EDITOR);
-    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
+    const newer = await relay.connect(EDITOR);
+    assertJoinCode(await newer.hello({ bindingToken: welcome.bindingToken }));
     await until(
       session,
       (state) => state.errorCode === BridgeSessionErrorCode.SESSION_REPLACED,
-      "the session to report its replacement"
+      "the session to report its supersession"
     );
-    const migrated = assertWelcome(await simx.nextMessage());
-    assertWelcome(await claimant.nextMessage());
+    assertWelcome(await simx.nextMessage());
 
     session.forget();
 
-    assert.deepEqual(session.state, { status: "none", joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
     assert.equal(store.size, 0);
 
-    await claimant.close();
+    await newer.close();
     assertCounterpartAway(await simx.nextMessage());
-    const rejoined = editorSession({ joinCode, ...hooks });
+    const vacancyCode = assertJoinCode(await simx.nextMessage());
+    const rejoined = editorSession({ joinCode: vacancyCode, ...hooks });
     const redelivered = nextCatalog(rejoined);
     rejoined.start();
     const rewelcome = assertWelcome(await simx.nextMessage());
     await simxHandshake(simx, "[]");
 
     assert.equal(await redelivered, "[]");
-    assert.deepEqual(rejoined.state, { status: "connected", joinCode, errorCode: undefined });
-    assert.equal(rewelcome.sessionId, migrated.sessionId);
-    assert.notEqual(rewelcome.sessionId, welcome.sessionId);
-    assert.equal(store.get("token"), migrated.bindingToken);
-    assert.notEqual(store.get("token"), welcome.bindingToken);
-    assert.equal(lastEditorHello()?.joinCode, joinCode);
+    assert.deepEqual(rejoined.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
+    assert.equal(rewelcome.sessionId, welcome.sessionId);
+    assert.equal(store.get("token"), welcome.bindingToken);
+    assert.equal(lastEditorHello()?.joinCode, vacancyCode);
     assert.equal(lastEditorHello()?.bindingToken, undefined);
   });
 
-  it("is carried into the session a new simx claimant opens, on its open connection with a fresh handshake and token", async () => {
-    const { simx, session, joinCode, welcome, saved } = await formSession("{}");
+  it("stays connected when another simx presents the join code, which the relay refuses", async () => {
+    const { simx, session, joinCode, saved } = await formSession("{}");
     const socketsBefore = editorSockets().length;
-    const received = nextCatalog(session);
 
     const claimant = await relay.connect(SIMX);
-    assert.equal(assertJoinCode(await claimant.hello({ joinCode })), joinCode);
-    assertSessionError(await simx.nextMessage(), BridgeSessionErrorCode.SESSION_REPLACED);
-    const claimantWelcome = assertWelcome(await claimant.nextMessage());
-    await simxHandshake(claimant, "[]");
+    assertJoinCodeUnknown(await claimant.hello({ joinCode }));
+    await within(claimant.closed, "the refused connection to close");
+    await simx.ping();
+    simx.assertNothingReceived();
 
-    assert.equal(await received, "[]");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
-    assert.notEqual(claimantWelcome.sessionId, welcome.sessionId);
-    assert.deepEqual(saved, [welcome.bindingToken, claimantWelcome.bindingToken]);
+    assert.equal(session.state.status, "connected");
+    assert.equal(session.state.errorCode, undefined);
+    assert.equal(saved.length, 1);
     assert.equal(editorSockets().length, socketsBefore);
+  });
+
+  it("joins by a code shown before a rotation within the entry grace, then shows live every rotated code of a vacancy", async () => {
+    const rotating = await startTestRelay({ bindingSecret: "spec-secret", rotationMs: ROTATION_MS });
+    try {
+      const simx = await rotating.connect(SIMX);
+      const shown = assertJoinCode(await simx.hello());
+      const rotated = assertJoinCode(await simx.nextMessage());
+      assert.notEqual(rotated, shown);
+
+      const session = createMakeCodeEditorSession({ bridgeUrl: rotating.address, joinCode: shown });
+      sessions.push(session);
+      const received = nextCatalog(session);
+      session.start();
+      const welcome = assertWelcome(await simx.nextMessage());
+      await simxHandshake(simx, "{}");
+      assert.equal(await received, "{}");
+      assert.equal(welcome.joinCode, rotated);
+      assert.deepEqual(session.state, {
+        status: "connected",
+        entry: undefined,
+        joinCode: undefined,
+        errorCode: undefined,
+      });
+
+      await simx.close();
+      const vacancy = await until(
+        session,
+        (current) => current.status === "disconnected" && current.joinCode !== undefined,
+        "the code minted for the vacant role"
+      );
+      const rotatedVacancy = await until(
+        session,
+        (current) => current.joinCode !== vacancy.joinCode,
+        "the vacancy's next rotated join code"
+      );
+      assert.equal(rotatedVacancy.status, "disconnected");
+    } finally {
+      await rotating.close();
+    }
   });
 
   it("recovers by itself from an outbound queue overflow on the payload path, discarding the queued payloads", async () => {
@@ -471,15 +646,22 @@ describe("makecode editor session on the relay", () => {
 
     assert.deepEqual(states.at(-1), {
       status: "disconnected",
-      joinCode,
+      entry: undefined,
+      joinCode: undefined,
       errorCode: BridgeSessionErrorCode.OUTBOUND_QUEUE_OVERFLOW,
     });
     assertCounterpartAway(await simx.nextMessage());
+    assertJoinCode(await simx.nextMessage());
     const received = nextCatalog(session);
     assert.equal(assertWelcome(await simx.nextMessage()).sessionId, welcome.sessionId);
     await simxHandshake(simx, "[]");
     assert.equal(await received, "[]");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
     assert.equal(bridges.length, 2);
     await simx.ping();
     simx.assertNothingReceived();
@@ -499,6 +681,7 @@ describe("makecode editor session on the relay", () => {
       "the session to report the newer version"
     );
     assertCounterpartAway(await simx.nextMessage());
+    assertJoinCode(await simx.nextMessage());
     assert.equal(session.state.status, "disconnected");
 
     const received = nextCatalog(session);
@@ -507,6 +690,11 @@ describe("makecode editor session on the relay", () => {
     await simxHandshake(simx, "{}");
 
     assert.equal(await received, "{}");
-    assert.deepEqual(session.state, { status: "connected", joinCode, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "connected",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+    });
   });
 });

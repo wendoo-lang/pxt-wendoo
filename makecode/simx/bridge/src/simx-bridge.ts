@@ -1,5 +1,10 @@
 import { ProjectSession } from "@wendoo/bridge-client";
-import type { AppSessionJoinCodeMessage, AppSessionWelcomeMessage, WsMessage } from "@wendoo/bridge-protocol";
+import {
+  type AppSessionJoinCodeMessage,
+  type AppSessionWelcomeMessage,
+  BridgeSessionErrorCode,
+  type WsMessage,
+} from "@wendoo/bridge-protocol";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "@wendoo/makecode-session";
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
 import type { BindingTokenStore } from "./binding-token-store.js";
@@ -22,13 +27,21 @@ export interface SimxBridgeOptions {
   bridgeUrl: string;
   /** Keeps the bridge session's binding token across reloads of the frame. */
   tokens: BindingTokenStore;
-  /** Receives the join code each time it changes, and every message from the program that was rejected, by its code. */
+  /**
+   * Receives each join code the bridge service sends for a vacant role, every
+   * message from the program that was rejected, by its code, and the code of
+   * a failure that stops the bridge connection.
+   */
   log: SimxLog;
 }
 
 /** A running simulator extension bridge. */
 export interface SimxBridge {
-  /** The join code the bridge service sent last, or `undefined` before the first. */
+  /**
+   * The join code the bridge service sent last while the session has a
+   * vacant role, or `undefined` before the first and from each welcome --
+   * both roles bound, so no code joins the session -- until the next.
+   */
   readonly joinCode: string | undefined;
   /**
    * `true` while the bridge service reports the session's counterpart
@@ -119,8 +132,11 @@ class CounterpartSession {
  * into each session once it is established, and every later catalog into the
  * current one. A rejected message from the program is logged by its code and
  * discards the latest catalog, so no session receives a catalog older than
- * the program's newest. When the bridge service reports that another
- * connection has replaced this one, the bridge stays disconnected.
+ * the program's newest. When the bridge service reports a failure that
+ * stops the connection -- another connection replacing this one, or the
+ * session ending -- the code is logged and the bridge stays disconnected; an
+ * ended session's binding token is cleared from `tokens`, so the next start
+ * forms a new session.
  */
 export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const { tokens, log } = options;
@@ -143,7 +159,7 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const unsubscribes = [
     relay.on("session:welcome", (message) => {
       const { bindingToken } = message.payload;
-      adoptJoinCode(message.payload.joinCode);
+      joinCode = undefined;
       if (bindingToken !== undefined && bindingToken !== tokens.load()) {
         tokens.save(bindingToken);
       }
@@ -156,6 +172,10 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     }),
     relay.addEventListener("counterpartAway", () => {
       counterpartAway = true;
+    }),
+    relay.addEventListener("error", (code) => {
+      if (code === BridgeSessionErrorCode.SESSION_ENDED) tokens.clear();
+      log.error(`${code}: the bridge connection stopped and reconnects when the simulator restarts.`);
     }),
     relay.addEventListener("status", (status) => {
       if (status === "connected") return;

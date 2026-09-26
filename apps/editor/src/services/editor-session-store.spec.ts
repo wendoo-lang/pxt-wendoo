@@ -23,7 +23,8 @@ class FakeSession implements MakeCodeEditorSession {
     this.options = options;
     this.state = {
       status: options.loadBindingToken?.() === undefined ? "none" : "disconnected",
-      joinCode: options.joinCode,
+      entry: undefined,
+      joinCode: undefined,
       errorCode: undefined,
     };
   }
@@ -53,7 +54,7 @@ class FakeSession implements MakeCodeEditorSession {
   forget(): void {
     this.forgotten += 1;
     this.options.clearBindingToken?.();
-    this.set({ status: "none", joinCode: undefined, errorCode: undefined });
+    this.set({ status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
   }
 
   /** The session's state changing by `fields`, reported to its listeners. */
@@ -147,6 +148,39 @@ describe("editor session store", () => {
 
     assert.equal(store.getSnapshot().view, "session");
     assert.equal(store.getSnapshot().joinCode, "apple-bird-cloud");
+  });
+
+  it("shows the entered code's progress on the connect page until the session connects", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const session = lastSession();
+
+    session.set({ entry: "submitted" });
+    assert.equal(store.getSnapshot().entry, "submitted");
+
+    session.set({ entry: "accepted" });
+    assert.equal(store.getSnapshot().entry, "accepted");
+    assert.equal(store.getSnapshot().view, "connect");
+
+    session.set({ status: "connected", entry: undefined });
+    assert.equal(store.getSnapshot().entry, undefined);
+    assert.equal(store.getSnapshot().view, "session");
+  });
+
+  it("returns to the connect page without the catalog when the session reports it ended", () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.resume();
+    const session = lastSession();
+    session.set({ status: "connected" });
+    session.deliver('{"packs":[]}');
+
+    session.set({ status: "none", errorCode: BridgeSessionErrorCode.SESSION_ENDED });
+
+    const state = store.getSnapshot();
+    assert.equal(state.view, "connect");
+    assert.equal(state.errorCode, BridgeSessionErrorCode.SESSION_ENDED);
+    assert.equal(state.catalogText, undefined);
   });
 
   it("wires the persistence into the session's token hooks", () => {
