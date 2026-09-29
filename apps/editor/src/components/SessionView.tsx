@@ -8,7 +8,9 @@ import { isVersionCode, VersionNotice } from "./VersionNotice";
  * The session: the app header, the catalog panel, and the recovery
  * affordances. The disconnected indicator renders only once the
  * disconnection has outlasted the grace; the replacement hold and a version
- * rejection render their notices at once.
+ * rejection render their notices at once, as does the not-recognized notice
+ * for an entered code refused while the store falls back to the held
+ * session.
  */
 export function SessionView() {
   const store = useEditorSession();
@@ -50,6 +52,15 @@ export function SessionView() {
                 Start over
               </button>
             </div>
+          </section>
+        )}
+        {errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN && (
+          <section
+            data-testid="code-unknown-notice"
+            data-code={errorCode}
+            className="max-w-md rounded-lg border p-3 text-sm"
+          >
+            <p>That join code was not recognized. Reconnecting to the MakeCode project you were connected to.</p>
           </section>
         )}
         <VersionNotice errorCode={errorCode} />

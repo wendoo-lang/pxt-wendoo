@@ -10,6 +10,7 @@ import {
   saveBindingToken,
 } from "./services/binding-token-persistence";
 import { EditorSessionStore } from "./services/editor-session-store";
+import { enterSession } from "./services/fragment-entry";
 import { bindTargetTheme } from "./services/target-theme";
 import "./globals.css";
 
@@ -43,7 +44,7 @@ const store = new EditorSessionStore({
   },
 });
 bindTargetTheme(store, document.documentElement);
-store.resume();
+enterSession(store, window);
 window.addEventListener(
   "pagehide",
   () => {

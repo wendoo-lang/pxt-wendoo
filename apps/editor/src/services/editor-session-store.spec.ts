@@ -339,4 +339,96 @@ describe("editor session store", () => {
     assert.equal(store.getSnapshot().view, "session");
     assert.equal(store.getSnapshot().joinCode, "delta-echo-fox");
   });
+
+  it("falls back to the held session by its token when an entered code is refused, reporting the refusal until the welcome", async () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.connect("stale-code-here");
+    const refused = lastSession();
+    assert.equal(refused.options.joinCode, "stale-code-here");
+    assert.equal(refused.options.loadBindingToken?.(), "token-1");
+
+    refused.set({ status: "disconnected", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+    assert.equal(store.getSnapshot().view, "session");
+    assert.equal(store.getSnapshot().errorCode, BridgeSessionErrorCode.JOIN_CODE_UNKNOWN);
+    await Promise.resolve();
+
+    const fallback = lastSession();
+    assert.notEqual(fallback, refused);
+    assert.equal(refused.stopped, 1);
+    assert.equal(fallback.started, 1);
+    assert.equal(fallback.options.joinCode, undefined);
+    assert.equal(fallback.options.loadBindingToken?.(), "token-1");
+    assert.equal(tokens.get("token"), "token-1");
+    let state = store.getSnapshot();
+    assert.equal(state.view, "session");
+    assert.equal(state.errorCode, BridgeSessionErrorCode.JOIN_CODE_UNKNOWN);
+    assert.equal(state.connectedSinceOpen, false);
+
+    fallback.set({ status: "disconnected", joinCode: "vacant-role-code" });
+    assert.equal(store.getSnapshot().errorCode, BridgeSessionErrorCode.JOIN_CODE_UNKNOWN);
+
+    fallback.set({ status: "connected", joinCode: undefined });
+    state = store.getSnapshot();
+    assert.equal(state.errorCode, undefined);
+    assert.equal(state.connectedSinceOpen, true);
+
+    fallback.set({ status: "disconnected" });
+    assert.equal(store.getSnapshot().errorCode, undefined);
+    assert.equal(sessions.length, 2);
+  });
+
+  it("reports the fallback session's own failure over the refusal", async () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.connect("stale-code-here");
+    lastSession().set({ status: "disconnected", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+    await Promise.resolve();
+
+    lastSession().set({ status: "disconnected", errorCode: BridgeSessionErrorCode.SESSION_REPLACED });
+
+    assert.equal(store.getSnapshot().errorCode, BridgeSessionErrorCode.SESSION_REPLACED);
+  });
+
+  it("stays on the connect page with the refusal when no token is held, opening no other session", async () => {
+    const store = openStore();
+    store.connect("stale-code-here");
+
+    lastSession().set({ status: "none", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+    await Promise.resolve();
+
+    assert.equal(sessions.length, 1);
+    assert.equal(store.getSnapshot().view, "connect");
+    assert.equal(store.getSnapshot().errorCode, BridgeSessionErrorCode.JOIN_CODE_UNKNOWN);
+  });
+
+  it("drops a refusal's report when a new code is entered or the session is forgotten", async () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.connect("stale-code-here");
+    lastSession().set({ status: "disconnected", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+    await Promise.resolve();
+
+    store.connect("apple-bird-cloud");
+    assert.equal(store.getSnapshot().errorCode, undefined);
+
+    lastSession().set({ status: "disconnected", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+    await Promise.resolve();
+    store.forget();
+    assert.equal(store.getSnapshot().errorCode, undefined);
+    assert.equal(store.getSnapshot().view, "connect");
+  });
+
+  it("opens no fallback once the refused session was replaced before the fallback ran", async () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.connect("stale-code-here");
+    lastSession().set({ status: "disconnected", errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN });
+
+    store.connect("apple-bird-cloud");
+    await Promise.resolve();
+
+    assert.equal(sessions.length, 2);
+    assert.equal(lastSession().options.joinCode, "apple-bird-cloud");
+  });
 });

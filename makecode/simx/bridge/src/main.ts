@@ -1,19 +1,9 @@
 import "./status-panel.css";
-import { DEFAULT_MAKECODE_BRIDGE_URL } from "@wendoo/makecode-session";
 import { openBindingTokenStore } from "./binding-token-store.js";
+import { bridgeUrlFor, editorUrlFor } from "./service-urls.js";
 import { startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel } from "./status-model.js";
 import { mountStatusPanel } from "./status-panel.js";
-
-/**
- * The bridge service this frame connects to: the local relay's dev address
- * when the frame itself is served from a loopback host, the deployed service
- * otherwise.
- */
-function bridgeUrlFor(hostname: string): string {
-  const loopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-  return loopback ? "localhost:6465" : DEFAULT_MAKECODE_BRIDGE_URL;
-}
 
 // Binding token store scoped to this browser tab.
 const tokens = openBindingTokenStore(() => window.sessionStorage);
@@ -32,7 +22,8 @@ const status = new SimxStatusModel(bridge);
 const unmount = mountStatusPanel(
   document.body.appendChild(document.createElement("main")),
   status,
-  navigator.clipboard
+  navigator.clipboard,
+  editorUrlFor(window.location.hostname)
 );
 window.addEventListener(
   "pagehide",

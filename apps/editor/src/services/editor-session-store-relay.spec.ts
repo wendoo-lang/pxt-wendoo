@@ -12,6 +12,7 @@ import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../m
 import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../makecode/simx/bridge/src/simx-bridge.js";
 import type { BindingTokenPersistence, EditorSessionViewState } from "./editor-session-store.js";
 import { EditorSessionStore } from "./editor-session-store.js";
+import { enterSession, type PageAddress } from "./fragment-entry.js";
 
 const CATALOG = '{"packs":[{"name":"motion","tiles":[{"name":"move","kind":"actuator"}]}]}';
 
@@ -95,6 +96,20 @@ class MemoryStorage implements TokenStorage {
   removeItem(key: string): void {
     this._items.delete(key);
   }
+}
+
+/** The address of an editor page at `/` carrying `hash`, whose `replaceState` rewrites it as a browser's history does. */
+function pageAt(hash: string): PageAddress {
+  const location = { pathname: "/", search: "", hash };
+  return {
+    location,
+    history: {
+      state: null,
+      replaceState(_state, _unused, url) {
+        location.hash = new URL(String(url), "http://localhost:5176").hash;
+      },
+    },
+  };
 }
 
 /** A simx log keeping its lines out of the test output. */
@@ -381,6 +396,106 @@ describe("editor session store with the simx module on the relay", () => {
     assert.equal(state.view, "connect");
     assert.equal(state.entry, undefined);
     assert.equal(editorTokens.size, 0);
+  });
+
+  it("boots from a link's fragment: scrubs it, then joins by the carried code through the entry flow", async () => {
+    const joinCode = await startSimx();
+    frame.programPosts(CATALOG);
+    const page = pageAt(`#code=${joinCode}`);
+    const store = editorStore();
+
+    enterSession(store, page);
+
+    assert.equal(page.location.hash, "");
+    assert.equal(store.getSnapshot().view, "connect");
+    assert.equal(store.getSnapshot().entry, "submitted");
+    const state = await until(
+      store,
+      (s) => s.status === "connected" && s.catalogText === CATALOG,
+      "the session to form from the fragment's code"
+    );
+    assert.equal(state.entry, undefined);
+    assert.equal(lastEditorHello()?.joinCode, joinCode);
+    assert.equal(editorTokens.size, 1);
+  });
+
+  it("lands on the refusal when a link's code is stale on arrival and no token is held", async () => {
+    await startSimx();
+    const store = editorStore();
+
+    enterSession(store, pageAt("#code=no-such-code"));
+    const state = await until(
+      store,
+      (s) => s.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+      "the store to report the refusal"
+    );
+
+    assert.equal(state.view, "connect");
+    assert.equal(editorTokens.size, 0);
+  });
+
+  it("falls back to the held session by its token when a link's code is stale, reporting the refusal until the welcome", async () => {
+    const { store } = await formSession();
+    const token = editorTokens.get("token");
+    store.stop();
+
+    const reloaded = editorStore();
+    const trace: EditorSessionViewState[] = [];
+    reloaded.subscribe(() => trace.push(reloaded.getSnapshot()));
+    enterSession(reloaded, pageAt("#code=no-such-code"));
+    const state = await until(
+      reloaded,
+      (s) => s.status === "connected" && s.catalogText === CATALOG,
+      "the reloaded editor to fall back to its session"
+    );
+
+    assert.ok(
+      trace.some((s) => s.view === "session" && s.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN),
+      "expected the refusal reported in the session view"
+    );
+    assert.ok(trace.every((s) => s.view === "session"));
+    assert.equal(state.errorCode, undefined);
+    assert.equal(editorTokens.get("token"), token);
+    const hellos = RecordingWebSocket.created
+      .filter((socket) => socket.url.endsWith(`/${EDITOR}`))
+      .map((socket) => socket.sentHellos[0]);
+    assert.deepEqual(
+      hellos.slice(-2).map((hello) => [hello?.joinCode, hello?.bindingToken]),
+      [
+        ["no-such-code", token],
+        [undefined, token],
+      ]
+    );
+  });
+
+  it("joins a fresh code over a held token by the code, keeping the joined session's token", async () => {
+    const { store } = await formSession();
+    const oldToken = editorTokens.get("token");
+    store.stop();
+    const other = startSimxBridge({
+      frame: new FakeFrame(),
+      bridgeUrl: relay.address,
+      tokens: openBindingTokenStore(() => new MemoryStorage()),
+      log: silentLog,
+    });
+    bridges.push(other);
+    const deadline = Date.now() + 2000;
+    while (other.joinCode === undefined) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for the other simx's join code");
+      await delay(10);
+    }
+    const freshCode = other.joinCode;
+
+    const reloaded = editorStore();
+    enterSession(reloaded, pageAt(`#code=${freshCode}`));
+    const state = await until(reloaded, (s) => s.status === "connected", "the editor to join the fresh code's session");
+
+    assert.equal(state.errorCode, undefined);
+    assert.equal(lastEditorHello()?.joinCode, freshCode);
+    assert.equal(lastEditorHello()?.bindingToken, oldToken);
+    assert.notEqual(editorTokens.get("token"), undefined);
+    assert.notEqual(editorTokens.get("token"), oldToken);
+    assert.equal(other.joinCode, undefined);
   });
 
   it("ends a live session when forgotten: the simx is told it ended and forgets its token, so its restart forms a new session", async () => {

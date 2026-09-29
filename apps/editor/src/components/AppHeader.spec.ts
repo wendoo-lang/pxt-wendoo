@@ -70,4 +70,16 @@ describe("AppHeader", () => {
       /data-testid="connection-status" data-status="replaced"/
     );
   });
+
+  it("links the logotype to the Wendoo homepage in a new tab", () => {
+    const markup = render(stateWith({ target: "arcade" }));
+    const link = /<a [^>]*href="https:\/\/wendoo.com"[^>]*>/.exec(markup)?.[0];
+
+    assert.ok(link, "expected a homepage link");
+    assert.match(link, /target="_blank"/);
+    assert.match(link, /rel="noopener noreferrer"/);
+    assert.match(link, /aria-label="[^"]+"/);
+    assert.match(markup, /href="https:\/\/wendoo.com"[^>]*><svg [^>]*aria-hidden="true"/);
+    assert.match(markup, /data-testid="target-name" data-target="arcade"/);
+  });
 });

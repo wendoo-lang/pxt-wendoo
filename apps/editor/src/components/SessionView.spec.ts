@@ -45,6 +45,7 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
     assert.doesNotMatch(markup, /data-testid="version-notice"/);
+    assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
   });
 
   it("renders the app header, naming the declared target and showing the connection status", () => {
@@ -101,5 +102,20 @@ describe("SessionView", () => {
     assert.ok(markup.includes(`data-code="${PeerSessionErrorCode.PROTOCOL_VERSION_NEWER}"`));
     assert.match(markup, /data-testid="reload-button"/);
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
+  });
+
+  it("shows the not-recognized notice, carrying the stable code, while it falls back to the held session", () => {
+    const markup = render(
+      stateWith({
+        status: "disconnected",
+        errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+        connectedSinceOpen: false,
+      })
+    );
+
+    assert.match(markup, /data-testid="code-unknown-notice"/);
+    assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.JOIN_CODE_UNKNOWN}"`));
+    assert.match(markup, /data-testid="connection-status" data-status="connecting"/);
+    assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
   });
 });

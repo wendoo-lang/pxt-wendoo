@@ -29,10 +29,14 @@ body {
 }
 
 .mark {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  display: flex;
   color: #444444;
+}
+
+.logotype {
+  display: block;
+  height: 14px;
+  width: auto;
 }
 
 .status {
@@ -111,6 +115,19 @@ body {
 .note {
   font-size: 11px;
   color: #6b6b6b;
+}
+
+.editor-link {
+  color: #0f766e;
+}
+
+.link-url {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: #1a1a1a;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
 }
 
 .question {

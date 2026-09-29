@@ -1,3 +1,4 @@
+import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import type {
   MakeCodeEditorSession,
   MakeCodeEditorSessionEntry,
@@ -47,7 +48,13 @@ export interface EditorSessionViewState {
    * `undefined` while both roles are bound.
    */
   readonly joinCode: string | undefined;
-  /** Stable code of the failure that ended the latest connection, or `undefined` when none did. */
+  /**
+   * Stable code of the failure that ended the latest connection, or
+   * `undefined` when none did. `JOIN_CODE_UNKNOWN` also reports an entered
+   * code refused while a binding token was held: the store then falls back
+   * to that token's session, and keeps reporting the refusal until the
+   * fallback is welcomed, unless the fallback fails with a code of its own.
+   */
   readonly errorCode: MakeCodeEditorSessionErrorCode | undefined;
   /**
    * `true` once the session has been continuously disconnected for
@@ -103,6 +110,8 @@ export class EditorSessionStore {
   private _beyondGrace = false;
   private _connectedSinceOpen = false;
   private _catalogText: string | undefined;
+  /** Whether an entered code was refused and the store fell back to the held token, with no welcome since. */
+  private _entryRefused = false;
   private _state: EditorSessionViewState;
 
   constructor(options: EditorSessionStoreOptions) {
@@ -136,8 +145,15 @@ export class EditorSessionStore {
     return true;
   }
 
-  /** Joins the session `joinCode` names, replacing any earlier connect attempt. */
+  /**
+   * Joins the session `joinCode` names, replacing any earlier connect
+   * attempt. The session presents the persisted token beside the code, and
+   * the bridge service matches the code alone. When it refuses the code
+   * while a token is held, the store opens a new session presenting the
+   * token alone, returning to the session the token names.
+   */
   connect(joinCode: string): void {
+    this._entryRefused = false;
     this.open(joinCode);
   }
 
@@ -155,6 +171,7 @@ export class EditorSessionStore {
    */
   forget(): void {
     this._catalogText = undefined;
+    this._entryRefused = false;
     if (this._session === undefined) {
       this.publish();
       return;
@@ -204,9 +221,24 @@ export class EditorSessionStore {
    * publishes.
    */
   private sessionChanged(): void {
-    const status = this._session?.state.status ?? "none";
+    const session = this._session;
+    const status = session?.state.status ?? "none";
     if (status === "none") this._catalogText = undefined;
-    if (status === "connected") this._connectedSinceOpen = true;
+    if (status === "connected") {
+      this._connectedSinceOpen = true;
+      this._entryRefused = false;
+    }
+    if (
+      session !== undefined &&
+      status !== "none" &&
+      session.state.errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN
+    ) {
+      this._entryRefused = true;
+      // Falls back once the refusing session's current call has returned.
+      queueMicrotask(() => {
+        if (this._session === session) this.open(undefined);
+      });
+    }
     if (status === "disconnected") {
       if (this._graceTimer === undefined && !this._beyondGrace) {
         this._graceTimer = setTimeout(() => {
@@ -233,7 +265,7 @@ export class EditorSessionStore {
       status,
       entry: sessionState?.entry,
       joinCode: sessionState?.joinCode,
-      errorCode: sessionState?.errorCode,
+      errorCode: sessionState?.errorCode ?? (this._entryRefused ? BridgeSessionErrorCode.JOIN_CODE_UNKNOWN : undefined),
       disconnectedBeyondGrace: this._beyondGrace,
       connectedSinceOpen: this._connectedSinceOpen,
       catalogText: this._catalogText,

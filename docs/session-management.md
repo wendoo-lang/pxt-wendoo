@@ -300,9 +300,12 @@ it keys on a session id.
   cleared entry, and an ended session
   (`SESSION_ENDED`) returns here with an ended notice, the entry being
   the way to connect afresh. With a token persisted from an earlier
-  page load, the app resumes the session on load and skips this page.
+  page load, the app resumes the session on load and skips this page,
+  unless the page was opened with a join code in its fragment (see
+  "Opening the editor from the simx", below).
 - The SESSION VIEW shows once a session exists, under the APP
-  HEADER: the Wendoo logotype, the declared target's display name,
+  HEADER: the Wendoo logotype (a link to https://wendoo.com, opening
+  in a new tab), the declared target's display name,
   and the connection status as an 8px dot and a lowercase word --
   the simx panel's idiom, using its words where the states
   correspond. The status is carried as `data-status`: `connecting`
@@ -333,7 +336,11 @@ it keys on a session id.
   automatically and surfaces only as transient status. A version
   rejection shows its remedy -- reload the editor -- the one ruled
   exception to in-page recovery. `JOIN_CODE_UNKNOWN` and
-  `SESSION_ENDED` render their notices on the connect page. The
+  `SESSION_ENDED` render their notices on the connect page; a
+  `JOIN_CODE_UNKNOWN` refusing a code entered while a binding token is
+  held renders its notice in the session view instead, while the store
+  falls back to the token's session (see "Opening the editor from the
+  simx", below). The
   start-over actions call `forget()`, which ends a session whose
   connection is live -- a counterpart away but this side connected --
   and clears locally otherwise.
@@ -385,11 +392,62 @@ the simx already holds; the panel stores nothing.
   makecode protocol (`PEER_SESSION_PROTOCOL_VERSION_NEWER`, held until
   a later handshake completes) shows `update`: reload the page. It is
   the one state whose remedy is not in place.
+- LINKS: the header's logotype links to https://wendoo.com in every
+  state, and the `code` state adds an "or open the editor" link after
+  the type-this-code hint (see "Opening the editor from the simx",
+  below). Links carry `data-link` (`home`, `editor`) and open through
+  a click probe: the panel opens a blank tab, cuts its `opener`, and
+  navigates it to the link's URL. MakeCode creates simx frames
+  sandboxed without `allow-popups`, so there the browser refuses the
+  tab; the panel then replaces the link in place with its URL as
+  selectable text and selects it, for the person to copy -- the same
+  fallback the copy button takes.
 - COPY: the code's copy button writes it with the async clipboard
   API. MakeCode's simx iframe delegates only `autoplay` and
   `microphone`, so in Chromium the write is refused by permissions
   policy; the panel then selects the code's text for the person to
   copy, and a click on the code selects all of it.
+
+## Opening the editor from the simx
+
+The simx panel's `code` state links to the editor so a person can
+join without typing the code. The link carries the code between
+browser tabs in a URL, never on the session wire.
+
+- VACANCY: the link exists exactly while the panel shows a join code,
+  and its URL always carries the code shown: a rotation re-renders it
+  with the new code, and the welcome takes it down with the code.
+- FORMAT: `<editor origin>/#code=<code>`, the code percent-encoded
+  (`encodeURIComponent`). The code travels in the fragment, which the
+  browser sends to no server and writes to no request log.
+- BASE URL, derived like the bridge address from the frame's own host
+  (`editorUrlFor` beside `bridgeUrlFor` in
+  `makecode/simx/bridge/src/service-urls.ts`): a frame served from a
+  loopback host links to the dev editor at `http://localhost:5176`;
+  any other frame links to the deployed editor at
+  `https://makecode.playwendoo.com`.
+- ENTRY: at boot, before rendering, the editor takes a fragment that
+  starts `#code=` and carries a non-empty code
+  (`takeFragmentJoinCode` in `apps/editor/src/services/fragment-entry.ts`):
+  it rewrites the URL without the fragment (`history.replaceState`,
+  keeping the path, query, and history state) and only then hands the
+  decoded, trimmed code to the store's `connect`, the connect page's
+  own entry action. The code is used once and stored nowhere; it gets
+  the ordinary entry states, and a code that went stale before the tab
+  opened is refused with `JOIN_CODE_UNKNOWN` like a typed one. Any
+  other fragment is left in the URL, and a page with no code resumes
+  by its persisted token as before.
+- WITH A HELD TOKEN: the session presents the entered code beside the
+  persisted token, and the relay matches the code alone. A code in
+  service joins its session, and the welcome's token replaces the
+  persisted one. When the relay refuses the code, the store opens a
+  new session presenting the token alone, so the tab falls back into
+  the session it already had; the session view shows the
+  not-recognized notice, carrying `JOIN_CODE_UNKNOWN`, until that
+  session is welcomed, unless it fails with a code of its own.
+- The link opens through the panel's click probe (see "The simx
+  status panel", above): inside a MakeCode frame that may not open
+  tabs, it reveals its URL for the person to copy into a new tab.
 
 ## The extension channel
 
@@ -444,16 +502,21 @@ The full stack runs locally, with no configuration surface: a page
 served from a loopback host connects to the local relay at
 `localhost:6465` (the relay's default dev port; the vscode-bridge
 relay's is 6464, so both Wendoo relays can run on one dev machine)
-instead of the deployed service. The rule lives in each composition
-root (`apps/editor/src/main.tsx`, `makecode/simx/bridge/src/main.ts`);
+instead of the deployed service. The rule lives with each composition
+root (`apps/editor/src/main.tsx`, `makecode/simx/bridge/src/service-urls.ts`);
 a deployed build, served from a real host, uses the deployed
 service.
 
 - The relay: `npm run dev` in `apps/bridge` (port 6465). Set
   `BRIDGE_BINDING_SECRET` to keep sessions healing across relay
   restarts; without it, every restart ends every session.
-- The simx: `npm run dev` in `makecode/simx/bridge` (port 5173).
-- The editor: `npm run dev` in `apps/editor`.
+- The simx: `npm run dev` in `makecode/simx/bridge` (port 5173 by its
+  dev config; `npm run dev -- --port <port>` serves it elsewhere, since
+  MakeCode loads it from the `devUrl` its `approvedRepoLib` entry
+  names).
+- The editor: `npm run dev` in `apps/editor` (port 5176, pinned with
+  `strictPort` by its dev config, because a simx served from a loopback
+  host links there).
 - MakeCode: `pxt serve` from a dev target checkout, with the simx
   registered by localdev URL (an `approvedRepoLib` entry carrying
   `devUrl`) and loaded via the `simxdev` URL parameter.
