@@ -22,6 +22,8 @@ const bridge = startSimxBridge({
   bridgeUrl: bridgeUrlFor(window.location.hostname),
   tokens,
   log: console,
+  // The id of the MakeCode target hosting this frame, which MakeCode passes in the frame URL.
+  target: new URLSearchParams(window.location.search).get("target") || undefined,
 });
 window.addEventListener(
   "pagehide",

@@ -60,6 +60,13 @@ export interface EditorSessionViewState {
    * {@link EditorSessionStore.forget}, and when the session ends.
    */
   readonly catalogText: string | undefined;
+  /**
+   * Id of the MakeCode target the MakeCode side declared, for example
+   * `microbit` or `arcade`, exactly as the session reports it: kept while
+   * disconnected, `undefined` when unknown. Informational, for display and
+   * theming.
+   */
+  readonly target: string | undefined;
 }
 
 /** Options for {@link EditorSessionStore}. */
@@ -216,6 +223,7 @@ export class EditorSessionStore {
       errorCode: sessionState?.errorCode,
       disconnectedBeyondGrace: this._beyondGrace,
       catalogText: this._catalogText,
+      target: sessionState?.target,
     };
   }
 
@@ -230,7 +238,8 @@ export class EditorSessionStore {
       next.joinCode === last.joinCode &&
       next.errorCode === last.errorCode &&
       next.disconnectedBeyondGrace === last.disconnectedBeyondGrace &&
-      next.catalogText === last.catalogText
+      next.catalogText === last.catalogText &&
+      next.target === last.target
     ) {
       return;
     }

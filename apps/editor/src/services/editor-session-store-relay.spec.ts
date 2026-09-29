@@ -174,9 +174,12 @@ describe("editor session store with the simx module on the relay", () => {
     (globalThis as Record<string, unknown>).WebSocket = originalWebSocket;
   });
 
-  /** Starts the real simx module against the relay in `frame`, and resolves with the join code it is issued. */
-  async function startSimx(): Promise<string> {
-    const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens: simxTokens, log: silentLog });
+  /**
+   * Starts the real simx module against the relay in `frame`, declaring
+   * `target` when one is given, and resolves with the join code it is issued.
+   */
+  async function startSimx(target?: string): Promise<string> {
+    const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens: simxTokens, log: silentLog, target });
     bridges.push(bridge);
     const deadline = Date.now() + 2000;
     while (bridge.joinCode === undefined) {
@@ -244,6 +247,28 @@ describe("editor session store with the simx module on the relay", () => {
 
     frame.programPosts(NEWER_CATALOG);
     await until(store, (s) => s.catalogText === NEWER_CATALOG, "the newer catalog to replace the shown one");
+  });
+
+  it("exposes the MakeCode target the simx declares, and none when it declares none", async () => {
+    const declaredCode = await startSimx("microbit");
+    const declaring = editorStore();
+    declaring.connect(declaredCode);
+    await until(declaring, (s) => s.status === "connected" && s.target === "microbit", "the declared target");
+    declaring.forget();
+    for (const bridge of bridges.splice(0)) bridge.dispose();
+
+    simxTokens = openBindingTokenStore(() => new MemoryStorage());
+    const silentCode = await startSimx();
+    frame.programPosts(CATALOG);
+    const silent = editorStore();
+    silent.connect(silentCode);
+    const state = await until(
+      silent,
+      (s) => s.status === "connected" && s.catalogText === CATALOG,
+      "the session to form and deliver the catalog"
+    );
+
+    assert.equal(state.target, undefined);
   });
 
   it("resumes by the persisted token on a fresh page load, presenting no code", async () => {

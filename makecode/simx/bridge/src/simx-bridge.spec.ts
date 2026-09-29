@@ -216,13 +216,16 @@ describe("simx bridge on the relay", () => {
   }
 
   /**
-   * Starts the simx bridge against the relay, the program posting `catalog`
-   * before the bridge's connection opens when one is given, and resolves once
-   * the relay has answered the bridge's hello, with its connection and the
-   * join code it was answered with.
+   * Starts the simx bridge against the relay, declaring `target` when one is
+   * given, the program posting `catalog` before the bridge's connection opens
+   * when one is given, and resolves once the relay has answered the bridge's
+   * hello, with its connection and the join code it was answered with.
    */
-  async function startSimx(catalog?: string): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+  async function startSimx(
+    catalog?: string,
+    target?: string
+  ): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, target });
     if (catalog !== undefined) frame.programPosts(catalog);
     const socket = simxSockets().at(-1);
     assert.ok(socket);
@@ -288,6 +291,20 @@ describe("simx bridge on the relay", () => {
     assert.ok(log.infos.some((line) => line.includes(joinCode)));
     assert.equal(bridge?.channelVersion, SIM_CHANNEL_VERSION);
     assert.deepEqual(log.errors, []);
+  });
+
+  it("declares the MakeCode target it was started with in its makecode hello", async () => {
+    const { joinCode } = await startSimx(CATALOG_TEXT, "microbit");
+
+    const editor = await relay.connect(EDITOR);
+    assertWelcome(await editor.hello({ joinCode }));
+    editor.send(MAKECODE_HELLO);
+
+    assert.deepEqual(await editor.nextMessage(), {
+      type: "makecode:hello",
+      payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION, declaration: { target: "microbit" } },
+    });
+    assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
   });
 
   it("rebuilds its session by its saved binding token after a relay restart, logging the new join code, and publishes the catalog to the editor returning by its token", async () => {

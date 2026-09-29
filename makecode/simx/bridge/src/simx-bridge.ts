@@ -33,6 +33,13 @@ export interface SimxBridgeOptions {
    * a failure that stops the bridge connection.
    */
   log: SimxLog;
+  /**
+   * Id of the MakeCode target running the program, for example `microbit`
+   * or `arcade`, declared to the editor in each makecode session's hello.
+   * Informational, for display and theming. When omitted, no target is
+   * declared.
+   */
+  target?: string;
 }
 
 /** A running simulator extension bridge. */
@@ -73,9 +80,14 @@ class CounterpartSession {
 
   /**
    * @param relay - The bridge connection, just welcomed.
+   * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, if any.
    */
-  constructor(relay: ProjectSession<WsMessage, RelayMessage>, latestCatalog: () => string | undefined) {
+  constructor(
+    relay: ProjectSession<WsMessage, RelayMessage>,
+    target: string | undefined,
+    latestCatalog: () => string | undefined
+  ) {
     const port: MakeCodeSessionPort = {
       postMessage(message) {
         relay.sendPayload(message);
@@ -91,7 +103,7 @@ class CounterpartSession {
         };
       },
     };
-    connectMakeCodeSession({ port }).then(
+    connectMakeCodeSession({ port, target }).then(
       (session) => {
         this._session = session;
         const catalog = latestCatalog();
@@ -126,8 +138,9 @@ class CounterpartSession {
  * simx role path, presenting the binding token `tokens` holds, and asks the
  * program for its catalog. Every welcome the bridge service sends -- when the
  * editor first pairs, and again whenever either side reconnects -- opens a
- * new makecode session with the counterpart and disposes the previous one,
- * and its binding token is saved to `tokens`; a connection that closes
+ * new makecode session with the counterpart, declaring `target` when one is
+ * given, and disposes the previous one, and its binding token is saved to
+ * `tokens`; a connection that closes
  * disposes its session. The latest catalog the program posted is published
  * into each session once it is established, and every later catalog into the
  * current one. A rejected message from the program is logged by its code and
@@ -165,7 +178,7 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
       }
       counterpartAway = false;
       counterpart?.close();
-      counterpart = new CounterpartSession(relay, () => catalog);
+      counterpart = new CounterpartSession(relay, options.target, () => catalog);
     }),
     relay.on("session:joinCode", (message) => {
       adoptJoinCode(message.payload.joinCode);

@@ -12,6 +12,7 @@ export type {
   MakeCodeCatalogPayload,
   MakeCodeHelloMessage,
   MakeCodeSession,
+  MakeCodeSessionDeclaration,
   MakeCodeSessionMessage,
   MakeCodeSessionOptions,
   MakeCodeSessionPort,

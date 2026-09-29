@@ -110,6 +110,65 @@ describe("makecode session establishment", () => {
   });
 });
 
+describe("makecode session target declaration", () => {
+  it("declares the target it is given in its hello, and a peer declaring none records none", async () => {
+    const [simxPort, editorPort] = linkedPorts();
+
+    const [simx, editor] = await Promise.all([
+      connectMakeCodeSession({ port: simxPort, target: "microbit" }),
+      connectMakeCodeSession({ port: editorPort }),
+    ]);
+
+    assert.equal(editor.peerTarget, "microbit");
+    assert.equal(simx.peerTarget, undefined);
+    simx.dispose();
+    editor.dispose();
+  });
+
+  it("sends a hello carrying its target, and one carrying only its version when it declares none", async () => {
+    const hellos: MakeCodeSessionMessage[] = [];
+    const recording = (): MakeCodeSessionPort => {
+      const peer = scriptedPeer([{ type: "makecode:hello", payload: { protocolVersion: 1 } }]);
+      return {
+        postMessage(message) {
+          hellos.push(message);
+          peer.postMessage(message);
+        },
+        onMessage: (listener) => peer.onMessage(listener),
+      };
+    };
+
+    const declaring = await connectMakeCodeSession({ port: recording(), target: "arcade" });
+    const silent = await connectMakeCodeSession({ port: recording() });
+
+    assert.deepEqual(hellos, [
+      {
+        type: "makecode:hello",
+        payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION, declaration: { target: "arcade" } },
+      },
+      { type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } },
+    ]);
+    declaring.dispose();
+    silent.dispose();
+  });
+
+  it("records the target a peer's hello declares, and none for a declaration without one", async () => {
+    const declaring = await connectMakeCodeSession({
+      port: scriptedPeer([
+        { type: "makecode:hello", payload: { protocolVersion: 1, declaration: { target: "arcade" } } },
+      ]),
+    });
+    const empty = await connectMakeCodeSession({
+      port: scriptedPeer([{ type: "makecode:hello", payload: { protocolVersion: 1, declaration: {} } }]),
+    });
+
+    assert.equal(declaring.peerTarget, "arcade");
+    assert.equal(empty.peerTarget, undefined);
+    declaring.dispose();
+    empty.dispose();
+  });
+});
+
 describe("makecode session catalog", () => {
   it("delivers a published catalog to the peer byte-verbatim across a JSON wire", async () => {
     const [simxPort, editorPort] = linkedPorts();

@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-09-26
+updated: 2026-09-29
 ---
 
 # Session Management in pxt-wendoo
@@ -24,6 +24,8 @@ session wire surface:
 
 - the kind name `makecode` and its message namespace (`makecode:*`);
 - the wire messages: `makecode:hello` and `makecode:catalog`;
+- the hello's declaration, `MakeCodeSessionDeclaration` (see "The
+  target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
   declares;
 - the role-path segments `makecode/editor` and `makecode/simx`,
@@ -86,6 +88,27 @@ The four-hop path assigns the session parts as follows.
   party. It participates through the sim-message channel only (the
   extension channel, below). It is MakeCode-target-agnostic and receives its channel
   identity from the host that calls it.
+
+## The target declaration
+
+The editor is target-blind, so the MakeCode target reaches it as
+session data, declared when the kind's handshake binds:
+
+- pxt passes the running target's id (`pxt.appTarget.id`, for
+  example `microbit` or `arcade`) to every simx frame in its URL's
+  `target` parameter, beside `channel` and `parentOrigin`.
+- The simx reads the parameter at boot and declares it in each
+  makecode hello it sends, as the declaration's `target`. A frame
+  URL without the parameter declares nothing; the hello then
+  carries its version alone.
+- The editor's hello never carries a declaration. The editor session
+  records the target of each completed handshake, keeps it while
+  the session is disconnected, and drops it with the binding; the
+  editor's session store exposes it as `target`, `undefined` when
+  unknown.
+- The value is informational, for display and theming. It is the
+  sender's own claim: identity and trust come from the session's
+  credentials, never from it.
 
 ## Simx credential continuity
 
@@ -292,7 +315,13 @@ from and beneath the session:
 - The channel name equals the simx's `approvedRepoLib` key
   (`wendoo-lang/pxt-wendoo`), supplied to the extension by its host
   -- the conformance driver in the harness, the game-facing arcade
-  extension in product.
+  extension in product. This equality is a ROUTING fact, not a
+  trust fact: pxt never checks a message's channel field against
+  its sender, any program can post on any registered channel, and
+  simx frames receive every channel. The one host-attested binding
+  is the frame itself (pxt tags each simx iframe with its key at
+  creation); anything deriving identity from this wire must key on
+  the frame, never on the channel field a sender writes.
 - Two packet kinds exist: a catalog emission (extension to simx,
   the framed catalog text described next) and a request (simx to extension, answered
   with a fresh serialization). The request/answer handshake exists

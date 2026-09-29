@@ -234,7 +234,13 @@ describe("makecode editor session on the relay", () => {
         saved.push(token);
       },
     });
-    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+      target: undefined,
+    });
     const received = nextCatalog(session);
 
     session.start();
@@ -247,6 +253,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.deepEqual(saved, [welcome.bindingToken]);
     assert.equal(editorSockets()[0].url, `ws://${relay.address}/${EDITOR}`);
@@ -269,6 +276,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.equal(rewelcome.sessionId, welcome.sessionId);
     assert.equal(lastEditorHello()?.bindingToken, welcome.bindingToken);
@@ -286,6 +294,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     const received = nextCatalog(reloaded);
     reloaded.start();
@@ -298,6 +307,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.equal(rewelcome.sessionId, welcome.sessionId);
   });
@@ -312,7 +322,13 @@ describe("makecode editor session on the relay", () => {
       "the session to be disconnected, showing the code minted for the vacant role"
     );
     const vacancyCode = away.joinCode;
-    assert.deepEqual(away, { status: "disconnected", entry: undefined, joinCode: vacancyCode, errorCode: undefined });
+    assert.deepEqual(away, {
+      status: "disconnected",
+      entry: undefined,
+      joinCode: vacancyCode,
+      errorCode: undefined,
+      target: undefined,
+    });
     const returned = await relay.connect(SIMX);
     const received = nextCatalog(session);
     assert.equal(
@@ -327,6 +343,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
   });
 
@@ -352,6 +369,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.deepEqual(statuses, ["disconnected", "connected"]);
     assert.notEqual(rebuiltCode, joinCode);
@@ -426,6 +444,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
+      target: undefined,
     });
   });
 
@@ -436,7 +455,13 @@ describe("makecode editor session on the relay", () => {
 
     assertSessionError(await simx.nextMessage(), BridgeSessionErrorCode.SESSION_ENDED);
     await within(simx.closed, "the simx's connection to close");
-    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+      target: undefined,
+    });
   });
 
   it("respects an end the simx asks for: drops its binding token and holds with no session", async () => {
@@ -471,6 +496,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: BridgeSessionErrorCode.SESSION_ENDED,
+      target: undefined,
     });
     assert.equal(store.size, 0);
     assert.equal(editorSockets().length, socketsAfterEnd);
@@ -491,6 +517,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
+      target: undefined,
     });
     assert.equal(assertWelcome(await simx.nextMessage()).sessionId, welcome.sessionId);
     const socketsAfterSupersession = editorSockets().length;
@@ -540,7 +567,13 @@ describe("makecode editor session on the relay", () => {
 
     session.forget();
 
-    assert.deepEqual(session.state, { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
+    assert.deepEqual(session.state, {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+      target: undefined,
+    });
     assert.equal(store.size, 0);
 
     await newer.close();
@@ -558,6 +591,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.equal(rewelcome.sessionId, welcome.sessionId);
     assert.equal(store.get("token"), welcome.bindingToken);
@@ -601,6 +635,7 @@ describe("makecode editor session on the relay", () => {
         entry: undefined,
         joinCode: undefined,
         errorCode: undefined,
+        target: undefined,
       });
 
       await simx.close();
@@ -649,6 +684,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: BridgeSessionErrorCode.OUTBOUND_QUEUE_OVERFLOW,
+      target: undefined,
     });
     assertCounterpartAway(await simx.nextMessage());
     assertJoinCode(await simx.nextMessage());
@@ -661,6 +697,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
     assert.equal(bridges.length, 2);
     await simx.ping();
@@ -695,6 +732,7 @@ describe("makecode editor session on the relay", () => {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     });
   });
 });

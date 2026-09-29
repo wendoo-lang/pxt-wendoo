@@ -17,6 +17,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     errorCode: undefined,
     disconnectedBeyondGrace: false,
     catalogText: undefined,
+    target: undefined,
     ...fields,
   };
 }

@@ -22,11 +22,27 @@ export const MAKECODE_SESSION_ROLE_PATHS = {
 } as const;
 
 /**
- * First message each party sends to open a makecode session, declaring the
- * version it speaks. Neither party sends any other message before it has
- * received the peer's hello.
+ * What a party of a makecode session declares about itself in its hello.
+ * Only the party serving the MakeCode project declares one; the editor's
+ * hello carries none.
  */
-export type MakeCodeHelloMessage = PeerSessionHelloMessage<"makecode">;
+export interface MakeCodeSessionDeclaration {
+  /**
+   * Id of the MakeCode target running the project, for example `microbit`
+   * or `arcade`. Absent when the serving party does not know it.
+   * Informational, for display and theming: it is the sender's own claim,
+   * never an identity or a basis for trust.
+   */
+  target?: string;
+}
+
+/**
+ * First message each party sends to open a makecode session, declaring the
+ * version it speaks and, for the party serving the project, a
+ * {@link MakeCodeSessionDeclaration}. Neither party sends any other message
+ * before it has received the peer's hello.
+ */
+export type MakeCodeHelloMessage = PeerSessionHelloMessage<"makecode", MakeCodeSessionDeclaration>;
 
 /** Payload of a {@link MakeCodeCatalogMessage}. */
 export interface MakeCodeCatalogPayload {
@@ -59,6 +75,13 @@ export type MakeCodeSessionPort = PeerSessionPort<MakeCodeSessionMessage>;
 export interface MakeCodeSessionOptions {
   /** Transport to the peer. */
   port: MakeCodeSessionPort;
+  /**
+   * Id of the MakeCode target running the project, declared in this side's
+   * hello; see {@link MakeCodeSessionDeclaration.target}. Given only by the
+   * party serving the project, and only when it knows the target. When
+   * omitted, the hello declares nothing.
+   */
+  target?: string;
 }
 
 /**
@@ -71,6 +94,12 @@ export interface MakeCodeSession {
    * {@link MAKECODE_SESSION_PROTOCOL_VERSION}.
    */
   readonly peerProtocolVersion: number;
+  /**
+   * Id of the MakeCode target the peer declared in its hello, or `undefined`
+   * when it declared none. Informational, for display and theming; see
+   * {@link MakeCodeSessionDeclaration.target}.
+   */
+  readonly peerTarget: string | undefined;
   /** Publish the serialized tile catalog to the peer, verbatim. */
   publishCatalog(content: string): void;
   /**
@@ -85,21 +114,24 @@ export interface MakeCodeSession {
 }
 
 /**
- * Open a makecode session over `port`: sends this side's hello and waits for
- * the peer's. A peer declaring any version up to
- * {@link MAKECODE_SESSION_PROTOCOL_VERSION} is accepted and its version
- * recorded on the session. Rejects with `PeerSessionError` carrying
+ * Open a makecode session over `port`: sends this side's hello, declaring
+ * `target` when one is given, and waits for the peer's. A peer declaring any
+ * version up to {@link MAKECODE_SESSION_PROTOCOL_VERSION} is accepted, and
+ * its version and declared target are recorded on the session. Rejects with `PeerSessionError` carrying
  * `PROTOCOL_VERSION_NEWER` when the peer declares a newer version. A
  * session covers one connection of the peer; open a new session when the
  * peer reconnects.
  */
 export async function connectMakeCodeSession(options: MakeCodeSessionOptions): Promise<MakeCodeSession> {
-  const session = await connectPeerSession<"makecode", MakeCodeCatalogMessage>({
+  const { port, target } = options;
+  const session = await connectPeerSession<"makecode", MakeCodeCatalogMessage, MakeCodeSessionDeclaration>({
     kind: MAKECODE_SESSION_KIND,
-    port: options.port,
+    port,
+    declaration: target === undefined ? undefined : { target },
   });
   return {
     peerProtocolVersion: session.peerProtocolVersion,
+    peerTarget: session.peerDeclaration?.target,
     publishCatalog(content: string): void {
       session.postMessage({ type: "makecode:catalog", payload: { content } });
     },

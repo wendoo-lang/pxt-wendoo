@@ -80,6 +80,16 @@ export interface MakeCodeEditorSessionState {
    * outdated side, which for the evergreen editor means reloading it.
    */
   readonly errorCode: MakeCodeEditorSessionErrorCode | undefined;
+  /**
+   * Id of the MakeCode target the counterpart declared, for example
+   * `microbit` or `arcade`, or `undefined` when it is unknown: before the
+   * first makecode handshake completes, when the latest one declared no
+   * target, and after the session is forgotten or ended. Set by each
+   * completed handshake and kept while the session is disconnected.
+   * Informational, for display and theming: the counterpart's own claim,
+   * never an identity or a basis for trust.
+   */
+  readonly target: string | undefined;
 }
 
 /** Options for {@link createMakeCodeEditorSession}. */
@@ -182,8 +192,9 @@ export function createEditorSessionOver(
 
 /**
  * The makecode handshake with the counterpart of one welcome, carried over
- * the bridge's payload messages. Reports the catalogs the counterpart
- * publishes once the handshake establishes the session.
+ * the bridge's payload messages. Reports the target the counterpart declared
+ * once the handshake establishes the session, then the catalogs it
+ * publishes.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -192,11 +203,13 @@ class CounterpartSession {
 
   /**
    * @param bridge - The bridge connection, just welcomed.
+   * @param onEstablished - Receives the target the counterpart declared, or `undefined` for none, once the handshake completes.
    * @param onCatalog - Receives each catalog the counterpart publishes.
    * @param onRejected - Receives the code of a failed handshake.
    */
   constructor(
     bridge: AppBridge,
+    onEstablished: (target: string | undefined) => void,
     onCatalog: (content: string) => void,
     onRejected: (code: PeerSessionErrorCode) => void
   ) {
@@ -224,6 +237,7 @@ class CounterpartSession {
           return;
         }
         this._session = session;
+        onEstablished(session.peerTarget);
         session.onCatalog(onCatalog);
       },
       (error: unknown) => {
@@ -258,6 +272,8 @@ class EditorSession implements MakeCodeEditorSession {
   private _entryCode: string | undefined;
   private _bindingToken: string | undefined;
   private _errorCode: MakeCodeEditorSessionErrorCode | undefined;
+  /** The target the counterpart declared in the latest completed handshake of this binding. */
+  private _target: string | undefined;
   /** Whether the bridge service has welcomed the open connection and the counterpart has not left since. */
   private _welcomed = false;
   /** Whether the bridge service has answered the open connection's hello presenting the entry join code. */
@@ -362,11 +378,12 @@ class EditorSession implements MakeCodeEditorSession {
     }
   }
 
-  /** Drops the binding token, held and persisted, the entry join code, and the join code. */
+  /** Drops the binding token, held and persisted, the entry join code, the join code, and the declared target. */
   private dropBinding(): void {
     this._bindingToken = undefined;
     this._entryCode = undefined;
     this._joinCode = undefined;
+    this._target = undefined;
     this._clearBindingToken?.();
   }
 
@@ -379,6 +396,10 @@ class EditorSession implements MakeCodeEditorSession {
     this._counterpart?.close();
     this._counterpart = new CounterpartSession(
       bridge,
+      (target) => {
+        this._target = target;
+        this.update();
+      },
       (content) => {
         for (const listener of this._catalogListeners) listener(content);
       },
@@ -439,6 +460,7 @@ class EditorSession implements MakeCodeEditorSession {
       entry: entryPending ? (this._entryAccepted ? "accepted" : "submitted") : undefined,
       joinCode: this._joinCode,
       errorCode: this._errorCode,
+      target: this._target,
     };
   }
 
@@ -450,7 +472,8 @@ class EditorSession implements MakeCodeEditorSession {
       next.status === last.status &&
       next.entry === last.entry &&
       next.joinCode === last.joinCode &&
-      next.errorCode === last.errorCode
+      next.errorCode === last.errorCode &&
+      next.target === last.target
     ) {
       return;
     }

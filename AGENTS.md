@@ -353,13 +353,25 @@ the current slice alone.
     Arcade-bound pieces -- the spawn block, sprite pairing, the WendooBrain
     asset blocks, the simx binding -- belong to a game-facing arcade
     extension that does not exist yet; it is created when the spawn-block
-    slice needs it, not before, and it depends on the VM extension.
-  - The other kind is a vocabulary pack: an extension supplying host-bound
-    tiles for one genre of game. The majority of vocabulary comes from packs
-    and from user code, not from core. A pack depends on core and never on
-    another pack; packs compose by keeping tile names disjoint. Exactly where
-    the line falls between a core tile and a pack tile is not settled -- when a
-    new tile could plausibly go either way, raise it rather than deciding it in
+    slice needs it, not before, and it depends on the VM extension and on
+    arcade's base pack.
+    Every target also has exactly one BASE PACK: its own extension unit,
+    distinct from the game-facing extension and from feature packs, created
+    when the first type declaration needs it. It depends on the VM core
+    extension and owns the target's type declarations -- the target's asset
+    types (for arcade: image, song, tilemap, tile, animation) and its
+    built-in types (for arcade: sprite). A base pack reserves the right to
+    carry a base set of common tile vocabulary shared by its target's
+    packs; what belongs there is not yet identified, so tiles land in a
+    base pack only by explicit ruling, never by drift.
+  - The other kind is a FEATURE PACK: an extension supplying host-bound
+    tiles for one genre of game. A feature pack takes a direct dependency on
+    its target's base pack (and through it the VM core extension) and never
+    depends on another feature pack; packs compose by keeping tile names
+    disjoint. The majority of vocabulary comes from packs and from user code,
+    not from core. Exactly where the line falls between a core tile, a
+    base-pack tile, and a feature-pack tile is not settled -- when a new tile
+    could plausibly go either way, raise it rather than deciding it in
     passing.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in its
     own subfolder. `makecode/simx/bridge` connects to the bridge service,

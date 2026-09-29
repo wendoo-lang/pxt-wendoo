@@ -26,6 +26,7 @@ class FakeSession implements MakeCodeEditorSession {
       entry: undefined,
       joinCode: undefined,
       errorCode: undefined,
+      target: undefined,
     };
   }
 
@@ -54,7 +55,7 @@ class FakeSession implements MakeCodeEditorSession {
   forget(): void {
     this.forgotten += 1;
     this.options.clearBindingToken?.();
-    this.set({ status: "none", entry: undefined, joinCode: undefined, errorCode: undefined });
+    this.set({ status: "none", entry: undefined, joinCode: undefined, errorCode: undefined, target: undefined });
   }
 
   /** The session's state changing by `fields`, reported to its listeners. */
@@ -248,6 +249,22 @@ describe("editor session store", () => {
     const state = store.getSnapshot();
     assert.equal(state.catalogText, '{"packs":[]}');
     assert.equal(state.errorCode, BridgeSessionErrorCode.SESSION_REPLACED);
+  });
+
+  it("exposes the MakeCode target the session reports, unknown while it reports none", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const session = lastSession();
+    assert.equal(store.getSnapshot().target, undefined);
+
+    session.set({ status: "connected", target: "microbit" });
+    assert.equal(store.getSnapshot().target, "microbit");
+
+    session.set({ status: "disconnected" });
+    assert.equal(store.getSnapshot().target, "microbit");
+
+    session.set({ status: "connected", target: undefined });
+    assert.equal(store.getSnapshot().target, undefined);
   });
 
   it("forgets the session and its catalog, returning to the connect page with the persistence cleared", () => {

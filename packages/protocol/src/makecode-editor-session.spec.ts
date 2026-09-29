@@ -27,6 +27,14 @@ const MAKECODE_HELLO: WsMessage = {
   payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION },
 };
 
+/** The hello a makecode party at this build's version sends declaring `target`. */
+function targetHello(target: string): WsMessage {
+  return {
+    type: "makecode:hello",
+    payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION, declaration: { target } },
+  };
+}
+
 /** An app bridge driven by the spec in place of a bridge connection. */
 class FakeBridge implements AppBridge {
   readonly options: AppBridgeOptions;
@@ -163,7 +171,14 @@ describe("makecode editor session", () => {
 
   /** A state with `fields` layered over a state reporting no session and nothing pending. */
   function stateWith(fields: Partial<MakeCodeEditorSessionState>): MakeCodeEditorSessionState {
-    return { status: "none", entry: undefined, joinCode: undefined, errorCode: undefined, ...fields };
+    return {
+      status: "none",
+      entry: undefined,
+      joinCode: undefined,
+      errorCode: undefined,
+      target: undefined,
+      ...fields,
+    };
   }
 
   beforeEach(() => {
@@ -262,6 +277,62 @@ describe("makecode editor session", () => {
 
     assert.deepEqual(saved, ["token-1", "token-2"]);
     assert.deepEqual(bridge.sent, [MAKECODE_HELLO, MAKECODE_HELLO, MAKECODE_HELLO]);
+  });
+
+  it("never declares a target in its own hello", () => {
+    const { session } = openSession();
+    session.start();
+    lastBridge().welcome("token-1");
+
+    assert.deepEqual(lastBridge().sent, [MAKECODE_HELLO]);
+  });
+
+  it("reports the target the counterpart declares, keeping it while disconnected and replacing it at each handshake", async () => {
+    const { session } = openSession();
+    session.start();
+    const bridge = lastBridge();
+    bridge.welcome("token-1");
+    assert.equal(session.state.target, undefined);
+
+    bridge.deliver(targetHello("microbit"));
+    await microtasks();
+    assert.deepEqual(session.state, stateWith({ status: "connected", target: "microbit" }));
+
+    bridge.change({ counterpartAway: true });
+    assert.deepEqual(session.state, stateWith({ status: "disconnected", target: "microbit" }));
+
+    bridge.welcome("token-1");
+    assert.equal(session.state.target, "microbit");
+    bridge.deliver(targetHello("arcade"));
+    await microtasks();
+    assert.equal(session.state.target, "arcade");
+
+    bridge.welcome("token-1");
+    bridge.deliver(MAKECODE_HELLO);
+    await microtasks();
+    assert.deepEqual(session.state, stateWith({ status: "connected" }));
+  });
+
+  it("drops the declared target with the binding: when forgotten and when the session is ended", async () => {
+    const forgotten = openSession().session;
+    forgotten.start();
+    lastBridge().welcome("token-1");
+    lastBridge().deliver(targetHello("arcade"));
+    await microtasks();
+
+    forgotten.forget();
+
+    assert.equal(forgotten.state.target, undefined);
+
+    const ended = openSession().session;
+    ended.start();
+    lastBridge().welcome("token-1");
+    lastBridge().deliver(targetHello("arcade"));
+    await microtasks();
+
+    lastBridge().fail(BridgeSessionErrorCode.SESSION_ENDED);
+
+    assert.deepEqual(ended.state, stateWith({ errorCode: BridgeSessionErrorCode.SESSION_ENDED }));
   });
 
   it("delivers the catalogs of the current handshake only", async () => {
