@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
-import { BridgeSessionErrorCode, PROTOCOL_VERSION, type WsMessage } from "@wendoo/bridge-protocol";
+import {
+  BridgeSessionErrorCode,
+  PeerSessionErrorCode,
+  PROTOCOL_VERSION,
+  type WsMessage,
+} from "@wendoo/bridge-protocol";
 import {
   assertCounterpartAway,
   assertJoinCode,
@@ -22,6 +27,7 @@ import {
 import { type BindingTokenStore, openBindingTokenStore, type TokenStorage } from "./binding-token-store.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
+import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
@@ -194,6 +200,44 @@ class RecordingLog implements SimxLog {
 async function handshake(editor: ScriptedPeer): Promise<void> {
   editor.send(MAKECODE_HELLO);
   assert.deepEqual(await editor.nextMessage(), MAKECODE_HELLO);
+}
+
+/**
+ * Resolves once `check` holds: at once when it already does, otherwise at
+ * the first change `bridge` announces after which it does.
+ */
+function changed(bridge: SimxBridge, check: () => boolean, what: string): Promise<void> {
+  return within(
+    new Promise<void>((resolve) => {
+      const test = (): void => {
+        if (!check()) return;
+        unsubscribe();
+        resolve();
+      };
+      const unsubscribe = bridge.onChange(test);
+      test();
+    }),
+    what
+  );
+}
+
+/**
+ * Resolves once the view of `model` satisfies `check`: at once when it
+ * already does, otherwise at the first view it publishes that does.
+ */
+function shown(model: SimxStatusModel, check: (view: SimxStatusView) => boolean, what: string): Promise<void> {
+  return within(
+    new Promise<void>((resolve) => {
+      const test = (): void => {
+        if (!check(model.getSnapshot())) return;
+        unsubscribe();
+        resolve();
+      };
+      const unsubscribe = model.subscribe(test);
+      test();
+    }),
+    what
+  );
 }
 
 /** Asserts that `message` is the `session:error` refusing a hello's join code, answering the hello. */
@@ -519,6 +563,205 @@ describe("simx bridge on the relay", () => {
     assert.ok(!socket.traffic.includes("in:session:welcome"));
 
     await joinEditor(joinCode, CATALOG_TEXT);
+  });
+
+  it("reports its connection, its counterpart's presence, and whether it holds a binding, announcing each change", async () => {
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+    const current = bridge;
+    let changes = 0;
+    current.onChange(() => {
+      changes += 1;
+    });
+    assert.equal(current.connection, "connecting");
+    const socket = simxSockets().at(-1);
+    assert.ok(socket);
+    const joinCode = assertJoinCode(await socket.firstReceived("session:joinCode"));
+    await changed(current, () => current.joinCode === joinCode, "the join code to be announced");
+
+    assert.equal(current.connection, "connected");
+    assert.equal(current.counterpartConnected, false);
+    assert.equal(current.bound, false);
+    frame.programPosts(CATALOG_TEXT);
+    const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+    assert.equal(current.counterpartConnected, true);
+    assert.equal(current.bound, true);
+
+    await editor.close();
+    await changed(current, () => current.counterpartAway, "the counterpart to be reported away");
+    assert.equal(current.counterpartConnected, false);
+    assert.equal(current.bound, true);
+    assert.equal(current.errorCode, undefined);
+    assert.ok(changes >= 4);
+  });
+
+  it("ends its session on purpose and opens a new pairing at once: the editor is told the session ended, and the new pairing's join code arrives", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+
+    bridge?.startNewSession();
+
+    assertSessionError(await editor.nextMessage(), BridgeSessionErrorCode.SESSION_ENDED);
+    assert.ok(socket.traffic.includes("out:session:goodbye"));
+    await within(socket.closed, "the ended connection to close");
+    assert.equal(simxSockets().length, 2);
+    const fresh = assertJoinCode(await simxSockets()[1].firstReceived("session:joinCode"));
+    const current = bridge;
+    assert.ok(current);
+    await changed(current, () => current.joinCode === fresh, "the new pairing's join code to be announced");
+    assert.notEqual(fresh, joinCode);
+    assert.equal(current.bound, false);
+    assert.equal(current.counterpartConnected, false);
+    assert.equal(tokens.load(), undefined);
+    assert.ok(log.infos.some((line) => line.includes(fresh)));
+
+    const { welcome } = await joinEditor(fresh, CATALOG_TEXT);
+    assert.equal(tokens.load(), welcome.bindingToken);
+  });
+
+  it("opens a new pairing when started anew after the editor ended the session", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+    editor.send({ type: "session:goodbye" });
+    assertSessionError(await socket.firstReceived("session:error"), BridgeSessionErrorCode.SESSION_ENDED);
+    await within(socket.closed, "the ended connection to close");
+    const current = bridge;
+    assert.ok(current);
+    assert.equal(current.errorCode, BridgeSessionErrorCode.SESSION_ENDED);
+    assert.equal(current.connection, "disconnected");
+
+    current.startNewSession();
+
+    assert.equal(current.errorCode, undefined);
+    const fresh = assertJoinCode(await simxSockets()[1].firstReceived("session:joinCode"));
+    await changed(current, () => current.joinCode === fresh, "the new pairing's join code to be announced");
+    assert.ok(!simxSockets()[1].traffic.includes("out:session:goodbye"));
+    assert.notEqual(fresh, joinCode);
+    await joinEditor(fresh, CATALOG_TEXT);
+  });
+
+  it("reports a counterpart declaring a newer makecode protocol by its code, until a later handshake completes", async () => {
+    const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+    const current = bridge;
+    assert.ok(current);
+    const editor = await relay.connect(EDITOR);
+    const welcome = assertWelcome(await editor.hello({ joinCode }));
+    editor.send({
+      type: "makecode:hello",
+      payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION + 1 },
+    });
+
+    await changed(
+      current,
+      () => current.errorCode === PeerSessionErrorCode.PROTOCOL_VERSION_NEWER,
+      "the newer protocol to be reported"
+    );
+    assert.equal(current.counterpartConnected, true);
+    assert.ok(log.errors.some((line) => line.startsWith(PeerSessionErrorCode.PROTOCOL_VERSION_NEWER)));
+    await editor.close();
+    assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
+    assert.equal(current.errorCode, PeerSessionErrorCode.PROTOCOL_VERSION_NEWER);
+
+    const returned = await relay.connect(EDITOR);
+    assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
+    await handshake(returned);
+    assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+    assert.equal(current.errorCode, undefined);
+  });
+
+  describe("status model over the bridge", () => {
+    /** Starts the simx with `CATALOG_TEXT` posted and a status model over it, grace `awayGraceMs`, recording each state it shows. */
+    async function startWatched(
+      awayGraceMs: number
+    ): Promise<{ model: SimxStatusModel; states: SimxStatusState[]; socket: RecordingWebSocket; joinCode: string }> {
+      const { socket, joinCode } = await startSimx(CATALOG_TEXT);
+      assert.ok(bridge);
+      const model = new SimxStatusModel(bridge, { awayGraceMs });
+      const states: SimxStatusState[] = [model.getSnapshot().state];
+      model.subscribe(() => states.push(model.getSnapshot().state));
+      return { model, states, socket, joinCode };
+    }
+
+    it("shows the join code until the welcome, then connected, and after a confirmed end the new pairing's code", async () => {
+      const { model, joinCode } = await startWatched(50);
+      await shown(model, (view) => view.joinCode === joinCode, "the join code to be shown");
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      await shown(model, (view) => view.state === "connected", "the connected state");
+
+      model.requestEnd();
+      assert.equal(model.getSnapshot().state, "confirm");
+      model.confirmEnd();
+
+      assertSessionError(await editor.nextMessage(), BridgeSessionErrorCode.SESSION_ENDED);
+      await shown(
+        model,
+        (view) => view.state === "code" && view.joinCode !== joinCode,
+        "the new pairing's code to be shown"
+      );
+      assert.equal(model.getSnapshot().joinCode, bridge?.joinCode);
+      model.dispose();
+    });
+
+    it("shows ended when the editor ends the session, and the new pairing's code once a new session is started", async () => {
+      const { model, joinCode } = await startWatched(50);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+
+      editor.send({ type: "session:goodbye" });
+      await shown(model, (view) => view.state === "ended", "the ended state");
+      model.startNewSession();
+
+      await shown(model, (view) => view.state === "code" && view.joinCode !== joinCode, "the new pairing's code");
+      model.dispose();
+    });
+
+    it("never shows away while the editor reloads and returns by its token within the grace", async () => {
+      const { model, states, socket, joinCode } = await startWatched(1500);
+      const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+      await editor.close();
+      assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
+      const returned = await relay.connect(EDITOR);
+      assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
+      await handshake(returned);
+      assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+      await delay(1600);
+
+      assert.ok(!states.includes("away"));
+      assert.equal(model.getSnapshot().state, "connected");
+      model.dispose();
+    });
+
+    it("shows away, never a code, once the editor stays gone past the grace", async () => {
+      const { model, states, joinCode } = await startWatched(50);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      const connectedAt = states.length;
+
+      await editor.close();
+      await shown(model, (view) => view.state === "away", "the away state");
+      await delay(100);
+
+      assert.ok(bridge?.joinCode !== undefined);
+      assert.ok(!states.slice(connectedAt).includes("code"));
+      model.dispose();
+    });
+
+    it("shows away, never a code, when its frame reloads while the editor is gone", async () => {
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      await editor.close();
+      bridge?.dispose();
+
+      frame = new FakeFrame();
+      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+      const model = new SimxStatusModel(bridge, { awayGraceMs: 50 });
+      const states: SimxStatusState[] = [model.getSnapshot().state];
+      model.subscribe(() => states.push(model.getSnapshot().state));
+      const current = bridge;
+      await changed(current, () => current.joinCode !== undefined, "the relay to answer with the editor's vacancy");
+      await shown(model, (view) => view.state === "away", "the away state");
+
+      assert.ok(!states.includes("code"));
+      model.dispose();
+    });
   });
 
   describe("before pairing", () => {

@@ -55,6 +55,12 @@ export interface EditorSessionViewState {
    */
   readonly disconnectedBeyondGrace: boolean;
   /**
+   * `true` once the session this page opened -- by resuming a persisted
+   * token or by an entered join code -- has been connected; kept through
+   * later disconnections, and `false` again when the next session is opened.
+   */
+  readonly connectedSinceOpen: boolean;
+  /**
    * The latest tile catalog the MakeCode side published, as its serialized
    * text. Kept while disconnected; dropped whenever no session exists -- by
    * {@link EditorSessionStore.forget}, and when the session ends.
@@ -95,6 +101,7 @@ export class EditorSessionStore {
   private _session: MakeCodeEditorSession | undefined;
   private _graceTimer: ReturnType<typeof setTimeout> | undefined;
   private _beyondGrace = false;
+  private _connectedSinceOpen = false;
   private _catalogText: string | undefined;
   private _state: EditorSessionViewState;
 
@@ -177,6 +184,7 @@ export class EditorSessionStore {
       },
     });
     this._session = session;
+    this._connectedSinceOpen = false;
     this._unsubscribes.push(
       session.onStateChange(() => {
         this.sessionChanged();
@@ -190,10 +198,15 @@ export class EditorSessionStore {
     this.sessionChanged();
   }
 
-  /** Tracks the session's connectivity into the grace bookkeeping, drops the catalog when no session exists, then publishes. */
+  /**
+   * Tracks the session's connectivity into the grace bookkeeping and whether
+   * it has connected, drops the catalog when no session exists, then
+   * publishes.
+   */
   private sessionChanged(): void {
     const status = this._session?.state.status ?? "none";
     if (status === "none") this._catalogText = undefined;
+    if (status === "connected") this._connectedSinceOpen = true;
     if (status === "disconnected") {
       if (this._graceTimer === undefined && !this._beyondGrace) {
         this._graceTimer = setTimeout(() => {
@@ -222,6 +235,7 @@ export class EditorSessionStore {
       joinCode: sessionState?.joinCode,
       errorCode: sessionState?.errorCode,
       disconnectedBeyondGrace: this._beyondGrace,
+      connectedSinceOpen: this._connectedSinceOpen,
       catalogText: this._catalogText,
       target: sessionState?.target,
     };
@@ -238,6 +252,7 @@ export class EditorSessionStore {
       next.joinCode === last.joinCode &&
       next.errorCode === last.errorCode &&
       next.disconnectedBeyondGrace === last.disconnectedBeyondGrace &&
+      next.connectedSinceOpen === last.connectedSinceOpen &&
       next.catalogText === last.catalogText &&
       next.target === last.target
     ) {

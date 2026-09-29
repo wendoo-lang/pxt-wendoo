@@ -10,6 +10,7 @@ import {
   saveBindingToken,
 } from "./services/binding-token-persistence";
 import { EditorSessionStore } from "./services/editor-session-store";
+import { bindTargetTheme } from "./services/target-theme";
 import "./globals.css";
 
 // Backstop for otherwise-silent floated promise rejections.
@@ -41,6 +42,7 @@ const store = new EditorSessionStore({
     has: hasBindingToken,
   },
 });
+bindTargetTheme(store, document.documentElement);
 store.resume();
 window.addEventListener(
   "pagehide",

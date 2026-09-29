@@ -1,20 +1,23 @@
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import { useState } from "react";
 import { useEditorSession, useEditorSessionState } from "@/contexts/editor-session";
+import { connectionStatus, StatusDot } from "./ConnectionStatus";
 import { VersionNotice } from "./VersionNotice";
 
 /**
  * The join-code entry: how a person connects the editor to a MakeCode
  * project. Submitting the entered code opens a session presenting it and
- * clears the entry. While the code is pending the page shows its progress --
- * connecting, then waiting for the game once the code is accepted -- and it
- * shows a notice, carrying the stable code, when the code was not recognized,
- * when the latest session was ended, or when a connect attempt was rejected
- * for a version mismatch.
+ * clears the entry. While the code is pending the page shows its progress
+ * beside its status dot -- connecting, then waiting for the MakeCode project
+ * once the code is accepted -- and it shows a notice, carrying the stable
+ * code, when the code was not recognized, when the latest session was ended,
+ * or when a connect attempt was rejected for a version mismatch.
  */
 export function ConnectPage() {
   const store = useEditorSession();
-  const { entry, errorCode } = useEditorSessionState();
+  const state = useEditorSessionState();
+  const { entry, errorCode } = state;
+  const status = connectionStatus(state);
   const [code, setCode] = useState("");
   const trimmed = code.trim();
 
@@ -49,9 +52,15 @@ export function ConnectPage() {
           Connect
         </button>
       </form>
-      {entry !== undefined && (
-        <output data-testid="connect-status" data-state={entry} className="block text-muted-foreground text-sm">
-          {entry === "submitted" ? "Connecting..." : "Code accepted. Waiting for the game to connect..."}
+      {status !== undefined && (
+        <output
+          data-testid="connect-status"
+          data-state={entry}
+          data-status={status}
+          className="flex items-center gap-2 text-muted-foreground text-sm"
+        >
+          <StatusDot status={status} />
+          {entry === "submitted" ? "Connecting..." : "Code accepted. Waiting for the MakeCode project to connect..."}
         </output>
       )}
       {errorCode === BridgeSessionErrorCode.JOIN_CODE_UNKNOWN && (

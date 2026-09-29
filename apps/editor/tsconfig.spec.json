@@ -10,10 +10,13 @@
   "include": [
     "src/vite-env.d.ts",
     "src/**/*.spec.ts",
+    "src/components/AppHeader.tsx",
     "src/components/CatalogPanel.tsx",
     "src/components/ConnectPage.tsx",
+    "src/components/ConnectionStatus.tsx",
     "src/components/SessionView.tsx",
     "src/components/VersionNotice.tsx",
+    "src/components/WendooLogo.tsx",
     "src/contexts/editor-session.tsx"
   ],
   "exclude": ["node_modules", "dist"]

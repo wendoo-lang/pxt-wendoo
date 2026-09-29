@@ -66,7 +66,9 @@ The four-hop path assigns the session parts as follows.
   writes that code to the console and exposes it on its handle, again
   for every code the relay sends for the editor's vacant role; each
   welcome takes the code off its handle, since both roles are then
-  bound. It is a channel, not a store: the
+  bound. Its frame renders a minimal session-status panel (see "The
+  simx status panel", below), which shows the code while the simx
+  holds no binding. It is a channel, not a store: the
   one thing it carries across its reload is its binding token (next
   section). It receives catalogs on the sim-message channel,
   connects at the simx role path, opens or refreshes its
@@ -109,6 +111,13 @@ session data, declared when the kind's handshake binds:
 - The value is informational, for display and theming. It is the
   sender's own claim: identity and trust come from the session's
   credentials, never from it.
+- The editor presents it through its per-target record
+  (`TARGET_THEMES` in `apps/editor/src/services/target-theme.ts`),
+  which maps a target id to a display name and theme token
+  overrides. An undeclared target, or a declared value that is not a
+  non-empty string, shows the Wendoo logotype alone in the default
+  theme; an id the record does not know shows raw, in the default
+  theme.
 
 ## Simx credential continuity
 
@@ -127,11 +136,13 @@ carries a session across frames.
   so its simx presents the same token and takes the session's simx
   role over from the original.
 - RESPECTING AN END: when the relay reports `SESSION_ENDED`, the
-  simx clears its stored token and logs the code, and holds until the
-  simulator restarts; the restarted frame presents no token and forms
-  a new session under a new code, never re-forming the ended binding.
-  Every other coded failure is logged and holds the same way, the
-  token kept.
+  simx clears its stored token and logs the code, and holds: its
+  panel shows the session ended, with a "start a new session" action
+  that opens a new pairing in place (`startNewSession`). A simulator
+  restart does the same -- the restarted frame presents no token and
+  forms a new session under a new code, never re-forming the ended
+  binding. Every other coded failure is logged and holds the same
+  way, the token kept until a new session is started.
 - DEGRADATION RULE: where the browser denies the frame storage, the
   simx holds the token in memory and says so in the console. The
   session then lasts only as long as the frame: each teardown
@@ -180,17 +191,25 @@ is vacant, and the relay sends it to whichever side is connected:
   is started again, which takes the session back.
 - Reloads never end a session: the editor closing on `pagehide` and
   the simx disposing its frame both stop the connection, which the
-  session survives. The one deliberate end in this lane is the
-  editor's `forget()` over a live connection, which sends
-  `session:goodbye`; the simx is then told `SESSION_ENDED`, clears its
-  token, and holds until the simulator restarts. An operator end tells
-  both sides, and each drops its token the same way. The simx never
-  ends a session.
+  session survives. Two deliberate ends exist in this lane. The
+  editor's `forget()` over a live connection sends `session:goodbye`;
+  the simx is then told `SESSION_ENDED`, clears its token, and holds
+  on its ended panel. The simx's panel "end session" action, once
+  confirmed, calls `startNewSession`: over an open connection it sends
+  `session:goodbye`, so a connected editor is told `SESSION_ENDED`
+  and returns to its connect page, then the simx clears its token and
+  at once opens a new pairing, whose code its panel shows. An
+  operator end tells both sides, and each drops its token the same
+  way. An end reaches only a CONNECTED counterpart: one that is away
+  when the session ends is told nothing, and its token later re-forms
+  a lone session under the ended binding (the relay's documented
+  token semantics), from which its own start-over path recovers.
 
 The engine rotates every code in service every ten minutes; the relay
 service configures nothing about it. A rotation reaches the connected
-side as a pushed code: the simx writes the new code to the console and
-exposes it on its handle. Neither side presents a code it received, so
+side as a pushed code: the simx writes the new code to the console,
+exposes it on its handle, and swaps it into its panel in place when
+the panel is showing a code. Neither side presents a code it received, so
 rotation never disturbs an established session. A person who read the
 simx's code just before a rotation can still enter it for two minutes
 afterward, and the editor joins. A
@@ -275,24 +294,39 @@ it keys on a session id.
 - The CONNECT PAGE shows while the status is `none`: a join-code
   entry whose submission creates the session with the entered code
   and clears the entry. While the code is pending the page names the
-  wait -- connecting while submitted, waiting for the game once
-  accepted. A refused code (`JOIN_CODE_UNKNOWN`) shows a
-  not-recognized notice above the cleared entry, and an ended session
+  wait beside the status dot -- connecting while submitted, waiting
+  for the MakeCode project once accepted. A refused code
+  (`JOIN_CODE_UNKNOWN`) shows a not-recognized notice above the
+  cleared entry, and an ended session
   (`SESSION_ENDED`) returns here with an ended notice, the entry being
   the way to connect afresh. With a token persisted from an earlier
   page load, the app resumes the session on load and skips this page.
-- The SESSION VIEW shows once a session exists: the catalog panel
-  rendering the latest catalog, and no join code -- the only codes an
-  editor receives are spent or name the simx's vacancy, which no
-  person can enter yet. The catalog stays rendered while disconnected
-  -- status gates delivery, never what is already shown -- and is
-  dropped whenever no session exists.
+- The SESSION VIEW shows once a session exists, under the APP
+  HEADER: the Wendoo logotype, the declared target's display name,
+  and the connection status as an 8px dot and a lowercase word --
+  the simx panel's idiom, using its words where the states
+  correspond. The status is carried as `data-status`: `connecting`
+  (the session has not connected since the page opened it),
+  `connected`, `reconnecting` (only once a disconnection outlasts the
+  grace, below), `replaced` (the editor-only takeover hold), `ended`,
+  and `update` (a version rejection). The dots paint from the
+  editor's themeable tokens: success, warning, destructive, and the
+  neutral muted foreground. The session view also holds the catalog
+  panel rendering the latest catalog, and no join code -- the only
+  codes an editor receives are spent or name the simx's vacancy,
+  which no person can enter yet. The catalog stays rendered while
+  disconnected -- status gates delivery, never what is already shown
+  -- and is dropped whenever no session exists.
 - The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
   routinely, so a brief disconnect is the common case. The
-  disconnected indicator renders only once a disconnection outlasts
-  `DISCONNECT_GRACE_MS` (a few seconds), and then offers `forget()`.
-  The session object stays truthful; the grace lives in the
-  editor's view-model only.
+  disconnected indicator -- the MakeCode project is not connected,
+  waiting for it to come back -- renders only once a disconnection
+  outlasts `DISCONNECT_GRACE_MS` (a few seconds), and then offers
+  `forget()` as "Start over". The header turns `reconnecting` at the
+  same moment; until then it keeps showing the status from before the
+  disconnection. "Start over" and the simx's "End session" are
+  different actions and keep distinct labels. The session object
+  stays truthful; the grace lives in the editor's view-model only.
 - RECOVERY AFFORDANCES: `SESSION_REPLACED` shows a held-state notice
   at once, with a reconnect action (`start()`) and a start-over
   action (`forget()`, back to the connect page). An overflow recovers
@@ -306,6 +340,56 @@ it keys on a session id.
 - The binding token persists in `localStorage` through a small
   persistence module (load/save/clear/has) wired into the session's
   token hooks; the store owns nothing else durable.
+
+## The simx status panel
+
+The simx frame is a visible panel in the simulator column, and it
+renders a minimal session-status surface: no authoring, no catalog,
+no product behavior. Everything it shows derives from session state
+the simx already holds; the panel stores nothing.
+
+- LAYERS: the simx bridge handle exposes truthful session state
+  (`joinCode`, `counterpartConnected`, `counterpartAway`, `bound` --
+  a binding token is held -- `connection`, `errorCode`) with an
+  `onChange` event and the one action `startNewSession`.
+  `SimxStatusModel` derives the displayed state from it and adds the
+  only two things that are display-only: the away grace and the
+  end confirmation. The panel renders the model's view with plain
+  DOM and routes its buttons to the model's actions.
+- STATES, one at a time, carried as `data-state` on the panel root:
+  `connecting` (the connection is not open, or the relay has not
+  answered the hello; `data-retrying="true"` while the bridge client
+  retries after a failed attempt), `code`, `connected`, `away`,
+  `confirm`, `ended`, `update`.
+- VACANCY: the panel shows a join code exactly while the simx holds
+  no binding token -- the editor seat has never been filled in this
+  binding. The welcome takes the code down, a rotation swaps it in
+  place, and a bound session whose editor is gone shows `away`, never
+  a code. The relay does mint and push a working code for a lingering
+  editor role; it stays on the handle and in the console but is not
+  displayed, because a second editor entering it would contend with
+  the first editor's still-valid token. From `away` the way to a
+  displayable code is ending the session.
+- AWAY GRACE: `away` shows only once the session has called for it
+  continuously for `AWAY_DISPLAY_GRACE_MS` (a few seconds), so an
+  editor tab reload that resumes by token never flashes it; until
+  then the previous display stays. The session state stays truthful;
+  the grace lives in the model only.
+- ENDING: `connected` and `away` offer "end session", which shows an
+  inline confirmation first; confirming calls `startNewSession`
+  (see "Join codes, refusal, and takeover in this lane", above). `ended` covers
+  `SESSION_ENDED` and every other failure that stops the connection,
+  and offers "start a new session", the same call.
+- VERSIONS: a relay refusing this side's protocol
+  (`PROTOCOL_VERSION_MISMATCH`) or an editor hello declaring a newer
+  makecode protocol (`PEER_SESSION_PROTOCOL_VERSION_NEWER`, held until
+  a later handshake completes) shows `update`: reload the page. It is
+  the one state whose remedy is not in place.
+- COPY: the code's copy button writes it with the async clipboard
+  API. MakeCode's simx iframe delegates only `autoplay` and
+  `microphone`, so in Chromium the write is refused by permissions
+  policy; the panel then selects the code's text for the person to
+  copy, and a click on the code selects all of it.
 
 ## The extension channel
 

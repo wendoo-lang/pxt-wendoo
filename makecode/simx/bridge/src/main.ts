@@ -1,6 +1,9 @@
+import "./status-panel.css";
 import { DEFAULT_MAKECODE_BRIDGE_URL } from "@wendoo/makecode-session";
 import { openBindingTokenStore } from "./binding-token-store.js";
 import { startSimxBridge } from "./simx-bridge.js";
+import { SimxStatusModel } from "./status-model.js";
+import { mountStatusPanel } from "./status-panel.js";
 
 /**
  * The bridge service this frame connects to: the local relay's dev address
@@ -25,9 +28,17 @@ const bridge = startSimxBridge({
   // The id of the MakeCode target hosting this frame, which MakeCode passes in the frame URL.
   target: new URLSearchParams(window.location.search).get("target") || undefined,
 });
+const status = new SimxStatusModel(bridge);
+const unmount = mountStatusPanel(
+  document.body.appendChild(document.createElement("main")),
+  status,
+  navigator.clipboard
+);
 window.addEventListener(
   "pagehide",
   () => {
+    unmount();
+    status.dispose();
     bridge.dispose();
   },
   { once: true }

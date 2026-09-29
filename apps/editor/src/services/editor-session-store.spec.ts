@@ -237,6 +237,23 @@ describe("editor session store", () => {
     assert.equal(store.getSnapshot().disconnectedBeyondGrace, true);
   });
 
+  it("records whether the session it opened has connected, kept across disconnections and reset by the next open", () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.resume();
+    const resumed = lastSession();
+    assert.equal(store.getSnapshot().connectedSinceOpen, false);
+
+    resumed.set({ status: "connected" });
+    assert.equal(store.getSnapshot().connectedSinceOpen, true);
+
+    resumed.set({ status: "disconnected" });
+    assert.equal(store.getSnapshot().connectedSinceOpen, true);
+
+    store.connect("apple-bird-cloud");
+    assert.equal(store.getSnapshot().connectedSinceOpen, false);
+  });
+
   it("keeps the latest catalog across a disconnection", () => {
     const store = openStore();
     store.connect("apple-bird-cloud");

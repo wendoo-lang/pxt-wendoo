@@ -18,6 +18,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     joinCode: "apple-bird-cloud",
     errorCode: undefined,
     disconnectedBeyondGrace: false,
+    connectedSinceOpen: true,
     catalogText: CATALOG_TEXT,
     target: undefined,
     ...fields,
@@ -46,10 +47,19 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /data-testid="version-notice"/);
   });
 
+  it("renders the app header, naming the declared target and showing the connection status", () => {
+    const markup = render(stateWith({ target: "arcade" }));
+
+    assert.match(markup, /data-testid="app-header"/);
+    assert.match(markup, /data-testid="target-name" data-target="arcade">Arcade</);
+    assert.match(markup, /data-testid="connection-status" data-status="connected"/);
+  });
+
   it("stays quiet about a disconnection within the grace, keeping the catalog rendered", () => {
     const markup = render(stateWith({ status: "disconnected" }));
 
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
+    assert.match(markup, /data-testid="connection-status" data-status="connected"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
   });
 
@@ -58,6 +68,7 @@ describe("SessionView", () => {
 
     assert.match(markup, /data-testid="disconnected-indicator"/);
     assert.match(markup, /data-testid="forget-button"/);
+    assert.match(markup, /data-testid="connection-status" data-status="reconnecting"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
   });
 

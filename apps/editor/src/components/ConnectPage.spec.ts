@@ -16,6 +16,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     joinCode: undefined,
     errorCode: undefined,
     disconnectedBeyondGrace: false,
+    connectedSinceOpen: false,
     catalogText: undefined,
     target: undefined,
     ...fields,
@@ -43,15 +44,18 @@ describe("ConnectPage", () => {
     assert.doesNotMatch(markup, /data-testid="ended-notice"/);
   });
 
-  it("shows an entered code's progress: submitted, then accepted and waiting for the game", () => {
-    assert.match(
-      renderWith(stateWith({ entry: "submitted" }), createElement(ConnectPage)),
-      /data-testid="connect-status" data-state="submitted"/
-    );
-    assert.match(
-      renderWith(stateWith({ entry: "accepted" }), createElement(ConnectPage)),
-      /data-testid="connect-status" data-state="accepted"/
-    );
+  it("shows an entered code's progress: submitted and connecting, then accepted and waiting for the project", () => {
+    const submitted = renderWith(stateWith({ entry: "submitted" }), createElement(ConnectPage));
+    assert.match(submitted, /data-testid="connect-status" data-state="submitted" data-status="connecting"/);
+    assert.match(submitted, /data-testid="status-dot" data-status="connecting"/);
+
+    const accepted = renderWith(stateWith({ entry: "accepted" }), createElement(ConnectPage));
+    assert.match(accepted, /data-testid="connect-status" data-state="accepted" data-status="waiting"/);
+    assert.match(accepted, /data-testid="status-dot" data-status="waiting"/);
+  });
+
+  it("keeps its centered layout, with no app header", () => {
+    assert.doesNotMatch(renderWith(stateWith({}), createElement(ConnectPage)), /data-testid="app-header"/);
   });
 
   it("shows the not-recognized notice, carrying the stable code, with the entry ready for another code", () => {

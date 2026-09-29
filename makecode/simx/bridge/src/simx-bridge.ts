@@ -1,6 +1,7 @@
-import { ProjectSession } from "@wendoo/bridge-client";
+import { type ConnectionStatus, ProjectSession } from "@wendoo/bridge-client";
 import {
   BridgeSessionErrorCode,
+  PeerSessionErrorCode,
   type SessionJoinCodeMessage,
   type SessionWelcomeMessage,
   type WsMessage,
@@ -12,6 +13,14 @@ import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxF
 
 /** Messages the bridge service sends that the simulator extension reads. */
 type RelayMessage = SessionWelcomeMessage | SessionJoinCodeMessage;
+
+/**
+ * Stable code of a failure the simulator extension bridge reports: one that
+ * stopped the bridge connection, or `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`
+ * when the counterpart's makecode hello declared a protocol version newer than
+ * this simulator extension speaks.
+ */
+export type SimxBridgeErrorCode = BridgeSessionErrorCode | PeerSessionErrorCode;
 
 /** Where the simulator extension writes its log lines for developers. */
 export interface SimxLog {
@@ -29,8 +38,9 @@ export interface SimxBridgeOptions {
   tokens: BindingTokenStore;
   /**
    * Receives each join code the bridge service sends for a vacant role, every
-   * message from the program that was rejected, by its code, and the code of
-   * a failure that stops the bridge connection.
+   * message from the program that was rejected, by its code, the code of a
+   * failure that stops the bridge connection, and the code of a counterpart's
+   * rejected makecode hello.
    */
   log: SimxLog;
   /**
@@ -56,8 +66,46 @@ export interface SimxBridge {
    * or until this side's own connection drops.
    */
   readonly counterpartAway: boolean;
+  /**
+   * `true` while the counterpart is connected to the session: from each
+   * welcome until the bridge service reports the counterpart away or this
+   * side's own connection drops.
+   */
+  readonly counterpartConnected: boolean;
+  /**
+   * `true` while this side holds a binding token: from its first welcome, or
+   * from the start when the token store held one, until the session is
+   * ended. A bound session whose counterpart is not connected is waiting for
+   * that counterpart to return by its own token.
+   */
+  readonly bound: boolean;
+  /** The status of the bridge connection, as the bridge client reports it. */
+  readonly connection: ConnectionStatus;
+  /**
+   * The code of the failure that stopped the bridge connection, or of the
+   * counterpart's makecode hello declaring a newer protocol version, or
+   * `undefined` while neither applies. A stopped connection's code stays
+   * until {@link startNewSession}; a rejected hello's code stays until a
+   * later makecode handshake completes.
+   */
+  readonly errorCode: SimxBridgeErrorCode | undefined;
   /** The channel version the program's latest catalog message declared, or `undefined` before the first. */
   readonly channelVersion: number | undefined;
+  /**
+   * Subscribe to changes of {@link joinCode}, {@link counterpartAway},
+   * {@link counterpartConnected}, {@link bound}, {@link connection}, and
+   * {@link errorCode}. Returns an unsubscribe function.
+   */
+  onChange(listener: () => void): () => void;
+  /**
+   * End the current session and open a new one at once. When the bridge
+   * connection is open, sends `session:goodbye`, so the bridge service ends
+   * the session and tells a connected counterpart it ended; a connection
+   * already stopped sends nothing. Either way the binding token is cleared
+   * from the token store and a new connection presenting none opens a new
+   * session, whose join code arrives as {@link joinCode}.
+   */
+  startNewSession(): void;
   /** Close the bridge connection and stop listening to the program. */
   dispose(): void;
 }
@@ -82,11 +130,16 @@ class CounterpartSession {
    * @param relay - The bridge connection, just welcomed.
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, if any.
+   * @param settled - Called once the counterpart's hello is read: with
+   *   `undefined` when the session is established, or with
+   *   `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER` when the hello declared a
+   *   newer version and no session was established.
    */
   constructor(
     relay: ProjectSession<WsMessage, RelayMessage>,
     target: string | undefined,
-    latestCatalog: () => string | undefined
+    latestCatalog: () => string | undefined,
+    settled: (rejection: PeerSessionErrorCode | undefined) => void
   ) {
     const port: MakeCodeSessionPort = {
       postMessage(message) {
@@ -110,9 +163,11 @@ class CounterpartSession {
         if (catalog !== undefined) {
           session.publishCatalog(catalog);
         }
+        settled(undefined);
       },
       () => {
-        // The counterpart declared a newer protocol version; no session until the next welcome.
+        // No session until the next welcome.
+        settled(PeerSessionErrorCode.PROTOCOL_VERSION_NEWER);
       }
     );
   }
@@ -147,21 +202,30 @@ class CounterpartSession {
  * discards the latest catalog, so no session receives a catalog older than
  * the program's newest. When the bridge service reports a failure that
  * stops the connection -- another connection replacing this one, or the
- * session ending -- the code is logged and the bridge stays disconnected; an
- * ended session's binding token is cleared from `tokens`, so the next start
- * forms a new session.
+ * session ending -- the code is logged and the bridge stays disconnected
+ * until {@link SimxBridge.startNewSession}; an ended session's binding token
+ * is cleared from `tokens`, so the next start forms a new session.
  */
 export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const { tokens, log } = options;
   const channel = connectSimChannel(options.frame);
-  const relay = new ProjectSession<WsMessage, RelayMessage>(MAKECODE_SESSION_ROLE_PATHS.simx, options.bridgeUrl, {
-    bindingToken: tokens.load(),
-  });
+  const listeners = new Set<() => void>();
+  let relay: ProjectSession<WsMessage, RelayMessage>;
+  let relayUnsubscribes: (() => void)[] = [];
   let catalog: string | undefined;
   let counterpart: CounterpartSession | undefined;
   let joinCode: string | undefined;
   let counterpartAway = false;
+  let counterpartConnected = false;
+  let relayError: BridgeSessionErrorCode | undefined;
+  let handshakeRejection: PeerSessionErrorCode | undefined;
   let channelVersion: number | undefined;
+
+  const changed = (): void => {
+    for (const listener of listeners) {
+      listener();
+    }
+  };
 
   const adoptJoinCode = (received: string): void => {
     if (received === joinCode) return;
@@ -169,33 +233,62 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     log.info(`Wendoo join code: ${received}`);
   };
 
-  const unsubscribes = [
-    relay.on("session:welcome", (message) => {
-      const { bindingToken } = message.payload;
-      joinCode = undefined;
-      if (bindingToken !== undefined && bindingToken !== tokens.load()) {
-        tokens.save(bindingToken);
-      }
-      counterpartAway = false;
-      counterpart?.close();
-      counterpart = new CounterpartSession(relay, options.target, () => catalog);
-    }),
-    relay.on("session:joinCode", (message) => {
-      adoptJoinCode(message.payload.joinCode);
-    }),
-    relay.addEventListener("counterpartAway", () => {
-      counterpartAway = true;
-    }),
-    relay.addEventListener("error", (code) => {
-      if (code === BridgeSessionErrorCode.SESSION_ENDED) tokens.clear();
-      log.error(`${code}: the bridge connection stopped and reconnects when the simulator restarts.`);
-    }),
-    relay.addEventListener("status", (status) => {
-      if (status === "connected") return;
-      counterpartAway = false;
-      counterpart?.close();
-      counterpart = undefined;
-    }),
+  const handshakeSettled = (rejection: PeerSessionErrorCode | undefined): void => {
+    if (rejection !== undefined) {
+      log.error(`${rejection}: the editor speaks a newer makecode protocol; reload the page to update Wendoo.`);
+    }
+    if (rejection === handshakeRejection) return;
+    handshakeRejection = rejection;
+    changed();
+  };
+
+  /** Opens a bridge connection presenting the binding token `tokens` holds, if any. */
+  const connect = (): void => {
+    const session = new ProjectSession<WsMessage, RelayMessage>(MAKECODE_SESSION_ROLE_PATHS.simx, options.bridgeUrl, {
+      bindingToken: tokens.load(),
+    });
+    relay = session;
+    relayUnsubscribes = [
+      session.on("session:welcome", (message) => {
+        const { bindingToken } = message.payload;
+        joinCode = undefined;
+        if (bindingToken !== undefined && bindingToken !== tokens.load()) {
+          tokens.save(bindingToken);
+        }
+        counterpartAway = false;
+        counterpartConnected = true;
+        counterpart?.close();
+        counterpart = new CounterpartSession(session, options.target, () => catalog, handshakeSettled);
+        changed();
+      }),
+      session.on("session:joinCode", (message) => {
+        adoptJoinCode(message.payload.joinCode);
+        changed();
+      }),
+      session.addEventListener("counterpartAway", () => {
+        counterpartAway = true;
+        counterpartConnected = false;
+        changed();
+      }),
+      session.addEventListener("error", (code) => {
+        relayError = code;
+        if (code === BridgeSessionErrorCode.SESSION_ENDED) tokens.clear();
+        log.error(`${code}: the bridge connection stopped.`);
+      }),
+      session.addEventListener("status", (status) => {
+        if (status !== "connected") {
+          counterpartAway = false;
+          counterpartConnected = false;
+          counterpart?.close();
+          counterpart = undefined;
+        }
+        changed();
+      }),
+    ];
+    session.start();
+  };
+
+  const channelUnsubscribes = [
     channel.onCatalog((posted, version) => {
       catalog = posted;
       channelVersion = version;
@@ -207,7 +300,16 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     }),
   ];
 
-  relay.start();
+  /** Detaches from the current bridge connection, so nothing it reports reaches this bridge again. */
+  const detachRelay = (): void => {
+    for (const unsubscribe of relayUnsubscribes.splice(0)) {
+      unsubscribe();
+    }
+    counterpart?.close();
+    counterpart = undefined;
+  };
+
+  connect();
   channel.requestCatalog();
 
   return {
@@ -217,15 +319,45 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     get counterpartAway() {
       return counterpartAway;
     },
+    get counterpartConnected() {
+      return counterpartConnected;
+    },
+    get bound() {
+      return tokens.load() !== undefined;
+    },
+    get connection() {
+      return relay.status;
+    },
+    get errorCode() {
+      return relayError ?? handshakeRejection;
+    },
     get channelVersion() {
       return channelVersion;
     },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    startNewSession() {
+      detachRelay();
+      relay.end();
+      tokens.clear();
+      joinCode = undefined;
+      counterpartAway = false;
+      counterpartConnected = false;
+      relayError = undefined;
+      handshakeRejection = undefined;
+      connect();
+      changed();
+    },
     dispose() {
-      for (const unsubscribe of unsubscribes) {
+      detachRelay();
+      for (const unsubscribe of channelUnsubscribes) {
         unsubscribe();
       }
-      counterpart?.close();
-      counterpart = undefined;
+      listeners.clear();
       relay.stop();
       channel.dispose();
     },

@@ -34,41 +34,27 @@ working copy.
 
 ## Git Is Read-Only
 
-Git is a read-only tool for Codex, Copilot, Claude, and any other agent,
-including subagents spawned for a task. Use it freely to inspect and to query
-history: `status`, `log`, `diff`, `show`, `blame`, `reflog`, `rev-parse`,
-`for-each-ref`, `branch --list`, and the like. `git rm` and `git mv` are also
-allowed, as ordinary file operations while editing the repo.
-
-Everything that changes repository state -- the working tree, the index, the
-stash, or any commit, branch, tag, or ref -- is the user's to run. Do it only
-when the user asks for that specific write in that turn.
-
-Two commands read as harmless but are writes: `git checkout -- <file>` and
-`git restore <file>` discard uncommitted work. Treat them as writes.
-
-To undo or fix a file, edit or regenerate it directly, and leave changes you did
-not make as they stand.
-
-The submodule at `external/wendoo-lang` is a second repository with its own
-history. The rule applies there identically: a submodule pointer bump is a write
-to this repo, and a commit inside the submodule is a write to that one.
+Git is a read-only tool for every agent, subagents included. Inspection and
+history queries are free, and `git rm` / `git mv` are allowed as ordinary file
+operations while editing. Everything that changes repository state -- the
+working tree, the index, the stash, any commit, branch, tag, or ref -- is the
+user's to run, and only when they ask for that specific write in that turn.
+`git checkout -- <file>` and `git restore <file>` read as harmless but discard
+uncommitted work: treat them as writes. To undo or fix a file, edit or
+regenerate it directly, and leave changes you did not make as they stand. The
+submodule at `external/wendoo-lang` is a second repository under the same
+rule: a pointer bump is a write to this repo, a commit inside it a write to
+that one.
 
 ## Never Kill Processes You Do Not Own
 
 Never kill, signal, or otherwise terminate a process you did not start in the
-current session. This is an absolute rule.
-
-- A port being in use is NOT evidence the listener is stale, orphaned, or yours.
-  A dev server matching this repo's app and working directory may well be the
-  user's own running server. Same app, same cwd, same port does NOT mean "safe
-  to kill."
-- Do not run `kill`, `pkill`, `killall`, `kill -9`, or any equivalent against a
-  process you cannot prove you launched this session.
-- If a port you want is occupied, pick a different port, or stop and ask the
-  user whether to free it -- do not free it yourself.
-- This applies to dev servers, watchers, language servers, databases, and any
-  other long-running process.
+current session -- no `kill`, `pkill`, `killall`, or equivalent. This is an
+absolute rule, and a port being in use is not evidence its listener is stale
+or yours: same app, same cwd, same port may well be the user's own server. If
+a port you want is occupied, pick another or ask the user; never free it
+yourself. This covers dev servers, watchers, language servers, databases, and
+every other long-running process.
 
 ## Command Approvals
 
@@ -82,19 +68,15 @@ current session. This is an absolute rule.
 - This repo uses npm exclusively; the only root lockfile is `package-lock.json`.
   Keep pnpm and yarn out entirely -- no alternate lockfiles, no `packageManager`
   field, no `pnpm`/`yarn` invocations.
-- This is intentionally NOT an npm workspaces monorepo, and must not become one.
-  The platform submodule is consumed by several independent repository roots,
-  and a workspace root cannot span them: two roots would each claim the same
-  packages while edits are mirrored into both working trees, which is a failure
-  class the current layout does not have. There is no root `workspaces` field.
-  Each app and simx component runs its own `npm install` into its own
-  `node_modules`; cross-package links use `file:` dependencies and symlinks.
-  MakeCode extensions under `makecode/extensions/` sit outside npm entirely:
-  their dependencies are declared in `pxt.json` and resolved by the MakeCode
-  toolchain into `pxt_modules/`. An extension may carry a scripts-only
-  `package.json` (no dependencies, private, never listed in `pxt.json` files)
-  as a convenience for invoking dev tooling; it participates in no npm
-  dependency graph.
+- This is intentionally NOT an npm workspaces monorepo, and must not become
+  one: the platform submodule is consumed by several independent repository
+  roots, and a workspace root cannot span them. No root `workspaces` field.
+  Each app and simx component runs its own `npm install`; cross-package links
+  use `file:` dependencies and symlinks. MakeCode extensions under
+  `makecode/extensions/` sit outside npm entirely (dependencies in `pxt.json`,
+  resolved into `pxt_modules/`); an extension may carry a scripts-only,
+  private, dependency-free `package.json` for dev tooling, never listed in
+  `pxt.json` files.
 - Because there is no hoisting, every package must declare the dev tooling its
   own scripts invoke (for example `tsx`) in its own `devDependencies`, so the
   script resolves the binary from that package's `node_modules/.bin`. Do not
@@ -133,57 +115,28 @@ Two hazards worth knowing:
 - A standalone wendoo-lang clone can lag the submodule checkouts. Prefer
   `external/wendoo-lang` as the current reference.
 
-The MakeCode bridge address is the worked example: both apps store the service
-as a bare host with an optional port and let `bridge-client` choose `ws://`
-for a loopback host and `wss://` otherwise, and neither app uses a `VITE_` env
-var for configuration. A scheme baked into the value would have been silently
-stripped, and an env var would have been this repo's only one.
+The MakeCode bridge address is the worked example: both apps store the
+service as a bare host and let `bridge-client` pick `ws://` or `wss://`, and
+neither uses a `VITE_` env var. A baked-in scheme would have been silently
+stripped; an env var would have been this repo's only one.
 
 ## Build System
 
-Builds are driven by `wendooBuild` metadata plus wireit freshness tracking --
-the same setup wendoo-lang and wendoo-mcu use. `build:deps` is the single entry
-point: it runs `external/wendoo-lang/scripts/build-packages.js`, which walks the
-`file:` dependency graph from the package it is pointed at and builds everything
-it finds, dependencies first, across repository boundaries.
+Builds are driven by `wendooBuild` metadata plus wireit freshness tracking,
+the same setup wendoo-lang and wendoo-mcu use; `docs/build-system.md` holds
+the declaration shapes and mechanics. The binding rules:
 
-Every app or npm package here that produces build output follows that shape:
-
-- Declare `wendooBuild` in its `package.json`: `{"script": "build:prod",
-  "outputs": ["dist"], "postProcessed": <bool>}`, adding `variants` and `needs`
-  when the package builds more than one output group.
-- Point that script at wireit (`"build:prod": "wireit"`) and declare the step
-  in a `wireit` block with `command`, `files`, `output`, `clean: true`, and
-  `packageLocks: []`. Cross-package steps are named by path, for example
-  `"../../external/wendoo-lang/packages/core:build:prod"`.
-- List `wireit` in the package's own `devDependencies`. There is no hoisting,
-  so it resolves from that package's `node_modules/.bin`.
-- Give the package a `build:deps` script delegating to the driver, and hang the
-  hooks that need current dists off it: `predev`, `prebuild`,
-  `prebuild:headless`, `prepackage`, `pretest`, `pretypecheck`, as that package
-  needs. The relative path depends on depth -- `../../external/...` from
-  `apps/<name>`, `../../../external/...` from `makecode/simx/<name>`.
-
-How work gets skipped, and what that demands of a declaration:
-
-- wireit hashes the declared input files and skips a step whose recorded hashes
-  still match. Hashing is by content, not timestamp, so touching a file or
-  rewriting it with the same bytes rebuilds nothing. An input you fail to
-  declare is an input that will not trigger a rebuild -- an under-declared
-  `files` list does not fail loudly, it goes stale silently.
-- A step with `clean: true` has its declared output deleted before it runs, so
-  a step that does run never mixes fresh output with leftovers.
-- The driver runs every step with `WIREIT_CACHE=none`, so wireit judges each
-  step where it stands and never restores output from a cache directory.
-- `.wireit/` holds run state, is private to a single checkout, and is
-  gitignored.
-
-Do not hand-roll build ordering or freshness checking. Declaring inputs and
-outputs is the whole interface: the revamp that introduced wireit deleted a
-bespoke freshness oracle rather than carry two mechanisms.
-
-MakeCode extensions under `makecode/extensions/` sit outside this entirely.
-They are built by the pxt toolchain and declare no `wendooBuild`.
+- `build:deps` is the single entry point: it walks the `file:` dependency
+  graph and builds everything it finds, dependencies first, across repository
+  boundaries. Every package producing build output declares `wendooBuild` and
+  its wireit step per the shapes in that doc, with `wireit` in its own
+  `devDependencies`.
+- An input missing from a step's `files` list does not fail loudly -- it goes
+  stale silently. Declare every input.
+- Do not hand-roll build ordering or freshness checking; declaring inputs and
+  outputs is the whole interface.
+- MakeCode extensions under `makecode/extensions/` sit outside this entirely:
+  pxt builds them, and they declare no `wendooBuild`.
 
 ## Code Quality
 
@@ -330,57 +283,54 @@ the current slice alone.
   is idiomatic on one side is frequently illegal on the other; check before
   carrying one across.
 - Planned first-cut ownership, one subfolder per unit:
-  - `makecode/extensions/*` own the MakeCode extensions, and there are two
-    kinds. They are nested pxt extensions: each is addressed by its GitHub
-    coordinate at full depth, so the VM is
-    `github:wendoo-lang/pxt-wendoo/makecode/extensions/vm`, and pxt's
-    monorepo support requires a top-level `pxt.json` at the repo root for any
-    of them to resolve. That coordinate is public identity -- it lands in every
-    consuming project and in every pack that depends on core -- so the
-    directory a shipped extension lives in is not free to rename.
-    `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
-    VM in MakeCode static TypeScript (a conforming Wendoo VM, held to the
-    observable semantics of the reference VM under the contract in
-    `.github/instructions/vm.instructions.md`), the trace emitter, the tile
-    bind API, and the language-level tiles. It carries NO block definitions
-    and ZERO target-specific pxt dependencies (`core: "*"` only) -- it is
-    MakeCode-target-agnostic by construction, incubating here, portable to
-    other MakeCode targets (micro:bit, Minecraft EDU) and extractable later
-    as a file move. The boundary is proven by compiling against a second
-    target, not by convention. Extraction, if it happens, changes the
-    extension's public coordinate, so the decision deadline is before
-    external projects pin it.
-    Arcade-bound pieces -- the spawn block, sprite pairing, the WendooBrain
-    asset blocks, the simx binding -- belong to a game-facing arcade
-    extension that does not exist yet; it is created when the spawn-block
-    slice needs it, not before, and it depends on the VM extension and on
-    arcade's base pack.
-    Every target also has exactly one BASE PACK: its own extension unit,
-    distinct from the game-facing extension and from feature packs, created
-    when the first type declaration needs it. It depends on the VM core
-    extension and owns the target's type declarations -- the target's asset
-    types (for arcade: image, song, tilemap, tile, animation) and its
-    built-in types (for arcade: sprite). A base pack reserves the right to
-    carry a base set of common tile vocabulary shared by its target's
-    packs; what belongs there is not yet identified, so tiles land in a
-    base pack only by explicit ruling, never by drift.
-  - The other kind is a FEATURE PACK: an extension supplying host-bound
-    tiles for one genre of game. A feature pack takes a direct dependency on
-    its target's base pack (and through it the VM core extension) and never
-    depends on another feature pack; packs compose by keeping tile names
-    disjoint. The majority of vocabulary comes from packs and from user code,
-    not from core. Exactly where the line falls between a core tile, a
-    base-pack tile, and a feature-pack tile is not settled -- when a new tile
-    could plausibly go either way, raise it rather than deciding it in
-    passing.
-  - `makecode/simx/*` own the MakeCode simx components, each a webapp in its
-    own subfolder. `makecode/simx/bridge` connects to the bridge service,
-    joining the editor webapp to the MakeCode project. A simx is a channel: not
-    a store, not a UI, and TARGET-BLIND -- one built simx serves every
-    MakeCode target. It reloads on every sim restart, so no state may live
-    only there. A simx is bound by an `approvedRepoLib` entry in EACH MakeCode
-    target's own `targetconfig.json`, keyed `owner/repo` and carrying a
-    hosting URL -- per-target registration of one shared artifact.
+  - `makecode/extensions/*` own the MakeCode extensions, one per subfolder.
+    They are nested pxt extensions: each is addressed by its GitHub
+    coordinate at full depth (the VM is
+    `github:wendoo-lang/pxt-wendoo/makecode/extensions/vm`), pxt's monorepo
+    support requires a top-level `pxt.json` at the repo root, and a shipped
+    extension's coordinate is public identity, so its directory is not free
+    to rename. Four unit kinds:
+    - `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
+      VM in MakeCode static TypeScript (a conforming Wendoo VM per
+      `.github/instructions/vm.instructions.md`), the trace emitter, the
+      tile bind API, and the language-level tiles. NO block definitions,
+      ZERO target-specific pxt dependencies (`core: "*"` only):
+      MakeCode-target-agnostic by construction, portable to other targets
+      and extractable later as a file move -- proven by compiling against a
+      second target, not by convention. Extraction changes the public
+      coordinate, so that decision's deadline is before external projects
+      pin it.
+    - Each target has exactly one BASE PACK, created when the first type
+      declaration needs it. It depends on the VM extension and owns the
+      target's type declarations: asset types (arcade: image, song,
+      tilemap, tile, animation) and built-in types (arcade: sprite). It
+      reserves a base set of common tile vocabulary shared by its target's
+      packs; tiles land there only by explicit ruling, never by drift.
+    - The game-facing arcade extension (created when the spawn-block slice
+      needs it, not before) depends on the VM extension and the arcade base
+      pack, and owns the arcade-bound pieces: the spawn block, sprite
+      pairing, the WendooBrain asset blocks, the simx binding.
+    - FEATURE PACKS supply host-bound tiles for one genre of game. A
+      feature pack depends on its target's base pack (and through it the
+      VM extension), never on another feature pack; packs compose by
+      keeping tile names disjoint. The majority of vocabulary comes from
+      packs and user code, not from core. Where the line falls between a
+      core tile, a base-pack tile, and a feature-pack tile is not settled:
+      when a tile could plausibly go either way, raise it rather than
+      deciding it in passing.
+  - `makecode/simx/*` own the MakeCode simx components, each a webapp in
+    its own subfolder; `makecode/simx/bridge` connects to the bridge
+    service, joining the editor webapp to the MakeCode project. A simx is a
+    channel, not a store: it reloads on every sim restart, so no state may
+    live only there. It is not product UI, but its frame is a visible panel
+    and renders a minimal session-status surface -- the join code while the
+    editor seat is vacant, and basic connection state; no authoring, no
+    catalog display. One shared artifact serves every target, bound by an
+    `approvedRepoLib` entry in each target's own `targetconfig.json`
+    (`owner/repo` key, hosting URL); it knows its hosting target from the
+    `target` frame URL param and may carry target-keyed behavior (asset
+    previews, target-specific state). Per-target simx builds are not
+    taken; raise a need as a decision.
   - `packages/*` own this repo's cross-side shared npm packages: contracts
     consumed by units on both sides of the integration via `file:`
     dependencies. The first is `packages/protocol` (`@wendoo/makecode-session`),
@@ -392,20 +342,21 @@ the current slice alone.
     becomes citable precedent for more of it.
   - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
     management, compiler integration, and diagnostics. The editor is
-    TARGET-BLIND: the entire tile vocabulary is injected from the MakeCode
-    side over the bridge (pack tiles surfaced via `apis.read`), so the tile
-    catalog is session data, never build configuration. The one target-aware
-    residue is theming, keyed by the target name carried in the session hello.
-    Tripwire: this holds because user-authored tiles live on the MakeCode
-    side; a Wendoo-TS user-tile flow in this editor would reintroduce
-    target-specific ambient typings (as in wendoo-mcu's editor) and must be
-    raised as a boundary change, not slipped in. (The directory name predates
-    the target-blind ruling; renaming it rides its own slice per F48.)
+    TARGET-BLIND: the tile vocabulary is injected from the MakeCode side
+    over the bridge, so the catalog is session data, never build
+    configuration; the one target-aware residue is the per-target theme
+    record (the target's display name and theme token overrides), keyed
+    by the target id carried in the session hello. Tripwire: this holds because
+    user-authored tiles live on the MakeCode side -- a Wendoo-TS user-tile
+    flow in this editor would reintroduce target-specific ambient typings
+    and must be raised as a boundary change, not slipped in. (The directory
+    name predates the target-blind ruling; renaming rides F48.)
   - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects
     to. Also target-blind: one deployment serves every target.
-  - The complete per-target surface of this repo is: the game-facing
-    extension, vocabulary packs, the `approvedRepoLib` registration, the
-    upstream `trg-*` platform-stack layer, and a theme record in the editor.
+  - The complete per-target surface of this repo is: the target base pack,
+    the game-facing extension, feature packs, the `approvedRepoLib`
+    registration, the upstream `trg-*` platform-stack layer, a theme record
+    in the editor, and target-keyed code paths inside the shared simx.
     Everything else is shared.
 - The editor webapp, the bridge service, the simx component, and the MakeCode
   project form one path. A change to any hop is not done until you have named
