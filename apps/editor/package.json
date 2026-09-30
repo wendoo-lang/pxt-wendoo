@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app",
+    "@wendoo/core": "file:../../external/wendoo-lang/packages/core",
     "@wendoo/makecode-session": "file:../../packages/protocol",
     "@wendoo/ui": "file:../../external/wendoo-lang/packages/ui",
     "react": "^19.0.0",

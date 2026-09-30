@@ -347,6 +347,13 @@ it keys on a session id.
 - The binding token persists in `localStorage` through a small
   persistence module (load/save/clear/has) wired into the session's
   token hooks; the store owns nothing else durable.
+- The BRAINS STORE (`BrainsStore`) follows the session store, reading
+  two things from it: the catalog, from which it builds the
+  environment brains are edited and compiled in (rebuilt whenever a
+  different catalog arrives), and the status, which gates delivery
+  only: a brain edited while the status is anything but `connected`
+  is recorded as pending, and the brains themselves are kept through
+  every status.
 
 ## The simx status panel
 
