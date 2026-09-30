@@ -96,7 +96,19 @@ unless noted otherwise.
 - `makecode/extensions/vm` is where brains execute, inside the Arcade game.
   It owns fiber scheduling, the handle table, and the host loop on that side,
   and it must preserve the single-entry rule under pxt's own event model: a
-  MakeCode event handler enqueues, and the host loop drains.
+  MakeCode event handler enqueues, and the host loop drains. The program
+  host (`makecode/extensions/vm/program-host.ts`) is that loop: game code
+  attaching a program to an actor only records the request, a target
+  extension's frame handler drains the host, and the drain alone starts,
+  thinks, and ends programs -- an actor's end is observed by the drain
+  polling the actor, never delivered to the VM by a callback.
+- Every program the extension runs is held to the world it computes in,
+  sts-f64 (device-profile id 2001, binary64 numbers): the loader refuses
+  an artifact carrying another profile id or another format version by
+  stable code, and the refused program never runs while the rest of the
+  game does. Brain-observable numeric results -- operator rounding and
+  number/text conversion -- flow through the numerics instance handed to
+  `registerCoreHostFunctions`.
 - `apps/editor` is an authoring surface. It may compile, inspect, and
   visualize, but the Arcade platform's execution semantics are the extension's.
 - `makecode/simx/*` components are messaging endpoints between the editor and

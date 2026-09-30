@@ -103,7 +103,7 @@ namespace wendoo {
   /**
    * A number value carrying `v`.
    *
-   * @param v - Numeric payload, at the simulator's binary64 precision.
+   * @param v - Numeric payload, a binary64 double.
    */
   export function mkNumber(v: number): Value {
     return new Value(ValueTag.Number, v, "", false);

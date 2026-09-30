@@ -293,7 +293,14 @@ the current slice alone.
     - `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
       VM in MakeCode static TypeScript (a conforming Wendoo VM per
       `.github/instructions/vm.instructions.md`), the trace emitter, the
-      tile bind API, and the language-level tiles. NO block definitions,
+      tile bind API, the language-level tiles, the compiled-brain
+      registry, the program loader, the target-blind program host (the
+      single-entry host loop a target's frame loop drains), and the
+      empty program `wendooPrograms.none` (`empty.g.ts`, generated from
+      `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
+      NO block definitions -- the compiled-brain type's
+      `//% fixedInstances` attribute is toolbox metadata on a type, which
+      a target extension's block parameter turns into its dropdown --
       ZERO target-specific pxt dependencies (`core: "*"` only):
       MakeCode-target-agnostic by construction, portable to other targets
       and extractable later as a file move -- proven by compiling against a
@@ -306,10 +313,15 @@ the current slice alone.
       tilemap, tile, animation) and built-in types (arcade: sprite). It
       reserves a base set of common tile vocabulary shared by its target's
       packs; tiles land there only by explicit ruling, never by drift.
-    - The game-facing arcade extension (created when the spawn-block slice
-      needs it, not before) depends on the VM extension and the arcade base
-      pack, and owns the arcade-bound pieces: the spawn block, sprite
-      pairing, the WendooBrain asset blocks, the simx binding.
+    - The game-facing arcade extension, `makecode/extensions/arcade`
+      (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
+      depends on the VM extension and Arcade's `device` library, and on
+      the arcade base pack once that exists. It owns the arcade-bound
+      pieces: the spawn block (`wendoo.runProgram`, its program picked
+      by name from the project's compiled brains), sprite pairing and
+      hosting (one program host per game scene, drained from the scene's
+      own update loop), and the catalog publication on the game's first
+      frame; the WendooBrain asset blocks and the simx binding join it.
     - FEATURE PACKS supply host-bound tiles for one genre of game. A
       feature pack depends on its target's base pack (and through it the
       VM extension), never on another feature pack; packs compose by

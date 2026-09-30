@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "id": "fw8lXxwGteWSsFOj",
+  "name": "Unnamed Brain",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "WGBFB25H1UWsMQRy",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "WGBFB25H1UWsMQRy",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [],
+          "children": [],
+          "ruleId": "5Bvq40kC50LEzDsY"
+        }
+      ]
+    }
+  ]
+}

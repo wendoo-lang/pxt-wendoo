@@ -253,28 +253,44 @@ serves exactly what the last one wrote.
   listed and pulled -- the editor's corruption handling takes it from
   there -- and is named from its registration, else empty.
 - COMPILED FORM: `brains.g.ts`, at the folder root, is ONE generated
-  module registering every brain's compiled form, which the project
+  module declaring every brain's compiled form, which the project
   compiles with the rest of its code. After two comment lines it
-  declares `// wendoo-brains-format 1`, then carries one entry per
-  brain, ordered by id:
+  declares `// wendoo-brains-format 1`, then a blank line, then the
+  namespace `wendooPrograms` carrying one entry per brain, ordered by
+  id and separated by blank lines:
 
   ```ts
-  // source-hash 1a2b3c4d
-  wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
-      000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
-  `);
+  namespace wendooPrograms {
+      // source-hash 1a2b3c4d
+      //% fixedInstance block="Chaser"
+      export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
+          000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      `);
+  }
   ```
 
-  The id and name are JSON string literals with every character
-  outside printable ASCII escaped; the program follows as lowercase
-  hex, 32 bytes a line (pxt's `hex` literal skips whitespace). The
-  `source-hash` line binds the program to the source it was compiled
-  from. `writeBrainsModule` and `readBrainsModule`
-  (`makecode/simx/bridge/src/brains-module.ts`) are a writer and
-  reader pair: the same entries always write the same text, which
-  reads back to them. The VM extension's registration selftest
-  compiles the module's generated form in real Arcade and micro:bit
-  projects, from the folder path a project holds it at.
+  Each entry is a fixed instance of the VM extension's compiled-brain
+  type: a block parameter of that type lists every entry in its
+  dropdown, labelled by the `block` attribute, and binds the entry's
+  declaration, named for the brain's document id -- so two brains
+  sharing a name are two entries, each bound to its own id. The label
+  is the brain's name, or its id when the name is empty. The
+  declaration is `p_` followed by the id, each character of the id
+  outside `[A-Za-z0-9]` written as `_` and four hex digits of its code
+  unit. The id and name are JSON string literals with every character
+  outside printable ASCII escaped; the label is the same literal with
+  each `"` escaped as `\u0022`, the only form pxt's attribute grammar
+  reads. The program follows as lowercase hex, 32 bytes a line (pxt's
+  `hex` literal skips whitespace). The `source-hash` line binds the
+  program to the source it was compiled from. `writeBrainsModule` and
+  `readBrainsModule` (`makecode/simx/bridge/src/brains-module.ts`) are
+  a writer and reader pair: the same entries always write the same
+  text, which reads back to them, and an entry whose label or
+  declaration name is not the one its id and name make reads as
+  damaged. The VM extension's registration selftest compiles the
+  module's generated form in real Arcade and micro:bit projects, from
+  the folder path a project holds it at, with programs the editor
+  compiled from the brain sources checked in beside it.
 - READING A DAMAGED MODULE: the reader never throws. A module
   declaring no format reads as registering nothing
   (`BRAINS_MODULE_UNREADABLE`); one entry that does not follow the
@@ -797,7 +813,11 @@ from and beneath the session:
   (`wendoo-lang/pxt-wendoo`). The extension holds it as one
   internal constant (`makecode/extensions/vm/sim-channel.ts`), and
   no public API of the extension takes or exposes it: a caller
-  publishes with `wendoo.publishCatalog(encoder)`. The simx reads
+  publishes with `wendoo.publishCatalog(encoder)`, whose first call in a
+  program run publishes and whose later calls do nothing. The arcade
+  extension calls it from each game frame, before draining the
+  scene's programs, so a project holding the arcade extension
+  publishes its catalog on its first frame with no code of its own. The simx reads
   the channel MakeCode names in its frame URL's `channel` parameter,
   falling back to its own `SIMX_CHANNEL` constant for a frame URL
   that names none; it reads the program's messages on that channel

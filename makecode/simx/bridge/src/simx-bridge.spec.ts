@@ -742,7 +742,7 @@ describe("simx bridge on the relay", () => {
       assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
       assert.match(
         host.file("brains.g.ts") ?? "",
-        /^wendoo\.registerCompiledBrain\("abcdabcdabcdabcd", "Chaser", hex`$/m
+        /^ {4}export const p_abcdabcdabcdabcd = wendoo\.registerCompiledBrain\("abcdabcdabcdabcd", "Chaser", hex`$/m
       );
     });
 

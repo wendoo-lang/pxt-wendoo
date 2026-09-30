@@ -11,11 +11,20 @@
  *   check line;
  * - one `DIAG registration <code> <name> ...` line per entry in
  *   `EXPECTED_DIAGNOSTICS`, and no other;
+ * - one `wendoo program-rejected <code> <id>` line per entry in
+ *   `EXPECTED_REJECTIONS`, in that order, and no other;
  * - one `CATALOG <payload>` line whose payload holds the same fields as
  *   `EXPECTED_CATALOG`, and, across the runs of one target, byte-identical
  *   payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
  *   only reaches by surviving every diagnostic.
+ *
+ * On an Arcade target it also builds and captures the arcade selftest
+ * project, whose capture must carry one `CHECK <name> ok` line per name in
+ * `EXPECTED_ARCADE_CHECKS` and no other check line, the program refusals in
+ * `EXPECTED_ARCADE_REJECTIONS` in that order, `CHECKS failed 0`, its
+ * `SIMCAP PASS` verdict, and exactly two messages on the simulator
+ * extension's channel: the startup ping, then one catalog.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -49,7 +58,28 @@ const EXPECTED_CHECKS = [
   "catalog-serialize-repeatable",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
-  "compiled-brain-bytes-intact",
+  "compiled-brain-declarations-bound-by-id",
+  "loader-accepts-sts-f64-program",
+  "loader-accepts-empty-program",
+  "loader-refuses-foreign-profile",
+  "loader-refuses-superseded-format",
+  "loader-loads-every-registration",
+  "host-starts-nothing-before-drain",
+  "host-pairs-each-actor-with-its-program",
+  "host-reports-refused-programs-by-code",
+  "host-thinks-each-running-program-once-per-drain",
+  "host-replaces-an-actors-program",
+  "host-ends-an-ended-actors-program",
+];
+
+/**
+ * Every refusal a program host is expected to log, as `<code> <id>`, in
+ * order: the programs the brains module declares for a superseded format
+ * and for a foreign device profile.
+ */
+const EXPECTED_REJECTIONS = [
+  "WENDOO_BINARY_CODEC_UNSUPPORTED_FORMAT_VERSION staleFormat00001",
+  "WENDOO_BINARY_CODEC_UNSUPPORTED_DEVICE_PROFILE wrongProfile0001",
 ];
 
 /** Every registration diagnostic the run is expected to record, as `<code> <name>`. */
@@ -59,6 +89,30 @@ const EXPECTED_DIAGNOSTICS = [
   "registration-field-writes-unbound Beacon",
   "registration-after-snapshot actuator.chime.late",
 ];
+
+/** Every check the arcade selftest is expected to report, and to report as holding. */
+const EXPECTED_ARCADE_CHECKS = [
+  "program-waits-for-the-next-frame",
+  "program-runs-on-its-sprite-by-id",
+  "programs-think-each-frame",
+  "destroyed-sprite-program-ends",
+  "pushed-scene-runs-its-own-programs",
+  "pushed-scene-pauses-programs-below-it",
+  "popped-scene-resumes-its-programs",
+];
+
+/**
+ * Every refusal the arcade selftest is expected to log, as `<code> <id>`, in
+ * order: each scene's program host logs the refused programs at its first
+ * frame, the game's first scene and then the scene the selftest pushes.
+ */
+const EXPECTED_ARCADE_REJECTIONS = [...EXPECTED_REJECTIONS, ...EXPECTED_REJECTIONS];
+
+/** The kinds of the frames the arcade selftest must post on the simulator extension's channel, in order. */
+const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
+
+/** The simulator extension's channel, which every message the Wendoo extensions post rides. */
+const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
 
 /**
  * The catalog payload the selftest run is expected to print: the two packs'
@@ -126,6 +180,7 @@ const EXPECTED_CATALOG = {
 
 const CHECK_PREFIX = "CHECK ";
 const DIAG_PREFIX = "DIAG registration ";
+const REJECTION_PREFIX = "wendoo program-rejected ";
 const FAILED_CHECKS_LINE = "CHECKS failed 0";
 
 function usage(message) {
@@ -176,6 +231,13 @@ function reportedDiagnostics(log) {
     .map((line) => line.slice(DIAG_PREFIX.length).split(" ").slice(0, 2).join(" "));
 }
 
+/** The `<code> <id>` of every program refusal the capture logged, in order. */
+function reportedRejections(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(REJECTION_PREFIX))
+    .map((line) => line.slice(REJECTION_PREFIX.length));
+}
+
 /** Whether `actual` and `expected` hold the same entries, in any order. */
 function sameEntries(actual, expected) {
   return [...actual].sort().join("\n") === [...expected].sort().join("\n");
@@ -214,8 +276,78 @@ function contractFailures(exitCode, log) {
   if (!sameEntries(diagnostics, EXPECTED_DIAGNOSTICS)) {
     failures.push(`diagnostics recorded: ${[...diagnostics].sort().join(" | ")}`);
   }
+  const rejections = reportedRejections(log);
+  if (rejections.join("\n") !== EXPECTED_REJECTIONS.join("\n")) {
+    failures.push(`program refusals logged: ${rejections.join(" | ")}`);
+  }
   failures.push(...catalogFailures(log));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
+  return failures;
+}
+
+/**
+ * Holds one capture of the arcade selftest to its contract and reports what
+ * failed.
+ *
+ * @param exitCode Exit code of the capture.
+ * @param log The captured bytes.
+ * @param simxLog The capture's simulator message log.
+ * @returns The reasons the capture failed the contract; empty when it passed.
+ */
+function arcadeContractFailures(exitCode, log, simxLog) {
+  const failures = [];
+  if (exitCode !== 0) failures.push(`capture exited ${exitCode}`);
+  const checks = reportedChecks(log);
+  if (checks.failed.length) failures.push(`checks failed: ${checks.failed.join(", ")}`);
+  if (!sameEntries(checks.ok, EXPECTED_ARCADE_CHECKS)) {
+    failures.push(`checks reported ok: ${[...checks.ok].sort().join(", ")}`);
+  }
+  const rejections = reportedRejections(log);
+  if (rejections.join("\n") !== EXPECTED_ARCADE_REJECTIONS.join("\n")) {
+    failures.push(`program refusals logged: ${rejections.join(" | ")}`);
+  }
+  const kinds = catalog
+    .channelMessages(simxLog)
+    .filter((message) => message.channel === SIMX_CHANNEL)
+    .map((message) => catalog.frameOf(message.text)?.kind ?? "malformed");
+  if (kinds.join(" ") !== EXPECTED_ARCADE_FRAME_KINDS.join(" ")) {
+    failures.push(`posted [${kinds.join(", ")}] on the simulator extension's channel`);
+  }
+  if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
+  return failures;
+}
+
+/**
+ * Builds and captures the arcade selftest project `options.runs` times.
+ *
+ * @returns How many captures failed, a failed build counting as one.
+ */
+function runArcadeSelftest(targetDir, targetName, project, options) {
+  if (!options.skipBuild) {
+    const built = build(targetDir, project.dir);
+    if (!built.ok) {
+      process.stdout.write(`${targetName}/${project.id}: BUILD FAILED\n${built.output}\n`);
+      return 1;
+    }
+  }
+  const binary = path.join(project.dir, "built", "debug", "binary.js");
+  let failures = 0;
+  for (let r = 1; r <= options.runs; r++) {
+    const logPath = path.join(project.dir, "built", `capture-run${r}.log`);
+    const simxLogPath = path.join(project.dir, "built", `capture-run${r}.simx.log`);
+    const captured = capture.capture(binary, logPath, { expect: project.id, timeoutSec: 120, simxLogPath });
+    const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+    const simxLog = fs.existsSync(simxLogPath) ? fs.readFileSync(simxLogPath, "utf8") : "";
+    const reasons = arcadeContractFailures(captured.code, log, simxLog);
+    process.stdout.write(`${targetName}/${project.id} run ${r}: ${reasons.length ? "FAILED" : "PASS"}\n`);
+    for (const line of linesOf(log)) {
+      process.stdout.write(`    ${line}\n`);
+    }
+    for (const reason of reasons) {
+      process.stdout.write(`    reason: ${reason}\n`);
+    }
+    if (reasons.length) failures++;
+  }
   return failures;
 }
 
@@ -262,6 +394,9 @@ function main() {
       }
       if (reasons.length) failures++;
     }
+
+    const arcade = gen.generateArcade(targetDir);
+    if (arcade) failures += runArcadeSelftest(targetDir, targetName, arcade, options);
   }
 
   process.exit(failures === 0 ? 0 : 1);

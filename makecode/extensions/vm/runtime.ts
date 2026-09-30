@@ -349,6 +349,11 @@ namespace wendoo {
       return this.vm.faults;
     }
 
+    /** How many thinks have run a page since construction: the tick count the program's context carries. */
+    tickCount(): number {
+      return this.ctx.currentTick;
+    }
+
     /** Activate the first page and spawn a fiber for each of its root rules. */
     startup(): void {
       this.lastThinkTime = 0;

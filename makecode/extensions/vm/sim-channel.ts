@@ -35,17 +35,24 @@ namespace wendoo {
     control.simmessages.send(SIMX_CHANNEL, Buffer.fromUTF8(`${SIM_CHANNEL_VERSION}\n${payload}`), false);
   }
 
+  /** Whether {@link publishCatalog} has published the catalog in this program run. */
+  let catalogPublished = false;
+
   /**
    * Post the catalog payload of the current registration set to the Wendoo
    * simulator extension, and from then on answer every message the simulator
    * extension sends by posting a freshly serialized catalog the same way.
-   * Call it once, right after the registration drain. In the simulator only;
-   * on hardware it does nothing.
+   * The first call publishes; every later call in the same program run does
+   * nothing. In the simulator only; on hardware it does nothing.
    *
    * @param icons - Icon encoder of the host target.
    */
   //% shim=TD_NOOP
   export function publishCatalog(icons: CatalogIconEncoder): void {
+    if (catalogPublished) {
+      return;
+    }
+    catalogPublished = true;
     const post = () => {
       postFrame(serializeCatalog(icons));
     };

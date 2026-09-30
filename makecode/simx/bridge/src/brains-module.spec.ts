@@ -20,12 +20,45 @@ const SELFTEST_MODULE_PATH = new URL(
   import.meta.url
 );
 
+/** The selftest's programs, compiled by the editor from the brain sources checked in beside them. */
+const SELFTEST_PROGRAMS_PATH = new URL("../../../tests/vm-conformance/selftest/programs.g.json", import.meta.url);
+
+/** One program of the selftest's programs file. */
+interface SelftestProgram {
+  id: string;
+  name: string;
+  sourceHash: string;
+  bytecode: string;
+}
+
+/** The bytes the lowercase hex `hex` spells. */
+function bytesOfHex(hex: string): Uint8Array {
+  return Uint8Array.from({ length: hex.length / 2 }, (_, index) =>
+    Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)
+  );
+}
+
 /**
- * The entries of the selftest's brains module: a name exercising quotes, a
+ * The entries of the selftest's brains module: the selftest's programs,
+ * among them two sharing a name, one whose name exercises quotes, a
+ * backslash, non-ASCII code units and a surrogate pair, and one with an
+ * empty name.
+ */
+const SELFTEST_ENTRIES: CompiledBrainEntry[] = (
+  JSON.parse(readFileSync(SELFTEST_PROGRAMS_PATH, "utf8")) as { programs: SelftestProgram[] }
+).programs.map((program) => ({
+  id: program.id,
+  name: program.name,
+  sourceHash: program.sourceHash,
+  bytecode: bytesOfHex(program.bytecode),
+}));
+
+/**
+ * Entries exercising the format's edges: a name exercising quotes, a
  * backslash, non-ASCII code units and a surrogate pair, an empty name, and a
  * program covering every byte value across several hex lines.
  */
-const SELFTEST_ENTRIES: CompiledBrainEntry[] = [
+const EDGE_ENTRIES: CompiledBrainEntry[] = [
   {
     id: "abcdabcdabcdabcd",
     name: 'Chaser "one" \\ caf\u00e9 \ud83d\ude00',
@@ -47,14 +80,14 @@ function codes(reading: ReturnType<typeof readBrainsModule>): string[] {
 
 describe("brains module", () => {
   it("reads back exactly the entries it wrote: ids, names, source hashes and every byte", () => {
-    const text = writeBrainsModule(SELFTEST_ENTRIES);
+    const text = writeBrainsModule(EDGE_ENTRIES);
 
     const reading = readBrainsModule(text);
 
     assert.equal(reading.format, BRAINS_MODULE_FORMAT);
     assert.deepEqual(reading.problems, []);
     assert.deepEqual([...reading.entries.keys()], ["0000111122223333", "abcdabcdabcdabcd"]);
-    for (const entry of SELFTEST_ENTRIES) assert.deepEqual(reading.entries.get(entry.id), entry);
+    for (const entry of EDGE_ENTRIES) assert.deepEqual(reading.entries.get(entry.id), entry);
   });
 
   it("round-trips names carrying line breaks, line and paragraph separators, and control characters", () => {
@@ -69,13 +102,13 @@ describe("brains module", () => {
   });
 
   it("writes ASCII text only, whatever the names hold", () => {
-    const text = writeBrainsModule(SELFTEST_ENTRIES);
+    const text = writeBrainsModule(EDGE_ENTRIES);
 
     assert.match(text, /^[\x20-\x7e\n]*$/);
   });
 
   it("writes the same text for the same entries in any order", () => {
-    assert.equal(writeBrainsModule(SELFTEST_ENTRIES), writeBrainsModule([...SELFTEST_ENTRIES].reverse()));
+    assert.equal(writeBrainsModule(EDGE_ENTRIES), writeBrainsModule([...EDGE_ENTRIES].reverse()));
   });
 
   it("writes a module registering no brain when given none, which reads back empty", () => {
@@ -90,18 +123,60 @@ describe("brains module", () => {
     assert.equal(writeBrainsModule(SELFTEST_ENTRIES), readFileSync(SELFTEST_MODULE_PATH, "utf8"));
   });
 
+  it("declares each brain as a fixed instance labelled by its name, bound by its document id", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES);
+
+    assert.ok(text.includes("namespace wendooPrograms {\n"));
+    const declaration = text.split("\n").findIndex((line) => line.includes("p_abcdabcdabcdabcd"));
+    assert.equal(
+      text.split("\n")[declaration],
+      '    export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", ' +
+        '"Chaser \\"one\\" \\\\ caf\\u00e9 \\ud83d\\ude00", hex`'
+    );
+    assert.equal(
+      text.split("\n")[declaration - 1],
+      '    //% fixedInstance block="Chaser \\u0022one\\u0022 \\\\ caf\\u00e9 \\ud83d\\ude00"'
+    );
+  });
+
+  it("labels a brain with an empty name by its document id", () => {
+    const lines = writeBrainsModule(EDGE_ENTRIES).split("\n");
+    const declaration = lines.findIndex((line) => line.includes("p_0000111122223333"));
+
+    assert.equal(lines[declaration - 1], '    //% fixedInstance block="0000111122223333"');
+  });
+
+  it("names each declaration for its document id, escaping what an identifier cannot carry", () => {
+    const lines = writeBrainsModule([{ ...EDGE_ENTRIES[0], id: "a-b_c" }]).split("\n");
+
+    assert.ok(
+      lines.includes(
+        '    export const p_a_002db_005fc = wendoo.registerCompiledBrain("a-b_c", ' +
+          '"Chaser \\"one\\" \\\\ caf\\u00e9 \\ud83d\\ude00", hex`'
+      )
+    );
+    assert.deepEqual([...readBrainsModule(lines.join("\n")).entries.keys()], ["a-b_c"]);
+  });
+
+  it("writes block labels that read back through pxt's attribute grammar as the name", () => {
+    const names = ['say "hi"', "back\\slash", "tab\there", "caf\u00e9 \ud83d\ude00", "50% off $x"];
+    for (const name of names) {
+      const text = writeBrainsModule([{ ...EDGE_ENTRIES[0], name }]);
+      const label = /\/\/% fixedInstance block=("[^"\n]*")$/m.exec(text);
+
+      assert.ok(label, name);
+      assert.equal(JSON.parse(label[1]), name);
+    }
+  });
+
   it("reads a module whose line ends became CRLF", () => {
-    const text = writeBrainsModule(SELFTEST_ENTRIES).replace(/\n/g, "\r\n");
+    const text = writeBrainsModule(EDGE_ENTRIES).replace(/\n/g, "\r\n");
 
     assert.equal(readBrainsModule(text).entries.size, 2);
   });
 
   it("reads nothing from text declaring no format, reporting it UNREADABLE", () => {
-    for (const text of [
-      "",
-      "not a module {",
-      writeBrainsModule(SELFTEST_ENTRIES).replace("wendoo-brains-format", "x"),
-    ]) {
+    for (const text of ["", "not a module {", writeBrainsModule(EDGE_ENTRIES).replace("wendoo-brains-format", "x")]) {
       const reading = readBrainsModule(text);
 
       assert.equal(reading.entries.size, 0);
@@ -110,7 +185,7 @@ describe("brains module", () => {
   });
 
   it("reads nothing from a module declaring a newer format, reporting FORMAT_NEWER", () => {
-    const text = writeBrainsModule(SELFTEST_ENTRIES).replace(
+    const text = writeBrainsModule(EDGE_ENTRIES).replace(
       `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
       `wendoo-brains-format ${BRAINS_MODULE_FORMAT + 1}`
     );
@@ -124,17 +199,23 @@ describe("brains module", () => {
 
   it("skips each damaged entry with ENTRY_MALFORMED on its line and reads the rest", () => {
     const damages: [string, (text: string) => string][] = [
-      ["a hash line gone", (text) => text.replace(/\/\/ source-hash [0-9a-f]{8}\n(wendoo[^\n]*"abcd)/, "$1")],
+      [
+        "a hash line gone",
+        (text) => text.replace(/ {4}\/\/ source-hash [0-9a-f]{8}\n( {4}\/\/% fixedInstance block="Chaser)/, "$1"),
+      ],
       [
         "a hash that is not eight hex digits",
-        (text) => text.replace(/source-hash [0-9a-f]{8}(\nwendoo[^\n]*"abcd)/, "source-hash xyz$1"),
+        (text) => text.replace(/source-hash [0-9a-f]{8}(\n {4}\/\/% fixedInstance block="Chaser)/, "source-hash xyz$1"),
       ],
+      ["a block label gone", (text) => text.replace(/ {4}\/\/% fixedInstance block="Chaser[^\n]*\n/, "")],
+      ["a block label other than the name", (text) => text.replace('block="Chaser', 'block="Chased')],
+      ["a declaration named for another id", (text) => text.replace("p_abcdabcdabcdabcd", "p_abcdabcdabcdabce")],
       ["a name literal broken", (text) => text.replace('"Chaser \\"one', '"Chaser "one')],
-      ["a stray character among the hex", (text) => text.replace(/(\n {4})57/, "$1g7")],
-      ["an odd number of hex digits", (text) => text.replace(/(\n {4})57/, "$15")],
-      ["the closing line gone", (text) => text.replace(/`\);\n$/, "")],
+      ["a stray character among the hex", (text) => text.replace(/(\n {8})57/, "$1g7")],
+      ["an odd number of hex digits", (text) => text.replace(/(\n {8})57/, "$15")],
+      ["the closing line gone", (text) => text.replace(/ {4}`\);\n\}\n$/, "}\n")],
     ];
-    const text = writeBrainsModule(SELFTEST_ENTRIES);
+    const text = writeBrainsModule(EDGE_ENTRIES);
 
     for (const [what, damage] of damages) {
       const damaged = damage(text);
@@ -149,7 +230,7 @@ describe("brains module", () => {
   });
 
   it("keeps the first of two entries under one id", () => {
-    const [chaser] = SELFTEST_ENTRIES;
+    const [chaser] = EDGE_ENTRIES;
     const first = writeBrainsModule([chaser]);
     const second = writeBrainsModule([{ ...chaser, name: "Second" }]);
     const text = `${first}${second.slice(second.indexOf("\n\n"))}`;

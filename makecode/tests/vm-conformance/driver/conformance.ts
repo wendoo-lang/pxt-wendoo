@@ -1097,7 +1097,7 @@ namespace wendoo {
    */
   function drainConformanceRegistrations(): ConformanceRegistries {
     const functions = new HostFunctionRegistry();
-    registerCoreHostFunctions(functions);
+    registerCoreHostFunctions(functions, new F64Numerics());
     const actions = new HostActionRegistry();
     registerCoreHostActions(actions);
     const types = new StructTypeRegistry();

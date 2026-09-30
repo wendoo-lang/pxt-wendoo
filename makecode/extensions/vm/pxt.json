@@ -17,11 +17,15 @@
         "context.ts",
         "registration.ts",
         "catalog.ts",
+        "numerics.ts",
         "core-host.ts",
         "vm.ts",
         "runtime.ts",
         "trace.ts",
         "compiled-brains.ts",
+        "empty.g.ts",
+        "program-loader.ts",
+        "program-host.ts",
         "sim-channel.ts"
     ],
     "supportedTargets": [

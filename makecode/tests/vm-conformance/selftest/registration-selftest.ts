@@ -25,8 +25,13 @@
  * assert.
  *
  * The project also carries a brains module, as the Wendoo simulator
- * extension writes it; the selftest checks that its registrations reached
- * the compiled-brain registry intact, before the project's main file ran.
+ * extension writes it, declaring programs the editor compiled; the selftest
+ * checks that its declarations reached the compiled-brain registry intact
+ * before the project's main file ran, that the loader accepts the programs
+ * built for the sts-f64 world and refuses the rest by code, and that a
+ * program host runs them on actors: pairing each actor with the program it
+ * was given, thinking every running program once per drain, and ending an
+ * actor's program when the actor ends.
  *
  * Output grammar, one line each:
  *
@@ -36,6 +41,8 @@
  * - `ASSERT <check>` -- follows each failed check; the capture harness reads
  *   it as the run's failure.
  * - `CATALOG <payload>` -- the serialized catalog, verbatim.
+ * - `wendoo program-rejected <code> <id>` -- one per program the host
+ *   refused, as the host logs it.
  * - `SIMCAP PASS <case>` -- the run reached its end.
  */
 namespace registrationSelftest {
@@ -249,38 +256,223 @@ namespace registrationSelftest {
     check("action-output-readable-by-name", readBack.t === wendoo.ValueTag.Struct && readBack.typeId === typeId);
   }
 
+  /** Document id of the ticker program: one rule restarting its page on every think. */
+  const TICKER_ID = "akBQz0nySKaYx37w";
+
+  /** Document ids of the two programs named `Twin`. */
+  const TWIN_IDS = ["Hq7EB8SthdeOudyP", "LBddvitRopf1wCnj"];
+
+  /** Document id of the program whose name exercises quotes, a backslash and non-ASCII text. */
+  const CHASER_ID = "pUlApzOoEHibF6mH";
+
+  /** Document id of the program with an empty name. */
+  const UNNAMED_ID = "UHa4GiKZLGJ8cOzW";
+
+  /** Document id of the program compiled for a foreign device profile. */
+  const WRONG_PROFILE_ID = "wrongProfile0001";
+
+  /** Document id of the program declaring a superseded format version. */
+  const WRONG_FORMAT_ID = "staleFormat00001";
+
+  /** Every document id the brains module declares, in the order it declares them. */
+  const MODULE_ORDER = [TWIN_IDS[0], TWIN_IDS[1], UNNAMED_ID, TICKER_ID, CHASER_ID, WRONG_FORMAT_ID, WRONG_PROFILE_ID];
+
+  /** The registered compiled brain declared under `id`, or `undefined`. */
+  function registeredBrain(id: string): wendoo.CompiledBrainRegistration {
+    const registered = wendoo.compiledBrainRegistrations();
+    for (let i = 0; i < registered.length; i++) {
+      if (registered[i].id === id) {
+        return registered[i];
+      }
+    }
+    return undefined;
+  }
+
   /**
-   * The project's brains module registered its two brains, in the order the
-   * module lists them, with their ids, names and program bytes intact: the
-   * first an empty-named brain whose program is every byte value in order,
-   * the second a brain whose name carries quotes, a backslash and non-ASCII
-   * text, with a three-byte program.
+   * The project's brains module registered its programs in the order the
+   * module declares them, with their ids and names intact, and each
+   * declaration names the registration of its own id.
    */
   function checkCompiledBrains(): void {
     const registered = wendoo.compiledBrainRegistrations();
-    check("compiled-brains-registered-in-order", registered.length === 2);
-    if (registered.length !== 2) {
-      return;
+    let inOrder = registered.length === MODULE_ORDER.length;
+    for (let i = 0; inOrder && i < registered.length; i++) {
+      inOrder = registered[i].id === MODULE_ORDER[i];
     }
-    const runner = registered[0];
-    const chaser = registered[1];
+    check("compiled-brains-registered-in-order", inOrder);
+    const chaser = registeredBrain(CHASER_ID);
+    const unnamed = registeredBrain(UNNAMED_ID);
     check(
       "compiled-brain-ids-and-names-intact",
-      runner.id === "0000111122223333" &&
-        runner.name === "" &&
-        chaser.id === "abcdabcdabcdabcd" &&
-        chaser.name === 'Chaser "one" \\ caf\u00e9 \ud83d\ude00'
+      chaser !== undefined &&
+        chaser.name === 'Chaser "one" \\ caf\u00e9 \ud83d\ude00' &&
+        unnamed !== undefined &&
+        unnamed.name === "" &&
+        registeredBrain(TWIN_IDS[0]).name === "Twin" &&
+        registeredBrain(TWIN_IDS[1]).name === "Twin"
     );
-    let intact =
-      runner.bytecode.length === 256 &&
-      chaser.bytecode.length === 3 &&
-      chaser.bytecode[0] === 0x57 &&
-      chaser.bytecode[1] === 0x44 &&
-      chaser.bytecode[2] === 0x4f;
-    for (let i = 0; intact && i < 256; i++) {
-      intact = runner.bytecode[i] === i;
+    check(
+      "compiled-brain-declarations-bound-by-id",
+      wendooPrograms.p_akBQz0nySKaYx37w === registeredBrain(TICKER_ID) &&
+        wendooPrograms.p_Hq7EB8SthdeOudyP === registeredBrain(TWIN_IDS[0]) &&
+        wendooPrograms.p_LBddvitRopf1wCnj === registeredBrain(TWIN_IDS[1])
+    );
+  }
+
+  /**
+   * The loader accepts a program built for the sts-f64 world and the empty
+   * program, refuses a foreign device profile and a superseded format by
+   * code, and loads every registration, the refused ones included.
+   */
+  function checkLoader(): void {
+    const types = new wendoo.StructTypeRegistry();
+    check(
+      "loader-accepts-sts-f64-program",
+      wendoo.loadCompiledProgram(registeredBrain(TICKER_ID), types).errorCode === ""
+    );
+    check("loader-accepts-empty-program", wendoo.loadCompiledProgram(wendooPrograms.none, types).errorCode === "");
+    check(
+      "loader-refuses-foreign-profile",
+      wendoo.loadCompiledProgram(registeredBrain(WRONG_PROFILE_ID), types).errorCode ===
+        wendoo.LOAD_ERROR_UNSUPPORTED_DEVICE_PROFILE
+    );
+    check(
+      "loader-refuses-superseded-format",
+      wendoo.loadCompiledProgram(registeredBrain(WRONG_FORMAT_ID), types).errorCode ===
+        wendoo.DECODE_ERROR_UNSUPPORTED_FORMAT_VERSION
+    );
+    const loaded = wendoo.loadRegisteredPrograms(types);
+    let refused = 0;
+    for (let i = 0; i < loaded.length; i++) {
+      if (loaded[i].errorCode.length > 0) {
+        refused++;
+      }
     }
-    check("compiled-brain-bytes-intact", intact);
+    check("loader-loads-every-registration", loaded.length === MODULE_ORDER.length && refused === 2);
+  }
+
+  /** An actor the selftest ends by hand. */
+  class SelftestActor extends wendoo.ActorWorld {
+    /** Whether the actor has ended. */
+    ended: boolean;
+
+    constructor() {
+      super();
+      this.ended = false;
+    }
+
+    hasEnded(): boolean {
+      return this.ended;
+    }
+  }
+
+  /** Counts the page switches the programs it observes make. */
+  class PageSwitchCounter extends wendoo.VmObserver {
+    /** Page switches seen so far. */
+    switches: number;
+
+    constructor() {
+      super();
+      this.switches = 0;
+    }
+
+    onHostActionCall(actionId: number, callSiteId: number, args: wendoo.Value[], result: wendoo.Value): void {
+      if (actionId === wendoo.CoreActionId.SwitchPage) {
+        this.switches++;
+      }
+    }
+  }
+
+  /** Milliseconds of scheduled time between the selftest's drains. */
+  const DRAIN_INTERVAL_MS = 20;
+
+  /** What {@link programOf} answers for an actor running no program. */
+  const NOT_RUNNING = "<not running>";
+
+  /** The document id of the program `actor` runs on `host`, or {@link NOT_RUNNING}. */
+  function programOf(host: wendoo.ProgramHost, actor: wendoo.ActorWorld): string {
+    const hosted = host.hostedPrograms();
+    for (let i = 0; i < hosted.length; i++) {
+      if (hosted[i].world === actor) {
+        return hosted[i].loaded.registration.id;
+      }
+    }
+    return NOT_RUNNING;
+  }
+
+  /**
+   * A program host pairs each actor with the program it was given by id,
+   * starts nothing before a drain, thinks every running program once per
+   * drain -- two programs sharing a name each on its own actor -- runs the
+   * empty program as nothing, refuses the programs the loader refuses while
+   * the rest run on, replaces an actor's program when it is given another,
+   * and ends an actor's program when the actor ends.
+   */
+  function checkProgramHost(): void {
+    const counter = new PageSwitchCounter();
+    const host = new wendoo.ProgramHost(counter);
+    const ticker = new SelftestActor();
+    const twinA = new SelftestActor();
+    const twinB = new SelftestActor();
+    const idle = new SelftestActor();
+    const foreign = new SelftestActor();
+    let time = 0;
+
+    host.attach(ticker, wendooPrograms.p_akBQz0nySKaYx37w);
+    host.attach(twinA, wendooPrograms.p_Hq7EB8SthdeOudyP);
+    host.attach(twinB, wendooPrograms.p_LBddvitRopf1wCnj);
+    host.attach(idle, wendooPrograms.none);
+    host.attach(foreign, wendooPrograms.p_wrongProfile0001);
+    check("host-starts-nothing-before-drain", host.hostedPrograms().length === 0 && counter.switches === 0);
+
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    check(
+      "host-pairs-each-actor-with-its-program",
+      programOf(host, ticker) === TICKER_ID &&
+        programOf(host, twinA) === TWIN_IDS[0] &&
+        programOf(host, twinB) === TWIN_IDS[1] &&
+        programOf(host, idle) === wendooPrograms.none.id &&
+        programOf(host, foreign) === NOT_RUNNING &&
+        host.hostedPrograms().length === 4
+    );
+    const rejections = host.rejections();
+    check(
+      "host-reports-refused-programs-by-code",
+      rejections.length === 2 &&
+        rejections[0].registration.id === WRONG_FORMAT_ID &&
+        rejections[0].errorCode === wendoo.DECODE_ERROR_UNSUPPORTED_FORMAT_VERSION &&
+        rejections[1].registration.id === WRONG_PROFILE_ID &&
+        rejections[1].errorCode === wendoo.LOAD_ERROR_UNSUPPORTED_DEVICE_PROFILE
+    );
+
+    const afterFirst = counter.switches;
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    check("host-thinks-each-running-program-once-per-drain", afterFirst === 3 && counter.switches === 9);
+
+    host.attach(twinB, wendooPrograms.p_akBQz0nySKaYx37w);
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    check(
+      "host-replaces-an-actors-program",
+      programOf(host, twinB) === TICKER_ID && host.hostedPrograms().length === 4 && counter.switches === 12
+    );
+
+    twinA.ended = true;
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    let faults = 0;
+    const hosted = host.hostedPrograms();
+    for (let i = 0; i < hosted.length; i++) {
+      faults += hosted[i].runtime.faults().length;
+    }
+    check(
+      "host-ends-an-ended-actors-program",
+      programOf(host, twinA) === NOT_RUNNING && hosted.length === 3 && counter.switches === 14 && faults === 0
+    );
   }
 
   /**
@@ -293,7 +485,7 @@ namespace registrationSelftest {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
 
     const functions = new wendoo.HostFunctionRegistry();
-    wendoo.registerCoreHostFunctions(functions);
+    wendoo.registerCoreHostFunctions(functions, new wendoo.F64Numerics());
     const actions = new wendoo.HostActionRegistry();
     wendoo.registerCoreHostActions(actions);
     const types = new wendoo.StructTypeRegistry();
@@ -308,6 +500,8 @@ namespace registrationSelftest {
     checkActionOutput();
     checkCatalog();
     checkCompiledBrains();
+    checkLoader();
+    checkProgramHost();
 
     const recorded = wendoo.registrationDiagnostics();
     for (let i = 0; i < recorded.length; i++) {

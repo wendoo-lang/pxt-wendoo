@@ -201,10 +201,12 @@ namespace wendoo {
    */
   class NumberArithmetic extends HostFunction {
     private kind: NumberArithmeticKind;
+    private numerics: F64Numerics;
 
-    constructor(kind: NumberArithmeticKind) {
+    constructor(kind: NumberArithmeticKind, numerics: F64Numerics) {
       super();
       this.kind = kind;
+      this.numerics = numerics;
     }
 
     exec(ctx: ExecutionContext, args: Value[]): Value {
@@ -223,28 +225,31 @@ namespace wendoo {
     private apply(a: number, b: number): number {
       switch (this.kind) {
         case NumberArithmeticKind.Add:
-          return a + b;
+          return this.numerics.round(a + b);
         case NumberArithmeticKind.Subtract:
-          return a - b;
+          return this.numerics.round(a - b);
         case NumberArithmeticKind.Multiply:
-          return a * b;
+          return this.numerics.round(a * b);
         default:
-          return a / b;
+          return this.numerics.round(a / b);
       }
     }
   }
 
   /** `negative` of a number operand. A bad operand and a result that is not a number both evaluate nil. */
   class OpNegateNumber extends HostFunction {
-    constructor() {
+    private numerics: F64Numerics;
+
+    constructor(numerics: F64Numerics) {
       super();
+      this.numerics = numerics;
     }
 
     exec(ctx: ExecutionContext, args: Value[]): Value {
       if (!isValidNumberArg(args, 0)) {
         return NIL_VALUE;
       }
-      const result = -args[0].num;
+      const result = this.numerics.round(-args[0].num);
       return isNotANumber(result) ? NIL_VALUE : mkNumber(result);
     }
   }
@@ -380,22 +385,21 @@ namespace wendoo {
    */
   class TypeConversion extends HostFunction {
     private kind: ConversionKind;
+    private numerics: F64Numerics;
 
-    constructor(kind: ConversionKind) {
+    constructor(kind: ConversionKind, numerics: F64Numerics) {
       super();
       this.kind = kind;
+      this.numerics = numerics;
     }
 
     exec(ctx: ExecutionContext, args: Value[]): Value {
       const operand = argAt(args, 0);
       switch (this.kind) {
         case ConversionKind.NumberToString:
-          return mkString(`${operand.num}`);
-        case ConversionKind.StringToNumber: {
-          // biome-ignore lint/style/useNumberNamespace: pxt declares only the global parseFloat.
-          const parsed = parseFloat(operand.str);
-          return mkNumber(isNotANumber(parsed) ? 0 : parsed);
-        }
+          return mkString(this.numerics.formatNumber(operand.num));
+        case ConversionKind.StringToNumber:
+          return mkNumber(this.numerics.parseNumber(operand.str));
         case ConversionKind.NumberToBoolean:
           return mkBoolean(operand.num !== 0);
         case ConversionKind.BooleanToNumber:
@@ -581,13 +585,15 @@ namespace wendoo {
    *
    * @param registry - Host-function registry the program's `HOST_CALL`
    *   operands resolve against.
+   * @param numerics - Numeric semantics the arithmetic and the number/text
+   *   conversions compute their results through.
    */
-  export function registerCoreHostFunctions(registry: HostFunctionRegistry): void {
-    registry.register(CoreFuncId.OpAddNumber, new NumberArithmetic(NumberArithmeticKind.Add));
-    registry.register(CoreFuncId.OpSubtractNumber, new NumberArithmetic(NumberArithmeticKind.Subtract));
-    registry.register(CoreFuncId.OpMultiplyNumber, new NumberArithmetic(NumberArithmeticKind.Multiply));
-    registry.register(CoreFuncId.OpDivideNumber, new NumberArithmetic(NumberArithmeticKind.Divide));
-    registry.register(CoreFuncId.OpNegateNumber, new OpNegateNumber());
+  export function registerCoreHostFunctions(registry: HostFunctionRegistry, numerics: F64Numerics): void {
+    registry.register(CoreFuncId.OpAddNumber, new NumberArithmetic(NumberArithmeticKind.Add, numerics));
+    registry.register(CoreFuncId.OpSubtractNumber, new NumberArithmetic(NumberArithmeticKind.Subtract, numerics));
+    registry.register(CoreFuncId.OpMultiplyNumber, new NumberArithmetic(NumberArithmeticKind.Multiply, numerics));
+    registry.register(CoreFuncId.OpDivideNumber, new NumberArithmetic(NumberArithmeticKind.Divide, numerics));
+    registry.register(CoreFuncId.OpNegateNumber, new OpNegateNumber(numerics));
 
     registry.register(CoreFuncId.OpEqualToNumber, new NumberComparison(NumberComparisonKind.EqualTo));
     registry.register(CoreFuncId.OpNotEqualToNumber, new NumberComparison(NumberComparisonKind.NotEqualTo));
@@ -626,12 +632,12 @@ namespace wendoo {
     registry.register(CoreFuncId.OpNotEqualToStringNil, new NilEquality(NilEqualityKind.LeftIsNotNil));
     registry.register(CoreFuncId.OpNotEqualToNilString, new NilEquality(NilEqualityKind.RightIsNotNil));
 
-    registry.register(CoreFuncId.ConvNumberToString, new TypeConversion(ConversionKind.NumberToString));
-    registry.register(CoreFuncId.ConvStringToNumber, new TypeConversion(ConversionKind.StringToNumber));
-    registry.register(CoreFuncId.ConvNumberToBoolean, new TypeConversion(ConversionKind.NumberToBoolean));
-    registry.register(CoreFuncId.ConvBooleanToNumber, new TypeConversion(ConversionKind.BooleanToNumber));
-    registry.register(CoreFuncId.ConvStringToBoolean, new TypeConversion(ConversionKind.StringToBoolean));
-    registry.register(CoreFuncId.ConvBooleanToString, new TypeConversion(ConversionKind.BooleanToString));
+    registry.register(CoreFuncId.ConvNumberToString, new TypeConversion(ConversionKind.NumberToString, numerics));
+    registry.register(CoreFuncId.ConvStringToNumber, new TypeConversion(ConversionKind.StringToNumber, numerics));
+    registry.register(CoreFuncId.ConvNumberToBoolean, new TypeConversion(ConversionKind.NumberToBoolean, numerics));
+    registry.register(CoreFuncId.ConvBooleanToNumber, new TypeConversion(ConversionKind.BooleanToNumber, numerics));
+    registry.register(CoreFuncId.ConvStringToBoolean, new TypeConversion(ConversionKind.StringToBoolean, numerics));
+    registry.register(CoreFuncId.ConvBooleanToString, new TypeConversion(ConversionKind.BooleanToString, numerics));
   }
 
   /**

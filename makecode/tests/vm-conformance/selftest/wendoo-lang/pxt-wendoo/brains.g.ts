@@ -2,19 +2,60 @@
 // Saving a brain in the Wendoo editor rewrites this file.
 // wendoo-brains-format 1
 
-// source-hash 1efa915c
-wendoo.registerCompiledBrain("0000111122223333", "", hex`
-    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
-    202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
-    404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f
-    606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f
-    808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f
-    a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf
-    c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf
-    e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff
-`);
+namespace wendooPrograms {
+    // source-hash a87bedcc
+    //% fixedInstance block="Twin"
+    export const p_Hq7EB8SthdeOudyP = wendoo.registerCompiledBrain("Hq7EB8SthdeOudyP", "Twin", hex`
+        894d425004d10f07010010624b6441374e394c594a4b6c617a434d0001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
 
-// source-hash 9bd8b252
-wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser \"one\" \\ caf\u00e9 \ud83d\ude00", hex`
-    57444f
-`);
+    // source-hash 052e4091
+    //% fixedInstance block="Twin"
+    export const p_LBddvitRopf1wCnj = wendoo.registerCompiledBrain("LBddvitRopf1wCnj", "Twin", hex`
+        894d425004d10f070100106e69685477594454567753547855756a0001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
+
+    // source-hash bb9aa3b6
+    //% fixedInstance block="UHa4GiKZLGJ8cOzW"
+    export const p_UHa4GiKZLGJ8cOzW = wendoo.registerCompiledBrain("UHa4GiKZLGJ8cOzW", "", hex`
+        894d425004d10f070100107973357441494634774a784e767744550001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
+
+    // source-hash d98799e6
+    //% fixedInstance block="Ticker"
+    export const p_akBQz0nySKaYx37w = wendoo.registerCompiledBrain("akBQz0nySKaYx37w", "Ticker", hex`
+        894d425004d10f070100106c573031507246526163754f6c646c580001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
+
+    // source-hash 21e26b07
+    //% fixedInstance block="Chaser \u0022one\u0022 \\ caf\u00e9 \ud83d\ude00"
+    export const p_pUlApzOoEHibF6mH = wendoo.registerCompiledBrain("pUlApzOoEHibF6mH", "Chaser \"one\" \\ caf\u00e9 \ud83d\ude00", hex`
+        894d425004d10f070100104e6554345745355a677467346946336c0001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
+
+    // source-hash d98799e6
+    //% fixedInstance block="Wrong format"
+    export const p_staleFormat00001 = wendoo.registerCompiledBrain("staleFormat00001", "Wrong format", hex`
+        894d425003d10f070100106c573031507246526163754f6c646c580001000201
+        010200000004484900001f000000094800000000040006012c0002004900001f
+        00000200010001000002000101000000
+    `);
+
+    // source-hash d98799e6
+    //% fixedInstance block="Wrong profile"
+    export const p_wrongProfile0001 = wendoo.registerCompiledBrain("wrongProfile0001", "Wrong profile", hex`
+        894d42500401070100106c573031507246526163754f6c646c58000100020101
+        0200000004484900001f000000094800000000040006012c0002004900001f00
+        000200010001000002000101000000
+    `);
+}

@@ -22,9 +22,10 @@ automatically. If you are building on the VM itself:
 
    https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/vm
 
-_(placeholder: link to the game-facing Wendoo extension and vocabulary packs
-once they exist -- that is where sprites get brains and where most readers
-should start.)_
+To give sprites programs in MakeCode Arcade, add the Wendoo arcade
+extension instead -- it pulls this one in:
+
+   https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/arcade
 
 ---
 

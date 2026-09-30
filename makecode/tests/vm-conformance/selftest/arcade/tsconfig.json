@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "ignoreDeprecations": "6.0",
+    "noLib": true,
+    "noImplicitAny": true,
+    "strictPropertyInitialization": false,
+    "strictNullChecks": false
+  },
+  "include": [
+    "*.ts",
+    "../wendoo-lang/pxt-wendoo/*.ts",
+    "../../../../extensions/vm/lib-stubs.d.ts",
+    "../../../../extensions/arcade/*.ts",
+    "../../../../extensions/arcade/pxt_modules/**/*.ts"
+  ],
+  "exclude": ["../../../../extensions/arcade/pxt_modules/**/*test.ts"]
+}

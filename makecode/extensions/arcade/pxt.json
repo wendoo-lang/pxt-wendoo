@@ -1,0 +1,19 @@
+{
+    "name": "wendoo-arcade",
+    "version": "0.0.0",
+    "description": "Wendoo for MakeCode Arcade: give your sprites programs",
+    "license": "MIT",
+    "dependencies": {
+        "device": "*",
+        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm"
+    },
+    "files": [
+        "README.md",
+        "sprite-host.ts",
+        "blocks.ts"
+    ],
+    "supportedTargets": [
+        "arcade"
+    ],
+    "preferredEditor": "tsprj"
+}

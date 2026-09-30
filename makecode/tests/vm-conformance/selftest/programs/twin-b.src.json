@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "LBddvitRopf1wCnj",
+  "name": "Twin",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "nihTwYDTVwSTxUuj",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "nihTwYDTVwSTxUuj",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [],
+          "children": [],
+          "ruleId": "RVTiskfoc9ty8glJ"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->switch-page",
+            "tile.literal->number:<number>->1"
+          ],
+          "children": [],
+          "ruleId": "xqumxfBxfZdBv7Qq"
+        }
+      ]
+    }
+  ]
+}

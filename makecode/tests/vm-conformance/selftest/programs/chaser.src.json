@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "pUlApzOoEHibF6mH",
+  "name": "Chaser \"one\" \\ café 😀",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "NeT4WE5Zgtg4iF3l",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "NeT4WE5Zgtg4iF3l",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [],
+          "children": [],
+          "ruleId": "jy4x2T4s5zdKuA6N"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->switch-page",
+            "tile.literal->number:<number>->1"
+          ],
+          "children": [],
+          "ruleId": "xSzstm8Z1VgqEzb5"
+        }
+      ]
+    }
+  ]
+}
