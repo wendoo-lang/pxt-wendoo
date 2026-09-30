@@ -73,8 +73,11 @@ interface QueuedPush {
  * compiled form. Everything served is read from the project's files at the
  * time of the request, so instances hold no brains of their own.
  *
- * - A list names every brain source file, with the document's name and the
- *   `brainSourceHash` of the file's text.
+ * - A list names every brain source file, with the document's name, the
+ *   `brainSourceHash` of the file's text, and the source hash the brains
+ *   module registers the brain's compiled form under -- `null` when it
+ *   holds no readable registration of the brain, and left out when the
+ *   module was written by a newer simulator extension.
  * - A pull returns each requested brain the project holds, its source
  *   verbatim and its compiled form as the brains module registers it.
  * - Pushes queue and are applied in drains. A drain reads the project,
@@ -134,10 +137,18 @@ export class BrainsProject {
       const files = await this._files.list();
       const ids = files.flatMap((file) => brainIdOf(file.name) ?? []);
       const [module, sources] = await Promise.all([this.readModule(), this.readSources(ids)]);
+      const reportsCompiled = !module.reading.problems.some((problem) => problem.code === ProblemCode.FORMAT_NEWER);
       brains = ids.flatMap((id, index) => {
         const source = sources[index];
         if (source === undefined) return [];
-        return [{ id, name: brainName(source, module.reading.entries.get(id)), sourceHash: brainSourceHash(source) }];
+        const entry = module.reading.entries.get(id);
+        const summary: MakeCodeBrainSummary = {
+          id,
+          name: brainName(source, entry),
+          sourceHash: brainSourceHash(source),
+        };
+        if (reportsCompiled) summary.compiledSourceHash = entry?.sourceHash ?? null;
+        return [summary];
       });
     } catch (error) {
       this.refused(request, error, "listing the brains");

@@ -80,6 +80,22 @@ export interface MakeCodeBrainSummary {
   name: string;
   /** {@link brainSourceHash} of the brain's source text as the project holds it now. */
   sourceHash: string;
+  /**
+   * What the project's compiled form of the brain says about its source:
+   *
+   * - a string: the {@link brainSourceHash} carried by the brain's current
+   *   registration of its compiled form -- equal to {@link sourceHash}
+   *   exactly when that compiled form was compiled from the source the
+   *   project holds now;
+   * - `null`: the serving party read the project and found no current
+   *   registration of the brain (no entry for it, an entry it cannot read,
+   *   or no readable compiled-form file at all); pushing the brain with a
+   *   compiled form restores one;
+   * - absent: the serving party does not report the registration -- it
+   *   predates this field, or holds compiled forms in a format it cannot
+   *   read or rewrite. The requester draws no conclusion from its absence.
+   */
+  compiledSourceHash?: string | null;
 }
 
 /** A brain's compiled form as carried on the wire. */

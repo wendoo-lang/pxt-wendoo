@@ -12,7 +12,7 @@ import type { WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
-import type { MakeCodeBrainsRequestMessage, MakeCodeWireBrain } from "@wendoo/makecode-session";
+import type { MakeCodeBrainSummary, MakeCodeBrainsRequestMessage, MakeCodeWireBrain } from "@wendoo/makecode-session";
 import {
   brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
@@ -57,7 +57,9 @@ type ReceivedRequest = MakeCodeBrainsRequestMessage;
  * A simx played by the spec over a raw relay connection: it opens a makecode
  * handshake on every welcome and answers the editor's brains requests from
  * its in-memory project -- or, while held, queues the answers until
- * released. It records every brains request it receives.
+ * released. It records every brains request it receives. Its list carries
+ * each brain's compiled source hash only when opened to report it; otherwise
+ * it answers as a simx predating that field does.
  */
 class ScriptedSimx {
   /** The brains the project holds, by document id, in the wire form. */
@@ -71,25 +73,30 @@ class ScriptedSimx {
   held = false;
   private readonly _queue: (() => void)[] = [];
   private readonly _peer: ScriptedPeer;
+  private readonly _reportsCompiled: boolean;
   private _running = true;
 
-  private constructor(peer: ScriptedPeer, project: Map<string, MakeCodeWireBrain>) {
+  private constructor(peer: ScriptedPeer, project: Map<string, MakeCodeWireBrain>, reportsCompiled: boolean) {
     this._peer = peer;
     this.project = project;
+    this._reportsCompiled = reportsCompiled;
   }
 
   /**
    * Connects at the simx role path over `project`, presenting `bindingToken`
    * when given, and resolves with the simx and the join code the relay
-   * answered with, if it answered with one.
+   * answered with, if it answered with one. With `reportsCompiled`, its list
+   * carries each brain's compiled source hash, `null` for a brain with no
+   * compiled form.
    */
   static async open(
     relay: TestRelay,
     project: Map<string, MakeCodeWireBrain>,
-    bindingToken?: string
+    bindingToken?: string,
+    reportsCompiled = false
   ): Promise<{ simx: ScriptedSimx; joinCode: string | undefined }> {
     const peer = await relay.connect(MAKECODE_SESSION_ROLE_PATHS.simx);
-    const simx = new ScriptedSimx(peer, project);
+    const simx = new ScriptedSimx(peer, project, reportsCompiled);
     const answer = await peer.hello(bindingToken === undefined ? {} : { bindingToken });
     const joinCode = answer.type === "session:joinCode" ? assertJoinCode(answer) : undefined;
     simx.handle(answer as unknown as Record<string, unknown>);
@@ -163,11 +170,15 @@ class ScriptedSimx {
           type: "makecode:brainsListReply",
           id: request.id,
           payload: {
-            brains: [...this.project.values()].map((brain) => ({
-              id: brain.id,
-              name: brain.name,
-              sourceHash: brainSourceHash(brain.source),
-            })),
+            brains: [...this.project.values()].map((brain) => {
+              const summary: MakeCodeBrainSummary = {
+                id: brain.id,
+                name: brain.name,
+                sourceHash: brainSourceHash(brain.source),
+              };
+              if (this._reportsCompiled) summary.compiledSourceHash = brain.compiled?.sourceHash ?? null;
+              return summary;
+            }),
           },
         };
       case "makecode:brainsPull":
@@ -373,12 +384,13 @@ describe("brains sync with a scripted simx on the relay", () => {
     return { session, brains: new BrainsStore(session, session) };
   }
 
-  /** Opens a scripted simx over `project`, stopped by the spec's cleanup. */
+  /** Opens a scripted simx over `project`, stopped by the spec's cleanup; `reportsCompiled` as {@link ScriptedSimx.open} takes it. */
   async function openSimx(
     project: Map<string, MakeCodeWireBrain>,
-    bindingToken?: string
+    bindingToken?: string,
+    reportsCompiled = false
   ): Promise<{ simx: ScriptedSimx; joinCode: string | undefined }> {
-    const opened = await ScriptedSimx.open(relay, project, bindingToken);
+    const opened = await ScriptedSimx.open(relay, project, bindingToken, reportsCompiled);
     simxs.push(opened.simx);
     return opened;
   }
@@ -614,6 +626,52 @@ describe("brains sync with a scripted simx on the relay", () => {
     await brainsUntil(brains, (state) => state.pending.size === 0, "the local edit to flush");
     assert.equal(brains.getSnapshot().brains.get(remote.id)?.name, "Local");
     assert.equal(returned.project.get(remote.id)?.name, "Local");
+  });
+
+  it("takes no action on the list of a simx that reports no compiled forms, through handshake after handshake", async () => {
+    const remote = projectBrain("Remote");
+    const { session, brains, simx } = await pair(projectOf(remote));
+    await dropSimx(simx, session);
+    const { compiled: _compiled, ...sourceOnly } = remote;
+    simx.project.set(remote.id, sourceOnly);
+
+    let token = simx.bindingToken;
+    for (let round = 0; round < 3; round++) {
+      const { simx: returned } = await openSimx(simx.project, token);
+      await eventually(
+        () => returned.requestsOf("makecode:brainsList").length,
+        (count) => count > 0,
+        "the returning simx's list"
+      );
+      await brainsUntil(brains, (state) => state.reconciled, "the editor to reconcile");
+      await delay(50);
+
+      assert.deepEqual(returned.requestsOf("makecode:brainsPull"), []);
+      assert.deepEqual(returned.requestsOf("makecode:brainsPush"), []);
+      token = returned.bindingToken;
+      await dropSimx(returned, session);
+    }
+    assert.equal(simx.project.get(remote.id), sourceOnly);
+  });
+
+  it("pulls and heals a brain whose compiled form a reporting simx lists as missing, once", async () => {
+    const remote = projectBrain("Remote");
+    const { session, brains, simx } = await pair(projectOf(remote));
+    await dropSimx(simx, session);
+    const { compiled: _compiled, ...sourceOnly } = remote;
+    simx.project.set(remote.id, sourceOnly);
+
+    const { simx: returned } = await openSimx(simx.project, simx.bindingToken, true);
+    const stored = await eventually(
+      () => returned.project.get(remote.id),
+      (brain) => brain?.compiled !== undefined,
+      "the recompiled pair to reach the project"
+    );
+
+    assert.equal(returned.requestsOf("makecode:brainsPull").length, 1);
+    assert.equal(returned.requestsOf("makecode:brainsPush").length, 1);
+    assert.deepEqual(stored?.compiled, remote.compiled);
+    await brainsUntil(brains, (state) => state.pending.size === 0, "nothing pending");
   });
 
   it("ignores payload types it does not know and replies to no request of its own", async () => {
@@ -958,6 +1016,84 @@ describe("brains sync with a scripted simx on the relay", () => {
       );
       assert.deepEqual([...registrations().keys()].sort(), [first, second].sort());
       assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
+    });
+
+    it("heals a deleted brains.g.ts at a fresh editor session, registering every brain's recompiled form", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal();
+      const ids = [authorBrain(brains, "Chaser"), authorBrain(brains, "Runner")];
+      await saved(brains, "both brains to be saved");
+      host.remove(BRAINS_MODULE_FILE);
+      session.stop();
+
+      restartSimx(bridge, simxTokens);
+      const fresh = editor();
+      assert.equal(fresh.session.resume(), true);
+      await brainsUntil(fresh.brains, (state) => state.reconciled && state.brains.size === 2, "the fresh editor");
+      await saved(fresh.brains, "brains.g.ts to be regenerated");
+
+      for (const id of ids) {
+        const entry = fresh.brains.getSnapshot().brains.get(id);
+        assert.ok(entry?.compiled);
+        assert.deepEqual(registrations().get(id), {
+          id,
+          name: entry.name,
+          sourceHash: entry.sourceHash,
+          bytecode: entry.compiled.bytecode,
+        });
+      }
+    });
+
+    it("heals a deleted brains.g.ts at the same editor's next handshake, registering every brain's recompiled form", async () => {
+      const { brains, bridge, simxTokens } = await pairReal();
+      const ids = [authorBrain(brains, "Chaser"), authorBrain(brains, "Runner")];
+      await saved(brains, "both brains to be saved");
+      host.remove(BRAINS_MODULE_FILE);
+
+      restartSimx(bridge, simxTokens);
+      await saved(brains, "brains.g.ts to be regenerated");
+
+      for (const id of ids) {
+        const entry = brains.getSnapshot().brains.get(id);
+        assert.ok(entry?.compiled);
+        assert.equal(entry.compiled.sourceHash, entry.sourceHash);
+        assert.deepEqual(registrations().get(id), {
+          id,
+          name: entry.name,
+          sourceHash: entry.sourceHash,
+          bytecode: entry.compiled.bytecode,
+        });
+        const program = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(entry.compiled.bytecode), {
+          precision: MAKECODE_VM_PRECISION,
+          typeRegistry: brains.getSnapshot().environment.brainServices.runtime.types,
+        });
+        assert.equal(program.profileId, 2001);
+      }
+      await brainsUntil(brains, (state) => state.pending.size === 0, "nothing pending");
+    });
+
+    it("heals a malformed and a stale registration at the next handshake, leaving another brain's files untouched", async () => {
+      const { brains, bridge, simxTokens } = await pairReal();
+      const kept = authorBrain(brains, "Kept");
+      const malformed = authorBrain(brains, "Malformed");
+      const stale = authorBrain(brains, "Stale");
+      await saved(brains, "the brains to be saved");
+      const keptRegistration = registrations().get(kept);
+      const staleHash = brains.getSnapshot().brains.get(stale)?.sourceHash;
+      const text = host.file(BRAINS_MODULE_FILE) ?? "";
+      host.edit(
+        BRAINS_MODULE_FILE,
+        text
+          .replace(`"${malformed}", "Malformed", hex\``, `"${malformed}", Malformed, hex\``)
+          .replace(`// source-hash ${staleHash}`, "// source-hash 00000000")
+      );
+      const mutationsBefore = host.mutations.length;
+
+      restartSimx(bridge, simxTokens);
+      await saved(brains, "both damaged registrations to be healed");
+
+      assert.deepEqual(registrations().get(kept), keptRegistration);
+      assert.equal(registrations().get(stale)?.sourceHash, staleHash);
+      assert.ok(!host.mutations.slice(mutationsBefore).includes(`write brains/${kept}.src.json`));
     });
 
     it("saves a burst of edits made while disconnected with fewer brains.g.ts writes than pushes", async () => {

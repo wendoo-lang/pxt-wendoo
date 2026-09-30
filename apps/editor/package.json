@@ -9,7 +9,7 @@
   "scripts": {
     "predev": "npm run build:deps",
     "dev": "vite --config vite/config.dev.mjs --force",
-    "prebuild": "npm run install:packages --prefix ../../external/wendoo-lang && npm run build:deps",
+    "prebuild": "npm_config_audit=false npm_config_fund=false npm run install:packages --prefix ../../external/wendoo-lang && npm run build:deps",
     "build": "vite build --config vite/config.prod.mjs",
     "build:deps": "node ../../external/wendoo-lang/scripts/build-packages.js .",
     "clean": "rm -rf dist && rm -rf node_modules/.vite",

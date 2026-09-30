@@ -721,7 +721,16 @@ describe("simx bridge on the relay", () => {
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsListReply",
         id: "list-1",
-        payload: { brains: [{ id: chaser.id, name: "Chaser", sourceHash: brainSourceHash(chaser.source) }] },
+        payload: {
+          brains: [
+            {
+              id: chaser.id,
+              name: "Chaser",
+              sourceHash: brainSourceHash(chaser.source),
+              compiledSourceHash: brainSourceHash(chaser.source),
+            },
+          ],
+        },
       });
       editor.send({ type: "makecode:brainsPull", id: "pull-1", payload: { ids: [chaser.id, "absentabsentabse"] } });
       assert.deepEqual(await editor.nextMessage(), {

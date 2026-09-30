@@ -173,8 +173,20 @@ everything else).
   until the handshake ends.
 - `makecode:brainsList` (editor -> project): answered by
   `makecode:brainsListReply` carrying `{ brains: [{ id, name,
-  sourceHash }] }` -- every brain the project holds, `sourceHash` being
-  `brainSourceHash` of the source text as the project holds it now.
+  sourceHash, compiledSourceHash? }] }` -- every brain the project
+  holds, `sourceHash` being `brainSourceHash` of the source text as the
+  project holds it now. `compiledSourceHash` reports the project's
+  compiled form of the brain in three states: a STRING is the source
+  hash the brain's current registration carries (equal to `sourceHash`
+  exactly when the compiled form was compiled from the current source);
+  `null` means the serving party read the project and found no current
+  registration of the brain -- no entry, an unreadable entry, or no
+  readable compiled-form file -- which a push of the brain restores;
+  ABSENT means the serving party does not report it (it predates the
+  field, or cannot read the compiled-form file's format), and the
+  editor draws no conclusion from it. The absent state is what keeps an
+  editor from pushing forever at a peer that can never report a
+  current registration.
 - `makecode:brainsPull` (editor -> project) with `{ ids }`: answered by
   `makecode:brainsPullReply` carrying `{ brains: [{ id, name, source,
   compiled?: { bytecode, sourceHash } }] }` in request order; an id the
@@ -232,9 +244,12 @@ serves exactly what the last one wrote.
   `getProjectId`) are how the simx reads its frame URL.
 - SOURCE FORM: `brains/<documentId>.src.json` holds the brain document
   exactly as pushed (the editor's two-space pretty print). A list names
-  each such file by its id, with the document's `name` and the
-  `brainSourceHash` of the file's text; a pull returns the text
-  verbatim. A text that is not a readable brain document is still
+  each such file by its id, with the document's `name`, the
+  `brainSourceHash` of the file's text, and as `compiledSourceHash` the
+  source hash `brains.g.ts` registers the brain under -- `null` when the
+  module is missing or unreadable or holds no readable entry for the
+  brain, and left out while the module is of a newer format (see
+  below); a pull returns the text verbatim. A text that is not a readable brain document is still
   listed and pulled -- the editor's corruption handling takes it from
   there -- and is named from its registration, else empty.
 - COMPILED FORM: `brains.g.ts`, at the folder root, is ONE generated
@@ -267,8 +282,11 @@ serves exactly what the last one wrote.
   read; a module declaring a newer format (`BRAINS_MODULE_FORMAT_NEWER`)
   reads as registering nothing and is never rewritten -- pushes fail
   while it stands. Each problem is written to the console by its code;
-  a pull serves the affected brains without compiled forms, which the
-  editor's staleness rule recompiles and pushes when it pulls them.
+  a list reports the affected brains' `compiledSourceHash` as `null`
+  (left out for a newer-format module, whose registrations this simx
+  cannot read and must not replace), and a pull serves them without
+  compiled forms, which the editor's staleness rule recompiles and
+  pushes.
 - PUSH: a push writes (or, for `remove`, deletes) the brain's source
   file and regenerates `brains.g.ts` from the registrations it holds for
   brains whose source file exists, with the push applied: a write
@@ -300,9 +318,10 @@ serves exactly what the last one wrote.
   `wendoo-lang/pxt-wendoo/brains`, each with a delete action, and
   they travel with the project wherever its files go.
 - DETECTING HAND EDITS: the editor compares hashes when a handshake
-  reconciles, so a source edited in MakeCode is recompiled and saved at
-  the next handshake (an editor reload or a reconnection); a simulator
-  restart that keeps the simx frame opens no new handshake.
+  reconciles, so a source edited in MakeCode, and a `brains.g.ts`
+  edited, damaged, or deleted there, is healed at the next handshake
+  (an editor reload or a reconnection); a simulator restart that keeps
+  the simx frame opens no new handshake.
 
 ## Simx credential continuity
 
@@ -618,11 +637,13 @@ channel, then pushes each edit as it is made:
   push to it, and its brains are pulled beside them. Carrying brains
   from one project to another is not done.
 - RECONCILIATION: list; pull every listed brain the store holds no copy
-  of or whose copy's `sourceHash` differs; adopt each pulled brain the
-  store holds no pending edit of (a pending edit wins, and the flush
-  pushes it); drop each brain the project no longer holds that has no
-  pending edit; then push every pend. A request that fails abandons the
-  reconciliation, pends intact, until the next handshake.
+  of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
+  is `null` or differs from its `sourceHash` (a summary without
+  `compiledSourceHash` pulls on the source rule alone); adopt each
+  pulled brain the store holds no pending edit of (a pending edit wins,
+  and the flush pushes it); drop each brain the project no longer holds
+  that has no pending edit; then push every pend. A request that fails
+  abandons the reconciliation, pends intact, until the next handshake.
 - RECONCILED: the store's `reconciled` is `true` while the session is
   connected and the latest handshake's reconciliation has finished;
   it turns `false` at the next disconnection and while a new handshake
@@ -643,6 +664,16 @@ channel, then pushes each edit as it is made:
   pair is pushed. A pulled source that parses but fails to compile is
   held with its diagnostics beside the project's compiled form as the
   last good one, and nothing is pushed.
+- COMPILED-FORM HEALING: because the list reports the compiled form, a
+  project whose `brains.g.ts` lost or garbled a brain's registration --
+  the file deleted in MakeCode's Explorer, an entry damaged, a
+  registration left from other source -- has that brain pulled even
+  when the store's copy of the source matches, and the staleness rule
+  pushes the fresh pair, rewriting the module. Every brain whose
+  registration is current is left alone. Healing happens when a
+  handshake reconciles: a fresh editor session, a reconnection, or a
+  new simx frame. Damage done while a handshake stays open is not seen
+  until the next one.
 - CORRUPTION: a pulled source that is not a brain document is listed in
   the store's `damaged` map under `BRAIN_SOURCE_INVALID`, and one whose
   embedded id differs from its address under `BRAIN_SOURCE_ID_MISMATCH`,

@@ -122,7 +122,8 @@ export interface BrainsViewState {
  * store reconciles: a handshake of a different binding than the previous
  * one first replaces the brains, discarding every local brain and pend; it
  * lists the project's brains, pulls those whose source differs from the
- * store's, adopts each pulled brain it holds no pending edit of, drops
+ * store's or whose compiled form the list reports missing or compiled from
+ * other source, adopts each pulled brain it holds no pending edit of, drops
  * each brain the project no longer holds that has no pending edit, then
  * pushes every pend. A pulled source that is not a brain document is listed
  * in {@link BrainsViewState.damaged} and never overwritten by itself; a
@@ -406,9 +407,16 @@ export class BrainsStore {
     for (const id of recompiled) this.push(channel, id);
   }
 
-  /** Whether a reconciliation pulls the listed brain: the store holds no copy of it, or its copy's source differs. */
+  /**
+   * Whether a reconciliation pulls the listed brain: the store holds no copy
+   * of it, its copy's source differs, or the project lists its compiled form
+   * as missing (`null`) or compiled from other source. A summary carrying no
+   * `compiledSourceHash` says nothing about the compiled form.
+   */
   private wantsPull(summary: MakeCodeBrainSummary): boolean {
-    return this._brains.get(summary.id)?.sourceHash !== summary.sourceHash;
+    if (this._brains.get(summary.id)?.sourceHash !== summary.sourceHash) return true;
+    const { compiledSourceHash } = summary;
+    return compiledSourceHash !== undefined && compiledSourceHash !== summary.sourceHash;
   }
 
   /**

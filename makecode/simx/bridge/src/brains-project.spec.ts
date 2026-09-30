@@ -376,8 +376,18 @@ describe("brains project", () => {
       assert.deepEqual(
         answer.value.sort((a, b) => a.id.localeCompare(b.id)),
         [
-          { id: CHASER, name: "Chaser", sourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")) },
-          { id: RUNNER, name: "Runner", sourceHash: brainSourceHash(sourceOf(RUNNER, "Runner")) },
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
+            compiledSourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
+          },
+          {
+            id: RUNNER,
+            name: "Runner",
+            sourceHash: brainSourceHash(sourceOf(RUNNER, "Runner")),
+            compiledSourceHash: brainSourceHash(sourceOf(RUNNER, "Runner")),
+          },
         ]
       );
     });
@@ -415,7 +425,14 @@ describe("brains project", () => {
 
       assert.deepEqual(await list(restarted), {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", sourceHash: chaser.compiled?.sourceHash }],
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: chaser.compiled?.sourceHash,
+            compiledSourceHash: chaser.compiled?.sourceHash,
+          },
+        ],
       });
       assert.deepEqual(await pull([CHASER], restarted), { ok: true, value: [chaser] });
     });
@@ -432,7 +449,14 @@ describe("brains project", () => {
 
       assert.deepEqual(listed, {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", sourceHash: brainSourceHash("not json {") }],
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash("not json {"),
+            compiledSourceHash: chaser.compiled?.sourceHash,
+          },
+        ],
       });
       assert.deepEqual(pulled, { ok: true, value: [{ ...chaser, source: "not json {" }] });
     });
@@ -442,7 +466,7 @@ describe("brains project", () => {
 
       assert.deepEqual(await list(), {
         ok: true,
-        value: [{ id: CHASER, name: "", sourceHash: brainSourceHash('{"name": 42') }],
+        value: [{ id: CHASER, name: "", sourceHash: brainSourceHash('{"name": 42'), compiledSourceHash: null }],
       });
     });
 
@@ -492,6 +516,78 @@ describe("brains project", () => {
       assert.equal(host.mutations.length, mutations);
       assert.ok(pulled.ok);
       assert.equal(pulled.value[0].compiled, undefined);
+    });
+  });
+
+  describe("compiled source hash", () => {
+    /** Each listed brain's `compiledSourceHash` by id, `"absent"` for a summary carrying none. */
+    async function listedCompiled(): Promise<Record<string, string | null>> {
+      const answer = await list();
+      assert.ok(answer.ok);
+      return Object.fromEntries(
+        answer.value.map((summary) => [
+          summary.id,
+          Object.hasOwn(summary, "compiledSourceHash") ? (summary.compiledSourceHash ?? null) : "absent",
+        ])
+      );
+    }
+
+    it("lists the hash each brain's registration carries, whether or not it matches the source", async () => {
+      const chaser = brain(CHASER, "Chaser");
+      const runner = brain(RUNNER, "Runner");
+      await write(chaser);
+      await write({ ...runner, compiled: { bytecode: Uint8Array.from([4]), sourceHash: brainSourceHash("older") } });
+
+      assert.deepEqual(await listedCompiled(), {
+        [CHASER]: brainSourceHash(chaser.source),
+        [RUNNER]: brainSourceHash("older"),
+      });
+    });
+
+    it("lists null for a brain brains.g.ts holds no registration of", async () => {
+      await write(brain(CHASER, "Chaser"));
+      const { compiled: _, ...uncompiled } = brain(RUNNER, "Runner");
+      await write(uncompiled);
+
+      assert.deepEqual(await listedCompiled(), {
+        [CHASER]: brainSourceHash(sourceOf(CHASER, "Chaser")),
+        [RUNNER]: null,
+      });
+    });
+
+    it("lists null for every brain once brains.g.ts is deleted", async () => {
+      await write(brain(CHASER, "Chaser"));
+      await write(brain(RUNNER, "Runner"));
+      host.remove(BRAINS_MODULE_FILE);
+
+      assert.deepEqual(await listedCompiled(), { [CHASER]: null, [RUNNER]: null });
+    });
+
+    it("lists null for every brain of an unreadable brains.g.ts", async () => {
+      await write(brain(CHASER, "Chaser"));
+      host.edit(BRAINS_MODULE_FILE, "garbage");
+
+      assert.deepEqual(await listedCompiled(), { [CHASER]: null });
+    });
+
+    it("lists null for a brain whose registration is malformed, and every other brain's hash", async () => {
+      await write(brain(CHASER, "Chaser"));
+      await write(brain(RUNNER, "Runner"));
+      const text = host.file(BRAINS_MODULE_FILE) ?? "";
+      host.edit(BRAINS_MODULE_FILE, text.replace(`"${RUNNER}", "Runner", hex\``, `"${RUNNER}", Runner, hex\``));
+
+      assert.deepEqual(await listedCompiled(), {
+        [CHASER]: brainSourceHash(sourceOf(CHASER, "Chaser")),
+        [RUNNER]: null,
+      });
+    });
+
+    it("leaves the hash out for every brain of a brains.g.ts of a newer format", async () => {
+      await write(brain(CHASER, "Chaser"));
+      const newer = (host.file(BRAINS_MODULE_FILE) ?? "").replace("wendoo-brains-format 1", "wendoo-brains-format 2");
+      host.edit(BRAINS_MODULE_FILE, newer);
+
+      assert.deepEqual(await listedCompiled(), { [CHASER]: "absent" });
     });
   });
 

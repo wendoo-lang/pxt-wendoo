@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type {
   MakeCodeBrain,
+  MakeCodeBrainSummary,
   MakeCodeBrainsRequest,
   MakeCodeBrainsRequestMessage,
   MakeCodeWireBrain,
@@ -564,6 +565,27 @@ describe("makecode session brains responder", () => {
     assert.equal(project.size, 0);
     assert.equal(responder.peerTarget, undefined);
     assert.equal(requester.peerTarget, "arcade");
+    requester.dispose();
+    responder.dispose();
+  });
+
+  it("carries each summary's compiled source hash as sent: a hash, null, or absent", async () => {
+    const { requester, responder } = await openPair();
+    const summaries: MakeCodeBrainSummary[] = [
+      { id: "current-current-", name: "Current", sourceHash: "1a2b3c4d", compiledSourceHash: "1a2b3c4d" },
+      { id: "stale-stale-stal", name: "Stale", sourceHash: "1a2b3c4d", compiledSourceHash: "00000000" },
+      { id: "missing-missing-", name: "Missing", sourceHash: "1a2b3c4d", compiledSourceHash: null },
+      { id: "unknown-unknown-", name: "Unknown", sourceHash: "1a2b3c4d" },
+    ];
+    responder.onBrainsRequest((request) => {
+      if (request.kind === "list") request.reply(summaries);
+    });
+
+    const listed = await requester.listBrains();
+
+    assert.deepEqual(listed, summaries);
+    assert.equal(listed[2].compiledSourceHash, null);
+    assert.equal("compiledSourceHash" in listed[3], false);
     requester.dispose();
     responder.dispose();
   });

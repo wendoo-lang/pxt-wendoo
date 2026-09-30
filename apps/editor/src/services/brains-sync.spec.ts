@@ -56,6 +56,12 @@ class FakeChannel implements EditorBrainsChannel {
   readonly pulls: string[][] = [];
   /** When set, pushes naming these ids are answered with `WRITE_FAILED`. */
   readonly failingWrites = new Set<string>();
+  /**
+   * Whether the list reports each brain's compiled source hash: the hash its
+   * compiled form carries, or `null` when it has none. When `false`, the list
+   * carries no such field, as a peer predating it answers.
+   */
+  reportsCompiled = true;
   held = false;
   private readonly _queue: HeldRequest[] = [];
   private readonly _rejects = new Set<(error: MakeCodeBrainsError) => void>();
@@ -68,11 +74,15 @@ class FakeChannel implements EditorBrainsChannel {
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
     return this.answer(() =>
-      [...this.project.values()].map((brain) => ({
-        id: brain.id,
-        name: brain.name,
-        sourceHash: brainSourceHash(brain.source),
-      }))
+      [...this.project.values()].map((brain) => {
+        const summary: MakeCodeBrainSummary = {
+          id: brain.id,
+          name: brain.name,
+          sourceHash: brainSourceHash(brain.source),
+        };
+        if (this.reportsCompiled) summary.compiledSourceHash = brain.compiled?.sourceHash ?? null;
+        return summary;
+      })
     );
   }
 
@@ -136,10 +146,19 @@ class FakeSync {
     };
   };
 
-  /** A handshake of `binding` completing over `project`, handing out its channel. */
-  open(binding: string | undefined, project: Map<string, MakeCodeBrain>, held = false): FakeChannel {
+  /**
+   * A handshake of `binding` completing over `project`, handing out its
+   * channel; `reportsCompiled` set as {@link FakeChannel.reportsCompiled}.
+   */
+  open(
+    binding: string | undefined,
+    project: Map<string, MakeCodeBrain>,
+    held = false,
+    reportsCompiled = true
+  ): FakeChannel {
     const channel = new FakeChannel(binding, project);
     channel.held = held;
+    channel.reportsCompiled = reportsCompiled;
     for (const listener of this._listeners) listener(channel);
     return channel;
   }
@@ -544,6 +563,97 @@ describe("brains sync", () => {
       assert.ok(entry.diagnostics.some((diagnostic) => diagnostic.severity === "error"));
       assert.deepEqual(entry.compiled, original.compiled);
       assert.deepEqual(channel.pushes, []);
+    });
+
+    it("pulls a held brain whose project copy lists no compiled form, recompiling it and pushing the fresh pair", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote", authorCompilingRule);
+      const first = await handshake("token-1", projectOf(remote));
+      first.close();
+      session.setStatus("disconnected");
+      const { compiled: _compiled, ...sourceOnly } = remote;
+      first.project.set(remote.id, sourceOnly);
+
+      const second = await handshake("token-1", first.project);
+
+      assert.deepEqual(second.pulls, [[remote.id]]);
+      const pushed = lastPush(second);
+      assert.ok(pushed?.op === "write");
+      assert.deepEqual(pushed.brain.compiled, entryOf(store, remote.id).compiled);
+      assert.equal(second.project.get(remote.id)?.compiled?.sourceHash, brainSourceHash(remote.source));
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("pulls a held brain whose project copy lists a compiled form of other source, and pushes the fresh pair", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote", authorCompilingRule);
+      const first = await handshake("token-1", projectOf(remote));
+      first.close();
+      session.setStatus("disconnected");
+      const other = projectBrain("Other");
+      first.project.set(remote.id, { ...remote, compiled: other.compiled });
+
+      const second = await handshake("token-1", first.project);
+
+      assert.deepEqual(second.pulls, [[remote.id]]);
+      assert.deepEqual(writtenIds(second), [remote.id]);
+      assert.deepEqual(second.project.get(remote.id)?.compiled, entryOf(store, remote.id).compiled);
+      assert.equal(entryOf(store, remote.id).compiled?.sourceHash, brainSourceHash(remote.source));
+    });
+
+    it("pulls only the held brains whose compiled form the project lists as stale or missing", async () => {
+      const store = syncedStore();
+      const healthy = projectBrain("Healthy", authorCompilingRule);
+      const missing = projectBrain("Missing", authorCompilingRule);
+      const first = await handshake("token-1", projectOf(healthy, missing));
+      first.close();
+      session.setStatus("disconnected");
+      const { compiled: _compiled, ...sourceOnly } = missing;
+      first.project.set(missing.id, sourceOnly);
+
+      const second = await handshake("token-1", first.project);
+
+      assert.deepEqual(second.pulls, [[missing.id]]);
+      assert.deepEqual(writtenIds(second), [missing.id]);
+      assert.equal(second.project.get(healthy.id), healthy);
+      assert.equal(store.getSnapshot().brains.size, 2);
+    });
+
+    it("takes no action on a list that carries no compiled source hashes, however many handshakes reconcile", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote", authorCompilingRule);
+      const first = await handshake("token-1", projectOf(remote));
+      const { compiled: _compiled, ...sourceOnly } = remote;
+      first.project.set(remote.id, sourceOnly);
+
+      for (let round = 0; round < 3; round++) {
+        first.close();
+        session.setStatus("disconnected");
+        session.setStatus("connected");
+        const legacy = sync.open("token-1", first.project, false, false);
+        await settle();
+
+        assert.equal(store.getSnapshot().reconciled, true);
+        assert.deepEqual(legacy.pulls, []);
+        assert.deepEqual(legacy.pushes, []);
+        legacy.close();
+      }
+      assert.equal(first.project.get(remote.id), sourceOnly);
+    });
+
+    it("pulls a brain that fails to compile once per handshake while its compiled form lists stale, pushing nothing", async () => {
+      const store = syncedStore();
+      const original = projectBrain("Remote");
+      const broken = { ...original, source: sourceWith(original, authorMisplacedTile) };
+      const first = await handshake("token-1", projectOf(broken));
+      first.close();
+      session.setStatus("disconnected");
+
+      const second = await handshake("token-1", first.project);
+
+      assert.deepEqual(second.pulls, [[broken.id]]);
+      assert.deepEqual(second.pushes, []);
+      assert.equal(store.getSnapshot().pending.size, 0);
     });
   });
 
