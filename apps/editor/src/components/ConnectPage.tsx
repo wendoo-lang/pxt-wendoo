@@ -36,7 +36,7 @@ export function ConnectPage() {
       >
         <input
           data-testid="join-code-input"
-          className="rounded-md border bg-background px-3 py-1.5 font-mono text-sm"
+          className="rounded-md border border-border bg-background px-3 py-1.5 font-mono text-sm"
           value={code}
           onChange={(event) => setCode(event.target.value)}
           aria-label="Join code"
@@ -47,7 +47,7 @@ export function ConnectPage() {
           type="submit"
           data-testid="connect-button"
           disabled={trimmed === ""}
-          className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+          className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
         >
           Connect
         </button>
@@ -67,13 +67,17 @@ export function ConnectPage() {
         <section
           data-testid="code-unknown-notice"
           data-code={errorCode}
-          className="max-w-md rounded-lg border p-3 text-sm"
+          className="max-w-md rounded-lg border border-border p-3 text-sm"
         >
           <p>That join code was not recognized. Enter the code your MakeCode project shows now.</p>
         </section>
       )}
       {errorCode === BridgeSessionErrorCode.SESSION_ENDED && (
-        <section data-testid="ended-notice" data-code={errorCode} className="max-w-md rounded-lg border p-3 text-sm">
+        <section
+          data-testid="ended-notice"
+          data-code={errorCode}
+          className="max-w-md rounded-lg border border-border p-3 text-sm"
+        >
           <p>The session with the MakeCode project was ended. Enter the join code it shows to connect again.</p>
         </section>
       )}

@@ -43,17 +43,19 @@ const VERSION_DECLARATION = /^[1-9][0-9]*$/;
 
 /**
  * The parts of one message the extension posts on a simulator message
- * channel: the channel version its first line declares, and the catalog
- * payload after that line.
+ * channel: the channel version its first line declares, the payload after
+ * that line, and the frame's kind -- `"ping"` for the empty payload of the
+ * ping the extension posts at startup, `"catalog"` for any other payload.
  *
  * @param text The message's bytes read as UTF-8.
- * @returns `{ version, payload }`, or null when `text` does not begin with a
- *   version declaration line.
+ * @returns `{ version, payload, kind }`, or null when `text` does not begin
+ *   with a version declaration line.
  */
 function frameOf(text) {
   const lineEnd = text.indexOf("\n");
   if (lineEnd < 0 || !VERSION_DECLARATION.test(text.slice(0, lineEnd))) return null;
-  return { version: Number(text.slice(0, lineEnd)), payload: text.slice(lineEnd + 1) };
+  const payload = text.slice(lineEnd + 1);
+  return { version: Number(text.slice(0, lineEnd)), payload, kind: payload.length === 0 ? "ping" : "catalog" };
 }
 
 /**

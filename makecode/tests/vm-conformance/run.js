@@ -11,19 +11,21 @@
  * not fail the run. A case that is not skipped is held to the golden in full:
  * hitting the extension's unimplemented-opcode fault still fails it, and so
  * does a replay that reports a registration diagnostic -- the corpus
- * vocabulary registers cleanly -- or that does not post exactly one message,
- * its catalog, on the conformance simulator message channel.
+ * vocabulary registers cleanly -- or that does not post exactly two messages
+ * on the simulator extension's channel (`SIMX_CHANNEL` in
+ * `makecode/simx/bridge/src/sim-channel.ts`): the extension's startup ping,
+ * then its catalog.
  *
  * Each target also builds and captures the catalog project twice. Each
- * capture delivers one request on the conformance channel once the program's
- * top-level code has finished, and must post exactly two messages on it: the
- * catalog published after the drain, and the catalog answering the request.
- * Each message must be a channel frame declaring the channel version the
- * simulator extension reads (`SIM_CHANNEL_VERSION` in
- * `makecode/simx/bridge/src/sim-channel.ts`), and carrying the bytes of the
- * `CATALOG` line the run prints as its payload; that payload is held to its
- * expected entries and must be byte-identical across the captures. A `--case`
- * filter skips the catalog capture.
+ * capture delivers one request on the simulator extension's channel once the
+ * program's top-level code has finished, and must post exactly three messages
+ * on it: the startup ping, the catalog published after the drain, and the
+ * catalog answering the request. Each message must be a channel frame
+ * declaring the channel version the simulator extension reads
+ * (`SIM_CHANNEL_VERSION` in the same file); the ping's payload is empty, and
+ * each catalog's payload is the bytes of the `CATALOG` line the run prints.
+ * That payload is held to its expected entries and must be byte-identical
+ * across the captures. A `--case` filter skips the catalog capture.
  *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
@@ -45,10 +47,10 @@ const DIAG_PREFIX = "DIAG ";
 /** Diagnostic prefix a replay reports a registration problem under. */
 const REGISTRATION_DIAG_PREFIX = "registration ";
 
-/** Simulator message channel the conformance driver publishes the catalog on (`CONFORMANCE_SIMX_CHANNEL`). */
-const CONFORMANCE_SIMX_CHANNEL = "wendoo-vm-conformance";
-
-/** Source file declaring the channel version the simulator extension reads, as `SIM_CHANNEL_VERSION`. */
+/**
+ * Source file declaring the simulator extension's channel, as `SIMX_CHANNEL`,
+ * and the channel version it reads, as `SIM_CHANNEL_VERSION`.
+ */
 const SIMX_CHANNEL_SOURCE_PATH = path.join(__dirname, "..", "..", "simx", "bridge", "src", "sim-channel.ts");
 
 /** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
@@ -145,6 +147,32 @@ function simxChannelVersion() {
   const declared = /export const SIM_CHANNEL_VERSION = (\d+);/.exec(fs.readFileSync(SIMX_CHANNEL_SOURCE_PATH, "utf8"));
   if (!declared) throw new Error(`no SIM_CHANNEL_VERSION declaration in ${SIMX_CHANNEL_SOURCE_PATH}`);
   return Number(declared[1]);
+}
+
+/** The simulator extension's channel, as its source declares it. */
+function simxChannel() {
+  const declared = /export const SIMX_CHANNEL = "([^"]+)";/.exec(fs.readFileSync(SIMX_CHANNEL_SOURCE_PATH, "utf8"));
+  if (!declared) throw new Error(`no SIMX_CHANNEL declaration in ${SIMX_CHANNEL_SOURCE_PATH}`);
+  return declared[1];
+}
+
+/** The kinds of the frames a replay of a corpus case must post on the simulator extension's channel, in order. */
+const CASE_FRAME_KINDS = ["ping", "catalog"];
+
+/** The kinds of the frames a catalog capture must post on the simulator extension's channel, in order. */
+const CATALOG_FRAME_KINDS = ["ping", "catalog", "catalog"];
+
+/**
+ * The kind of each message in `posted`, in order: the kind of its channel
+ * frame, or `"malformed"` for a message that declares no channel version.
+ */
+function frameKinds(posted) {
+  return posted.map((text) => catalog.frameOf(text)?.kind ?? "malformed");
+}
+
+/** Whether `kinds`, the frame kinds one capture of a corpus case posted, are exactly `CASE_FRAME_KINDS`. */
+function postedCaseFrames(kinds) {
+  return kinds.join(" ") === CASE_FRAME_KINDS.join(" ");
 }
 
 /** How many captures of the catalog project one harness run compares. */
@@ -249,24 +277,26 @@ function runCatalogCheck(targetDir, targetName, options) {
       expect: project.id,
       timeoutSec: 120,
       simxLogPath,
-      simxRequest: CONFORMANCE_SIMX_CHANNEL,
+      simxRequest: simxChannel(),
     });
     const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
     const payload = catalog.payloadOf(log);
     payloads.push(payload);
-    const posted = conformanceChannelMessages(simxLogPath);
+    const posted = simxChannelMessages(simxLogPath);
     record.runs.push({
       run: r,
       exit: captured.code,
       sha256: payload === null ? null : sha256(payload),
       channelSha256: posted.map(sha256),
     });
-    const frames = posted.map(catalog.frameOf);
-    if (posted.length !== 2) {
-      record.problems.push(`capture ${r} posted ${posted.length} messages on the conformance channel, expected 2`);
-    } else if (frames.some((frame) => frame === null)) {
-      record.problems.push(`capture ${r} posted a channel message that declares no channel version`);
+    const kinds = frameKinds(posted);
+    if (kinds.join(" ") !== CATALOG_FRAME_KINDS.join(" ")) {
+      record.problems.push(
+        `capture ${r} posted [${kinds.join(", ")}] on the simulator extension's channel, ` +
+          `expected [${CATALOG_FRAME_KINDS.join(", ")}]`
+      );
     } else {
+      const frames = posted.map(catalog.frameOf);
       for (const frame of frames) {
         if (frame.version !== channelVersion) {
           record.problems.push(
@@ -275,8 +305,8 @@ function runCatalogCheck(targetDir, targetName, options) {
           );
         }
       }
-      if (frames.some((frame) => frame.payload !== payload)) {
-        record.problems.push(`capture ${r} posted a channel message other than its CATALOG payload`);
+      if (frames.slice(1).some((frame) => frame.payload !== payload)) {
+        record.problems.push(`capture ${r} posted a catalog other than its CATALOG payload`);
       }
     }
   }
@@ -302,15 +332,16 @@ function runCatalogCheck(targetDir, targetName, options) {
 }
 
 /**
- * The texts of the messages a capture posted on the conformance channel, in
- * posting order, read from its simulator message log; empty when the log is
- * absent.
+ * The texts of the messages a capture posted on the simulator extension's
+ * channel, in posting order, read from its simulator message log; empty when
+ * the log is absent.
  */
-function conformanceChannelMessages(simxLogPath) {
+function simxChannelMessages(simxLogPath) {
   const simxLog = fs.existsSync(simxLogPath) ? fs.readFileSync(simxLogPath, "utf8") : "";
+  const channel = simxChannel();
   return catalog
     .channelMessages(simxLog)
-    .filter((message) => message.channel === CONFORMANCE_SIMX_CHANNEL)
+    .filter((message) => message.channel === channel)
     .map((message) => message.text);
 }
 
@@ -355,7 +386,7 @@ function main() {
         verdict: "",
         diagnostics: [],
         unsupported: [],
-        channelMessages: [],
+        channelFrames: [],
       };
       results.push(record);
 
@@ -388,7 +419,7 @@ function main() {
         const simxLogPath = path.join(projectDir, "built", `capture-run${r}.simx.log`);
         const captured = capture.capture(binary, logPath, { expect: entry.id, timeoutSec: 120, simxLogPath });
         const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
-        record.channelMessages.push(conformanceChannelMessages(simxLogPath).length);
+        record.channelFrames.push(frameKinds(simxChannelMessages(simxLogPath)));
         const body = traceBody(log, entry.id);
         const run = {
           run: r,
@@ -405,8 +436,8 @@ function main() {
       }
 
       const registrationDiagnosed = record.diagnostics.some((diag) => diag.startsWith(REGISTRATION_DIAG_PREFIX));
-      const catalogPublished = record.channelMessages.every((count) => count === 1);
-      record.verdict = allMatch && !registrationDiagnosed && catalogPublished ? "PASS" : "STOPPED";
+      const framesPosted = record.channelFrames.every(postedCaseFrames);
+      record.verdict = allMatch && !registrationDiagnosed && framesPosted ? "PASS" : "STOPPED";
       if (!allMatch && firstBody !== null) {
         record.divergence = firstDivergence(firstBody, golden);
       }
@@ -435,9 +466,11 @@ function reportCase(record) {
   for (const diag of record.diagnostics) {
     process.stdout.write(`    diag: ${diag}\n`);
   }
-  if (record.channelMessages.some((count) => count !== 1)) {
+  if (!record.channelFrames.every(postedCaseFrames)) {
+    const perCapture = record.channelFrames.map((kinds) => `[${kinds.join(", ")}]`).join(" ");
     process.stdout.write(
-      `    conformance channel messages per capture: ${record.channelMessages.join(" ")}, expected 1 each\n`
+      `    simulator extension channel frames per capture: ${perCapture}, ` +
+        `expected [${CASE_FRAME_KINDS.join(", ")}] each\n`
     );
   }
   if (record.divergence) {

@@ -88,8 +88,9 @@ The four-hop path assigns the session parts as follows.
   engine's own rate protection applies to every connection.
 - The VM EXTENSION (`makecode/extensions/vm`) is NOT a session
   party. It participates through the sim-message channel only (the
-  extension channel, below). It is MakeCode-target-agnostic and receives its channel
-  identity from the host that calls it.
+  extension channel, below). It is MakeCode-target-agnostic and holds
+  its channel identity itself; no caller of its API supplies or sees
+  it.
 
 ## The target declaration
 
@@ -314,12 +315,14 @@ it keys on a session id.
   grace, below), `replaced` (the editor-only takeover hold), `ended`,
   and `update` (a version rejection). The dots paint from the
   editor's themeable tokens: success, warning, destructive, and the
-  neutral muted foreground. The session view also holds the catalog
-  panel rendering the latest catalog, and no join code -- the only
-  codes an editor receives are spent or name the simx's vacancy,
-  which no person can enter yet. The catalog stays rendered while
-  disconnected -- status gates delivery, never what is already shown
-  -- and is dropped whenever no session exists.
+  neutral muted foreground. Below the notices the session view holds
+  the BRAIN LIST (the brains store's brains, below), then the
+  catalog's diagnostics, then the catalog panel rendering the latest
+  catalog -- and no join code: the only codes an editor receives are
+  spent or name the simx's vacancy, which no person can enter yet.
+  The catalog stays rendered while disconnected -- status gates
+  delivery, never what is already shown -- and is dropped whenever no
+  session exists.
 - The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
   routinely, so a brief disconnect is the common case. The
   disconnected indicator -- the MakeCode project is not connected,
@@ -354,6 +357,24 @@ it keys on a session id.
   only: a brain edited while the status is anything but `connected`
   is recorded as pending, and the brains themselves are kept through
   every status.
+- The BRAIN LIST renders the brains store in every status, so
+  authoring continues while the project is away. Each row is keyed by
+  the brain's document id; the name is display data, and two brains
+  may show the same one. A row opens the brain in the upstream brain
+  editor dialog, whose config is built from the store's current
+  environment and rebuilt whenever the environment is; saving applies
+  the edited document to the store, which compiles it, and the row's
+  badge counts the compile's errors and warnings (carrying the
+  compile state -- `current`, `stale`, or `none` -- as
+  `data-compile`). Rows also rename and remove brains; adding a brain
+  names it and opens the editor on it. Pending edits have no surface
+  yet.
+- The CATALOG DIAGNOSTICS the store reports while building its
+  environment render as one coded line each above the catalog panel:
+  `CATALOG_UNREADABLE` for catalog text it cannot read (brains keep
+  the built-in tiles), and `CATALOG_PACK_UNBOUND` per pack whose
+  tiles brains cannot use yet. They inform and never block
+  authoring.
 
 ## The simx status panel
 
@@ -462,33 +483,45 @@ The extension-to-simx wire is pxt's sim-message channel, distinct
 from and beneath the session:
 
 - The channel name equals the simx's `approvedRepoLib` key
-  (`wendoo-lang/pxt-wendoo`), supplied to the extension by its host
-  -- the conformance driver in the harness, the game-facing arcade
-  extension in product. This equality is a ROUTING fact, not a
+  (`wendoo-lang/pxt-wendoo`). The extension holds it as one
+  internal constant (`makecode/extensions/vm/sim-channel.ts`), and
+  no public API of the extension takes or exposes it: a caller
+  publishes with `wendoo.publishCatalog(encoder)`. This
+  equality is a ROUTING fact, not a
   trust fact: pxt never checks a message's channel field against
   its sender, any program can post on any registered channel, and
   simx frames receive every channel. The one host-attested binding
   is the frame itself (pxt tags each simx iframe with its key at
   creation); anything deriving identity from this wire must key on
   the frame, never on the channel field a sender writes.
-- Two packet kinds exist: a catalog emission (extension to simx,
-  the framed catalog text described next) and a request (simx to extension, answered
-  with a fresh serialization). The request/answer handshake exists
-  because the first packet on a simx channel creates the simx frame
-  and is lost to it; the simx requests once loaded.
+- Three packet kinds exist: a ping (extension to simx, posted once
+  from the extension's own load-time init, before any user code
+  runs), a catalog emission (extension to simx, posted by
+  `publishCatalog`), and a request (simx to extension, answered
+  with a fresh serialization once `publishCatalog` has run). pxt
+  creates -- or, from an earlier run, restarts -- the simx frame on
+  the first packet of a run on its channel, and that packet is lost
+  to it. The ping is that first packet, so the frame -- its status
+  panel, and the join code while the editor seat is vacant --
+  appears as soon as any program that includes the extension runs,
+  whether or not the program ever publishes a catalog. The
+  simx requests the catalog once loaded; a program that publishes
+  later posts its catalog unasked.
 - The channel framing carries the extension's declared version,
   because the extension is the most version-pinned party in the
   system and has no other declaration carrier. Each message from
   the extension is the channel version in decimal, a line feed,
-  then the catalog payload, all UTF-8; the payload text is
-  unchanged by the framing. The simx reads any version up to its
-  own `SIM_CHANNEL_VERSION` and records it; a newer version, or a
+  then the payload, all UTF-8: empty for the ping, the catalog
+  text for a catalog emission (a catalog is never empty), unchanged
+  by the framing. The simx reads any version up to its
+  own `SIM_CHANNEL_VERSION`; it ignores a ping, and records the
+  version of each catalog it reads. A newer version, or a
   message with no version line, is rejected with a stable code
   (`SIM_CHANNEL_VERSION_NEWER`, `SIM_CHANNEL_FRAME_MALFORMED`)
   written to the console, and the simx drops its cached catalog so
   no older one outlives it. The simx's request carries no bytes.
-  The conformance harness pins the extension's declared version to
-  the simx's.
+  The conformance harness pins the extension's declared version and
+  its channel to the simx's.
 - CATALOG CURRENCY RULE: the extension is the sole authority for
   the current catalog. The simx's in-memory copy and the session's
   buffering are delivery conveniences; neither may outlive a

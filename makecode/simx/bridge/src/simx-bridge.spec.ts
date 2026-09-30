@@ -146,6 +146,11 @@ class FakeFrame implements SimxFrame {
     this.programPostsText(`${version}\n${catalog}`, channel);
   }
 
+  /** MakeCode delivering the ping the running program posts at startup: a frame with an empty payload. */
+  programPings(): void {
+    this.programPosts("");
+  }
+
   /** MakeCode delivering a message the running program posted on `channel` with `text` as its UTF-8 bytes. */
   programPostsText(text: string, channel = SIMX_CHANNEL): void {
     const packet = {
@@ -465,6 +470,25 @@ describe("simx bridge on the relay", () => {
     assert.ok(log.errors[1].startsWith(SimChannelErrorCode.FRAME_MALFORMED));
     frame.programPosts("{}");
     assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+  });
+
+  it("ignores the program's ping, before its catalog and after: it logs nothing and publishes nothing", async () => {
+    const { joinCode } = await startSimx();
+
+    frame.programPings();
+    const editor = await relay.connect(EDITOR);
+    assertWelcome(await editor.hello({ joinCode }));
+    await handshake(editor);
+    await editor.ping();
+
+    editor.assertNothingReceived();
+    assert.equal(bridge?.channelVersion, undefined);
+    frame.programPosts(CATALOG_TEXT);
+    assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+    frame.programPings();
+    await editor.ping();
+    editor.assertNothingReceived();
+    assert.deepEqual(log.errors, []);
   });
 
   it("publishes once, into the newest session only, when the editor drops before answering the simx's hello and returns", async () => {

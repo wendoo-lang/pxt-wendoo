@@ -3,7 +3,11 @@ import { describe, it } from "node:test";
 import { BridgeSessionErrorCode, PeerSessionErrorCode } from "@wendoo/bridge-app";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { BrainsProvider } from "../contexts/brains.js";
 import { EditorSessionProvider } from "../contexts/editor-session.js";
+import { CATALOG_PACK_UNBOUND } from "../services/authoring-environment.js";
+import { BrainsStore } from "../services/brains-store.js";
+import { CATALOG_UNREADABLE } from "../services/catalog.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
 import { SessionView } from "./SessionView.js";
 
@@ -25,13 +29,25 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
   };
 }
 
-/** Renders the session view under a provider whose store reports `state`. */
-function render(state: EditorSessionViewState): string {
+/**
+ * Renders the session view under providers whose session store reports
+ * `state`, and whose brains store follows it and holds a brain named each of
+ * `brainNames`.
+ */
+function render(state: EditorSessionViewState, brainNames: readonly string[] = []): string {
   const store = {
     subscribe: () => () => {},
     getSnapshot: () => state,
   } as unknown as EditorSessionStore;
-  return renderToStaticMarkup(createElement(EditorSessionProvider, { value: store }, createElement(SessionView)));
+  const brains = new BrainsStore(store);
+  for (const name of brainNames) brains.addBrain(name);
+  return renderToStaticMarkup(
+    createElement(
+      EditorSessionProvider,
+      { value: store },
+      createElement(BrainsProvider, { value: brains }, createElement(SessionView))
+    )
+  );
 }
 
 describe("SessionView", () => {
@@ -117,5 +133,35 @@ describe("SessionView", () => {
     assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.JOIN_CODE_UNKNOWN}"`));
     assert.match(markup, /data-testid="connection-status" data-status="connecting"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
+  });
+
+  it("shows the brain list above the catalog panel, listing the store's brains", () => {
+    const markup = render(stateWith({}), ["Chaser"]);
+
+    assert.match(markup, /data-testid="brain-list"/);
+    assert.match(markup, /data-testid="brain-item"[^>]*data-brain-name="Chaser"/);
+    assert.ok(markup.indexOf('data-testid="brain-list"') < markup.indexOf('data-testid="catalog-panel"'));
+  });
+
+  it("shows no catalog diagnostics for a catalog the environment reads without problems", () => {
+    const markup = render(stateWith({ catalogText: undefined }));
+
+    assert.doesNotMatch(markup, /data-testid="catalog-diagnostics"/);
+  });
+
+  it("shows the catalog's diagnostics by stable code beside the catalog panel, above it", () => {
+    const markup = render(stateWith({}));
+
+    assert.match(
+      markup,
+      new RegExp(`data-testid="catalog-diagnostic" data-code="${CATALOG_PACK_UNBOUND}" data-pack="motion"`)
+    );
+    assert.ok(markup.indexOf('data-testid="catalog-diagnostics"') < markup.indexOf('data-testid="catalog-panel"'));
+  });
+
+  it("shows an unreadable catalog's diagnostic by its stable code", () => {
+    const markup = render(stateWith({ catalogText: "not a catalog" }));
+
+    assert.match(markup, new RegExp(`data-testid="catalog-diagnostic" data-code="${CATALOG_UNREADABLE}"`));
   });
 });

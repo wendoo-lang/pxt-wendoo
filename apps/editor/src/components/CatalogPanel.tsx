@@ -24,7 +24,7 @@ export function CatalogPanel({ catalogText }: { catalogText: string | undefined 
           key={pack.name}
           data-testid="catalog-pack"
           data-name={pack.name}
-          className="space-y-2 rounded-lg border p-3"
+          className="space-y-2 rounded-lg border border-border p-3"
         >
           <h3 className="text-sm font-medium">{pack.name}</h3>
           <ul className="space-y-1">
@@ -33,7 +33,7 @@ export function CatalogPanel({ catalogText }: { catalogText: string | undefined 
                 key={tile.name}
                 data-testid="catalog-tile"
                 data-name={tile.name}
-                className="flex items-center justify-between gap-2 rounded border px-2 py-1 text-sm"
+                className="flex items-center justify-between gap-2 rounded border border-border px-2 py-1 text-sm"
               >
                 <span className="font-mono">{tile.name}</span>
                 {tile.kind !== undefined && (

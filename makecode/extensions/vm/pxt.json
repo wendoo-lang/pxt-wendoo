@@ -20,7 +20,8 @@
         "core-host.ts",
         "vm.ts",
         "runtime.ts",
-        "trace.ts"
+        "trace.ts",
+        "sim-channel.ts"
     ],
     "supportedTargets": [
         "arcade"

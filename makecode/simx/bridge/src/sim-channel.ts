@@ -58,8 +58,10 @@ export interface SimxFrame {
  *
  * Every message the program posts is one frame, read as UTF-8 text: the
  * channel version its Wendoo extension declares in decimal, a line feed, then
- * the serialized tile catalog. Every message posted to the program is a
- * request for one, and carries no bytes.
+ * the payload. A frame whose payload is empty is the ping the extension posts
+ * when the program starts, and is ignored; any other payload is the
+ * serialized tile catalog. Every message posted to the program is a request
+ * for the catalog, and carries no bytes.
  */
 export interface SimChannel {
   /**
@@ -107,6 +109,10 @@ export function connectSimChannel(frame: SimxFrame): SimChannel {
       return;
     }
     const catalog = text.slice(lineEnd + 1);
+    if (catalog.length === 0) {
+      // The program's ping, which carries nothing to read.
+      return;
+    }
     for (const listener of catalogListeners) {
       listener(catalog, version);
     }

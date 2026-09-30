@@ -3,6 +3,7 @@ import type { EditorSessionStore, EditorSessionViewState } from "@/services/edit
 
 const EditorSessionContext = createContext<EditorSessionStore | null>(null);
 
+/** Provides the editor session store to {@link useEditorSession} and {@link useEditorSessionState} below it. */
 export const EditorSessionProvider = EditorSessionContext.Provider;
 
 /** Reads the editor session store from context. Throws when used outside the provider. */

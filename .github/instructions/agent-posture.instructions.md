@@ -209,6 +209,11 @@ When adding a new error family, follow the existing repo convention:
 - Include prose `message` fields only as secondary human context.
 - Add direct tests for the new branch.
 
+Displaying diagnostics on a kid-facing surface is a separate decision
+from having them; the audience rules live in
+`.github/instructions/diagnostics-display.instructions.md`, scoped to
+the surfaces they govern.
+
 Where this repo has no convention yet, take it from the equivalent family in
 `external/wendoo-lang` rather than inventing one.
 

@@ -2,6 +2,7 @@ import { DEFAULT_MAKECODE_BRIDGE_URL } from "@wendoo/makecode-session";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { BrainsProvider } from "./contexts/brains";
 import { EditorSessionProvider } from "./contexts/editor-session";
 import {
   clearBindingToken,
@@ -9,6 +10,7 @@ import {
   loadBindingToken,
   saveBindingToken,
 } from "./services/binding-token-persistence";
+import { BrainsStore } from "./services/brains-store";
 import { EditorSessionStore } from "./services/editor-session-store";
 import { enterSession } from "./services/fragment-entry";
 import { bindTargetTheme } from "./services/target-theme";
@@ -43,6 +45,7 @@ const store = new EditorSessionStore({
     has: hasBindingToken,
   },
 });
+const brains = new BrainsStore(store);
 bindTargetTheme(store, document.documentElement);
 enterSession(store, window);
 window.addEventListener(
@@ -56,7 +59,9 @@ window.addEventListener(
 createRoot(root).render(
   <StrictMode>
     <EditorSessionProvider value={store}>
-      <App />
+      <BrainsProvider value={brains}>
+        <App />
+      </BrainsProvider>
     </EditorSessionProvider>
   </StrictMode>
 );

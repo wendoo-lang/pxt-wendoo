@@ -18,13 +18,14 @@
     "pretypecheck": "npm run build:deps",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json",
     "pretest": "npm run build:deps",
-    "test": "tsx --tsconfig tsconfig.spec.json --test $(find src -name '*.spec.ts')"
+    "test": "tsx --disable-warning=ExperimentalWarning --tsconfig tsconfig.spec.json --import ./src/test-support/single-react.ts --test $(find src -name '*.spec.ts')"
   },
   "dependencies": {
     "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app",
     "@wendoo/core": "file:../../external/wendoo-lang/packages/core",
     "@wendoo/makecode-session": "file:../../packages/protocol",
     "@wendoo/ui": "file:../../external/wendoo-lang/packages/ui",
+    "lucide-react": "^0.561.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
