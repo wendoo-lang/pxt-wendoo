@@ -37,6 +37,7 @@
       "files": [
         "src/**",
         "!src/**/*.spec.ts",
+        "!src/test-support/**",
         "index.html",
         "vite/config.prod.mjs",
         "tsconfig.json",

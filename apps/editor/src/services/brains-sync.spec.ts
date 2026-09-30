@@ -673,6 +673,55 @@ describe("brains sync", () => {
     });
   });
 
+  describe("reconciled", () => {
+    it("reports reconciled once a connected handshake has reconciled, and not while its requests are in flight", async () => {
+      const store = syncedStore();
+      assert.equal(store.getSnapshot().reconciled, false);
+      session.setStatus("connected");
+
+      const channel = sync.open("token-1", projectOf(projectBrain("Remote")), true);
+      await settle();
+      assert.equal(store.getSnapshot().reconciled, false);
+      channel.release();
+      await settle();
+
+      assert.equal(store.getSnapshot().reconciled, true);
+    });
+
+    it("stops reporting reconciled when the session disconnects, until the next handshake reconciles", async () => {
+      const store = syncedStore();
+      const first = await handshake("token-1", projectOf());
+      assert.equal(store.getSnapshot().reconciled, true);
+
+      first.close();
+      session.setStatus("disconnected");
+      assert.equal(store.getSnapshot().reconciled, false);
+      await handshake("token-1", first.project);
+
+      assert.equal(store.getSnapshot().reconciled, true);
+    });
+
+    it("pushes nothing for a re-push asked while disconnected, keeping the damage", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const first = await handshake("token-1", projectOf(remote));
+      first.close();
+      session.setStatus("disconnected");
+      first.project.set(remote.id, { ...remote, source: "not json {" });
+      const second = await handshake("token-1", first.project);
+      assert.equal(store.getSnapshot().damaged.has(remote.id), true);
+      second.close();
+      session.setStatus("disconnected");
+
+      store.repushBrain(remote.id);
+      await settle();
+
+      assert.deepEqual(second.pushes, []);
+      assert.equal(store.getSnapshot().damaged.has(remote.id), true);
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+  });
+
   describe("two brains", () => {
     it("flushes two pends independently: a failed write stays pending while the other clears", async () => {
       const store = syncedStore();

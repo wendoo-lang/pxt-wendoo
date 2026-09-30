@@ -97,6 +97,13 @@ export interface BrainsViewState {
    * {@link BrainsStore.repushBrain} restores the project from that copy.
    */
   readonly damaged: ReadonlyMap<string, BrainDamage>;
+  /**
+   * `true` while the session is connected and the latest handshake's
+   * reconciliation has finished, so edits and re-pushes reach the MakeCode
+   * project at once; `false` from the next disconnection, and while a new
+   * handshake is reconciling.
+   */
+  readonly reconciled: boolean;
 }
 
 /**
@@ -135,7 +142,7 @@ export class BrainsStore {
   private _damaged: ReadonlyMap<string, BrainDamage> = new Map();
   /** The channel of the latest handshake, or `undefined` before the first. */
   private _channel: EditorBrainsChannel | undefined;
-  /** Whether the latest handshake's reconciliation has finished. */
+  /** Whether the latest handshake's reconciliation has finished and the session has stayed connected since. */
   private _reconciled = false;
   private _state: BrainsViewState;
 
@@ -237,7 +244,8 @@ export class BrainsStore {
    * Pushes the store's copy of the brain `id` to the MakeCode project over
    * the damaged source the project holds, clearing the damage once the
    * project acknowledges it. Does nothing unless the brain is listed
-   * damaged, the store holds it, and a handshake has reconciled.
+   * damaged, the store holds it, and the store is reconciled
+   * ({@link BrainsViewState.reconciled}).
    *
    * @param id - Document id of the brain.
    */
@@ -330,12 +338,15 @@ export class BrainsStore {
    */
   private handshakeCompleted(channel: EditorBrainsChannel): void {
     const previous = this._channel;
+    const wasReconciled = this._reconciled;
     this._channel = channel;
     this._reconciled = false;
     if (previous !== undefined && previous.binding !== channel.binding) {
       this._brains = new Map();
       this._pending = new Set();
       this._damaged = new Map();
+      this.publish();
+    } else if (wasReconciled) {
       this.publish();
     }
     void this.reconcile(channel);
@@ -434,12 +445,21 @@ export class BrainsStore {
     return { entry, recompiled: compile.bytecode !== undefined && brain.compiled?.sourceHash !== sourceHash };
   }
 
-  /** Rebuilds the environment when the session carries a different catalog, then publishes. */
+  /**
+   * Ends the reconciled state when the session is no longer connected, and
+   * rebuilds the environment when the session carries a different catalog;
+   * publishes when either changed.
+   */
   private sessionChanged(): void {
-    const catalogText = this._session.getSnapshot().catalogText;
-    if (catalogText === this._catalogText) return;
-    this._catalogText = catalogText;
-    this._environment = buildAuthoringEnvironment(catalogText);
+    const { status, catalogText } = this._session.getSnapshot();
+    const unreconciled = this._reconciled && status !== "connected";
+    if (unreconciled) this._reconciled = false;
+    if (catalogText !== this._catalogText) {
+      this._catalogText = catalogText;
+      this._environment = buildAuthoringEnvironment(catalogText);
+    } else if (!unreconciled) {
+      return;
+    }
     this.publish();
   }
 
@@ -450,6 +470,7 @@ export class BrainsStore {
       brains: this._brains,
       pending: this._pending,
       damaged: this._damaged,
+      reconciled: this._reconciled,
     };
   }
 

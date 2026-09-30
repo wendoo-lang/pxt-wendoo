@@ -177,10 +177,10 @@ describe("BrainList", () => {
      * Renders the brain list over `store`, reporting `damaged` as the
      * damaged brains and recording each re-push asked of it in `repushed`.
      */
-    function renderDamaged(damaged: BrainsViewState["damaged"], repushed: string[] = []): string {
+    function renderDamaged(damaged: BrainsViewState["damaged"], repushed: string[] = [], reconciled = true): string {
       const reporting = {
         subscribe: store.subscribe,
-        getSnapshot: () => ({ ...store.getSnapshot(), damaged }),
+        getSnapshot: () => ({ ...store.getSnapshot(), damaged, reconciled }),
         repushBrain: (id: string) => {
           repushed.push(id);
         },
@@ -199,6 +199,18 @@ describe("BrainList", () => {
       assert.match(row, new RegExp(`data-testid="brain-restore" data-brain-id="${damaged}"`));
       assert.match(row, new RegExp(`data-testid="brain-edit" data-brain-id="${damaged}"`));
       assert.doesNotMatch(rowMarkup(markup, intact), /data-testid="brain-damaged-notice"/);
+    });
+
+    it("disables Restore, keeping the notice, while the store is not reconciled with the project", () => {
+      const damaged = store.addBrain("Chaser");
+      const damage = new Map([[damaged, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }] as const]);
+
+      const unreconciled = rowMarkup(renderDamaged(damage, [], false), damaged);
+      const reconciled = rowMarkup(renderDamaged(damage, [], true), damaged);
+
+      assert.match(unreconciled, /<button[^>]*data-testid="brain-restore"[^>]*disabled=""/);
+      assert.doesNotMatch(reconciled, /<button[^>]*data-testid="brain-restore"[^>]*disabled=""/);
+      assert.match(reconciled, /data-testid="brain-restore"/);
     });
 
     it("lists a damaged brain it holds no copy of under the project's name, with the notice alone", () => {
@@ -259,6 +271,7 @@ describe("BrainDamageNotice", () => {
       brainId: "abcdabcdabcdabcd",
       code: BRAIN_SOURCE_INVALID,
       restorable: true,
+      reconciled: true,
       brains: {
         repushBrain: (id) => {
           repushed.push(id);
@@ -276,6 +289,7 @@ describe("BrainDamageNotice", () => {
       brainId: "abcdabcdabcdabcd",
       code: BRAIN_SOURCE_INVALID,
       restorable: false,
+      reconciled: true,
       brains: { repushBrain: () => {} },
     });
 
@@ -284,5 +298,17 @@ describe("BrainDamageNotice", () => {
       elementsIn(tree).some((element) => element.props["data-testid"] === "brain-restore"),
       false
     );
+  });
+
+  it("offers Restore disabled while not reconciled", () => {
+    const tree = BrainDamageNotice({
+      brainId: "abcdabcdabcdabcd",
+      code: BRAIN_SOURCE_INVALID,
+      restorable: true,
+      reconciled: false,
+      brains: { repushBrain: () => {} },
+    });
+
+    assert.equal(elementByTestId(tree, "brain-restore").props.disabled, true);
   });
 });

@@ -26,6 +26,12 @@ const PROJECTS_SUBDIR = path.join("projects", "wendoo-vm-registration-selftest")
 /** The selftest, injected into the generated project. */
 const SELFTEST_NAME = "registration-selftest.ts";
 
+/**
+ * The brains module the selftest's compiled-brain checks read, injected at
+ * the path the Wendoo simulator extension writes it to in a project.
+ */
+const BRAINS_MODULE_NAME = "wendoo-lang/pxt-wendoo/brains.g.ts";
+
 /** Manifest id the capture harness brackets the run's output with. */
 const SELFTEST_CASE_ID = "registration-selftest";
 
@@ -137,11 +143,14 @@ function generate(targetDir) {
     name: "wendoo-vm-registration-selftest",
     description: "Wendoo VM registration selftest (generated)",
     dependencies,
-    files: [SELFTEST_NAME, "main.ts"],
+    // The brains module follows main.ts, as a simulator extension's write appends it to a project's files.
+    files: [SELFTEST_NAME, "main.ts", BRAINS_MODULE_NAME],
     targetVersions: { target: version },
     supportedTargets: [target.id],
   });
   fs.copyFileSync(path.join(SELFTEST_DIR, SELFTEST_NAME), path.join(projectDir, SELFTEST_NAME));
+  fs.mkdirSync(path.dirname(path.join(projectDir, BRAINS_MODULE_NAME)), { recursive: true });
+  fs.copyFileSync(path.join(SELFTEST_DIR, BRAINS_MODULE_NAME), path.join(projectDir, BRAINS_MODULE_NAME));
   fs.writeFileSync(path.join(projectDir, "main.ts"), entrySource());
 
   return { id: SELFTEST_CASE_ID, dir: projectDir };

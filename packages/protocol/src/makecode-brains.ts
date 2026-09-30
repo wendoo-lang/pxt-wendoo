@@ -253,3 +253,73 @@ export interface MakeCodeBrain {
  * brain `brainId` in both forms, whether or not the project holds it.
  */
 export type MakeCodeBrainPush = { op: "write"; brain: MakeCodeBrain } | { op: "remove"; brainId: string };
+
+/**
+ * A list request from the peer, delivered to the party serving the project.
+ * Answer it once, with {@link reply} or {@link fail}; later answers are not
+ * sent.
+ */
+export interface MakeCodeBrainsListRequest {
+  readonly kind: "list";
+  /**
+   * Answer with every brain the project holds, one entry per id.
+   *
+   * @param brains - The project's brains, in any order.
+   */
+  reply(brains: readonly MakeCodeBrainSummary[]): void;
+  /**
+   * Answer that the project's brains could not be read, with
+   * `MakeCodeBrainsErrorCode.READ_FAILED`.
+   *
+   * @param message - Human-readable description of the failure.
+   */
+  fail(message: string): void;
+}
+
+/**
+ * A pull request from the peer, delivered to the party serving the project.
+ * Answer it once, with {@link reply} or {@link fail}; later answers are not
+ * sent.
+ */
+export interface MakeCodeBrainsPullRequest {
+  readonly kind: "pull";
+  /** Document ids of the brains to return. */
+  readonly ids: readonly string[];
+  /**
+   * Answer with the requested brains the project holds, in request order,
+   * leaving out each id it does not hold.
+   *
+   * @param brains - The brains, each compiled program as bytes.
+   */
+  reply(brains: readonly MakeCodeBrain[]): void;
+  /**
+   * Answer that the project's brains could not be read, with
+   * `MakeCodeBrainsErrorCode.READ_FAILED`.
+   *
+   * @param message - Human-readable description of the failure.
+   */
+  fail(message: string): void;
+}
+
+/**
+ * A push request from the peer, delivered to the party serving the project.
+ * Answer it once, with {@link ack} or {@link fail}; later answers are not
+ * sent.
+ */
+export interface MakeCodeBrainsPushRequest {
+  readonly kind: "push";
+  /** The change to apply, each compiled program as bytes. */
+  readonly push: MakeCodeBrainPush;
+  /** Answer that the change is applied to the project. */
+  ack(): void;
+  /**
+   * Answer that the change could not be applied, with
+   * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
+   *
+   * @param message - Human-readable description of the failure.
+   */
+  fail(message: string): void;
+}
+
+/** A brains request from the peer, as the party serving the project receives it. */
+export type MakeCodeBrainsRequest = MakeCodeBrainsListRequest | MakeCodeBrainsPullRequest | MakeCodeBrainsPushRequest;

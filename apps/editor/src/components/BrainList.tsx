@@ -32,6 +32,8 @@ interface BrainDamageNoticeProps {
   code: BrainDamageCode;
   /** Whether the brains store holds a copy of the brain to restore the project's source from. */
   restorable: boolean;
+  /** Whether the brains store is reconciled with the project; Restore is disabled while this is `false`. */
+  reconciled: boolean;
   /** The brains store a Restore asks to re-push the brain. */
   brains: Pick<BrainsStore, "repushBrain">;
 }
@@ -41,9 +43,10 @@ interface BrainDamageNoticeProps {
  * damaged, worded for the person authoring and carrying the damage's stable
  * code as `data-code`. When `restorable`, it offers Restore, which re-pushes
  * the held copy over the damaged source, carrying the brain's id as
- * `data-brain-id`; otherwise it says to fix or delete the file in MakeCode.
+ * `data-brain-id` and disabled unless `reconciled`; otherwise it says to fix
+ * or delete the file in MakeCode.
  */
-export function BrainDamageNotice({ brainId, code, restorable, brains }: BrainDamageNoticeProps) {
+export function BrainDamageNotice({ brainId, code, restorable, reconciled, brains }: BrainDamageNoticeProps) {
   return (
     <div
       data-testid="brain-damaged-notice"
@@ -61,7 +64,8 @@ export function BrainDamageNotice({ brainId, code, restorable, brains }: BrainDa
           type="button"
           data-testid="brain-restore"
           data-brain-id={brainId}
-          className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-medium text-foreground text-xs hover:bg-muted"
+          disabled={!reconciled}
+          className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-medium text-foreground text-xs hover:bg-muted disabled:opacity-50"
           onClick={() => brains.repushBrain(brainId)}
         >
           Restore
@@ -87,13 +91,14 @@ type BrainDialog =
  * `data-brain-name`.
  *
  * A brain whose source in the MakeCode project is damaged shows a
- * {@link BrainDamageNotice} below its row, offering Restore. A damaged brain
+ * {@link BrainDamageNotice} below its row, offering Restore while the store
+ * is reconciled with the project. A damaged brain
  * the store holds no copy of is listed after the held brains under the name
  * the project gave it, with the notice alone and no other controls.
  */
 export function BrainList() {
   const store = useBrains();
-  const { brains, damaged } = useBrainsState();
+  const { brains, damaged, reconciled } = useBrainsState();
   const uncopied = [...damaged].filter(([id]) => !brains.has(id));
   const [dialog, setDialog] = useState<BrainDialog>(null);
   const [editingBrainId, setEditingBrainId] = useState<string | null>(null);
@@ -233,7 +238,13 @@ export function BrainList() {
                     </div>
                   </div>
                   {damage !== undefined && (
-                    <BrainDamageNotice brainId={id} code={damage.code} restorable brains={store} />
+                    <BrainDamageNotice
+                      brainId={id}
+                      code={damage.code}
+                      restorable
+                      reconciled={reconciled}
+                      brains={store}
+                    />
                   )}
                   {diagnosticsExpanded && <BrainDiagnosticsList diagnostics={diagnostics} />}
                 </li>
@@ -250,7 +261,13 @@ export function BrainList() {
                 <div className="px-3 py-2">
                   <span className="wrap-break-word text-sm">{damage.name}</span>
                 </div>
-                <BrainDamageNotice brainId={id} code={damage.code} restorable={false} brains={store} />
+                <BrainDamageNotice
+                  brainId={id}
+                  code={damage.code}
+                  restorable={false}
+                  reconciled={reconciled}
+                  brains={store}
+                />
               </li>
             ))}
           </ul>

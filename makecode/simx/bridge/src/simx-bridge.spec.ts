@@ -20,14 +20,19 @@ import {
   within,
 } from "@wendoo/bridge-session/testing";
 import {
+  brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,
+  MakeCodeBrainsErrorCode,
   type MakeCodeSessionMessage,
+  type MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
 import { type BindingTokenStore, openBindingTokenStore, type TokenStorage } from "./binding-token-store.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
+import { FakeProjfsHost, PROJFS_RATE_LIMIT } from "./test-support/projfs-host.js";
+import type { ProjfsClient } from "./vendor/projfs.js";
 
 /**
  * A catalog document exercising characters a JSON wire must carry intact: quotes,
@@ -258,6 +263,8 @@ describe("simx bridge on the relay", () => {
   let tokens: BindingTokenStore;
   let log: RecordingLog;
   let bridge: SimxBridge | undefined;
+  let host: FakeProjfsHost;
+  let files: ProjfsClient;
 
   /** The sockets the simx role path has been connected on, in creation order. */
   function simxSockets(): RecordingWebSocket[] {
@@ -274,7 +281,7 @@ describe("simx bridge on the relay", () => {
     catalog?: string,
     target?: string
   ): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, target });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, target, files });
     if (catalog !== undefined) frame.programPosts(catalog);
     const socket = simxSockets().at(-1);
     assert.ok(socket);
@@ -292,11 +299,14 @@ describe("simx bridge on the relay", () => {
     frame = new FakeFrame();
     tokens = openBindingTokenStore(() => new MemoryStorage());
     log = new RecordingLog();
+    host = new FakeProjfsHost();
+    files = host.client();
   });
 
   afterEach(async () => {
     bridge?.dispose();
     bridge = undefined;
+    files.dispose();
     await relay.closePeers();
   });
 
@@ -406,7 +416,7 @@ describe("simx bridge on the relay", () => {
     assertCounterpartAway(await editor.nextMessage());
     const vacancyCode = assertJoinCode(await editor.nextMessage());
     frame = new FakeFrame();
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
     frame.programPosts("{}");
     const rewelcome = assertWelcome(await editor.nextMessage());
     await handshake(editor);
@@ -560,7 +570,7 @@ describe("simx bridge on the relay", () => {
   it("shows each rotated join code on its handle and in its log", async () => {
     const rotating = await startTestRelay({ bindingSecret: "spec-secret", rotationMs: ROTATION_MS });
     try {
-      bridge = startSimxBridge({ frame, bridgeUrl: rotating.address, tokens, log });
+      bridge = startSimxBridge({ frame, bridgeUrl: rotating.address, tokens, log, files });
       const socket = simxSockets().at(-1);
       assert.ok(socket);
       const joinCode = assertJoinCode(await socket.firstReceived("session:joinCode"));
@@ -590,7 +600,7 @@ describe("simx bridge on the relay", () => {
   });
 
   it("reports its connection, its counterpart's presence, and whether it holds a binding, announcing each change", async () => {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
     const current = bridge;
     let changes = 0;
     current.onChange(() => {
@@ -692,6 +702,154 @@ describe("simx bridge on the relay", () => {
     assert.equal(current.errorCode, undefined);
   });
 
+  describe("brains requests", () => {
+    /** A brain as the editor pushes it on the wire, its compiled program covering every byte value. */
+    function wireBrain(id: string, name: string): MakeCodeWireBrain {
+      const source = JSON.stringify({ version: 1, id, name, pages: [] }, null, 2);
+      const bytecode = Buffer.from(Uint8Array.from({ length: 256 }, (_, index) => index)).toString("base64");
+      return { id, name, source, compiled: { bytecode, sourceHash: brainSourceHash(source) } };
+    }
+
+    it("answers the editor's push, list and pull from the project's files, writing both forms", async () => {
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+
+      editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+      assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+      editor.send({ type: "makecode:brainsList", id: "list-1" });
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:brainsListReply",
+        id: "list-1",
+        payload: { brains: [{ id: chaser.id, name: "Chaser", sourceHash: brainSourceHash(chaser.source) }] },
+      });
+      editor.send({ type: "makecode:brainsPull", id: "pull-1", payload: { ids: [chaser.id, "absentabsentabse"] } });
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:brainsPullReply",
+        id: "pull-1",
+        payload: { brains: [chaser] },
+      });
+
+      assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
+      assert.match(
+        host.file("brains.g.ts") ?? "",
+        /^wendoo\.registerCompiledBrain\("abcdabcdabcdabcd", "Chaser", hex`$/m
+      );
+    });
+
+    it("serves the project's brains after its frame reloads, holding none of its own", async () => {
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+      editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+      assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+
+      bridge?.dispose();
+      files.dispose();
+      assertCounterpartAway(await editor.nextMessage());
+      assertJoinCode(await editor.nextMessage());
+      frame = new FakeFrame();
+      files = host.client();
+      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
+      frame.programPosts("{}");
+      assertWelcome(await editor.nextMessage());
+      await handshake(editor);
+      assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+      editor.send({ type: "makecode:brainsPull", id: "pull-1", payload: { ids: [chaser.id] } });
+
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:brainsPullReply",
+        id: "pull-1",
+        payload: { brains: [chaser] },
+      });
+    });
+
+    it("answers a push the project refuses with WRITE_FAILED, the refusal's code leading its message", async () => {
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      host.spendMutations(PROJFS_RATE_LIMIT);
+
+      editor.send({
+        type: "makecode:brainsPush",
+        id: "push-1",
+        payload: { op: "write", brain: wireBrain("abcdabcdabcdabcd", "Chaser") },
+      });
+      const reply = await editor.nextMessage();
+
+      assert.equal(reply.type, "makecode:brainsError");
+      assert.equal(reply.id, "push-1");
+      const payload = reply.payload as { code: string; message: string };
+      assert.equal(payload.code, MakeCodeBrainsErrorCode.WRITE_FAILED);
+      assert.match(payload.message, /^RATE_LIMITED\b/);
+      assert.equal(host.file("brains/abcdabcdabcdabcd.src.json"), undefined);
+    });
+  });
+
+  describe("frame parameters", () => {
+    it("reads the program's messages on the channel it was started with, and asks for the catalog on it", async () => {
+      bridge = startSimxBridge({
+        frame,
+        bridgeUrl: relay.address,
+        tokens,
+        log,
+        files,
+        channel: "fork-owner/fork-repo",
+      });
+      const socket = simxSockets().at(-1);
+      assert.ok(socket);
+      const joinCode = assertJoinCode(await socket.firstReceived("session:joinCode"));
+      frame.programPosts("from the default channel");
+      frame.programPosts("from its own channel", "fork-owner/fork-repo");
+
+      await joinEditor(joinCode, "from its own channel");
+
+      assert.deepEqual(frame.posted, [
+        { type: "messagepacket", channel: "fork-owner/fork-repo", data: new Uint8Array(0) },
+      ]);
+    });
+
+    it("forms a new pairing for another project opened in the same tab, and rejoins each project's own session when it returns", async () => {
+      const storage = new MemoryStorage();
+      tokens = openBindingTokenStore(() => storage, "project-a");
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+      bridge?.dispose();
+      assertCounterpartAway(await editor.nextMessage());
+      assertJoinCode(await editor.nextMessage());
+      frame = new FakeFrame();
+      bridge = startSimxBridge({
+        frame,
+        bridgeUrl: relay.address,
+        tokens: openBindingTokenStore(() => storage, "project-b"),
+        log,
+        files,
+      });
+      const other = simxSockets().at(-1);
+      assert.ok(other);
+      const otherCode = assertJoinCode(await other.firstReceived("session:joinCode"));
+      assert.equal(bridge.bound, false);
+      assert.equal(bridge.joinCode, otherCode);
+      assert.notEqual(otherCode, joinCode);
+
+      bridge.dispose();
+      frame = new FakeFrame();
+      bridge = startSimxBridge({
+        frame,
+        bridgeUrl: relay.address,
+        tokens: openBindingTokenStore(() => storage, "project-a"),
+        log,
+        files,
+      });
+      frame.programPosts("{}");
+      const rewelcome = assertWelcome(await editor.nextMessage());
+      await handshake(editor);
+
+      assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+      assert.equal(rewelcome.sessionId, welcome.sessionId);
+    });
+  });
+
   describe("status model over the bridge", () => {
     /** Starts the simx with `CATALOG_TEXT` posted and a status model over it, grace `awayGraceMs`, recording each state it shows. */
     async function startWatched(
@@ -775,7 +933,7 @@ describe("simx bridge on the relay", () => {
       bridge?.dispose();
 
       frame = new FakeFrame();
-      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log });
+      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
       const model = new SimxStatusModel(bridge, { awayGraceMs: 50 });
       const states: SimxStatusState[] = [model.getSnapshot().state];
       model.subscribe(() => states.push(model.getSnapshot().state));

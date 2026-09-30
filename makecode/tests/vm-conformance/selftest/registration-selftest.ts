@@ -24,6 +24,10 @@
  * payloads are byte-identical, and prints it for the node-side runner to
  * assert.
  *
+ * The project also carries a brains module, as the Wendoo simulator
+ * extension writes it; the selftest checks that its registrations reached
+ * the compiled-brain registry intact, before the project's main file ran.
+ *
  * Output grammar, one line each:
  *
  * - `DIAG registration <code> <name> <pack> <otherPack>` -- one per recorded
@@ -246,6 +250,40 @@ namespace registrationSelftest {
   }
 
   /**
+   * The project's brains module registered its two brains, in the order the
+   * module lists them, with their ids, names and program bytes intact: the
+   * first an empty-named brain whose program is every byte value in order,
+   * the second a brain whose name carries quotes, a backslash and non-ASCII
+   * text, with a three-byte program.
+   */
+  function checkCompiledBrains(): void {
+    const registered = wendoo.compiledBrainRegistrations();
+    check("compiled-brains-registered-in-order", registered.length === 2);
+    if (registered.length !== 2) {
+      return;
+    }
+    const runner = registered[0];
+    const chaser = registered[1];
+    check(
+      "compiled-brain-ids-and-names-intact",
+      runner.id === "0000111122223333" &&
+        runner.name === "" &&
+        chaser.id === "abcdabcdabcdabcd" &&
+        chaser.name === 'Chaser "one" \\ caf\u00e9 \ud83d\ude00'
+    );
+    let intact =
+      runner.bytecode.length === 256 &&
+      chaser.bytecode.length === 3 &&
+      chaser.bytecode[0] === 0x57 &&
+      chaser.bytecode[1] === 0x44 &&
+      chaser.bytecode[2] === 0x4f;
+    for (let i = 0; intact && i < 256; i++) {
+      intact = runner.bytecode[i] === i;
+    }
+    check("compiled-brain-bytes-intact", intact);
+  }
+
+  /**
    * Drain what the packs registered, report every diagnostic the drain
    * recorded, and run the checks.
    *
@@ -269,6 +307,7 @@ namespace registrationSelftest {
     checkLateRegistrationIgnored(ids, actions);
     checkActionOutput();
     checkCatalog();
+    checkCompiledBrains();
 
     const recorded = wendoo.registrationDiagnostics();
     for (let i = 0; i < recorded.length; i++) {

@@ -18,9 +18,20 @@ import {
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,
 } from "@wendoo/makecode-session";
-import { openBindingTokenStore, type TokenStorage } from "../../../../makecode/simx/bridge/src/binding-token-store.js";
+import {
+  type BindingTokenStore,
+  openBindingTokenStore,
+  type TokenStorage,
+} from "../../../../makecode/simx/bridge/src/binding-token-store.js";
+import { BRAINS_MODULE_FILE, readBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../makecode/simx/bridge/src/sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../makecode/simx/bridge/src/simx-bridge.js";
+import {
+  FakeProjfsHost,
+  PROJFS_RATE_LIMIT,
+  PROJFS_RATE_WINDOW_MS,
+} from "../../../../makecode/simx/bridge/src/test-support/projfs-host.js";
+import type { ProjfsClient } from "../../../../makecode/simx/bridge/src/vendor/projfs.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
@@ -35,8 +46,6 @@ import type { BindingTokenPersistence, EditorSessionViewState } from "./editor-s
 import { EditorSessionStore } from "./editor-session-store.js";
 
 const CATALOG = '{"packs":[]}';
-
-const NEWER_CATALOG = '{"packs":[{"name":"motion","tiles":[]}]}';
 
 /** How long a wait in these specs lasts before it fails, in milliseconds. */
 const WAIT_MS = 2000;
@@ -253,6 +262,36 @@ function authorCompilingRule(environment: WendooEnvironment, definition: BrainDe
     }
   }
   throw new Error("no core tiles");
+}
+
+/**
+ * Reopens the brain `id` of `brains` as the brain editor does, appends a
+ * second compiling rule to its first page, and applies the result.
+ */
+function reopenWithSecondRule(brains: BrainsStore, id: string): void {
+  const reopened = brains.getBrain(id);
+  assert.ok(reopened);
+  const page = reopened.pages().get(0) as BrainPageDef;
+  const rule = page.appendNewRule();
+  const environment = brains.getSnapshot().environment;
+  for (const catalog of environment.tileCatalogs()) {
+    const when = catalog.get(mkSensorTileId(CoreHostActions.OnPageEntered.key));
+    const act = catalog.get(mkActuatorTileId(CoreHostActions.RestartPage.key));
+    if (when && act) {
+      rule.when().appendTile(when);
+      rule.do().appendTile(act);
+      brains.applyBrain(reopened);
+      return;
+    }
+  }
+  throw new Error("no core tiles");
+}
+
+/** How many rules the first page of the brain `id` of `brains` holds. */
+function pageRules(brains: BrainsStore, id: string): number {
+  const held = brains.getBrain(id);
+  assert.ok(held);
+  return (held.pages().get(0) as BrainPageDef).children().size();
 }
 
 /** A brain as a project holds it after an editor pushed it, in the wire form: its source and that source's compiled form. */
@@ -603,38 +642,405 @@ describe("brains sync with a scripted simx on the relay", () => {
     assert.equal(brains.getSnapshot().pending.size, 0);
   });
 
-  describe("with the landed simx module", () => {
-    it("stays connected and keeps serving catalogs while the editor's brains requests go unanswered, keeping edits pending", async () => {
+  describe("with the real simx module over a MakeCode project", () => {
+    let host: FakeProjfsHost;
+    let clients: ProjfsClient[];
+
+    beforeEach(() => {
+      host = new FakeProjfsHost();
+      clients = [];
+    });
+
+    afterEach(() => {
+      for (const client of clients) client.dispose();
+    });
+
+    /**
+     * Starts the real simx module in a fresh frame over `project`'s files,
+     * keeping its binding token in `tokens`, as MakeCode does on every
+     * simulator start; the program posts the catalog.
+     */
+    function startSimx(tokens: BindingTokenStore, project: FakeProjfsHost = host): SimxBridge {
       const frame = new FakeFrame();
-      const bridge = startSimxBridge({
-        frame,
-        bridgeUrl: relay.address,
-        tokens: openBindingTokenStore(() => new MemoryStorage()),
-        log: silentLog,
-      });
+      const files = project.client();
+      clients.push(files);
+      const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log: silentLog, files });
       bridges.push(bridge);
+      frame.programPosts(CATALOG);
+      return bridge;
+    }
+
+    /** Restarts the simulator: the running simx module goes, and a new one starts over the same project and tokens. */
+    function restartSimx(running: SimxBridge, tokens: BindingTokenStore): SimxBridge {
+      running.dispose();
+      return startSimx(tokens);
+    }
+
+    /**
+     * Pairs a new editor with a new simx module over the spec's project and
+     * resolves once the editor has reconciled, with the simx's token store.
+     */
+    async function pairReal(): Promise<{
+      session: EditorSessionStore;
+      brains: BrainsStore;
+      bridge: SimxBridge;
+      simxTokens: BindingTokenStore;
+    }> {
+      const simxTokens = openBindingTokenStore(() => new MemoryStorage());
+      const bridge = startSimx(simxTokens);
       const joinCode = await eventually(
         () => bridge.joinCode,
         (code) => code !== undefined,
         "the simx's join code"
       );
       assert.ok(joinCode);
-      frame.programPosts(CATALOG);
       const { session, brains } = editor();
-
       session.connect(joinCode);
-      await sessionUntil(
-        session,
-        (state) => state.status === "connected" && state.catalogText === CATALOG,
-        "the session to form and deliver the catalog"
-      );
-      const id = brains.addBrain("Chaser");
-      frame.programPosts(NEWER_CATALOG);
-      await sessionUntil(session, (state) => state.catalogText === NEWER_CATALOG, "the newer catalog");
+      await brainsUntil(brains, (state) => state.reconciled, "the editor to reconcile");
+      return { session, brains, bridge, simxTokens };
+    }
 
-      assert.equal(bridge.counterpartConnected, true);
-      assert.equal(session.getSnapshot().status, "connected");
+    /** The project's brains module read back with the simx's own reader. */
+    function registrations(): ReturnType<typeof readBrainsModule>["entries"] {
+      const reading = readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "");
+      assert.deepEqual(reading.problems, []);
+      return reading.entries;
+    }
+
+    /** How many times the project's brains module has been written. */
+    function moduleWrites(): number {
+      return host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length;
+    }
+
+    /** Adds a brain named `name` with a compiling rule to `brains`, returning its id. */
+    function authorBrain(brains: BrainsStore, name: string): string {
+      const id = brains.addBrain(name);
+      const edited = brains.getBrain(id);
+      assert.ok(edited);
+      authorCompilingRule(brains.getSnapshot().environment, edited);
+      brains.applyBrain(edited);
+      return id;
+    }
+
+    /**
+     * Resolves once the project holds every brain `brains` holds, in both
+     * forms as the store holds them, and no source of a brain it does not.
+     */
+    async function saved(brains: BrainsStore, what: string): Promise<void> {
+      await eventually(
+        () => {
+          const { brains: held } = brains.getSnapshot();
+          const reading = readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "");
+          const sources = host.listed.filter((name) => name.endsWith(".src.json")).length;
+          return (
+            sources === held.size &&
+            [...held].every(
+              ([id, entry]) =>
+                host.file(`brains/${id}.src.json`) === entry.source &&
+                reading.entries.get(id)?.sourceHash === entry.compiled?.sourceHash
+            )
+          );
+        },
+        (done) => done,
+        what
+      );
+    }
+
+    it("saves an authored brain in both forms, and a fresh editor session after a simulator restart pulls it back", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal();
+
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the brain to be saved");
+      const stored = brains.getSnapshot().brains.get(id);
+      assert.ok(stored?.compiled);
+      assert.equal(host.file(`brains/${id}.src.json`), stored.source);
+      assert.deepEqual(registrations().get(id), {
+        id,
+        name: "Chaser",
+        sourceHash: stored.sourceHash,
+        bytecode: stored.compiled.bytecode,
+      });
+      session.stop();
+      restartSimx(bridge, simxTokens);
+      const fresh = editor();
+
+      assert.equal(fresh.session.resume(), true);
+      const pulled = await brainsUntil(
+        fresh.brains,
+        (state) => state.brains.has(id),
+        "the fresh editor to pull the brain"
+      );
+
+      assert.equal(pulled.brains.get(id)?.source, stored.source);
+      assert.deepEqual(pulled.brains.get(id)?.compiled?.bytecode, stored.compiled.bytecode);
+      assert.equal(pulled.pending.size, 0);
+      assert.equal(pulled.damaged.size, 0);
+    });
+
+    it("saves a re-edit of a saved brain in both forms, and a fresh editor session pulls the re-edit back", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the first version to be saved");
+      const first = brains.getSnapshot().brains.get(id);
+      assert.ok(first?.compiled);
+
+      reopenWithSecondRule(brains, id);
+      await saved(brains, "the re-edit to be saved");
+
+      const second = brains.getSnapshot().brains.get(id);
+      assert.ok(second?.compiled);
+      assert.notEqual(second.source, first.source);
+      assert.equal(host.file(`brains/${id}.src.json`), second.source);
+      assert.equal(registrations().get(id)?.sourceHash, second.sourceHash);
+      assert.deepEqual(registrations().get(id)?.bytecode, second.compiled.bytecode);
+      session.stop();
+      restartSimx(bridge, simxTokens);
+      const fresh = editor();
+
+      assert.equal(fresh.session.resume(), true);
+      const pulled = await brainsUntil(
+        fresh.brains,
+        (state) => state.reconciled && state.brains.has(id),
+        "the fresh editor to pull the re-edit"
+      );
+      assert.equal(pulled.brains.get(id)?.source, second.source);
+      assert.equal(pageRules(fresh.brains, id), 2);
+      await delay(100);
+      assert.equal(host.file(`brains/${id}.src.json`), second.source);
+      assert.equal(registrations().get(id)?.sourceHash, second.sourceHash);
+    });
+
+    it("saves only the latest of two re-edits of a saved brain that reach one drain, acknowledging both", async () => {
+      const { brains } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the first version to be saved");
+      const mutationsBefore = host.mutations.length;
+      host.hold();
+
+      reopenWithSecondRule(brains, id);
+      reopenWithSecondRule(brains, id);
+      const latest = brains.getSnapshot().brains.get(id);
+      assert.ok(latest?.compiled);
+      host.release();
+      await saved(brains, "the latest re-edit to be saved");
+
+      assert.equal(host.file(`brains/${id}.src.json`), latest.source);
+      assert.equal(pageRules(brains, id), 3);
+      assert.equal(registrations().get(id)?.sourceHash, latest.sourceHash);
+      assert.deepEqual(host.mutations.slice(mutationsBefore), [
+        `write ${BRAINS_MODULE_FILE}`,
+        `write brains/${id}.src.json`,
+      ]);
+      await brainsUntil(brains, (state) => state.pending.size === 0, "both pushes to be acknowledged");
+    });
+
+    it("removes a saved brain whose re-edit and removal reach one drain, in both forms", async () => {
+      const { brains } = await pairReal();
+      const kept = authorBrain(brains, "Kept");
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "both brains to be saved");
+      host.hold();
+
+      reopenWithSecondRule(brains, id);
+      brains.removeBrain(id);
+      host.release();
+      await saved(brains, "the removal to be saved");
+
+      assert.equal(host.file(`brains/${id}.src.json`), undefined);
+      assert.deepEqual([...registrations().keys()], [kept]);
+      await brainsUntil(brains, (state) => state.pending.size === 0, "both pushes to be acknowledged");
+    });
+
+    it("keeps re-edits of a brain whose files are open in MakeCode's text editor through file switches", async () => {
+      const { brains } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the first version to be saved");
+      host.openInEditor(`brains/${id}.src.json`);
+
+      reopenWithSecondRule(brains, id);
+      await saved(brains, "the re-edit to be saved");
+      host.openInEditor(BRAINS_MODULE_FILE);
+
+      const second = brains.getSnapshot().brains.get(id);
+      assert.ok(second);
+      assert.equal(host.file(`brains/${id}.src.json`), second.source);
+
+      reopenWithSecondRule(brains, id);
+      await saved(brains, "the second re-edit to be saved");
+      host.closeEditor();
+
+      const third = brains.getSnapshot().brains.get(id);
+      assert.ok(third);
+      assert.equal(pageRules(brains, id), 3);
+      assert.equal(host.file(`brains/${id}.src.json`), third.source);
+      assert.equal(registrations().get(id)?.sourceHash, third.sourceHash);
+    });
+
+    it("saves an open source file's old text over a re-edit on a file switch when MakeCode does not reload it", async () => {
+      host.reloadsOpenFile = false;
+      const { brains } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the first version to be saved");
+      const first = host.file(`brains/${id}.src.json`);
+      host.openInEditor(`brains/${id}.src.json`);
+
+      reopenWithSecondRule(brains, id);
+      await saved(brains, "the re-edit to be saved");
+      host.closeEditor();
+
+      assert.equal(host.file(`brains/${id}.src.json`), first);
+    });
+
+    it("recompiles a source edited by hand in MakeCode and saves the fresh pair", async () => {
+      const { brains, bridge, simxTokens } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the brain to be saved");
+      const edited = editedOutOfBand({ id, name: "Chaser", source: host.file(`brains/${id}.src.json`) ?? "" });
+      host.edit(`brains/${id}.src.json`, edited);
+
+      restartSimx(bridge, simxTokens);
+      await eventually(
+        () => registrations().get(id)?.sourceHash,
+        (hash) => hash === brainSourceHash(edited),
+        "the recompiled pair to be saved"
+      );
+
+      assert.equal(host.file(`brains/${id}.src.json`), edited);
+      assert.equal(brains.getSnapshot().brains.get(id)?.source, edited);
+      const program = linkedBrainProgramFromBytes(
+        stream.byteArrayFromUint8Array(registrations().get(id)?.bytecode ?? new Uint8Array()),
+        {
+          precision: MAKECODE_VM_PRECISION,
+          typeRegistry: brains.getSnapshot().environment.brainServices.runtime.types,
+        }
+      );
+      assert.equal(program.profileId, 2001);
+    });
+
+    it("lists a source mangled in MakeCode as damaged, and a Restore saves the held copy over it", async () => {
+      const { brains, bridge, simxTokens } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the brain to be saved");
+      const held = brains.getSnapshot().brains.get(id)?.source;
+      host.edit(`brains/${id}.src.json`, "not json {");
+
+      restartSimx(bridge, simxTokens);
+      const damaged = await brainsUntil(
+        brains,
+        (state) => state.damaged.has(id) && state.reconciled,
+        "the damage to be listed"
+      );
+      assert.equal(damaged.damaged.get(id)?.code, BRAIN_SOURCE_INVALID);
+      assert.equal(damaged.damaged.get(id)?.name, "Chaser");
+      assert.equal(host.file(`brains/${id}.src.json`), "not json {");
+      brains.repushBrain(id);
+
+      await brainsUntil(brains, (state) => state.damaged.size === 0, "the restore to clear the damage");
+      assert.equal(host.file(`brains/${id}.src.json`), held);
+    });
+
+    it("serves the brains of an unreadable brains.g.ts without compiled forms, which a fresh editor session recompiles and saves", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal();
+      const first = authorBrain(brains, "Chaser");
+      const second = authorBrain(brains, "Runner");
+      await saved(brains, "both brains to be saved");
+      host.edit(BRAINS_MODULE_FILE, "garbage");
+      session.stop();
+
+      restartSimx(bridge, simxTokens);
+      const fresh = editor();
+      assert.equal(fresh.session.resume(), true);
+
+      await eventually(
+        () => readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.size,
+        (size) => size === 2,
+        "the brains module to register both brains again"
+      );
+      assert.deepEqual([...registrations().keys()].sort(), [first, second].sort());
+      assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
+    });
+
+    it("saves a burst of edits made while disconnected with fewer brains.g.ts writes than pushes", async () => {
+      const { session, brains } = await pairReal();
+      session.stop();
+      await sessionUntil(session, (state) => state.status === "disconnected", "the editor to disconnect");
+      const ids = ["A", "B", "C", "D", "E"].map((name) => authorBrain(brains, name));
+      const writesBefore = moduleWrites();
+
+      session.reconnect();
+      await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the burst to be pushed");
+      await saved(brains, "the burst to be saved");
+
+      assert.deepEqual([...registrations().keys()].sort(), [...ids].sort());
+      for (const id of ids)
+        assert.equal(host.file(`brains/${id}.src.json`), brains.getSnapshot().brains.get(id)?.source);
+      assert.ok(moduleWrites() - writesBefore < ids.length);
+    });
+
+    it("keeps an edit pending while MakeCode refuses the save, and saves it once a later handshake can", async () => {
+      const { brains, bridge, simxTokens } = await pairReal();
+      host.spendMutations(PROJFS_RATE_LIMIT);
+
+      const id = authorBrain(brains, "Chaser");
+      await delay(100);
       assert.deepEqual([...brains.getSnapshot().pending], [id]);
+      assert.equal(host.file(`brains/${id}.src.json`), undefined);
+      host.now += PROJFS_RATE_WINDOW_MS;
+      restartSimx(bridge, simxTokens);
+
+      await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the pend to be pushed");
+      await saved(brains, "the pend to be saved");
+      assert.ok(registrations().has(id));
+    });
+
+    it("keeps two brains apart through interleaved edits: a rename and a removal both land", async () => {
+      const { brains } = await pairReal();
+      const kept = authorBrain(brains, "Kept");
+      const removed = authorBrain(brains, "Removed");
+      await saved(brains, "both brains to be saved");
+
+      brains.renameBrain(kept, "Renamed");
+      brains.removeBrain(removed);
+      await saved(brains, "both edits to be saved");
+
+      assert.equal(host.file(`brains/${removed}.src.json`), undefined);
+      assert.deepEqual([...registrations().keys()], [kept]);
+      assert.equal(registrations().get(kept)?.name, "Renamed");
+      assert.equal(JSON.parse(host.file(`brains/${kept}.src.json`) ?? "{}").name, "Renamed");
+    });
+
+    it("pairs afresh when the MakeCode tab opens another project, never carrying the first project's brains into it", async () => {
+      const storage = new MemoryStorage();
+      const firstTokens = openBindingTokenStore(() => storage, "project-a");
+      const firstSimx = startSimx(firstTokens);
+      const joinCode = await eventually(
+        () => firstSimx.joinCode,
+        (code) => code !== undefined,
+        "the first project's join code"
+      );
+      assert.ok(joinCode);
+      const { session, brains } = editor();
+      session.connect(joinCode);
+      await brainsUntil(brains, (state) => state.reconciled, "the editor to reconcile");
+      authorBrain(brains, "Chaser");
+      await saved(brains, "the brain to be saved");
+      const other = new FakeProjfsHost();
+
+      firstSimx.dispose();
+      const otherSimx = startSimx(
+        openBindingTokenStore(() => storage, "project-b"),
+        other
+      );
+      await eventually(
+        () => otherSimx.joinCode,
+        (code) => code !== undefined,
+        "the other project's own join code"
+      );
+      await delay(100);
+
+      assert.equal(otherSimx.bound, false);
+      assert.equal(session.getSnapshot().status, "disconnected");
+      assert.deepEqual(other.mutations, []);
     });
   });
 });

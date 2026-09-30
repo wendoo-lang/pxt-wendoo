@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # Session Management in pxt-wendoo
@@ -33,7 +33,9 @@ session wire surface:
 - the role-path segments `makecode/editor` and `makecode/simx`,
   which endpoints pass to the role-generic client as their wsPath;
 - `connectMakeCodeSession`, binding the upstream peer-session
-  mechanism to the kind over any payload-capable port;
+  mechanism to the kind over any payload-capable port, whose session
+  both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and
+  serves them (`onBrainsRequest`);
 - `createMakeCodeEditorSession`, the editor role's session object
   (described below);
 - the brain contracts both sides of the family must agree on:
@@ -98,8 +100,10 @@ The four-hop path assigns the session parts as follows.
   one thing it carries across its reload is its binding token (next
   section). It receives catalogs on the sim-message channel,
   connects at the simx role path, opens or refreshes its
-  connection-scoped handshake on every welcome, and publishes the
-  current catalog into the session.
+  connection-scoped handshake on every welcome, publishes the
+  current catalog into the session, and answers the editor's brains
+  requests from the project's files (see "The simx write path",
+  below).
 - `apps/bridge` is the relay service: an adapter plus a deployment
   identity over the upstream session engine,
   `@wendoo/bridge-session`, which holds every session rule. The
@@ -198,8 +202,107 @@ everything else).
   reconnection, the counterpart returning, or a further welcome on an
   open connection -- hands out a new one.
 - Only the editor requests; the party serving the project answers.
-  Until the simx gains its answering side, the simx's session drops
-  brains requests unanswered, and the editor keeps every edit pending.
+  The kind's session hands each incoming request to its
+  `onBrainsRequest` listeners (buffered until the first attaches) as a
+  `list`, `pull`, or `push` request carrying the senders of its answer:
+  `reply` for a list or a pull, `ack` for a push, and `fail(message)`,
+  which answers `MAKECODE_BRAINS_READ_FAILED` for a list or a pull and
+  `MAKECODE_BRAINS_WRITE_FAILED` for a push. A request is answered once;
+  a later answer, or any answer after the session is disposed, is not
+  sent. The simx serves them from the project (see "The simx write
+  path", below).
+
+## The simx write path
+
+The simx answers the brains family from the MakeCode project's files,
+through MakeCode's project-file messages (projfs). It holds no brains
+of its own: every answer is read from the project when the request
+arrives, and every push is written to it, so a simx started afresh
+serves exactly what the last one wrote.
+
+- SCOPE: projfs lets a simx see and change only the folder named by
+  the key its frame was created for (`wendoo-lang/pxt-wendoo/`), by
+  names relative to that folder, and only the files `pxt.json` lists;
+  a write lists its file. The client is pxt's own
+  `pxtservices/projfs.ts`, vendored byte-for-byte as
+  `makecode/simx/bridge/src/vendor/projfs.ts`; the sibling
+  `PROVENANCE` file records the exact source commit, and the vendored
+  file is kept out of this repo's lint and formatting so a re-vendor
+  is a plain copy. Its frame-parameter helpers (`getSimxChannel`, `getTargetId`,
+  `getProjectId`) are how the simx reads its frame URL.
+- SOURCE FORM: `brains/<documentId>.src.json` holds the brain document
+  exactly as pushed (the editor's two-space pretty print). A list names
+  each such file by its id, with the document's `name` and the
+  `brainSourceHash` of the file's text; a pull returns the text
+  verbatim. A text that is not a readable brain document is still
+  listed and pulled -- the editor's corruption handling takes it from
+  there -- and is named from its registration, else empty.
+- COMPILED FORM: `brains.g.ts`, at the folder root, is ONE generated
+  module registering every brain's compiled form, which the project
+  compiles with the rest of its code. After two comment lines it
+  declares `// wendoo-brains-format 1`, then carries one entry per
+  brain, ordered by id:
+
+  ```ts
+  // source-hash 1a2b3c4d
+  wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
+      000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+  `);
+  ```
+
+  The id and name are JSON string literals with every character
+  outside printable ASCII escaped; the program follows as lowercase
+  hex, 32 bytes a line (pxt's `hex` literal skips whitespace). The
+  `source-hash` line binds the program to the source it was compiled
+  from. `writeBrainsModule` and `readBrainsModule`
+  (`makecode/simx/bridge/src/brains-module.ts`) are a writer and
+  reader pair: the same entries always write the same text, which
+  reads back to them. The VM extension's registration selftest
+  compiles the module's generated form in real Arcade and micro:bit
+  projects, from the folder path a project holds it at.
+- READING A DAMAGED MODULE: the reader never throws. A module
+  declaring no format reads as registering nothing
+  (`BRAINS_MODULE_UNREADABLE`); one entry that does not follow the
+  format is skipped (`BRAINS_MODULE_ENTRY_MALFORMED`) and the rest are
+  read; a module declaring a newer format (`BRAINS_MODULE_FORMAT_NEWER`)
+  reads as registering nothing and is never rewritten -- pushes fail
+  while it stands. Each problem is written to the console by its code;
+  a pull serves the affected brains without compiled forms, which the
+  editor's staleness rule recompiles and pushes when it pulls them.
+- PUSH: a push writes (or, for `remove`, deletes) the brain's source
+  file and regenerates `brains.g.ts` from the registrations it holds for
+  brains whose source file exists, with the push applied: a write
+  carrying a compiled form registers it, one carrying none drops the
+  registration, and a removal drops it. Deleting a source the project
+  does not hold counts as done. Every write and delete is an ARTIFACT
+  (never `dirty`), so a brain save never restarts the running program;
+  a written file open in MakeCode's text editor reloads to show it.
+- COALESCING: pushes queue and apply in drains. A drain reads the
+  project, then takes every push queued by then -- the latest push of
+  each brain, when a brain was pushed more than once, all of its
+  requests answered together -- writes `brains.g.ts` once (skipped when
+  its text would not change), then each brain's source file. A burst of
+  pushes, such as a reconnection's flush, costs one module write plus
+  one write per brain against projfs's limit of 30 writes and deletes
+  per 10 seconds; pushes arriving while a drain writes join the next.
+- ACKS AND REFUSALS: a push is acknowledged once its source file has
+  landed after its drain's module write, so an acknowledged push is in
+  the project in both forms. A refused write fails the pushes it
+  carried with `MAKECODE_BRAINS_WRITE_FAILED`, the projfs code leading
+  the message (`RATE_LIMITED: ...`, `QUOTA_EXCEEDED: ...`); a refused
+  module write fails every push of its drain and writes no source. The
+  editor keeps a failed push pending and pushes it again on the next
+  reconciled handshake. A list or a pull the project cannot serve fails
+  with `MAKECODE_BRAINS_READ_FAILED` and the projfs code likewise.
+- VISIBILITY: both forms are ordinary project files. They appear in
+  MakeCode's Explorer -- shown in the JavaScript and Python views, not
+  in Blocks -- grouped under `wendoo-lang/pxt-wendoo` and
+  `wendoo-lang/pxt-wendoo/brains`, each with a delete action, and
+  they travel with the project wherever its files go.
+- DETECTING HAND EDITS: the editor compares hashes when a handshake
+  reconciles, so a source edited in MakeCode is recompiled and saved at
+  the next handshake (an editor reload or a reconnection); a simulator
+  restart that keeps the simx frame opens no new handshake.
 
 ## Simx credential continuity
 
@@ -210,6 +313,16 @@ carries a session across frames.
 - The simx saves the binding token of every welcome to the
   browser's `sessionStorage` and presents it in its first hello.
   It never stores the join code.
+- PER-PROJECT KEYING: MakeCode passes the open project's id to every
+  simx frame in its URL's `project` parameter, and the simx stores its
+  token under a key naming that project
+  (`wendoo-simx-bridge:bindingToken:<projectId>`). A frame serving
+  another project in the same tab therefore finds no token and forms a
+  new pairing under a new join code, so an editor bound to the first
+  project never joins, lists, or pushes into the second; returning to
+  the first project resumes its own session by its own token. A frame
+  URL without the parameter (a MakeCode build that does not pass it)
+  stores under the one per-tab key `wendoo-simx-bridge:bindingToken`.
 - `sessionStorage` lasts for one top-level browser tab: a frame
   reallocated in the same MakeCode tab rejoins its session, and a
   second MakeCode tab opened on its own never presents the first
@@ -412,8 +525,8 @@ it keys on a session id.
   turns `reconnecting` only once a disconnection outlasts
   `DISCONNECT_GRACE_MS` (a few seconds); until then it keeps showing
   the status from before the disconnection. The header's status is
-  the whole disconnection surface -- the session view shows no card
-  for it -- and End session beside it is the way out. The session
+  the whole disconnection surface, and End session beside it is the
+  way out. The session
   object stays truthful; the grace lives in the editor's view-model
   only.
 - END SESSION: a small destructive button beside the header's status,
@@ -437,7 +550,7 @@ it keys on a session id.
   is closed, so nothing reaches the relay and the start over clears
   this editor's seat alone). An overflow recovers
   automatically and surfaces only as transient status. A version
-  rejection shows its remedy -- reload the editor -- the one ruled
+  rejection shows its remedy -- reload the editor -- the one
   exception to in-page recovery. `JOIN_CODE_UNKNOWN` and
   `SESSION_ENDED` render their notices on the connect page; a
   `JOIN_CODE_UNKNOWN` refusing a code entered while a binding token is
@@ -471,7 +584,9 @@ it keys on a session id.
   for the kid -- its file in the MakeCode project is broken -- with
   the damage's stable code as `data-code`, never as text. When the
   store holds a copy of the brain, the notice offers Restore
-  (`repushBrain`); a damaged brain the store holds no copy of is
+  (`repushBrain`), disabled (the button's `disabled` attribute) unless
+  the store is `reconciled`, since a re-push reaches the project only
+  then; a damaged brain the store holds no copy of is
   listed after the held brains under the name the project gave it,
   with the notice alone (fix or delete the file in MakeCode) and no
   other controls. The store clears the damage on the project's ack
@@ -508,6 +623,11 @@ channel, then pushes each edit as it is made:
   pushes it); drop each brain the project no longer holds that has no
   pending edit; then push every pend. A request that fails abandons the
   reconciliation, pends intact, until the next handshake.
+- RECONCILED: the store's `reconciled` is `true` while the session is
+  connected and the latest handshake's reconciliation has finished;
+  it turns `false` at the next disconnection and while a new handshake
+  reconciles. Edits made and re-pushes asked while it is `false` do
+  not reach the project at once.
 - PUSH: once reconciled, each add, apply, rename, or removal made while
   connected is pushed at once; one made otherwise is recorded pending.
   A push carries the brain exactly as the store holds it -- source plus
@@ -646,7 +766,12 @@ from and beneath the session:
   (`wendoo-lang/pxt-wendoo`). The extension holds it as one
   internal constant (`makecode/extensions/vm/sim-channel.ts`), and
   no public API of the extension takes or exposes it: a caller
-  publishes with `wendoo.publishCatalog(encoder)`. This
+  publishes with `wendoo.publishCatalog(encoder)`. The simx reads
+  the channel MakeCode names in its frame URL's `channel` parameter,
+  falling back to its own `SIMX_CHANNEL` constant for a frame URL
+  that names none; it reads the program's messages on that channel
+  only, and posts its catalog requests on it. The conformance
+  harness checks the extension's key against the fallback constant. This
   equality is a ROUTING fact, not a
   trust fact: pxt never checks a message's channel field against
   its sender, any program can post on any registered channel, and
@@ -710,10 +835,10 @@ service.
 - The relay: `npm run dev` in `apps/bridge` (port 6465). Set
   `BRIDGE_BINDING_SECRET` to keep sessions healing across relay
   restarts; without it, every restart ends every session.
-- The simx: `npm run dev` in `makecode/simx/bridge` (port 5173 by its
-  dev config; `npm run dev -- --port <port>` serves it elsewhere, since
-  MakeCode loads it from the `devUrl` its `approvedRepoLib` entry
-  names).
+- The simx: `npm run dev` in `makecode/simx/bridge` (port 5175, pinned
+  with `strictPort` by its dev config, matching the `devUrl` its
+  `approvedRepoLib` entry registers; `npm run dev -- --port <port>`
+  serves it elsewhere, and the registration must then name that port).
 - The editor: `npm run dev` in `apps/editor` (port 5176, pinned with
   `strictPort` by its dev config, because a simx served from a loopback
   host links there).
@@ -727,7 +852,12 @@ headlessly on both provisioned targets, and the composed acceptance
 tier drives the editor's service layer and the simx module against
 the engine's in-process testkit, `@wendoo/bridge-session/testing`
 (`apps/editor/src/services/editor-session-store-relay.spec.ts`), and
-the brain sync against a scripted simx over the same testkit
-(`apps/editor/src/services/brains-sync-relay.spec.ts`). The
+the brain sync against a scripted simx and against the real simx
+module serving an in-memory MakeCode project over the same testkit
+(`apps/editor/src/services/brains-sync-relay.spec.ts`; the project is
+`makecode/simx/bridge/src/test-support/projfs-host.ts`, which applies
+MakeCode's projfs rules -- scope, visibility, quota, rate limit -- and
+plays MakeCode's text editor sharing the project: the open file's
+buffer, its reload on a write, and its save-back on a file switch). The
 relay service's own suite runs the testkit over the service's own
 server (`startTestRelay({ server: startRelayServer })`).

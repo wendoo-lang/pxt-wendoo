@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { MakeCodeBrainsRequestMessage, MakeCodeWireBrain } from "./makecode-brains.js";
+import type {
+  MakeCodeBrain,
+  MakeCodeBrainsRequest,
+  MakeCodeBrainsRequestMessage,
+  MakeCodeWireBrain,
+} from "./makecode-brains.js";
 import {
   brainSourceHash,
   MAKECODE_VM_PROFILE_ID,
@@ -296,5 +301,270 @@ describe("makecode session brains requests", () => {
 
     assert.deepEqual(catalogs, ["first", "second"]);
     session.dispose();
+  });
+});
+
+/** The requests a session delivered to its brains request listener, in arrival order. */
+function servedRequests(session: MakeCodeSession): MakeCodeBrainsRequest[] {
+  const served: MakeCodeBrainsRequest[] = [];
+  session.onBrainsRequest((request) => {
+    served.push(request);
+  });
+  return served;
+}
+
+/** The only request in `served`, narrowed to `kind`. Fails the spec otherwise. */
+function onlyRequest<TKind extends MakeCodeBrainsRequest["kind"]>(
+  served: MakeCodeBrainsRequest[],
+  kind: TKind
+): Extract<MakeCodeBrainsRequest, { kind: TKind }> {
+  assert.equal(served.length, 1);
+  assert.equal(served[0].kind, kind);
+  return served[0] as Extract<MakeCodeBrainsRequest, { kind: TKind }>;
+}
+
+/**
+ * Two sessions joined by a JSON wire, as the relay joins an editor and the
+ * party serving the project: every message one posts reaches the other.
+ */
+async function openPair(): Promise<{ requester: MakeCodeSession; responder: MakeCodeSession }> {
+  const listeners = [
+    new Set<(message: MakeCodeSessionMessage) => void>(),
+    new Set<(message: MakeCodeSessionMessage) => void>(),
+  ];
+  const end = (side: 0 | 1): MakeCodeSessionPort => ({
+    postMessage(message) {
+      const parsed = JSON.parse(JSON.stringify(message)) as MakeCodeSessionMessage;
+      queueMicrotask(() => {
+        for (const listener of listeners[1 - side]) listener(parsed);
+      });
+    },
+    onMessage(listener) {
+      listeners[side].add(listener);
+      return () => {
+        listeners[side].delete(listener);
+      };
+    },
+  });
+  const [requester, responder] = await Promise.all([
+    connectMakeCodeSession({ port: end(0) }),
+    connectMakeCodeSession({ port: end(1), target: "arcade" }),
+  ]);
+  return { requester, responder };
+}
+
+describe("makecode session brains responder", () => {
+  it("delivers a list request and answers it with the reply carrying its id", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({ type: "makecode:brainsList", id: "peer-1" });
+    onlyRequest(served, "list").reply([
+      { id: "abcdabcdabcdabcd", name: "Chaser", sourceHash: brainSourceHash(SOURCE) },
+    ]);
+
+    assert.deepEqual(port.sent.at(-1), {
+      type: "makecode:brainsListReply",
+      id: "peer-1",
+      payload: { brains: [{ id: "abcdabcdabcdabcd", name: "Chaser", sourceHash: brainSourceHash(SOURCE) }] },
+    });
+    session.dispose();
+  });
+
+  it("delivers a pull request's ids and answers with each compiled program encoded as base64", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({
+      type: "makecode:brainsPull",
+      id: "peer-1",
+      payload: { ids: ["abcdabcdabcdabcd", "missingmissingmi"] },
+    });
+    const request = onlyRequest(served, "pull");
+    assert.deepEqual(request.ids, ["abcdabcdabcdabcd", "missingmissingmi"]);
+    request.reply([
+      {
+        id: "abcdabcdabcdabcd",
+        name: "Chaser",
+        source: SOURCE,
+        compiled: { bytecode: BYTECODE, sourceHash: brainSourceHash(SOURCE) },
+      },
+      { id: "nocompilednocomp", name: "", source: "not json {" },
+    ]);
+
+    assert.deepEqual(port.sent.at(-1), {
+      type: "makecode:brainsPullReply",
+      id: "peer-1",
+      payload: {
+        brains: [
+          {
+            id: "abcdabcdabcdabcd",
+            name: "Chaser",
+            source: SOURCE,
+            compiled: { bytecode: Buffer.from(BYTECODE).toString("base64"), sourceHash: brainSourceHash(SOURCE) },
+          },
+          { id: "nocompilednocomp", name: "", source: "not json {" },
+        ],
+      },
+    });
+    session.dispose();
+  });
+
+  it("delivers a pushed write with its compiled program decoded to bytes, and acknowledges it", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({
+      type: "makecode:brainsPush",
+      id: "peer-1",
+      payload: {
+        op: "write",
+        brain: {
+          id: "abcdabcdabcdabcd",
+          name: "Chaser",
+          source: SOURCE,
+          compiled: { bytecode: Buffer.from(BYTECODE).toString("base64"), sourceHash: brainSourceHash(SOURCE) },
+        },
+      },
+    });
+    const request = onlyRequest(served, "push");
+    assert.deepEqual(request.push, {
+      op: "write",
+      brain: {
+        id: "abcdabcdabcdabcd",
+        name: "Chaser",
+        source: SOURCE,
+        compiled: { bytecode: BYTECODE, sourceHash: brainSourceHash(SOURCE) },
+      },
+    });
+    request.ack();
+
+    assert.deepEqual(port.sent.at(-1), { type: "makecode:brainsAck", id: "peer-1" });
+    session.dispose();
+  });
+
+  it("delivers a pushed removal by brain id", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({ type: "makecode:brainsPush", id: "peer-1", payload: { op: "remove", brainId: "abcdabcdabcdabcd" } });
+
+    assert.deepEqual(onlyRequest(served, "push").push, { op: "remove", brainId: "abcdabcdabcdabcd" });
+    session.dispose();
+  });
+
+  it("fails a list or a pull with READ_FAILED and a push with WRITE_FAILED", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({ type: "makecode:brainsList", id: "list-1" });
+    port.deliver({ type: "makecode:brainsPull", id: "pull-1", payload: { ids: [] } });
+    port.deliver({ type: "makecode:brainsPush", id: "push-1", payload: { op: "remove", brainId: "abcdabcdabcdabcd" } });
+    for (const request of served) request.fail("refused");
+
+    assert.deepEqual(port.sent.slice(-3), [
+      {
+        type: "makecode:brainsError",
+        id: "list-1",
+        payload: { code: MakeCodeBrainsErrorCode.READ_FAILED, message: "refused" },
+      },
+      {
+        type: "makecode:brainsError",
+        id: "pull-1",
+        payload: { code: MakeCodeBrainsErrorCode.READ_FAILED, message: "refused" },
+      },
+      {
+        type: "makecode:brainsError",
+        id: "push-1",
+        payload: { code: MakeCodeBrainsErrorCode.WRITE_FAILED, message: "refused" },
+      },
+    ]);
+    session.dispose();
+  });
+
+  it("answers each request once, sending nothing for a later answer", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+    port.deliver({ type: "makecode:brainsPush", id: "peer-1", payload: { op: "remove", brainId: "abcdabcdabcdabcd" } });
+    const request = onlyRequest(served, "push");
+    const sentBefore = port.sent.length;
+
+    request.ack();
+    request.fail("too late");
+    request.ack();
+
+    assert.deepEqual(port.sent.slice(sentBefore), [{ type: "makecode:brainsAck", id: "peer-1" }]);
+    session.dispose();
+  });
+
+  it("replays requests received while no listener was attached to the first listener, in arrival order", async () => {
+    const { session, port } = await openSession();
+    port.deliver({ type: "makecode:brainsList", id: "first" });
+    port.deliver({ type: "makecode:brainsPush", id: "second", payload: { op: "remove", brainId: "abcdabcdabcdabcd" } });
+
+    const served = servedRequests(session);
+
+    assert.deepEqual(
+      served.map((request) => request.kind),
+      ["list", "push"]
+    );
+    session.dispose();
+  });
+
+  it("sends no answer once disposed", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+    port.deliver({ type: "makecode:brainsList", id: "peer-1" });
+    const sentBefore = port.sent.length;
+
+    session.dispose();
+    onlyRequest(served, "list").reply([]);
+
+    assert.equal(port.sent.length, sentBefore);
+  });
+
+  it("round-trips list, pull and push between a requesting and a responding session, bytes intact", async () => {
+    const { requester, responder } = await openPair();
+    const project = new Map<string, MakeCodeBrain>();
+    responder.onBrainsRequest((request) => {
+      switch (request.kind) {
+        case "list":
+          request.reply(
+            [...project.values()].map((brain) => ({
+              id: brain.id,
+              name: brain.name,
+              sourceHash: brainSourceHash(brain.source),
+            }))
+          );
+          return;
+        case "pull":
+          request.reply(request.ids.flatMap((id) => project.get(id) ?? []));
+          return;
+        case "push":
+          if (request.push.op === "write") project.set(request.push.brain.id, request.push.brain);
+          else project.delete(request.push.brainId);
+          request.ack();
+          return;
+      }
+    });
+    const brain: MakeCodeBrain = {
+      id: "abcdabcdabcdabcd",
+      name: "Chaser",
+      source: SOURCE,
+      compiled: { bytecode: BYTECODE, sourceHash: brainSourceHash(SOURCE) },
+    };
+
+    await requester.pushBrain({ op: "write", brain });
+    const listed = await requester.listBrains();
+    const pulled = await requester.pullBrains([brain.id, "missingmissingmi"]);
+    await requester.pushBrain({ op: "remove", brainId: brain.id });
+
+    assert.deepEqual(listed, [{ id: brain.id, name: "Chaser", sourceHash: brainSourceHash(SOURCE) }]);
+    assert.deepEqual(pulled, [brain]);
+    assert.equal(project.size, 0);
+    assert.equal(responder.peerTarget, undefined);
+    assert.equal(requester.peerTarget, "arcade");
+    requester.dispose();
+    responder.dispose();
   });
 });

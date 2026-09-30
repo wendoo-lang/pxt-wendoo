@@ -321,8 +321,9 @@ the current slice alone.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in
     its own subfolder; `makecode/simx/bridge` connects to the bridge
     service, joining the editor webapp to the MakeCode project. A simx is a
-    channel, not a store: it reloads on every sim restart, so no state may
-    live only there. It is not product UI, but its frame is a visible panel
+    channel, not a store: its frame persists across sim restarts and runs
+    but is reallocated on a page reload or project teardown, so no state
+    may live only there. It is not product UI, but its frame is a visible panel
     and renders a minimal session-status surface -- the join code while the
     editor seat is vacant, and basic connection state; no authoring, no
     catalog display. One shared artifact serves every target, bound by an

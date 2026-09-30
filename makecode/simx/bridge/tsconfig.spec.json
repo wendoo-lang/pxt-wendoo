@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/**/*.spec.ts"],
+  "include": ["src/**/*.spec.ts", "src/test-support"],
   "exclude": ["node_modules", "dist"]
 }

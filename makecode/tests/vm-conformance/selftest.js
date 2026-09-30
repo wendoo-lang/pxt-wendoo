@@ -47,6 +47,9 @@ const EXPECTED_CHECKS = [
   "late-registration-not-bound",
   "action-output-readable-by-name",
   "catalog-serialize-repeatable",
+  "compiled-brains-registered-in-order",
+  "compiled-brain-ids-and-names-intact",
+  "compiled-brain-bytes-intact",
 ];
 
 /** Every registration diagnostic the run is expected to record, as `<code> <name>`. */

@@ -21,6 +21,7 @@
         "vm.ts",
         "runtime.ts",
         "trace.ts",
+        "compiled-brains.ts",
         "sim-channel.ts"
     ],
     "supportedTargets": [

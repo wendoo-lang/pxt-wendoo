@@ -7,6 +7,12 @@
     "strictPropertyInitialization": false,
     "strictNullChecks": false
   },
-  "include": ["*.ts", "packs/*.ts", "../../../extensions/vm/*.ts", "../../../extensions/vm/pxt_modules/**/*.ts"],
+  "include": [
+    "*.ts",
+    "packs/*.ts",
+    "wendoo-lang/pxt-wendoo/*.ts",
+    "../../../extensions/vm/*.ts",
+    "../../../extensions/vm/pxt_modules/**/*.ts"
+  ],
   "exclude": ["../../../extensions/vm/built/**", "../../../extensions/vm/pxt_modules/**/*test.ts"]
 }
