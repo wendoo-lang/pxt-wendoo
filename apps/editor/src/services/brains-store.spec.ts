@@ -7,13 +7,15 @@ import { ParseDiagCode } from "@wendoo/core/brain/compiler";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type {
+  MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
 } from "@wendoo/makecode-session";
-import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION, MAKECODE_VM_PROFILE_ID } from "./authoring-environment.js";
-import { brainSourceHash, serializeBrainSource } from "./brain-source.js";
+import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
+import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
+import { serializeBrainSource } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 import { CATALOG_UNREADABLE } from "./catalog.js";
@@ -422,6 +424,10 @@ describe("brains store", () => {
         return () => {
           this._catalogListeners.delete(listener);
         };
+      }
+
+      onBrainsChannel(_listener: (channel: MakeCodeBrainsChannel) => void): () => void {
+        return () => {};
       }
 
       start(): void {}

@@ -1,4 +1,33 @@
 export type {
+  MakeCodeBrain,
+  MakeCodeBrainPush,
+  MakeCodeBrainSummary,
+  MakeCodeBrainsAckMessage,
+  MakeCodeBrainsErrorMessage,
+  MakeCodeBrainsErrorPayload,
+  MakeCodeBrainsListMessage,
+  MakeCodeBrainsListReplyMessage,
+  MakeCodeBrainsListReplyPayload,
+  MakeCodeBrainsPullMessage,
+  MakeCodeBrainsPullPayload,
+  MakeCodeBrainsPullReplyMessage,
+  MakeCodeBrainsPullReplyPayload,
+  MakeCodeBrainsPushMessage,
+  MakeCodeBrainsReplyMessage,
+  MakeCodeBrainsRequestMessage,
+  MakeCodeCompiledBrain,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+  MakeCodeWireCompiledBrain,
+} from "./makecode-brains.js";
+export {
+  brainSourceHash,
+  MAKECODE_VM_PROFILE_ID,
+  MakeCodeBrainsError,
+  MakeCodeBrainsErrorCode,
+} from "./makecode-brains.js";
+export type {
+  MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionEntry,
   MakeCodeEditorSessionErrorCode,

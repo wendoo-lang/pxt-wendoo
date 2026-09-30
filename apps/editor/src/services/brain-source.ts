@@ -3,7 +3,14 @@ import type { BrainDef, IBrainDef, WendooEnvironment } from "@wendoo/core/app";
 import { encodePersistedBrainJson } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
 import { linkedBrainProgramToBytes } from "@wendoo/core/runtime";
-import { MAKECODE_VM_PRECISION, MAKECODE_VM_PROFILE_ID } from "./authoring-environment";
+import { MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
+import { MAKECODE_VM_PRECISION } from "./authoring-environment";
+
+/** Stable code of a brain source that is not a brain document: it does not parse as JSON, or does not read as a brain. */
+export const BRAIN_SOURCE_INVALID = "BRAIN_SOURCE_INVALID";
+
+/** Stable code of a brain source that reads as a brain document whose embedded id differs from the id it is addressed by. */
+export const BRAIN_SOURCE_ID_MISMATCH = "BRAIN_SOURCE_ID_MISMATCH";
 
 /**
  * Project namespace brain sources are persisted relative to: identifiers
@@ -33,21 +40,6 @@ export function serializeBrainSource(definition: IBrainDef): string {
  */
 export function readBrainSource(environment: WendooEnvironment, source: string): BrainDef {
   return environment.deserializeBrainJsonFromPlain(JSON.parse(source), BRAIN_SOURCE_NAMESPACE) as BrainDef;
-}
-
-/**
- * Hash of a brain source text: 32-bit FNV-1a over its UTF-16 code units, as
- * eight lowercase hex digits. Equal texts hash equal in every runtime.
- *
- * @param source - Source text to hash.
- */
-export function brainSourceHash(source: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < source.length; i++) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 /** What compiling one brain source produced. */

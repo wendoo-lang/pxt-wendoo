@@ -36,7 +36,8 @@
     "build:prod": {
       "command": "tsc --build tsconfig.prod.json",
       "dependencies": [
-        "../../external/wendoo-lang/packages/bridge-app:build:prod"
+        "../../external/wendoo-lang/packages/bridge-app:build:prod",
+        "../../external/wendoo-lang/packages/service-api:build:prod"
       ],
       "files": [
         "src/**",
@@ -54,7 +55,8 @@
     }
   },
   "dependencies": {
-    "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app"
+    "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app",
+    "@wendoo/service-api": "file:../../external/wendoo-lang/packages/service-api"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.15",

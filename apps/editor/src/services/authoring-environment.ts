@@ -13,9 +13,6 @@ export const CATALOG_PACK_UNBOUND = "CATALOG_PACK_UNBOUND";
  */
 export const MAKECODE_VM_PRECISION: NumberPrecision = "f64";
 
-/** Numeric device-profile id written into the envelope of every brain compiled for the MakeCode Wendoo VM. */
-export const MAKECODE_VM_PROFILE_ID = 1001;
-
 /** One problem found in a session catalog while building an environment from it. */
 export type CatalogDiagnostic =
   | {

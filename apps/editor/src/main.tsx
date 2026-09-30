@@ -45,7 +45,7 @@ const store = new EditorSessionStore({
     has: hasBindingToken,
   },
 });
-const brains = new BrainsStore(store);
+const brains = new BrainsStore(store, store);
 bindTargetTheme(store, document.documentElement);
 enterSession(store, window);
 window.addEventListener(

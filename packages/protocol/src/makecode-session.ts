@@ -1,5 +1,21 @@
-import type { PeerSessionHelloMessage, PeerSessionKind, PeerSessionPort } from "@wendoo/bridge-app/peer-session";
+import type {
+  PeerSession,
+  PeerSessionHelloMessage,
+  PeerSessionKind,
+  PeerSessionPort,
+} from "@wendoo/bridge-app/peer-session";
 import { connectPeerSession } from "@wendoo/bridge-app/peer-session";
+import { base64ToBytes, bytesToBase64 } from "@wendoo/service-api";
+import type {
+  MakeCodeBrain,
+  MakeCodeBrainPush,
+  MakeCodeBrainSummary,
+  MakeCodeBrainsReplyMessage,
+  MakeCodeBrainsRequestMessage,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+} from "./makecode-brains.js";
+import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 
 /** Newest version of the makecode-session protocol this build speaks. */
 export const MAKECODE_SESSION_PROTOCOL_VERSION = 1;
@@ -62,8 +78,17 @@ export interface MakeCodeCatalogMessage {
   payload: MakeCodeCatalogPayload;
 }
 
-/** Messages either party of a makecode session sends to the other. */
-export type MakeCodeSessionMessage = MakeCodeHelloMessage | MakeCodeCatalogMessage;
+/**
+ * Messages either party of a makecode session sends to the other. Every
+ * message type is named `makecode:<name>`, and the set grows additively
+ * under {@link MAKECODE_SESSION_PROTOCOL_VERSION}: a party ignores every
+ * message whose type it does not know.
+ */
+export type MakeCodeSessionMessage =
+  | MakeCodeHelloMessage
+  | MakeCodeCatalogMessage
+  | MakeCodeBrainsRequestMessage
+  | MakeCodeBrainsReplyMessage;
 
 /**
  * Transport carrying makecode-session messages between this party and its
@@ -109,7 +134,35 @@ export interface MakeCodeSession {
    * function.
    */
   onCatalog(listener: (content: string) => void): () => void;
-  /** Detach from the port. */
+  /**
+   * Ask the peer serving the project for the brains the project holds.
+   * Resolves with the peer's list; rejects with a `MakeCodeBrainsError`
+   * carrying the code of the peer's error reply, or `CLOSED` when the
+   * session is disposed before the reply arrives. A peer that does not
+   * answer leaves the request pending until the session is disposed.
+   */
+  listBrains(): Promise<MakeCodeBrainSummary[]>;
+  /**
+   * Ask the peer serving the project for the full brains `ids` names.
+   * Resolves with the requested brains the project holds, in request order,
+   * each compiled program decoded to bytes; rejects as {@link listBrains}
+   * does.
+   *
+   * @param ids - Document ids of the brains to return.
+   */
+  pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]>;
+  /**
+   * Ask the peer serving the project to apply `push` to the project's
+   * brains. Resolves once the peer acknowledges it; rejects as
+   * {@link listBrains} does.
+   *
+   * @param push - The change to apply.
+   */
+  pushBrain(push: MakeCodeBrainPush): Promise<void>;
+  /**
+   * Detach from the port. Every brains request still awaiting its reply
+   * rejects with `CLOSED`, as does every request made afterwards.
+   */
   dispose(): void;
 }
 
@@ -124,24 +177,165 @@ export interface MakeCodeSession {
  */
 export async function connectMakeCodeSession(options: MakeCodeSessionOptions): Promise<MakeCodeSession> {
   const { port, target } = options;
-  const session = await connectPeerSession<"makecode", MakeCodeCatalogMessage, MakeCodeSessionDeclaration>({
+  const session = await connectPeerSession<"makecode", SessionTraffic, MakeCodeSessionDeclaration>({
     kind: MAKECODE_SESSION_KIND,
     port,
     declaration: target === undefined ? undefined : { target },
   });
-  return {
-    peerProtocolVersion: session.peerProtocolVersion,
-    peerTarget: session.peerDeclaration?.target,
-    publishCatalog(content: string): void {
-      session.postMessage({ type: "makecode:catalog", payload: { content } });
-    },
-    onCatalog(listener: (content: string) => void): () => void {
-      return session.onMessage((message) => {
-        listener(message.payload.content);
+  return new EstablishedSession(session);
+}
+
+/** The messages of a makecode session other than its hello. */
+type SessionTraffic = Exclude<MakeCodeSessionMessage, MakeCodeHelloMessage>;
+
+/** A brains request awaiting its reply. */
+interface PendingRequest {
+  /** Type of the reply that answers the request, beside an error reply. */
+  readonly replyType: Exclude<MakeCodeBrainsReplyMessage["type"], "makecode:brainsError">;
+  resolve(reply: MakeCodeBrainsReplyMessage): void;
+  reject(error: MakeCodeBrainsError): void;
+}
+
+class EstablishedSession implements MakeCodeSession {
+  readonly peerProtocolVersion: number;
+  readonly peerTarget: string | undefined;
+  private readonly _session: PeerSession<SessionTraffic, MakeCodeSessionDeclaration>;
+  private readonly _unsubscribe: () => void;
+  private readonly _catalogListeners = new Set<(content: string) => void>();
+  /** Catalogs received while no catalog listener was attached, in arrival order. */
+  private readonly _bufferedCatalogs: string[] = [];
+  private readonly _pending = new Map<string, PendingRequest>();
+  /**
+   * Prefix of every request id this session mints, random per session, so a
+   * late reply to an earlier session's request on the same connection never
+   * matches a request of this one.
+   */
+  private readonly _requestPrefix = Math.random().toString(36).slice(2, 10);
+  private _requestCount = 0;
+  private _disposed = false;
+
+  constructor(session: PeerSession<SessionTraffic, MakeCodeSessionDeclaration>) {
+    this._session = session;
+    this.peerProtocolVersion = session.peerProtocolVersion;
+    this.peerTarget = session.peerDeclaration?.target;
+    this._unsubscribe = session.onMessage((message) => {
+      this.receive(message);
+    });
+  }
+
+  publishCatalog(content: string): void {
+    this._session.postMessage({ type: "makecode:catalog", payload: { content } });
+  }
+
+  onCatalog(listener: (content: string) => void): () => void {
+    this._catalogListeners.add(listener);
+    for (const content of this._bufferedCatalogs.splice(0)) listener(content);
+    return () => {
+      this._catalogListeners.delete(listener);
+    };
+  }
+
+  async listBrains(): Promise<MakeCodeBrainSummary[]> {
+    const reply = await this.request((id) => ({ type: "makecode:brainsList", id }), "makecode:brainsListReply");
+    return reply.payload.brains;
+  }
+
+  async pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]> {
+    const reply = await this.request(
+      (id) => ({ type: "makecode:brainsPull", id, payload: { ids: [...ids] } }),
+      "makecode:brainsPullReply"
+    );
+    return reply.payload.brains.map(brainFromWire);
+  }
+
+  async pushBrain(push: MakeCodeBrainPush): Promise<void> {
+    await this.request((id) => ({ type: "makecode:brainsPush", id, payload: pushToWire(push) }), "makecode:brainsAck");
+  }
+
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+    this._unsubscribe();
+    this._session.dispose();
+    const pending = [...this._pending.values()];
+    this._pending.clear();
+    for (const request of pending) {
+      request.reject(closedError());
+    }
+  }
+
+  /**
+   * Sends the request `build` makes under a freshly minted id and resolves
+   * with the reply of `replyType` carrying that id; rejects on an error reply
+   * carrying it, and with `CLOSED` once the session is disposed.
+   */
+  private request<TReply extends PendingRequest["replyType"]>(
+    build: (id: string) => MakeCodeBrainsRequestMessage,
+    replyType: TReply
+  ): Promise<Extract<MakeCodeBrainsReplyMessage, { type: TReply }>> {
+    if (this._disposed) return Promise.reject(closedError());
+    const id = `${this._requestPrefix}-${++this._requestCount}`;
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, {
+        replyType,
+        resolve: (reply) => {
+          resolve(reply as Extract<MakeCodeBrainsReplyMessage, { type: TReply }>);
+        },
+        reject,
       });
-    },
-    dispose(): void {
-      session.dispose();
-    },
+      this._session.postMessage(build(id));
+    });
+  }
+
+  /** Routes one message from the peer: catalogs to their listeners, replies to their requests; drops the rest. */
+  private receive(message: SessionTraffic): void {
+    if (message.type === "makecode:catalog") {
+      const { content } = message.payload;
+      if (this._catalogListeners.size === 0) {
+        this._bufferedCatalogs.push(content);
+        return;
+      }
+      for (const listener of this._catalogListeners) listener(content);
+      return;
+    }
+    const pending = typeof message.id === "string" ? this._pending.get(message.id) : undefined;
+    if (pending === undefined) return;
+    if (message.type === "makecode:brainsError") {
+      this._pending.delete(message.id);
+      pending.reject(new MakeCodeBrainsError(message.payload.code, message.payload.message));
+      return;
+    }
+    if (message.type !== pending.replyType) return;
+    this._pending.delete(message.id);
+    pending.resolve(message);
+  }
+}
+
+/** The rejection of a brains request whose session was disposed before its reply. */
+function closedError(): MakeCodeBrainsError {
+  return new MakeCodeBrainsError(
+    MakeCodeBrainsErrorCode.CLOSED,
+    "The makecode session ended before the brains request was answered."
+  );
+}
+
+/** `brain` as a brains request returns it, its compiled program decoded from base64. */
+function brainFromWire(brain: MakeCodeWireBrain): MakeCodeBrain {
+  const { compiled, ...rest } = brain;
+  return compiled === undefined
+    ? rest
+    : { ...rest, compiled: { bytecode: base64ToBytes(compiled.bytecode), sourceHash: compiled.sourceHash } };
+}
+
+/** `push` as the wire carries it, a written brain's compiled program encoded as base64. */
+function pushToWire(push: MakeCodeBrainPush): MakeCodeWireBrainPush {
+  if (push.op === "remove") return { op: "remove", brainId: push.brainId };
+  const { compiled, ...rest } = push.brain;
+  return {
+    op: "write",
+    brain:
+      compiled === undefined
+        ? rest
+        : { ...rest, compiled: { bytecode: bytesToBase64(compiled.bytecode), sourceHash: compiled.sourceHash } },
   };
 }

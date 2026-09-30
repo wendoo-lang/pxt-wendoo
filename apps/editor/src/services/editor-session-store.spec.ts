@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import type {
+  MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,
 } from "@wendoo/makecode-session";
-import type { BindingTokenPersistence } from "./editor-session-store.js";
+import type { BindingTokenPersistence, EditorBrainsChannel } from "./editor-session-store.js";
 import { DISCONNECT_GRACE_MS, EditorSessionStore } from "./editor-session-store.js";
 
 /** An editor session driven by the spec in place of a real one. */
@@ -18,6 +19,7 @@ class FakeSession implements MakeCodeEditorSession {
   state: MakeCodeEditorSessionState;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
   constructor(options: MakeCodeEditorSessionOptions) {
     this.options = options;
@@ -41,6 +43,13 @@ class FakeSession implements MakeCodeEditorSession {
     this._catalogListeners.add(listener);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
+    this._brainsChannelListeners.add(listener);
+    return () => {
+      this._brainsChannelListeners.delete(listener);
     };
   }
 
@@ -68,6 +77,25 @@ class FakeSession implements MakeCodeEditorSession {
   deliver(content: string): void {
     for (const listener of this._catalogListeners) listener(content);
   }
+
+  /** A makecode handshake completing, handing out `channel`. */
+  handshake(channel: MakeCodeBrainsChannel): void {
+    for (const listener of this._brainsChannelListeners) listener(channel);
+  }
+}
+
+/** A brains channel whose requests never settle, recording the removals pushed on it. */
+function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
+  const removed: string[] = [];
+  return {
+    removed,
+    listBrains: () => new Promise(() => {}),
+    pullBrains: () => new Promise(() => {}),
+    pushBrain: (push) => {
+      if (push.op === "remove") removed.push(push.brainId);
+      return new Promise(() => {});
+    },
+  };
 }
 
 describe("editor session store", () => {
@@ -430,5 +458,32 @@ describe("editor session store", () => {
 
     assert.equal(sessions.length, 2);
     assert.equal(lastSession().options.joinCode, "apple-bird-cloud");
+  });
+
+  it("hands out each handshake's brains channel carrying the binding token held when it completed", () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    const channels: EditorBrainsChannel[] = [];
+    store.onBrainsChannel((channel) => {
+      channels.push(channel);
+    });
+    store.resume();
+    const resumed = idleChannel();
+
+    lastSession().handshake(resumed);
+    lastSession().options.saveBindingToken?.("token-2");
+    lastSession().handshake(idleChannel());
+    store.forget();
+    store.connect("ABCD");
+    lastSession().handshake(idleChannel());
+    lastSession().options.saveBindingToken?.("token-3");
+    lastSession().handshake(idleChannel());
+
+    assert.deepEqual(
+      channels.map((channel) => channel.binding),
+      ["token-1", "token-2", undefined, "token-3"]
+    );
+    void channels[0].pushBrain({ op: "remove", brainId: "abcdabcdabcdabcd" });
+    assert.deepEqual(resumed.removed, ["abcdabcdabcdabcd"]);
   });
 });

@@ -23,7 +23,9 @@ kind's whole identity, and nothing else in the repository declares
 session wire surface:
 
 - the kind name `makecode` and its message namespace (`makecode:*`);
-- the wire messages: `makecode:hello` and `makecode:catalog`;
+- the wire messages: `makecode:hello`, `makecode:catalog`, and the
+  `makecode:brains*` payload family (see "The brains payload family",
+  below);
 - the hello's declaration, `MakeCodeSessionDeclaration` (see "The
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
@@ -34,6 +36,11 @@ session wire surface:
   mechanism to the kind over any payload-capable port;
 - `createMakeCodeEditorSession`, the editor role's session object
   (described below);
+- the brain contracts both sides of the family must agree on:
+  `brainSourceHash` (32-bit FNV-1a over UTF-16 code units, eight
+  lowercase hex digits) and `MAKECODE_VM_PROFILE_ID`, the device-profile
+  id compiled brains carry (its value is interim, pending the
+  platform's device-profile map);
 - `DEFAULT_MAKECODE_BRIDGE_URL`, the deployed bridge service's
   address as a bare host with an optional port and no scheme; the
   bridge client connects with `ws://` to a loopback host and
@@ -119,6 +126,61 @@ session data, declared when the kind's handshake binds:
   non-empty string, shows the Wendoo logotype alone in the default
   theme; an id the record does not know shows raw, in the default
   theme.
+
+## The brains payload family
+
+Brains travel between the editor and the party serving the MakeCode
+project as a request-reply family under the kind's namespace. Payload
+kinds carry no versions of their own: the family is additive under
+`MAKECODE_SESSION_PROTOCOL_VERSION`, and every party ignores a
+`makecode:*` type it does not know (the kind's session object routes
+catalogs to catalog listeners and replies to their requests, and drops
+everything else).
+
+- REQUEST-REPLY: every request carries an envelope `id`, and its reply
+  carries the same `id`. This is the envelope correlation the relay
+  engine already honors (a forwarded message carrying an `id` has the
+  peer's next message carrying it relayed back as its reply) and the
+  folder-session protocol's `folder:ack` / `folder:error` shape. The
+  requesting session mints ids with a random per-session prefix, so a
+  late reply to an earlier handshake's request on the same connection
+  never matches a later request. A request settles on its reply, or
+  rejects with `MAKECODE_BRAINS_CLOSED` when its handshake ends; there
+  is no timeout, and a peer that never answers leaves requests pending
+  until the handshake ends.
+- `makecode:brainsList` (editor -> project): answered by
+  `makecode:brainsListReply` carrying `{ brains: [{ id, name,
+  sourceHash }] }` -- every brain the project holds, `sourceHash` being
+  `brainSourceHash` of the source text as the project holds it now.
+- `makecode:brainsPull` (editor -> project) with `{ ids }`: answered by
+  `makecode:brainsPullReply` carrying `{ brains: [{ id, name, source,
+  compiled?: { bytecode, sourceHash } }] }` in request order; an id the
+  project does not hold has no entry.
+- `makecode:brainsPush` (editor -> project) with `{ op: "write", brain }`
+  (the pull entry's shape; a write replaces both forms) or `{ op:
+  "remove", brainId }`: answered by `makecode:brainsAck` once applied.
+- `makecode:brainsError` answers any request that failed, carrying `{
+  code, message }`: `MAKECODE_BRAINS_READ_FAILED` for a list or pull,
+  `MAKECODE_BRAINS_WRITE_FAILED` for a push.
+- An entry's `id` is the brain's ADDRESS -- the document id its source
+  file is keyed by -- which the serving party takes from the file name,
+  never from the source; `source` is carried verbatim whether or not it
+  is a valid brain document; `compiled.sourceHash` is the hash of the
+  source the program was compiled from, the hash the compiled form
+  embeds.
+- BINARY ENCODING: `compiled.bytecode` is base64 text, the platform's
+  wire norm for bytes (`FileContentPayload`'s `encoding: "base64"` in
+  `@wendoo/bridge-protocol`), encoded and decoded with
+  `@wendoo/service-api`'s `bytesToBase64` / `base64ToBytes`. The kind's
+  API takes and returns bytes; only the wire carries text.
+- The editor session object hands out a BRAINS CHANNEL per completed
+  makecode handshake (`onBrainsChannel`); its requests travel on that
+  handshake and reject once it ends, and every later handshake -- a
+  reconnection, the counterpart returning, or a further welcome on an
+  open connection -- hands out a new one.
+- Only the editor requests; the party serving the project answers.
+  Until the simx gains its answering side, the simx's session drops
+  brains requests unanswered, and the editor keeps every edit pending.
 
 ## Simx credential continuity
 
@@ -351,12 +413,11 @@ it keys on a session id.
   persistence module (load/save/clear/has) wired into the session's
   token hooks; the store owns nothing else durable.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
-  two things from it: the catalog, from which it builds the
-  environment brains are edited and compiled in (rebuilt whenever a
-  different catalog arrives), and the status, which gates delivery
-  only: a brain edited while the status is anything but `connected`
-  is recorded as pending, and the brains themselves are kept through
-  every status.
+  the catalog, from which it builds the environment brains are edited
+  and compiled in (rebuilt whenever a different catalog arrives), and
+  the status, and it syncs its brains with the MakeCode project over
+  each handshake's brains channel (see "Brain sync", below). The
+  brains are kept through every status.
 - The BRAIN LIST renders the brains store in every status, so
   authoring continues while the project is away. Each row is keyed by
   the brain's document id; the name is display data, and two brains
@@ -367,14 +428,66 @@ it keys on a session id.
   badge counts the compile's errors and warnings (carrying the
   compile state -- `current`, `stale`, or `none` -- as
   `data-compile`). Rows also rename and remove brains; adding a brain
-  names it and opens the editor on it. Pending edits have no surface
-  yet.
+  names it and opens the editor on it. Pending edits and damaged
+  project sources have no surface yet; they live in the store's state.
 - The CATALOG DIAGNOSTICS the store reports while building its
   environment render as one coded line each above the catalog panel:
   `CATALOG_UNREADABLE` for catalog text it cannot read (brains keep
   the built-in tiles), and `CATALOG_PACK_UNBOUND` per pack whose
   tiles brains cannot use yet. They inform and never block
   authoring.
+
+## Brain sync
+
+The editor is authoritative for in-flight edits and the MakeCode
+project is durable truth. The brains store reconciles on every brains
+channel, then pushes each edit as it is made:
+
+- BINDING IDENTITY: each channel carries the binding token the session
+  held when its handshake completed -- the session store tracks it
+  through the session's token hooks. Equal tokens name the same
+  binding; the relay derives the token from the binding alone, so it is
+  stable across reconnections and across relay restarts that keep the
+  binding secret. The store compares tokens only.
+- LIFECYCLE, per binding: a channel of the same binding as the previous
+  one keeps every brain and pend. A channel of a DIFFERENT binding first
+  replaces the store's brains with that project's pulled set,
+  discarding every local brain and pend. Brains authored before any
+  binding was ever held are pending, so the first binding merges: they
+  push to it, and its brains are pulled beside them. Carrying brains
+  from one project to another is not done.
+- RECONCILIATION: list; pull every listed brain the store holds no copy
+  of or whose copy's `sourceHash` differs; adopt each pulled brain the
+  store holds no pending edit of (a pending edit wins, and the flush
+  pushes it); drop each brain the project no longer holds that has no
+  pending edit; then push every pend. A request that fails abandons the
+  reconciliation, pends intact, until the next handshake.
+- PUSH: once reconciled, each add, apply, rename, or removal made while
+  connected is pushed at once; one made otherwise is recorded pending.
+  A push carries the brain exactly as the store holds it -- source plus
+  the compiled form and hash of ONE compile (the convergence rule; a
+  failed compile carries the last good compiled form); a removal pushes
+  as `remove`. A push that fails records its brain pending. Pends
+  flush on the next reconciled handshake and clear when the project
+  acknowledges them; until then they survive every status.
+- STALENESS: a pulled brain whose compiled form is absent or was
+  compiled from other source (its `sourceHash` differs from the
+  source's hash -- someone edited the source out of band) is recompiled
+  from the pulled source and, when that compile succeeds, the fresh
+  pair is pushed. A pulled source that parses but fails to compile is
+  held with its diagnostics beside the project's compiled form as the
+  last good one, and nothing is pushed.
+- CORRUPTION: a pulled source that is not a brain document is listed in
+  the store's `damaged` map under `BRAIN_SOURCE_INVALID`, and one whose
+  embedded id differs from its address under `BRAIN_SOURCE_ID_MISMATCH`.
+  The store never crashes on it and never overwrites it by itself: a
+  held copy stays as it was, edits to a damaged brain (removals
+  included) stay pending, and the flush skips it. `repushBrain(id)`
+  restores the project from the held copy -- offered only when the
+  store holds one; otherwise the way out is fixing or deleting the file
+  in the project, which the next reconciliation sees. An acknowledged
+  push of the brain, or a later pull finding the source repaired or
+  gone, clears the damage.
 
 ## The simx status panel
 
@@ -566,6 +679,8 @@ exact invocations. The harness exercises the extension's emission
 headlessly on both provisioned targets, and the composed acceptance
 tier drives the editor's service layer and the simx module against
 the engine's in-process testkit, `@wendoo/bridge-session/testing`
-(`apps/editor/src/services/editor-session-store-relay.spec.ts`). The
+(`apps/editor/src/services/editor-session-store-relay.spec.ts`), and
+the brain sync against a scripted simx over the same testkit
+(`apps/editor/src/services/brains-sync-relay.spec.ts`). The
 relay service's own suite runs the testkit over the service's own
 server (`startTestRelay({ server: startRelayServer })`).

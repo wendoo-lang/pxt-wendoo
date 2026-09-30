@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { BrainDef, encodePersistedBrainJson } from "@wendoo/core/app";
 import { buildAuthoringEnvironment } from "./authoring-environment.js";
-import { BRAIN_SOURCE_NAMESPACE, brainSourceHash, readBrainSource, serializeBrainSource } from "./brain-source.js";
+import { BRAIN_SOURCE_NAMESPACE, readBrainSource, serializeBrainSource } from "./brain-source.js";
 
 describe("brain source", () => {
   it("serializes a brain as its upstream persisted brain JSON", () => {
@@ -25,16 +25,5 @@ describe("brain source", () => {
     assert.equal(read.id(), definition.id());
     assert.equal(read.servicesTypeRegistry(), reading.brainServices.runtime.types);
     assert.equal(serializeBrainSource(read), source);
-  });
-
-  it("hashes a source to eight lowercase hex digits, the same for the same text", () => {
-    const hash = brainSourceHash('{"name":"Chaser"}');
-
-    assert.match(hash, /^[0-9a-f]{8}$/);
-    assert.equal(brainSourceHash('{"name":"Chaser"}'), hash);
-  });
-
-  it("hashes texts differing in one character differently", () => {
-    assert.notEqual(brainSourceHash('{"name":"Chaser"}'), brainSourceHash('{"name":"Chasex"}'));
   });
 });

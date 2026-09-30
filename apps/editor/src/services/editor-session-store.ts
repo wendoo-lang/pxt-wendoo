@@ -1,5 +1,6 @@
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import type {
+  MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionEntry,
   MakeCodeEditorSessionErrorCode,
@@ -82,6 +83,18 @@ export interface EditorSessionViewState {
   readonly target: string | undefined;
 }
 
+/** The brains requests of one makecode handshake, with the binding the handshake belongs to. */
+export interface EditorBrainsChannel extends MakeCodeBrainsChannel {
+  /**
+   * The binding token the session held when the handshake completed, or
+   * `undefined` when it held none. It names the binding -- the pairing with
+   * one MakeCode side -- the handshake belongs to: two channels carrying the
+   * same token belong to the same binding. Compare it only; it is a
+   * credential, never to be shown, logged or sent.
+   */
+  readonly binding: string | undefined;
+}
+
 /** Options for {@link EditorSessionStore}. */
 export interface EditorSessionStoreOptions {
   /** Address of the MakeCode bridge service as a bare host with an optional port. Defaults to the deployed service. */
@@ -104,12 +117,15 @@ export class EditorSessionStore {
   private readonly _persistence: BindingTokenPersistence;
   private readonly _createSession: (options: MakeCodeEditorSessionOptions) => MakeCodeEditorSession;
   private readonly _listeners = new Set<() => void>();
+  private readonly _brainsChannelListeners = new Set<(channel: EditorBrainsChannel) => void>();
   private readonly _unsubscribes: (() => void)[] = [];
   private _session: MakeCodeEditorSession | undefined;
   private _graceTimer: ReturnType<typeof setTimeout> | undefined;
   private _beyondGrace = false;
   private _connectedSinceOpen = false;
   private _catalogText: string | undefined;
+  /** The binding token the current session holds, as its token hooks report it. */
+  private _bindingToken: string | undefined;
   /** Whether an entered code was refused and the store fell back to the held token, with no welcome since. */
   private _entryRefused = false;
   private _state: EditorSessionViewState;
@@ -132,6 +148,18 @@ export class EditorSessionStore {
   /** The current view state. A new object each time any of its fields changes. */
   getSnapshot = (): EditorSessionViewState => {
     return this._state;
+  };
+
+  /**
+   * Subscribe to the brains channel of each makecode handshake the session
+   * completes, from whichever connect attempt opened it, each carrying the
+   * binding it belongs to. Returns an unsubscribe function.
+   */
+  onBrainsChannel = (listener: (channel: EditorBrainsChannel) => void): (() => void) => {
+    this._brainsChannelListeners.add(listener);
+    return () => {
+      this._brainsChannelListeners.delete(listener);
+    };
   };
 
   /**
@@ -189,14 +217,17 @@ export class EditorSessionStore {
     const previous = this._session;
     for (const unsubscribe of this._unsubscribes.splice(0)) unsubscribe();
     previous?.stop();
+    this._bindingToken = this._persistence.load();
     const session = this._createSession({
       bridgeUrl: this._bridgeUrl,
       joinCode,
-      loadBindingToken: () => this._persistence.load(),
+      loadBindingToken: () => this._bindingToken,
       saveBindingToken: (token) => {
+        this._bindingToken = token;
         this._persistence.save(token);
       },
       clearBindingToken: () => {
+        this._bindingToken = undefined;
         this._persistence.clear();
       },
     });
@@ -209,6 +240,15 @@ export class EditorSessionStore {
       session.onCatalog((content) => {
         this._catalogText = content;
         this.publish();
+      }),
+      session.onBrainsChannel((channel) => {
+        const bound: EditorBrainsChannel = {
+          binding: this._bindingToken,
+          listBrains: () => channel.listBrains(),
+          pullBrains: (ids) => channel.pullBrains(ids),
+          pushBrain: (push) => channel.pushBrain(push),
+        };
+        for (const listener of this._brainsChannelListeners) listener(bound);
       })
     );
     session.start();

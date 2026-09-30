@@ -9,9 +9,11 @@ import {
   BridgeSessionErrorCode,
   PeerSessionErrorCode,
 } from "@wendoo/bridge-app";
+import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import {
   createEditorSessionOver,
   DEFAULT_MAKECODE_BRIDGE_URL,
+  type MakeCodeBrainsChannel,
   type MakeCodeEditorSession,
   type MakeCodeEditorSessionOptions,
   type MakeCodeEditorSessionState,
@@ -567,5 +569,103 @@ describe("makecode editor session", () => {
     assert.equal(bridge.stopped, true);
     assert.equal(bridge.ended, false);
     assert.deepEqual(session.state, stateWith({ status: "disconnected" }));
+  });
+
+  describe("brains channel", () => {
+    /** Asserts that `promise` rejects with a brains error carrying `CLOSED`. */
+    async function rejectsClosed(promise: Promise<unknown>): Promise<void> {
+      await assert.rejects(promise, (error: unknown) => {
+        assert.ok(error instanceof MakeCodeBrainsError);
+        assert.equal(error.code, MakeCodeBrainsErrorCode.CLOSED);
+        return true;
+      });
+    }
+
+    it("hands out a channel once each handshake completes, carrying its requests on the handshake's connection", async () => {
+      const { session } = openSession();
+      const channels: MakeCodeBrainsChannel[] = [];
+      session.onBrainsChannel((channel) => {
+        channels.push(channel);
+      });
+      session.start();
+      const bridge = lastBridge();
+      bridge.welcome("token-1");
+      assert.equal(channels.length, 0);
+
+      bridge.deliver(MAKECODE_HELLO);
+      await microtasks();
+      assert.equal(channels.length, 1);
+      const listed = channels[0].listBrains();
+      const request = bridge.sent.at(-1);
+      assert.equal(request?.type, "makecode:brainsList");
+      bridge.deliver({ type: "makecode:brainsListReply", id: request?.id, payload: { brains: [] } });
+
+      assert.deepEqual(await listed, []);
+    });
+
+    it("closes a handshake's channel when the handshake ends, and hands out a new one for the next handshake", async () => {
+      const { session } = openSession();
+      const channels: MakeCodeBrainsChannel[] = [];
+      session.onBrainsChannel((channel) => {
+        channels.push(channel);
+      });
+      session.start();
+      const bridge = lastBridge();
+      bridge.welcome("token-1");
+      bridge.deliver(MAKECODE_HELLO);
+      await microtasks();
+      const inFlight = channels[0].pushBrain({ op: "remove", brainId: "abcdabcdabcdabcd" });
+
+      bridge.change({ counterpartAway: true });
+      await rejectsClosed(inFlight);
+      await rejectsClosed(channels[0].listBrains());
+
+      bridge.welcome("token-1");
+      bridge.deliver(MAKECODE_HELLO);
+      await microtasks();
+      assert.equal(channels.length, 2);
+      const staleRequestId = bridge.sent.find((message) => message.type === "makecode:brainsPush")?.id;
+      const listed = channels[1].listBrains();
+      bridge.deliver({ type: "makecode:brainsAck", id: staleRequestId });
+      bridge.deliver({ type: "makecode:brainsListReply", id: bridge.sent.at(-1)?.id, payload: { brains: [] } });
+      assert.deepEqual(await listed, []);
+    });
+
+    it("closes the channel of a handshake a further welcome on the same connection replaces", async () => {
+      const { session } = openSession();
+      const channels: MakeCodeBrainsChannel[] = [];
+      session.onBrainsChannel((channel) => {
+        channels.push(channel);
+      });
+      session.start();
+      const bridge = lastBridge();
+      bridge.welcome("token-1");
+      bridge.deliver(MAKECODE_HELLO);
+      await microtasks();
+      const inFlight = channels[0].listBrains();
+
+      bridge.welcome("token-1");
+
+      assert.equal(session.state.status, "connected");
+      await rejectsClosed(inFlight);
+    });
+
+    it("hands out no channel for a handshake the counterpart's newer version rejects", async () => {
+      const { session } = openSession();
+      const channels: MakeCodeBrainsChannel[] = [];
+      session.onBrainsChannel((channel) => {
+        channels.push(channel);
+      });
+      session.start();
+      lastBridge().welcome("token-1");
+
+      lastBridge().deliver({
+        type: "makecode:hello",
+        payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION + 1 },
+      });
+      await microtasks();
+
+      assert.equal(channels.length, 0);
+    });
   });
 });

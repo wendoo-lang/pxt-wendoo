@@ -92,6 +92,14 @@ export interface MakeCodeEditorSessionState {
   readonly target: string | undefined;
 }
 
+/**
+ * The brains requests of one makecode handshake with the counterpart: each
+ * travels on that handshake and rejects with `MakeCodeBrainsErrorCode.CLOSED`
+ * once the handshake ends -- the counterpart leaves, the connection closes,
+ * or a further welcome replaces the handshake.
+ */
+export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain">;
+
 /** Options for {@link createMakeCodeEditorSession}. */
 export interface MakeCodeEditorSessionOptions {
   /**
@@ -141,6 +149,13 @@ export interface MakeCodeEditorSession {
    * as the verbatim serialized text. Returns an unsubscribe function.
    */
   onCatalog(listener: (content: string) => void): () => void;
+  /**
+   * Subscribe to the brains channel of each makecode handshake with the
+   * counterpart, delivered once the handshake completes. A channel is good
+   * only while its handshake lasts; every later handshake delivers a new
+   * one. Returns an unsubscribe function.
+   */
+  onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void;
   /**
    * Connect, presenting the binding token the session holds, and the join
    * code it was created with until the bridge service first welcomes it.
@@ -192,9 +207,8 @@ export function createEditorSessionOver(
 
 /**
  * The makecode handshake with the counterpart of one welcome, carried over
- * the bridge's payload messages. Reports the target the counterpart declared
- * once the handshake establishes the session, then the catalogs it
- * publishes.
+ * the bridge's payload messages. Reports the established session once the
+ * handshake completes, then the catalogs the counterpart publishes.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -203,13 +217,13 @@ class CounterpartSession {
 
   /**
    * @param bridge - The bridge connection, just welcomed.
-   * @param onEstablished - Receives the target the counterpart declared, or `undefined` for none, once the handshake completes.
+   * @param onEstablished - Receives the established session once the handshake completes.
    * @param onCatalog - Receives each catalog the counterpart publishes.
    * @param onRejected - Receives the code of a failed handshake.
    */
   constructor(
     bridge: AppBridge,
-    onEstablished: (target: string | undefined) => void,
+    onEstablished: (session: MakeCodeSession) => void,
     onCatalog: (content: string) => void,
     onRejected: (code: PeerSessionErrorCode) => void
   ) {
@@ -237,7 +251,7 @@ class CounterpartSession {
           return;
         }
         this._session = session;
-        onEstablished(session.peerTarget);
+        onEstablished(session);
         session.onCatalog(onCatalog);
       },
       (error: unknown) => {
@@ -266,6 +280,7 @@ class EditorSession implements MakeCodeEditorSession {
   private readonly _clearBindingToken: (() => void) | undefined;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
   /** The join code the state shows. */
   private _joinCode: string | undefined;
   /** The join code connections present: the one created with, until the first welcome. */
@@ -311,6 +326,13 @@ class EditorSession implements MakeCodeEditorSession {
     this._catalogListeners.add(listener);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
+    this._brainsChannelListeners.add(listener);
+    return () => {
+      this._brainsChannelListeners.delete(listener);
     };
   }
 
@@ -396,9 +418,15 @@ class EditorSession implements MakeCodeEditorSession {
     this._counterpart?.close();
     this._counterpart = new CounterpartSession(
       bridge,
-      (target) => {
-        this._target = target;
+      (session) => {
+        this._target = session.peerTarget;
         this.update();
+        const channel: MakeCodeBrainsChannel = {
+          listBrains: () => session.listBrains(),
+          pullBrains: (ids) => session.pullBrains(ids),
+          pushBrain: (push) => session.pushBrain(push),
+        };
+        for (const listener of this._brainsChannelListeners) listener(channel);
       },
       (content) => {
         for (const listener of this._catalogListeners) listener(content);
