@@ -510,6 +510,7 @@ describe("editor session store with the simx module on the relay", () => {
       if (Date.now() > deadline) throw new Error("timed out waiting for the simx to forget its token");
       await delay(10);
     }
+    assert.equal(bridges[0].errorCode, BridgeSessionErrorCode.SESSION_ENDED);
 
     bridges[0].dispose();
     frame = new FakeFrame();

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { MakeCodeBrainsRequestMessage, MakeCodeWireBrain } from "./makecode-brains.js";
-import { brainSourceHash, MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
+import {
+  brainSourceHash,
+  MAKECODE_VM_PROFILE_ID,
+  MakeCodeBrainsError,
+  MakeCodeBrainsErrorCode,
+  MakeCodeDeviceProfileNumericId,
+} from "./makecode-brains.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
 import { connectMakeCodeSession } from "./makecode-session.js";
 
@@ -65,6 +71,17 @@ async function openSession(): Promise<{ session: MakeCodeSession; port: WirePort
   const session = await connectMakeCodeSession({ port });
   return { session, port };
 }
+
+describe("device profiles", () => {
+  it("maps the one world, sts-f64, to device-profile id 2001, in a frozen map", () => {
+    assert.deepEqual({ ...MakeCodeDeviceProfileNumericId }, { "sts-f64": 2001 });
+    assert.equal(Object.isFrozen(MakeCodeDeviceProfileNumericId), true);
+  });
+
+  it("stamps compiled brains with the sts-f64 world's id", () => {
+    assert.equal(MAKECODE_VM_PROFILE_ID, 2001);
+  });
+});
 
 describe("brain source hash", () => {
   it("hashes a source to eight lowercase hex digits, the same for the same text", () => {

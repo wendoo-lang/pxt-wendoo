@@ -6,9 +6,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@wendoo/ui";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { CircleAlert, MoreHorizontal, Plus } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import type { BrainDamageCode, BrainsStore } from "@/services/brains-store";
 import {
   BrainDiagnosticsList,
   BrainErrorBadge,
@@ -24,6 +25,52 @@ import { NameInputDialog } from "./NameInputDialog";
 const ICON_TRIGGER_CLASSES =
   "inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground";
 
+interface BrainDamageNoticeProps {
+  /** Document id of the damaged brain. */
+  brainId: string;
+  /** Why the brain's source in the MakeCode project is damaged, carried as `data-code`. */
+  code: BrainDamageCode;
+  /** Whether the brains store holds a copy of the brain to restore the project's source from. */
+  restorable: boolean;
+  /** The brains store a Restore asks to re-push the brain. */
+  brains: Pick<BrainsStore, "repushBrain">;
+}
+
+/**
+ * The notice below a brain row whose source in the MakeCode project is
+ * damaged, worded for the person authoring and carrying the damage's stable
+ * code as `data-code`. When `restorable`, it offers Restore, which re-pushes
+ * the held copy over the damaged source, carrying the brain's id as
+ * `data-brain-id`; otherwise it says to fix or delete the file in MakeCode.
+ */
+export function BrainDamageNotice({ brainId, code, restorable, brains }: BrainDamageNoticeProps) {
+  return (
+    <div
+      data-testid="brain-damaged-notice"
+      data-code={code}
+      className="flex items-center gap-2 border-border border-t bg-muted/40 px-3 py-2 text-xs"
+    >
+      <CircleAlert aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-destructive" />
+      <p className="min-w-0 flex-1">
+        {restorable
+          ? "This brain's file in the MakeCode project is broken."
+          : "This brain's file in the MakeCode project is broken. Fix or delete it in MakeCode."}
+      </p>
+      {restorable && (
+        <button
+          type="button"
+          data-testid="brain-restore"
+          data-brain-id={brainId}
+          className="shrink-0 rounded-md border border-border bg-background px-2 py-1 font-medium text-foreground text-xs hover:bg-muted"
+          onClick={() => brains.repushBrain(brainId)}
+        >
+          Restore
+        </button>
+      )}
+    </div>
+  );
+}
+
 type BrainDialog =
   | { kind: "add" }
   | { kind: "rename"; id: string; name: string }
@@ -38,10 +85,16 @@ type BrainDialog =
  * action that names a new brain and opens the brain editor on it. Each row
  * carries its brain's document id as `data-brain-id` and its name as
  * `data-brain-name`.
+ *
+ * A brain whose source in the MakeCode project is damaged shows a
+ * {@link BrainDamageNotice} below its row, offering Restore. A damaged brain
+ * the store holds no copy of is listed after the held brains under the name
+ * the project gave it, with the notice alone and no other controls.
  */
 export function BrainList() {
   const store = useBrains();
-  const { brains } = useBrainsState();
+  const { brains, damaged } = useBrainsState();
+  const uncopied = [...damaged].filter(([id]) => !brains.has(id));
   const [dialog, setDialog] = useState<BrainDialog>(null);
   const [editingBrainId, setEditingBrainId] = useState<string | null>(null);
   const [expandedDiagnostics, setExpandedDiagnostics] = useState<ReadonlySet<string>>(new Set());
@@ -84,7 +137,7 @@ export function BrainList() {
         </Button>
       </div>
 
-      {brains.size === 0 ? (
+      {brains.size === 0 && uncopied.length === 0 ? (
         <div
           data-testid="brain-list-empty"
           className="mt-3 rounded-lg border border-border border-dashed p-6 text-center"
@@ -101,6 +154,7 @@ export function BrainList() {
             {[...brains].map(([id, brain]) => {
               const diagnostics = listedDiagnostics(brain);
               const diagnosticsExpanded = expandedDiagnostics.has(id) && diagnostics.length > 0;
+              const damage = damaged.get(id);
               return (
                 <li
                   key={id}
@@ -178,10 +232,27 @@ export function BrainList() {
                       </DropdownMenu>
                     </div>
                   </div>
+                  {damage !== undefined && (
+                    <BrainDamageNotice brainId={id} code={damage.code} restorable brains={store} />
+                  )}
                   {diagnosticsExpanded && <BrainDiagnosticsList diagnostics={diagnostics} />}
                 </li>
               );
             })}
+            {uncopied.map(([id, damage]) => (
+              <li
+                key={id}
+                data-testid="brain-item"
+                data-brain-id={id}
+                data-brain-name={damage.name}
+                className="flex flex-col"
+              >
+                <div className="px-3 py-2">
+                  <span className="wrap-break-word text-sm">{damage.name}</span>
+                </div>
+                <BrainDamageNotice brainId={id} code={damage.code} restorable={false} brains={store} />
+              </li>
+            ))}
           </ul>
         </div>
       )}

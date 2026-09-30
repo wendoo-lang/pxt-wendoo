@@ -63,6 +63,14 @@ export interface BrainEntry {
  */
 export type BrainDamageCode = typeof BRAIN_SOURCE_INVALID | typeof BRAIN_SOURCE_ID_MISMATCH;
 
+/** The damage found in the MakeCode project's source of one brain. */
+export interface BrainDamage {
+  /** Why the source is damaged. */
+  readonly code: BrainDamageCode;
+  /** The brain's display name as the project gave it with the damaged source; any text, including empty. */
+  readonly name: string;
+}
+
 /** What the editor reads from the brains store. */
 export interface BrainsViewState {
   /** The environment built from the session's latest catalog, for reading, editing and compiling brains. */
@@ -82,13 +90,13 @@ export interface BrainsViewState {
   readonly pending: ReadonlySet<string>;
   /**
    * Brains whose source in the MakeCode project is damaged, keyed by
-   * document id, each with the code of its damage: found on a pull, and
+   * document id, each with its damage: found on a pull, and
    * cleared when a later reconciliation finds the source repaired or gone,
    * or when the project acknowledges a push of the brain. The store never pushes a damaged brain by itself, and edits to
    * one stay pending; when {@link brains} holds the brain,
    * {@link BrainsStore.repushBrain} restores the project from that copy.
    */
-  readonly damaged: ReadonlyMap<string, BrainDamageCode>;
+  readonly damaged: ReadonlyMap<string, BrainDamage>;
 }
 
 /**
@@ -124,7 +132,7 @@ export class BrainsStore {
   private _environment: AuthoringEnvironment;
   private _brains: ReadonlyMap<string, BrainEntry> = new Map();
   private _pending: ReadonlySet<string> = new Set();
-  private _damaged: ReadonlyMap<string, BrainDamageCode> = new Map();
+  private _damaged: ReadonlyMap<string, BrainDamage> = new Map();
   /** The channel of the latest handshake, or `undefined` before the first. */
   private _channel: EditorBrainsChannel | undefined;
   /** Whether the latest handshake's reconciliation has finished. */
@@ -360,7 +368,7 @@ export class BrainsStore {
     for (const brain of pulled) {
       const read = this.readPulled(brain);
       if (typeof read === "string") {
-        damaged.set(brain.id, read);
+        damaged.set(brain.id, { code: read, name: brain.name });
         continue;
       }
       damaged.delete(brain.id);

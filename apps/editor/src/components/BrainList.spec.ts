@@ -6,10 +6,12 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
-import type { BrainsSessionState } from "../services/brains-store.js";
+import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../services/brain-source.js";
+import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
+import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
-import { BrainList } from "./BrainList.js";
+import { BrainDamageNotice, BrainList } from "./BrainList.js";
 
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
@@ -170,6 +172,72 @@ describe("BrainList", () => {
     assert.match(rowMarkup(render(store), id), /data-testid="brain-error-badge"[^>]*data-compile="stale"/);
   });
 
+  describe("damaged brains", () => {
+    /**
+     * Renders the brain list over `store`, reporting `damaged` as the
+     * damaged brains and recording each re-push asked of it in `repushed`.
+     */
+    function renderDamaged(damaged: BrainsViewState["damaged"], repushed: string[] = []): string {
+      const reporting = {
+        subscribe: store.subscribe,
+        getSnapshot: () => ({ ...store.getSnapshot(), damaged }),
+        repushBrain: (id: string) => {
+          repushed.push(id);
+        },
+      } as unknown as BrainsStore;
+      return render(reporting);
+    }
+
+    it("marks a damaged brain it holds a copy of with the coded notice and a Restore for that brain", () => {
+      const damaged = store.addBrain("Chaser");
+      const intact = store.addBrain("Runner");
+
+      const markup = renderDamaged(new Map([[damaged, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }]]));
+
+      const row = rowMarkup(markup, damaged);
+      assert.match(row, new RegExp(`data-testid="brain-damaged-notice" data-code="${BRAIN_SOURCE_INVALID}"`));
+      assert.match(row, new RegExp(`data-testid="brain-restore" data-brain-id="${damaged}"`));
+      assert.match(row, new RegExp(`data-testid="brain-edit" data-brain-id="${damaged}"`));
+      assert.doesNotMatch(rowMarkup(markup, intact), /data-testid="brain-damaged-notice"/);
+    });
+
+    it("lists a damaged brain it holds no copy of under the project's name, with the notice alone", () => {
+      const held = store.addBrain("Runner");
+
+      const markup = renderDamaged(new Map([["abcdabcdabcdabcd", { code: BRAIN_SOURCE_ID_MISMATCH, name: "Chaser" }]]));
+
+      assert.deepEqual(rows(markup), [
+        [held, "Runner"],
+        ["abcdabcdabcdabcd", "Chaser"],
+      ]);
+      const row = rowMarkup(markup, "abcdabcdabcdabcd");
+      assert.match(row, new RegExp(`data-testid="brain-damaged-notice" data-code="${BRAIN_SOURCE_ID_MISMATCH}"`));
+      assert.doesNotMatch(row, /data-testid="brain-restore"/);
+      assert.doesNotMatch(row, /data-testid="brain-edit"/);
+      assert.doesNotMatch(row, /data-testid="brain-actions"/);
+    });
+
+    it("shows a damaged brain it holds no copy of in place of the empty state", () => {
+      const markup = renderDamaged(new Map([["abcdabcdabcdabcd", { code: BRAIN_SOURCE_INVALID, name: "Chaser" }]]));
+
+      assert.doesNotMatch(markup, /data-testid="brain-list-empty"/);
+      assert.deepEqual(rows(markup), [["abcdabcdabcdabcd", "Chaser"]]);
+    });
+
+    it("drops the notice once the damage clears", () => {
+      const id = store.addBrain("Chaser");
+      assert.match(
+        renderDamaged(new Map([[id, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }]])),
+        /data-testid="brain-damaged-notice"/
+      );
+
+      const markup = renderDamaged(new Map());
+
+      assert.deepEqual(rows(markup), [[id, "Chaser"]]);
+      assert.doesNotMatch(markup, /data-testid="brain-damaged-notice"/);
+    });
+  });
+
   it("badges a brain that has never compiled with the none compile state", () => {
     const environment = store.getSnapshot().environment;
     const definition = BrainDef.emptyBrainDef(environment.brainServices, "Chaser");
@@ -181,5 +249,40 @@ describe("BrainList", () => {
     const markup = rowMarkup(render(store), definition.id());
 
     assert.match(markup, /data-testid="brain-error-badge"[^>]*data-compile="none"/);
+  });
+});
+
+describe("BrainDamageNotice", () => {
+  it("restores its own brain from the held copy when Restore is chosen", () => {
+    const repushed: string[] = [];
+    const tree = BrainDamageNotice({
+      brainId: "abcdabcdabcdabcd",
+      code: BRAIN_SOURCE_INVALID,
+      restorable: true,
+      brains: {
+        repushBrain: (id) => {
+          repushed.push(id);
+        },
+      },
+    });
+
+    (elementByTestId(tree, "brain-restore").props.onClick as () => void)();
+
+    assert.deepEqual(repushed, ["abcdabcdabcdabcd"]);
+  });
+
+  it("offers no Restore when no held copy exists", () => {
+    const tree = BrainDamageNotice({
+      brainId: "abcdabcdabcdabcd",
+      code: BRAIN_SOURCE_INVALID,
+      restorable: false,
+      brains: { repushBrain: () => {} },
+    });
+
+    assert.equal(elementByTestId(tree, "brain-damaged-notice").props["data-code"], BRAIN_SOURCE_INVALID);
+    assert.equal(
+      elementsIn(tree).some((element) => element.props["data-testid"] === "brain-restore"),
+      false
+    );
   });
 });

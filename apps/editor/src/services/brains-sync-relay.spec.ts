@@ -17,7 +17,6 @@ import {
   brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,
-  MAKECODE_VM_PROFILE_ID,
 } from "@wendoo/makecode-session";
 import { openBindingTokenStore, type TokenStorage } from "../../../../makecode/simx/bridge/src/binding-token-store.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../makecode/simx/bridge/src/sim-channel.js";
@@ -510,7 +509,7 @@ describe("brains sync with a scripted simx on the relay", () => {
       precision: MAKECODE_VM_PRECISION,
       typeRegistry: brains.getSnapshot().environment.brainServices.runtime.types,
     });
-    assert.equal(program.profileId, MAKECODE_VM_PROFILE_ID);
+    assert.equal(program.profileId, 2001);
   });
 
   it("lists a corrupt source as damaged without overwriting it, keeping the held copy for a re-push on request", async () => {
@@ -523,7 +522,7 @@ describe("brains sync with a scripted simx on the relay", () => {
     const { simx: returned } = await openSimx(simx.project, simx.bindingToken);
     const state = await brainsUntil(brains, (s) => s.damaged.size === 1, "the damage to be listed");
 
-    assert.equal(state.damaged.get(remote.id), BRAIN_SOURCE_INVALID);
+    assert.equal(state.damaged.get(remote.id)?.code, BRAIN_SOURCE_INVALID);
     assert.equal(state.brains.get(remote.id), held);
     await delay(50);
     assert.deepEqual(returned.requestsOf("makecode:brainsPush"), []);
@@ -544,7 +543,7 @@ describe("brains sync with a scripted simx on the relay", () => {
     session.connect(joinCode);
     const state = await brainsUntil(brains, (s) => s.damaged.size === 1, "the damage to be listed");
 
-    assert.equal(state.damaged.get(addressed.id), BRAIN_SOURCE_ID_MISMATCH);
+    assert.equal(state.damaged.get(addressed.id)?.code, BRAIN_SOURCE_ID_MISMATCH);
     assert.equal(state.brains.size, 0);
     await delay(50);
     assert.deepEqual(simx.requestsOf("makecode:brainsPush"), []);

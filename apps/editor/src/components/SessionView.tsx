@@ -5,23 +5,21 @@ import { AppHeader } from "./AppHeader";
 import { BrainList } from "./BrainList";
 import { CatalogDiagnosticsNotice } from "./CatalogDiagnosticsNotice";
 import { CatalogPanel } from "./CatalogPanel";
-import { isVersionCode, VersionNotice } from "./VersionNotice";
+import { VersionNotice } from "./VersionNotice";
 
 /**
  * The session: the app header, the recovery affordances, the brain list,
- * the catalog's diagnostics, and the catalog panel. The disconnected
- * indicator renders only once the disconnection has outlasted the grace;
- * the replacement hold and a version rejection render their notices at once,
- * as does the not-recognized notice for an entered code refused while the
- * store falls back to the held session.
+ * the catalog's diagnostics, and the catalog panel. The replacement hold and
+ * a version rejection render their notices at once, as does the
+ * not-recognized notice for an entered code refused while the store falls
+ * back to the held session.
  */
 export function SessionView() {
   const store = useEditorSession();
-  const { errorCode, disconnectedBeyondGrace, catalogText } = useEditorSessionState();
+  const { errorCode, catalogText } = useEditorSessionState();
   const { catalogDiagnostics } = useBrainsState();
 
   const replaced = errorCode === BridgeSessionErrorCode.SESSION_REPLACED;
-  const showIndicator = disconnectedBeyondGrace && !replaced && !isVersionCode(errorCode);
 
   return (
     <div className="flex h-screen flex-col">
@@ -68,25 +66,6 @@ export function SessionView() {
           </section>
         )}
         <VersionNotice errorCode={errorCode} />
-        {showIndicator && (
-          <section
-            data-testid="disconnected-indicator"
-            className="max-w-md rounded-lg border border-border p-3 text-sm"
-          >
-            <p className="font-medium">The MakeCode project isn't connected right now</p>
-            <p className="text-muted-foreground">Waiting for it to come back...</p>
-            <button
-              type="button"
-              data-testid="forget-button"
-              className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm"
-              onClick={() => {
-                store.forget();
-              }}
-            >
-              Start over
-            </button>
-          </section>
-        )}
         <BrainList />
         <CatalogDiagnosticsNotice diagnostics={catalogDiagnostics} />
         <CatalogPanel catalogText={catalogText} />

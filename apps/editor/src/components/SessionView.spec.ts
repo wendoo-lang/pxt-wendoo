@@ -58,7 +58,6 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /apple-bird-cloud/);
     assert.doesNotMatch(markup, /data-testid="copy-join-code"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
-    assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
     assert.doesNotMatch(markup, /data-testid="version-notice"/);
     assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
@@ -75,21 +74,21 @@ describe("SessionView", () => {
   it("stays quiet about a disconnection within the grace, keeping the catalog rendered", () => {
     const markup = render(stateWith({ status: "disconnected" }));
 
-    assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.match(markup, /data-testid="connection-status" data-status="connected"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
   });
 
-  it("shows the disconnected indicator with a forget affordance once the grace has passed", () => {
+  it("states a disconnection past the grace in the header alone, offering End session there and no away card", () => {
     const markup = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }));
 
-    assert.match(markup, /data-testid="disconnected-indicator"/);
-    assert.match(markup, /data-testid="forget-button"/);
     assert.match(markup, /data-testid="connection-status" data-status="reconnecting"/);
+    assert.match(markup, /data-testid="end-session-button"/);
+    assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
+    assert.doesNotMatch(markup, /data-testid="forget-button"/);
     assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
   });
 
-  it("shows the replacement hold at once, with reconnect and start-over actions and no indicator", () => {
+  it("shows the replacement hold at once, with reconnect and start-over actions", () => {
     const markup = render(
       stateWith({
         status: "disconnected",
@@ -102,10 +101,9 @@ describe("SessionView", () => {
     assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.SESSION_REPLACED}"`));
     assert.match(markup, /data-testid="reconnect-button"/);
     assert.match(markup, /data-testid="start-over-button"/);
-    assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
   });
 
-  it("shows the version notice with its reload remedy at once, and no indicator", () => {
+  it("shows the version notice with its reload remedy at once", () => {
     const markup = render(
       stateWith({
         status: "disconnected",
@@ -117,7 +115,6 @@ describe("SessionView", () => {
     assert.match(markup, /data-testid="version-notice"/);
     assert.ok(markup.includes(`data-code="${PeerSessionErrorCode.PROTOCOL_VERSION_NEWER}"`));
     assert.match(markup, /data-testid="reload-button"/);
-    assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
   });
 
   it("shows the not-recognized notice, carrying the stable code, while it falls back to the held session", () => {

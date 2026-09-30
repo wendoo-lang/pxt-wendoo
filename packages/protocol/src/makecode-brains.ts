@@ -1,10 +1,23 @@
 /**
- * Numeric device-profile id written into the envelope of every brain
- * compiled for the MakeCode Wendoo VM. The value is interim: it stands until
- * the platform's device-profile map assigns the MakeCode Wendoo VM its
- * identity, and it changes then.
+ * The MakeCode Wendoo VM's device profiles: each key names a world brains
+ * are compiled for -- the computational semantics a compiled brain assumes
+ * -- and maps it to the numeric device-profile id written into the envelope
+ * of every brain compiled for that world. `sts-f64` is the static TypeScript
+ * VM computing in 64-bit floating point, on every MakeCode target.
+ *
+ * Append-only: never renumber an entry, and never reuse the id of a removed
+ * one.
  */
-export const MAKECODE_VM_PROFILE_ID = 1001;
+export const MakeCodeDeviceProfileNumericId = Object.freeze({
+  "sts-f64": 2001,
+} as const);
+
+/**
+ * Numeric device-profile id written into the envelope of every brain
+ * compiled for the MakeCode Wendoo VM: the id of its `sts-f64` world in
+ * {@link MakeCodeDeviceProfileNumericId}.
+ */
+export const MAKECODE_VM_PROFILE_ID = MakeCodeDeviceProfileNumericId["sts-f64"];
 
 /**
  * Hash of a brain source text: 32-bit FNV-1a over its UTF-16 code units, as

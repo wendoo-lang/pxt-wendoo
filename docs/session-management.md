@@ -38,9 +38,8 @@ session wire surface:
   (described below);
 - the brain contracts both sides of the family must agree on:
   `brainSourceHash` (32-bit FNV-1a over UTF-16 code units, eight
-  lowercase hex digits) and `MAKECODE_VM_PROFILE_ID`, the device-profile
-  id compiled brains carry (its value is interim, pending the
-  platform's device-profile map);
+  lowercase hex digits) and the device profile compiled brains carry
+  (see "Device profiles", below);
 - `DEFAULT_MAKECODE_BRIDGE_URL`, the deployed bridge service's
   address as a bare host with an optional port and no scheme; the
   bridge client connects with `ws://` to a loopback host and
@@ -49,6 +48,26 @@ session wire surface:
 Per the core placement rule, this package lives here -- with the
 integration -- and never in the upstream core packages. Its kind
 name must never collide with a reserved bridge namespace.
+
+## Device profiles
+
+Every compiled brain's envelope carries a numeric device-profile id:
+the computational world the brain was compiled for. The upstream
+format specifies the field; each platform declares its own ids, and
+this lane's declaration is `MakeCodeDeviceProfileNumericId` in
+`packages/protocol`, a frozen map from world name to id:
+
+| World     | Id   | Meaning                                                          |
+| --------- | ---- | ---------------------------------------------------------------- |
+| `sts-f64` | 2001 | the static TypeScript VM, 64-bit floating point, on every target |
+
+- The map is keyed by WORLD, not by MakeCode target: the VM is
+  target-agnostic and computes in 64-bit floating point on every
+  MakeCode target, so every target shares the one world.
+- `MAKECODE_VM_PROFILE_ID` is the `sts-f64` id; the editor stamps it
+  into every brain it compiles.
+- The map is append-only: an entry is never renumbered, and a removed
+  entry's id is never reused.
 
 ## Who plays which role
 
@@ -255,9 +274,10 @@ is vacant, and the relay sends it to whichever side is connected:
 - Reloads never end a session: the editor closing on `pagehide` and
   the simx disposing its frame both stop the connection, which the
   session survives. Two deliberate ends exist in this lane. The
-  editor's `forget()` over a live connection sends `session:goodbye`;
-  the simx is then told `SESSION_ENDED`, clears its token, and holds
-  on its ended panel. The simx's panel "end session" action, once
+  editor's `forget()` over a live connection sends `session:goodbye`
+  (the editor's End session action calls it; see "The editor webapp
+  on this object", below); the simx is then told `SESSION_ENDED`,
+  clears its token, and holds on its ended panel. The simx's panel "end session" action, once
   confirmed, calls `startNewSession`: over an open connection it sends
   `session:goodbye`, so a connected editor is told `SESSION_ENDED`
   and returns to its connect page, then the simx clears its token and
@@ -371,7 +391,9 @@ it keys on a session id.
   in a new tab), the declared target's display name,
   and the connection status as an 8px dot and a lowercase word --
   the simx panel's idiom, using its words where the states
-  correspond. The status is carried as `data-status`: `connecting`
+  correspond -- followed, while the status is `connected` or
+  `reconnecting`, by the END SESSION action (below). The status is
+  carried as `data-status`: `connecting`
   (the session has not connected since the page opened it),
   `connected`, `reconnecting` (only once a disconnection outlasts the
   grace, below), `replaced` (the editor-only takeover hold), `ended`,
@@ -386,18 +408,34 @@ it keys on a session id.
   delivery, never what is already shown -- and is dropped whenever no
   session exists.
 - The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
-  routinely, so a brief disconnect is the common case. The
-  disconnected indicator -- the MakeCode project is not connected,
-  waiting for it to come back -- renders only once a disconnection
-  outlasts `DISCONNECT_GRACE_MS` (a few seconds), and then offers
-  `forget()` as "Start over". The header turns `reconnecting` at the
-  same moment; until then it keeps showing the status from before the
-  disconnection. "Start over" and the simx's "End session" are
-  different actions and keep distinct labels. The session object
-  stays truthful; the grace lives in the editor's view-model only.
+  routinely, so a brief disconnect is the common case. The header
+  turns `reconnecting` only once a disconnection outlasts
+  `DISCONNECT_GRACE_MS` (a few seconds); until then it keeps showing
+  the status from before the disconnection. The header's status is
+  the whole disconnection surface -- the session view shows no card
+  for it -- and End session beside it is the way out. The session
+  object stays truthful; the grace lives in the editor's view-model
+  only.
+- END SESSION: a small destructive button beside the header's status,
+  shown while the status is `connected` or `reconnecting` (never on
+  the connect page, and not in the `replaced` or `update` holds,
+  which carry their own remedies). It opens a destructive
+  confirmation, the same dialog removing a brain uses; confirming
+  calls the store's `forget()`, which over a live connection sends
+  `session:goodbye`, so the relay ends the session for BOTH sides --
+  the simx is told `SESSION_ENDED` and shows its ended panel -- and
+  returns this editor to the connect page. It is the analog of the
+  simx panel's "End session". Known shape: an end performed while the
+  simx is away does not reach it (see "Join codes, refusal, and
+  takeover in this lane", above), and an end performed while this
+  editor's own connection is down reaches no one; either way the
+  editor returns to its connect page, and the simx's own End session
+  recovers its side.
 - RECOVERY AFFORDANCES: `SESSION_REPLACED` shows a held-state notice
-  at once, with a reconnect action (`start()`) and a start-over
-  action (`forget()`, back to the connect page). An overflow recovers
+  at once, with a reconnect action (`start()`) and a "Start over"
+  action (`forget()`, back to the connect page; the held connection
+  is closed, so nothing reaches the relay and the start over clears
+  this editor's seat alone). An overflow recovers
   automatically and surfaces only as transient status. A version
   rejection shows its remedy -- reload the editor -- the one ruled
   exception to in-page recovery. `JOIN_CODE_UNKNOWN` and
@@ -405,10 +443,7 @@ it keys on a session id.
   `JOIN_CODE_UNKNOWN` refusing a code entered while a binding token is
   held renders its notice in the session view instead, while the store
   falls back to the token's session (see "Opening the editor from the
-  simx", below). The
-  start-over actions call `forget()`, which ends a session whose
-  connection is live -- a counterpart away but this side connected --
-  and clears locally otherwise.
+  simx", below).
 - The binding token persists in `localStorage` through a small
   persistence module (load/save/clear/has) wired into the session's
   token hooks; the store owns nothing else durable.
@@ -428,8 +463,19 @@ it keys on a session id.
   badge counts the compile's errors and warnings (carrying the
   compile state -- `current`, `stale`, or `none` -- as
   `data-compile`). Rows also rename and remove brains; adding a brain
-  names it and opens the editor on it. Pending edits and damaged
-  project sources have no surface yet; they live in the store's state.
+  names it and opens the editor on it. Pending edits have no surface
+  yet; they live in the store's state.
+- DAMAGED BRAINS (see "Brain sync", below) surface in the brain list
+  at the default diagnostics tier, since restoring is a
+  blocks-only action. A damaged brain's row carries a notice worded
+  for the kid -- its file in the MakeCode project is broken -- with
+  the damage's stable code as `data-code`, never as text. When the
+  store holds a copy of the brain, the notice offers Restore
+  (`repushBrain`); a damaged brain the store holds no copy of is
+  listed after the held brains under the name the project gave it,
+  with the notice alone (fix or delete the file in MakeCode) and no
+  other controls. The store clears the damage on the project's ack
+  or a later reconciliation, and the notice goes with it.
 - The CATALOG DIAGNOSTICS the store reports while building its
   environment render as one coded line each above the catalog panel:
   `CATALOG_UNREADABLE` for catalog text it cannot read (brains keep
@@ -479,7 +525,8 @@ channel, then pushes each edit as it is made:
   last good one, and nothing is pushed.
 - CORRUPTION: a pulled source that is not a brain document is listed in
   the store's `damaged` map under `BRAIN_SOURCE_INVALID`, and one whose
-  embedded id differs from its address under `BRAIN_SOURCE_ID_MISMATCH`.
+  embedded id differs from its address under `BRAIN_SOURCE_ID_MISMATCH`,
+  each with the display name the pull carried.
   The store never crashes on it and never overwrites it by itself: a
   held copy stays as it was, edits to a damaged brain (removals
   included) stay pending, and the flush skips it. `repushBrain(id)`

@@ -10,6 +10,7 @@
   "include": [
     "src/vite-env.d.ts",
     "src/**/*.spec.ts",
+    "src/test-support/element-tree.ts",
     "src/test-support/single-react.ts",
     "src/components/AppHeader.tsx",
     "src/components/BrainDiagnostics.tsx",
@@ -20,6 +21,7 @@
     "src/components/ConfirmDialog.tsx",
     "src/components/ConnectPage.tsx",
     "src/components/ConnectionStatus.tsx",
+    "src/components/EndSession.tsx",
     "src/components/Modal.tsx",
     "src/components/NameInputDialog.tsx",
     "src/components/SessionView.tsx",

@@ -559,7 +559,7 @@ describe("brains sync", () => {
 
       const second = await handshake("token-1", first.project);
 
-      assert.equal(store.getSnapshot().damaged.get(remote.id), BRAIN_SOURCE_INVALID);
+      assert.equal(store.getSnapshot().damaged.get(remote.id)?.code, BRAIN_SOURCE_INVALID);
       assert.equal(entryOf(store, remote.id), held);
       assert.deepEqual(second.pushes, []);
       assert.equal(second.project.get(remote.id)?.source, "not json {");
@@ -592,7 +592,7 @@ describe("brains sync", () => {
 
       const second = await handshake("token-1", first.project);
 
-      assert.equal(store.getSnapshot().damaged.get(remote.id), BRAIN_SOURCE_INVALID);
+      assert.equal(store.getSnapshot().damaged.get(remote.id)?.code, BRAIN_SOURCE_INVALID);
       assert.deepEqual([...store.getSnapshot().pending], [remote.id]);
       assert.deepEqual(second.pushes, []);
     });
@@ -616,7 +616,7 @@ describe("brains sync", () => {
       assert.equal(second.project.get(remote.id)?.source, entryOf(store, remote.id).source);
     });
 
-    it("lists a damaged brain it holds no copy of, offering no re-push", async () => {
+    it("lists a damaged brain it holds no copy of under the name the project gives it, offering no re-push", async () => {
       const store = syncedStore();
       const remote = { ...projectBrain("Remote"), source: "[]" };
 
@@ -624,7 +624,7 @@ describe("brains sync", () => {
       store.repushBrain(remote.id);
       await settle();
 
-      assert.equal(store.getSnapshot().damaged.get(remote.id), BRAIN_SOURCE_INVALID);
+      assert.deepEqual(store.getSnapshot().damaged.get(remote.id), { code: BRAIN_SOURCE_INVALID, name: "Remote" });
       assert.equal(store.getSnapshot().brains.has(remote.id), false);
       assert.deepEqual(channel.pushes, []);
     });
@@ -637,7 +637,7 @@ describe("brains sync", () => {
 
       const channel = await handshake("token-1", projectOf(mismatched));
 
-      assert.equal(store.getSnapshot().damaged.get(addressed.id), BRAIN_SOURCE_ID_MISMATCH);
+      assert.equal(store.getSnapshot().damaged.get(addressed.id)?.code, BRAIN_SOURCE_ID_MISMATCH);
       assert.equal(store.getSnapshot().brains.size, 0);
       assert.deepEqual(channel.pushes, []);
     });

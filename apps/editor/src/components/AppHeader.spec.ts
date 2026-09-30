@@ -71,6 +71,48 @@ describe("AppHeader", () => {
     );
   });
 
+  it("offers End session beside the status while a session is connected or reconnecting", () => {
+    const connected = render(stateWith({}));
+    assert.match(connected, /data-testid="end-session-button"/);
+    assert.ok(
+      connected.indexOf('data-testid="connection-status"') < connected.indexOf('data-testid="end-session-button"')
+    );
+
+    const withinGrace = render(stateWith({ status: "disconnected" }));
+    assert.match(withinGrace, /data-testid="connection-status" data-status="connected"/);
+    assert.match(withinGrace, /data-testid="end-session-button"/);
+
+    const reconnecting = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }));
+    assert.match(reconnecting, /data-testid="connection-status" data-status="reconnecting"/);
+    assert.match(reconnecting, /data-testid="end-session-button"/);
+  });
+
+  it("offers no End session while connecting, taken over, or needing an update", () => {
+    const connecting = render(stateWith({ status: "disconnected", connectedSinceOpen: false }));
+    assert.match(connecting, /data-testid="connection-status" data-status="connecting"/);
+    assert.doesNotMatch(connecting, /data-testid="end-session-button"/);
+
+    const replaced = render(
+      stateWith({
+        status: "disconnected",
+        errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
+        disconnectedBeyondGrace: true,
+      })
+    );
+    assert.match(replaced, /data-testid="connection-status" data-status="replaced"/);
+    assert.doesNotMatch(replaced, /data-testid="end-session-button"/);
+
+    const update = render(
+      stateWith({
+        status: "disconnected",
+        errorCode: BridgeSessionErrorCode.PROTOCOL_VERSION_MISMATCH,
+        disconnectedBeyondGrace: true,
+      })
+    );
+    assert.match(update, /data-testid="connection-status" data-status="update"/);
+    assert.doesNotMatch(update, /data-testid="end-session-button"/);
+  });
+
   it("links the logotype to the Wendoo homepage in a new tab", () => {
     const markup = render(stateWith({ target: "arcade" }));
     const link = /<a [^>]*href="https:\/\/wendoo.com"[^>]*>/.exec(markup)?.[0];

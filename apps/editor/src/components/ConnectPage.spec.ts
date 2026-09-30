@@ -58,6 +58,15 @@ describe("ConnectPage", () => {
     assert.doesNotMatch(renderWith(stateWith({}), createElement(ConnectPage)), /data-testid="app-header"/);
   });
 
+  it("offers no End session, whether idle, with a code pending, or after an end", () => {
+    for (const fields of [{}, { entry: "submitted" as const }, { errorCode: BridgeSessionErrorCode.SESSION_ENDED }]) {
+      assert.doesNotMatch(
+        renderWith(stateWith(fields), createElement(ConnectPage)),
+        /data-testid="end-session-button"/
+      );
+    }
+  });
+
   it("shows the not-recognized notice, carrying the stable code, with the entry ready for another code", () => {
     const markup = renderWith(
       stateWith({ errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN }),

@@ -13,7 +13,7 @@ import type {
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
 } from "@wendoo/makecode-session";
-import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
+import { brainSourceHash } from "@wendoo/makecode-session";
 import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
 import { serializeBrainSource } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
@@ -211,7 +211,7 @@ describe("brains store", () => {
         precision: MAKECODE_VM_PRECISION,
         typeRegistry: store.getSnapshot().environment.brainServices.runtime.types,
       });
-      assert.equal(decoded.profileId, MAKECODE_VM_PROFILE_ID);
+      assert.equal(decoded.profileId, 2001);
     });
 
     it("keeps a failed brain's document and coded diagnostics, beside its last good compile", () => {

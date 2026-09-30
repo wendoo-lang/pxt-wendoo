@@ -1,13 +1,16 @@
 import { useEditorSessionState } from "@/contexts/editor-session";
 import { resolveTarget } from "@/services/target-theme";
 import { ConnectionStatus, connectionStatus } from "./ConnectionStatus";
+import { EndSession } from "./EndSession";
 import { WendooLogotype } from "./WendooLogo";
 
 /**
  * The app header of the session view: the identity strip -- the Wendoo
  * logotype, linking to the Wendoo homepage in a new tab, and, when the
  * MakeCode side declared a target, its display name,
- * carrying the target id as `data-target` -- and the connection status.
+ * carrying the target id as `data-target` -- and the connection status,
+ * followed by the End session action while the status is `connected` or
+ * `reconnecting`.
  */
 export function AppHeader() {
   const state = useEditorSessionState();
@@ -34,7 +37,10 @@ export function AppHeader() {
           </>
         )}
       </h1>
-      {status !== undefined && <ConnectionStatus status={status} />}
+      <div className="flex items-center gap-3">
+        {status !== undefined && <ConnectionStatus status={status} />}
+        {(status === "connected" || status === "reconnecting") && <EndSession />}
+      </div>
     </header>
   );
 }
