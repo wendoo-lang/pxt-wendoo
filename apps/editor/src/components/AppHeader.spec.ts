@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { BrainsProvider } from "../contexts/brains.js";
 import { EditorSessionProvider } from "../contexts/editor-session.js";
+import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
+import { BrainsStore } from "../services/brains-store.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
 import { AppHeader } from "./AppHeader.js";
 
@@ -23,13 +26,28 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
   };
 }
 
-/** Renders the header under a provider whose store reports `state`. */
-function render(state: EditorSessionViewState): string {
+/**
+ * Renders the header under providers whose session store reports `state` and
+ * whose brains store reports `brains` over an empty store's view.
+ */
+function render(state: EditorSessionViewState, brains: Partial<BrainsViewState> = {}): string {
   const store = {
     subscribe: () => () => {},
     getSnapshot: () => state,
   } as unknown as EditorSessionStore;
-  return renderToStaticMarkup(createElement(EditorSessionProvider, { value: store }, createElement(AppHeader)));
+  const held = new BrainsStore({
+    subscribe: () => () => {},
+    getSnapshot: (): BrainsSessionState => ({ status: state.status, catalogText: undefined }),
+  });
+  const brainsView = { ...held.getSnapshot(), ...brains };
+  const brainsStore = { subscribe: held.subscribe, getSnapshot: () => brainsView } as unknown as BrainsStore;
+  return renderToStaticMarkup(
+    createElement(
+      EditorSessionProvider,
+      { value: store },
+      createElement(BrainsProvider, { value: brainsStore }, createElement(AppHeader))
+    )
+  );
 }
 
 describe("AppHeader", () => {
@@ -111,6 +129,20 @@ describe("AppHeader", () => {
     );
     assert.match(update, /data-testid="connection-status" data-status="update"/);
     assert.doesNotMatch(update, /data-testid="end-session-button"/);
+  });
+
+  it("shows the brains store's save status beside the connection status, in every status", () => {
+    const unsaved = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }), {
+      pending: new Set(["a"]),
+      reconciled: false,
+    });
+    assert.match(unsaved, /data-testid="save-status" data-save-state="unsaved" data-pending="1"/);
+    assert.ok(unsaved.indexOf('data-testid="save-status"') < unsaved.indexOf('data-testid="connection-status"'));
+
+    const saving = render(stateWith({}), { pending: new Set(["a"]), pushesInFlight: 1, reconciled: true });
+    assert.match(saving, /data-testid="save-status" data-save-state="saving"/);
+
+    assert.match(render(stateWith({})), /data-testid="save-status" data-save-state="saved"/);
   });
 
   it("links the logotype to the Wendoo homepage in a new tab", () => {

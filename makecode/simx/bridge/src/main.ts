@@ -6,10 +6,10 @@ import { SimxStatusModel } from "./status-model.js";
 import { mountStatusPanel } from "./status-panel.js";
 import { getProjectId, getSimxChannel, getTargetId, ProjfsClient } from "./vendor/projfs.js";
 
-// Binding token store scoped to this browser tab and to the project MakeCode passes in the frame URL.
-const tokens = openBindingTokenStore(() => window.sessionStorage, getProjectId());
+// Binding token store kept in the browser's local storage, shared by every tab of this origin, scoped to the project MakeCode passes in the frame URL.
+const tokens = openBindingTokenStore(() => window.localStorage, getProjectId());
 if (!tokens.persistent) {
-  console.warn("Wendoo bridge: session storage is unavailable; each reload of this frame starts a new pairing.");
+  console.warn("Wendoo bridge: local storage is unavailable; each reload of this frame starts a new pairing.");
 }
 // Project-file client for this frame; warns on the console about each request still unanswered after the slow-reply threshold.
 const files = new ProjfsClient({

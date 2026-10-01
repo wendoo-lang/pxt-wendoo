@@ -27,7 +27,12 @@ import {
   type MakeCodeSessionMessage,
   type MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
-import { type BindingTokenStore, openBindingTokenStore, type TokenStorage } from "./binding-token-store.js";
+import {
+  type BindingTokenStore,
+  bindingTokenStorageKey,
+  openBindingTokenStore,
+  type TokenStorage,
+} from "./binding-token-store.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
@@ -856,6 +861,96 @@ describe("simx bridge on the relay", () => {
 
       assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
       assert.equal(rewelcome.sessionId, welcome.sessionId);
+    });
+  });
+
+  describe("tabs sharing the project's token storage", () => {
+    /**
+     * Starts a simx bridge as a newly opened tab on `project` does: in a new
+     * frame, with a new token store over `storage`. Returns the bridge and its frame.
+     */
+    function openTab(storage: TokenStorage, project: string): { tab: SimxBridge; tabFrame: FakeFrame } {
+      const tabFrame = new FakeFrame();
+      const tab = startSimxBridge({
+        frame: tabFrame,
+        bridgeUrl: relay.address,
+        tokens: openBindingTokenStore(() => storage, project),
+        log,
+        files,
+      });
+      return { tab, tabFrame };
+    }
+
+    it("restores the session in a newly opened tab, whose new store finds the token the closed tab saved", async () => {
+      const storage = new MemoryStorage();
+      tokens = openBindingTokenStore(() => storage, "project-a");
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+
+      bridge?.dispose();
+      assertCounterpartAway(await editor.nextMessage());
+      const vacancyCode = assertJoinCode(await editor.nextMessage());
+      const { tab, tabFrame } = openTab(storage, "project-a");
+      bridge = tab;
+      tabFrame.programPosts("{}");
+      const rewelcome = assertWelcome(await editor.nextMessage());
+      await handshake(editor);
+
+      assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+      assert.equal(rewelcome.sessionId, welcome.sessionId);
+      assert.equal(tab.joinCode, undefined);
+      assert.ok(!log.infos.some((line) => line.includes(vacancyCode)));
+    });
+
+    it("hands the session to the newer of two tabs on one project: the older rests on replaced, never reconnecting, and leaves the token stored", async () => {
+      const storage = new MemoryStorage();
+      const key = bindingTokenStorageKey("project-a");
+      tokens = openBindingTokenStore(() => storage, "project-a");
+      const { socket: olderSocket, joinCode } = await startSimx(CATALOG_TEXT);
+      const older = bridge;
+      assert.ok(older);
+      const olderModel = new SimxStatusModel(older, { awayGraceMs: 50 });
+      const { editor, welcome } = await joinEditor(joinCode, CATALOG_TEXT);
+      const { tab: newer, tabFrame: newerFrame } = openTab(storage, "project-a");
+      let latest: SimxBridge | undefined;
+      try {
+        newerFrame.programPosts("{}");
+        assertSessionError(await olderSocket.firstReceived("session:error"), BridgeSessionErrorCode.SESSION_REPLACED);
+        const rewelcome = assertWelcome(await editor.nextMessage());
+        await handshake(editor);
+        assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+        await shown(olderModel, (view) => view.state === "replaced", "the replaced state");
+
+        olderModel.startNewSession();
+        olderModel.requestEnd();
+        olderModel.confirmEnd();
+        // Waits out the bridge client's first reconnect attempt.
+        await delay(1200);
+
+        assert.equal(rewelcome.sessionId, welcome.sessionId);
+        assert.equal(older.errorCode, BridgeSessionErrorCode.SESSION_REPLACED);
+        assert.equal(older.connection, "disconnected");
+        assert.equal(olderModel.getSnapshot().state, "replaced");
+        assert.equal(simxSockets().length, 2);
+        assert.equal(storage.items.get(key), welcome.bindingToken);
+        assert.equal(newer.counterpartConnected, true);
+        assert.ok(log.errors.some((line) => line.startsWith(BridgeSessionErrorCode.SESSION_REPLACED)));
+
+        newer.dispose();
+        assertCounterpartAway(await editor.nextMessage());
+        assertJoinCode(await editor.nextMessage());
+        const reopened = openTab(storage, "project-a");
+        latest = reopened.tab;
+        reopened.tabFrame.programPosts(CATALOG_TEXT);
+        assert.equal(assertWelcome(await editor.nextMessage()).sessionId, welcome.sessionId);
+        await handshake(editor);
+        assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+        assert.equal(storage.items.get(key), welcome.bindingToken);
+      } finally {
+        olderModel.dispose();
+        newer.dispose();
+        latest?.dispose();
+      }
     });
   });
 

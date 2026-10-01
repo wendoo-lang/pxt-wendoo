@@ -25,6 +25,7 @@
     "src/components/EndSession.tsx",
     "src/components/Modal.tsx",
     "src/components/NameInputDialog.tsx",
+    "src/components/SaveStatus.tsx",
     "src/components/SessionView.tsx",
     "src/components/VersionNotice.tsx",
     "src/components/WendooLogo.tsx",

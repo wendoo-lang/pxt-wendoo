@@ -83,7 +83,7 @@ describe("binding token store", () => {
     assert.equal(bindingTokenStorageKey(undefined), BINDING_TOKEN_STORAGE_KEY);
   });
 
-  it("finds no token for another project opened in the same tab, and each project's own token when it returns", () => {
+  it("finds no token for another project, and each project's own token when it returns", () => {
     const storage = new MemoryStorage();
     openBindingTokenStore(() => storage, "project-a").save("token-a");
 
@@ -96,7 +96,7 @@ describe("binding token store", () => {
     assert.equal(openBindingTokenStore(() => storage, "project-b").load(), "token-b");
   });
 
-  it("keeps a frame serving no known project on the per-tab key, apart from every project's", () => {
+  it("keeps a frame serving no known project on the unscoped key, apart from every project's", () => {
     const storage = new MemoryStorage();
     openBindingTokenStore(() => storage, "project-a").save("token-a");
 
@@ -105,6 +105,20 @@ describe("binding token store", () => {
 
     assert.equal(storage.items.get(BINDING_TOKEN_STORAGE_KEY), "token-tab");
     assert.equal(openBindingTokenStore(() => storage, "project-a").load(), "token-a");
+  });
+
+  it("hands a project's token to a store a newly opened tab opens over the same storage, and none of another project's", () => {
+    const storage = new MemoryStorage();
+    const closedTab = openBindingTokenStore(() => storage, "project-a");
+    closedTab.save("token-a");
+    openBindingTokenStore(() => storage, "project-b").save("token-b");
+
+    const newTab = openBindingTokenStore(() => storage, "project-a");
+
+    assert.equal(newTab.load(), "token-a");
+    newTab.clear();
+    assert.equal(openBindingTokenStore(() => storage, "project-a").load(), undefined);
+    assert.equal(openBindingTokenStore(() => storage, "project-b").load(), "token-b");
   });
 
   it("clears only its own project's token", () => {

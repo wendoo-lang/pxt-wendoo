@@ -171,10 +171,9 @@ describe("simx status model", () => {
     });
   });
 
-  it("shows ended when the session was ended, and for every other failure that stops the connection", () => {
+  it("shows ended when the session was ended, and for every other failure that stops the connection but a replacement", () => {
     for (const code of [
       BridgeSessionErrorCode.SESSION_ENDED,
-      BridgeSessionErrorCode.SESSION_REPLACED,
       BridgeSessionErrorCode.OUTBOUND_QUEUE_OVERFLOW,
       BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
     ]) {
@@ -183,6 +182,30 @@ describe("simx status model", () => {
       source.set({ errorCode: code, connection: "disconnected", counterpartConnected: false });
       assert.equal(model.getSnapshot().state, "ended", code);
     }
+  });
+
+  it("shows replaced when another connection took the session over, and rests there: no new session, no end", () => {
+    const source = FakeSource.connected();
+    const model = new SimxStatusModel(source);
+    model.requestEnd();
+
+    source.set({
+      errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
+      connection: "disconnected",
+      counterpartConnected: false,
+    });
+    assert.deepEqual(model.getSnapshot(), {
+      state: "replaced",
+      joinCode: undefined,
+      retrying: false,
+      endFrom: undefined,
+    });
+    model.startNewSession();
+    model.requestEnd();
+    model.confirmEnd();
+
+    assert.equal(source.newSessions, 0);
+    assert.equal(model.getSnapshot().state, "replaced");
   });
 
   it("shows update needed for a version rejection, from the bridge service or from the editor's hello", () => {

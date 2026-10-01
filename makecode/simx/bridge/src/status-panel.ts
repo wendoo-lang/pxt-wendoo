@@ -10,6 +10,7 @@ const STATUS_WORDS: Record<Exclude<SimxStatusState, "confirm">, string> = {
   connected: "connected",
   away: "reconnecting",
   ended: "ended",
+  replaced: "in another tab",
   update: "update needed",
 };
 
@@ -86,6 +87,11 @@ function renderBody(view: SimxStatusView, editorUrl: string): string {
       return (
         '<div class="body"><span class="title">Session ended</span>' +
         '<button type="button" class="start-new" aria-label="Start a new session" data-action="start-new">Start a new session</button></div>'
+      );
+    case "replaced":
+      return (
+        '<div class="body"><span class="title">Wendoo moved to another tab</span>' +
+        '<span class="note">This game is connected in another tab now. Reload this page to connect here instead</span></div>'
       );
     case "update":
       return (

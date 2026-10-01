@@ -21,10 +21,23 @@ export const AWAY_DISPLAY_GRACE_MS = 4000;
  *   and awaits confirmation.
  * - `ended`: the connection stopped for good -- the session was ended, or
  *   another failure stopped it -- until a new session is started.
+ * - `replaced`: a newer connection presenting this side's binding token, as
+ *   another tab on the same project opens, took the session over; the
+ *   session continues there. A resting state: nothing here reconnects, starts
+ *   a new session, or touches the stored token, and reloading the page is the
+ *   one way to take the session back.
  * - `update`: this side and the bridge service or the editor speak no common
  *   version; reloading the page updates this side.
  */
-export type SimxStatusState = "connecting" | "code" | "connected" | "away" | "confirm" | "ended" | "update";
+export type SimxStatusState =
+  | "connecting"
+  | "code"
+  | "connected"
+  | "away"
+  | "confirm"
+  | "ended"
+  | "replaced"
+  | "update";
 
 /** One reading of the simulator extension's session status, as the panel renders it. */
 export interface SimxStatusView {
@@ -78,6 +91,7 @@ function readSource(source: SimxStatusSource): SimxStatusView {
     endFrom: undefined,
   });
   if (isVersionCode(source.errorCode)) return view("update");
+  if (source.errorCode === BridgeSessionErrorCode.SESSION_REPLACED) return view("replaced");
   if (source.errorCode !== undefined) return view("ended");
   if (source.connection !== "connected") {
     return { ...view("connecting"), retrying: source.connection === "reconnecting" };

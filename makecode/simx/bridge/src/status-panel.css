@@ -73,7 +73,8 @@ body {
   background: #a3a3a3;
 }
 
-.status[data-tone="ended"] .dot {
+.status[data-tone="ended"] .dot,
+.status[data-tone="replaced"] .dot {
   background: #737373;
 }
 

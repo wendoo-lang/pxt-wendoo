@@ -17,6 +17,7 @@ import {
   brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,
+  MakeCodeBrainsErrorCode,
 } from "@wendoo/makecode-session";
 import {
   type BindingTokenStore,
@@ -33,6 +34,7 @@ import {
   PROJFS_SCOPE_QUOTA_BYTES,
 } from "../../../../makecode/simx/bridge/src/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../../../makecode/simx/bridge/src/vendor/projfs.js";
+import { FLUSH_DEBOUNCE_MS, openBrainEditing } from "../brain/editing.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
@@ -75,6 +77,10 @@ class ScriptedSimx {
   /** How many welcomes arrived. */
   welcomes = 0;
   held = false;
+  /** How many of the next lists are answered with a `READ_FAILED` error reply. */
+  failingLists = 0;
+  /** Whether pushes are received and never answered. */
+  dropsPushes = false;
   private readonly _queue: (() => void)[] = [];
   private readonly _peer: ScriptedPeer;
   private readonly _reportsCompiled: boolean;
@@ -155,6 +161,7 @@ class ScriptedSimx {
       case "makecode:brainsPush": {
         const request = message as unknown as ReceivedRequest;
         this.requests.push(request);
+        if (request.type === "makecode:brainsPush" && this.dropsPushes) return;
         const answer = () => {
           this.send(this.answer(request));
         };
@@ -170,6 +177,14 @@ class ScriptedSimx {
   private answer(request: ReceivedRequest): object {
     switch (request.type) {
       case "makecode:brainsList":
+        if (this.failingLists > 0) {
+          this.failingLists -= 1;
+          return {
+            type: "makecode:brainsError",
+            id: request.id,
+            payload: { code: MakeCodeBrainsErrorCode.READ_FAILED, message: "unreadable" },
+          };
+        }
         return {
           type: "makecode:brainsListReply",
           id: request.id,
@@ -676,6 +691,57 @@ describe("brains sync with a scripted simx on the relay", () => {
     assert.equal(returned.requestsOf("makecode:brainsPush").length, 1);
     assert.deepEqual(stored?.compiled, remote.compiled);
     await brainsUntil(brains, (state) => state.pending.size === 0, "nothing pending");
+  });
+
+  it("re-runs a reconciliation whose list the simx refused while connected, then pushes edits as they are made", async () => {
+    const remote = projectBrain("Remote");
+    const { simx, joinCode } = await openSimx(projectOf(remote));
+    assert.ok(joinCode);
+    simx.failingLists = 1;
+    const { session, brains } = editor();
+
+    session.connect(joinCode);
+    await eventually(
+      () => simx.requestsOf("makecode:brainsList").length,
+      (count) => count === 1,
+      "the refused list"
+    );
+    const id = brains.addBrain("Local");
+    assert.equal(brains.getSnapshot().reconciled, false);
+    await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the re-run to reconcile");
+
+    assert.equal(simx.welcomes, 1);
+    assert.equal(simx.requestsOf("makecode:brainsList").length, 2);
+    assert.equal(brains.getSnapshot().brains.get(remote.id)?.source, remote.source);
+    assert.equal(simx.project.has(id), true);
+    brains.renameBrain(id, "Renamed");
+    await eventually(
+      () => simx.project.get(id)?.name,
+      (name) => name === "Renamed",
+      "the later edit to reach the project"
+    );
+  });
+
+  it("counts a push the simx never answers as pending and in flight, and a reconnection's flush lands it", async () => {
+    const { session, brains, simx } = await pair(projectOf());
+    simx.dropsPushes = true;
+
+    const id = brains.addBrain("Chaser");
+    await eventually(
+      () => simx.requestsOf("makecode:brainsPush").length,
+      (count) => count === 1,
+      "the unanswered push"
+    );
+    await delay(50);
+    assert.deepEqual([...brains.getSnapshot().pending], [id]);
+    assert.equal(brains.getSnapshot().pushesInFlight, 1);
+    assert.equal(simx.project.has(id), false);
+    await dropSimx(simx, session);
+    assert.equal(brains.getSnapshot().pushesInFlight, 0);
+
+    const { simx: returned } = await openSimx(simx.project, simx.bindingToken);
+    await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the flush to land");
+    assert.equal(returned.project.has(id), true);
   });
 
   it("ignores payload types it does not know and replies to no request of its own", async () => {
@@ -1186,6 +1252,91 @@ describe("brains sync with a scripted simx on the relay", () => {
       await saved(brains, "the refused edit to be saved");
       assert.ok(registrations().has(id));
       assert.equal(handshakes, 0);
+    });
+
+    it("re-runs a reconciliation MakeCode refused while no project was open, once one is, with no new handshake", async () => {
+      host.open = false;
+      const simxTokens = openBindingTokenStore(() => new MemoryStorage());
+      const bridge = startSimx(simxTokens);
+      const joinCode = await eventually(
+        () => bridge.joinCode,
+        (code) => code !== undefined,
+        "the simx's join code"
+      );
+      assert.ok(joinCode);
+      const { session, brains } = editor();
+      let handshakes = 0;
+      session.onBrainsChannel(() => {
+        handshakes += 1;
+      });
+      session.connect(joinCode);
+      await eventually(
+        () => handshakes,
+        (count) => count === 1,
+        "the handshake"
+      );
+      await delay(100);
+      assert.equal(brains.getSnapshot().reconciled, false);
+      const id = authorBrain(brains, "Chaser");
+
+      host.open = true;
+      await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the re-run to reconcile");
+      await saved(brains, "the edit to be saved");
+
+      assert.equal(handshakes, 1);
+      assert.ok(registrations().has(id));
+    });
+
+    it("counts a push MakeCode has not answered yet as pending and in flight until it is applied", async () => {
+      const { brains } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await brainsUntil(brains, (state) => state.pending.size === 0, "the new brain to be acknowledged");
+      host.hold();
+
+      brains.renameBrain(id, "Runner");
+      await delay(100);
+      assert.deepEqual([...brains.getSnapshot().pending], [id]);
+      assert.equal(brains.getSnapshot().pushesInFlight, 1);
+      host.release();
+
+      await brainsUntil(
+        brains,
+        (state) => state.pending.size === 0 && state.pushesInFlight === 0,
+        "the push to be acknowledged"
+      );
+      await saved(brains, "the brain to be saved");
+    });
+
+    it("saves continuous edits as they are made, each flush two writes, and the close flushes the last at once", async () => {
+      const { brains } = await pairReal();
+      const id = authorBrain(brains, "Chaser");
+      await saved(brains, "the new brain to be saved");
+      await brainsUntil(brains, (state) => state.pending.size === 0, "the new brain to be acknowledged");
+      const editing = openBrainEditing(brains, id);
+      const working = editing.srcBrainDef;
+      assert.ok(working);
+      const page = working.pages().get(0) as BrainPageDef;
+
+      const mutationsBefore = host.mutations.length;
+      page.appendNewRule();
+      editing.change(() => working);
+      await delay(FLUSH_DEBOUNCE_MS / 2);
+      assert.equal(pageRules(brains, id), 1);
+      await brainsUntil(
+        brains,
+        (state) => state.pending.size === 0 && pageRules(brains, id) === 2,
+        "the first flush to be acknowledged"
+      );
+      await saved(brains, "the first flush to be saved");
+      assert.equal(host.mutations.length - mutationsBefore, 2);
+
+      page.appendNewRule();
+      editing.change(() => working);
+      editing.close();
+
+      assert.equal(pageRules(brains, id), 3);
+      await brainsUntil(brains, (state) => state.pending.size === 0, "the close flush to be acknowledged");
+      await saved(brains, "the close flush to be saved");
     });
 
     it("keeps two brains apart through interleaved edits: a rename and a removal both land", async () => {

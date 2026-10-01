@@ -349,8 +349,9 @@ serves exactly what the last one wrote.
   `MAKECODE_BRAINS_WRITE_FAILED`, the projfs code leading the message
   (`QUOTA_EXCEEDED: ...`, `PROJECT_CLOSED: ...`); a refused module
   write fails every push of its drain and writes no source. The
-  editor keeps a failed push pending and pushes it again on the next
-  reconciled handshake. A list or a pull the project cannot serve fails
+  editor keeps a failed push pending and retries it over the same
+  handshake, and the next reconciled handshake pushes it too (see
+  "Brain sync", below). A list or a pull the project cannot serve fails
   with `MAKECODE_BRAINS_READ_FAILED` and the projfs code likewise.
 - VISIBILITY: both forms are ordinary project files. They appear in
   MakeCode's Explorer -- shown in the JavaScript and Python views, not
@@ -370,7 +371,7 @@ so the frame's lifetime anchors nothing; the binding token is what
 carries a session across frames.
 
 - The simx saves the binding token of every welcome to the
-  browser's `sessionStorage` and presents it in its first hello.
+  browser's `localStorage` and presents it in its first hello.
   It never stores the join code.
 - PER-PROJECT KEYING: MakeCode passes the open project's id to every
   simx frame in its URL's `project` parameter, and the simx stores its
@@ -381,22 +382,42 @@ carries a session across frames.
   project never joins, lists, or pushes into the second; returning to
   the first project resumes its own session by its own token. A frame
   URL without the parameter (a MakeCode build that does not pass it)
-  stores under the one per-tab key `wendoo-simx-bridge:bindingToken`.
-- `sessionStorage` lasts for one top-level browser tab: a frame
-  reallocated in the same MakeCode tab rejoins its session, and a
-  second MakeCode tab opened on its own never presents the first
-  tab's token, so the two do not displace each other. A tab the
-  browser duplicates starts with a copy of the original's storage,
-  so its simx presents the same token and takes the session's simx
-  role over from the original.
+  stores under the one unscoped key `wendoo-simx-bridge:bindingToken`.
+- `localStorage` outlives the tab and is shared by every tab of the
+  origin: a frame reallocated in the same MakeCode tab, a page
+  refresh, and a MakeCode tab closed and opened again on the project
+  all present the stored token and rejoin the session, so the editor
+  waiting on its own token is welcomed with no code entered. The
+  editor persists its token the same way, so the binding survives
+  either side's tab closing.
+- TWO TABS, ONE PROJECT: a second MakeCode tab on the same project
+  presents the same token, and the relay's token takeover resolves
+  it (see "Join codes, refusal, and takeover in this lane", below):
+  the newer tab takes the simx role over and the older one rests on
+  its `replaced` panel. The last tab opened holds the session.
+- WHO WRITES THE TOKEN: a welcome saves its token only when it differs
+  from the one held, and the relay signs one token per binding, so a
+  takeover rewrites nothing; a `SESSION_REPLACED` neither saves nor
+  clears the stored token, which the tab now holding the session
+  relies on for its own next reload; only an end clears it (next
+  bullet). Each frame reads the stored token once, when it opens.
 - RESPECTING AN END: when the relay reports `SESSION_ENDED`, the
   simx clears its stored token and logs the code, and holds: its
   panel shows the session ended, with a "start a new session" action
   that opens a new pairing in place (`startNewSession`). A simulator
   restart does the same -- the restarted frame presents no token and
   forms a new session under a new code, never re-forming the ended
-  binding. Every other coded failure is logged and holds the same
-  way, the token kept until a new session is started.
+  binding. Every other coded failure but a replacement is logged and
+  holds the same way, the token kept until a new session is started.
+  `SESSION_REPLACED` is logged and rests on the `replaced` panel,
+  which offers no action: nothing in that frame reconnects, starts a
+  new session, or touches the stored token, so two tabs never
+  displace each other in a loop. The way back is any fresh hello
+  from the resting tab: a page reload, or MakeCode resuming its
+  simulator when the tab becomes visible again -- MakeCode pauses a
+  hidden tab's simulator and resumes it on focus, so in practice the
+  session follows the tab the user is looking at, each switch a
+  user-driven takeover, never an automatic loop.
 - DEGRADATION RULE: where the browser denies the frame storage, the
   simx holds the token in memory and says so in the console. The
   session then lasts only as long as the frame: each teardown
@@ -438,11 +459,14 @@ is vacant, and the relay sends it to whichever side is connected:
   editor role is filled -- is refused with `JOIN_CODE_UNKNOWN`. So a
   second editor entering the code of a connected session is refused
   and the session is undisturbed: there is no replacement.
-- The one takeover is by token. A MakeCode tab the browser duplicates
-  presents the original's simx token, and editor tabs of one origin
-  share the persisted editor token; the newer connection takes the
-  role over, and the older one holds on `SESSION_REPLACED` until it
-  is started again, which takes the session back.
+- The one takeover is by token. MakeCode tabs on one project share
+  the stored simx token, and editor tabs of one origin share the
+  persisted editor token; the newer connection takes the role over,
+  and the older one holds on `SESSION_REPLACED`. An editor holds
+  until it is started again, which takes the session back; a simx
+  rests on its `replaced` panel until its next fresh hello -- a page
+  reload, or MakeCode resuming the simulator as its tab regains
+  focus, so the session follows the visible tab.
 - Reloads never end a session: the editor closing on `pagehide` and
   the simx disposing its frame both stop the connection, which the
   session survives. Two deliberate ends exist in this lane. The
@@ -568,7 +592,7 @@ it keys on a session id.
   carried as `data-status`: `connecting`
   (the session has not connected since the page opened it),
   `connected`, `reconnecting` (only once a disconnection outlasts the
-  grace, below), `replaced` (the editor-only takeover hold), `ended`,
+  grace, below), `replaced` (the takeover hold), `ended`,
   and `update` (a version rejection). The dots paint from the
   editor's themeable tokens: success, warning, destructive, and the
   neutral muted foreground. Below the notices the session view holds
@@ -629,14 +653,39 @@ it keys on a session id.
   authoring continues while the project is away. Each row is keyed by
   the brain's document id; the name is display data, and two brains
   may show the same one. A row opens the brain in the upstream brain
-  editor dialog, whose config is built from the store's current
-  environment and rebuilt whenever the environment is; saving applies
-  the edited document to the store, which compiles it, and the row's
-  badge counts the compile's errors and warnings (carrying the
-  compile state -- `current`, `stale`, or `none` -- as
+  editor dialog in its continuous mode, whose config is built from the
+  store's current environment and rebuilt whenever the environment is.
+  The row's badge counts the compile's errors and warnings (carrying
+  the compile state -- `current`, `stale`, or `none` -- as
   `data-compile`). Rows also rename and remove brains; adding a brain
-  names it and opens the editor on it. Pending edits have no surface
-  yet; they live in the store's state.
+  names it and opens the editor on it.
+- CONTINUOUS EDITING: the brain editor has no OK or Cancel. Every edit
+  the dialog reports -- a command, an undo, a redo, a load -- reaches
+  the store through the editing's debounced flush: once
+  `FLUSH_DEBOUNCE_MS` (700 ms) has passed after the latest edit, the
+  flush reads the edited document and applies it to the store, which
+  compiles and pushes it. The floor follows MakeCode's write rate: a
+  flush that changes a brain costs two project-file writes, and
+  MakeCode allows 30 per 10 seconds. Closing the editor flushes the
+  unflushed edit at once, before the dialog goes; closing hands over
+  and discards nothing else, and reverting is the editor's own undo.
+  The dialog keeps the document it opened on for as long as it stays
+  open, whatever the flushes store. A flush that throws is logged
+  under `BRAIN_FLUSH_FAILED` and keeps its edit unflushed, so the next
+  edit's flush, or the close, tries again. Edits live only in memory
+  until the project acknowledges them: closing the page drops any not
+  yet acknowledged.
+- The SAVE STATUS beside the header's connection status shows whether
+  the brains are saved to the MakeCode project, from the store's facts:
+  `saved` while nothing is pending, and nothing shown; `saving` while
+  something is pending and a push is in flight; `unsaved` while
+  something is pending and no push is in flight -- disconnected,
+  reconciling, waiting to retry, or held by a damaged source. It is
+  worded for the kid; the state rides as `data-save-state`, the pend
+  count as `data-pending`, the pushes in flight as `data-in-flight`,
+  and `reconciled` as `data-reconciled`. From the `sm` breakpoint up
+  it is drawn above the brain editor's backdrop, so it stays readable
+  while the editor is open.
 - DAMAGED BRAINS (see "Brain sync", below) surface in the brain list
   at the default diagnostics tier, since restoring is a
   blocks-only action. A damaged brain's row carries a notice worded
@@ -683,7 +732,11 @@ channel, then pushes each edit as it is made:
   pulled brain the store holds no pending edit of (a pending edit wins,
   and the flush pushes it); drop each brain the project no longer holds
   that has no pending edit; then push every pend. A request that fails
-  abandons the reconciliation, pends intact, until the next handshake.
+  abandons that run, pends intact, and the reconciliation re-runs over
+  the same channel after each of `PUSH_RETRY_DELAYS_MS` in turn, then
+  after the last of them again and again, while the session stays
+  connected and no later handshake has completed; a later handshake
+  reconciles over its own channel instead.
 - RECONCILED: the store's `reconciled` is `true` while the session is
   connected and the latest handshake's reconciliation has finished;
   it turns `false` at the next disconnection and while a new handshake
@@ -694,9 +747,16 @@ channel, then pushes each edit as it is made:
   A push carries the brain exactly as the store holds it -- source plus
   the compiled form and hash of ONE compile (the convergence rule; a
   failed compile carries the last good compiled form); a removal pushes
-  as `remove`. A push that fails records its brain pending. Pends
-  flush on the next reconciled handshake and clear when the project
-  acknowledges them; until then they survive every status.
+  as `remove`. A push records its brain pending as it goes out, and the
+  project's acknowledgment of it clears the pend only while it carries
+  the brain's latest state, however late it arrives. A push unanswered
+  for `PUSH_LIVENESS_DEADLINE_MS` (30 s) counts as failed, its pend
+  standing. A failed push of a brain's latest state is retried after
+  each of `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then
+  every 8 s for as long as the push keeps failing, while the handshake
+  stays reconciled and connected and the brain is not damaged; a newer
+  edit's push takes over from the retries. Pends flush on the next
+  reconciled handshake; until acknowledged they survive every status.
 - STALENESS: a pulled brain whose compiled form is absent or was
   compiled from other source (its `sourceHash` differs from the
   source's hash -- someone edited the source out of band) is recompiled
@@ -746,7 +806,7 @@ the simx already holds; the panel stores nothing.
   `connecting` (the connection is not open, or the relay has not
   answered the hello; `data-retrying="true"` while the bridge client
   retries after a failed attempt), `code`, `connected`, `away`,
-  `confirm`, `ended`, `update`.
+  `confirm`, `ended`, `replaced`, `update`.
 - VACANCY: the panel shows a join code exactly while the simx holds
   no binding token -- the editor seat has never been filled in this
   binding. The welcome takes the code down, a rotation swaps it in
@@ -764,13 +824,19 @@ the simx already holds; the panel stores nothing.
 - ENDING: `connected` and `away` offer "end session", which shows an
   inline confirmation first; confirming calls `startNewSession`
   (see "Join codes, refusal, and takeover in this lane", above). `ended` covers
-  `SESSION_ENDED` and every other failure that stops the connection,
-  and offers "start a new session", the same call.
+  `SESSION_ENDED` and every other failure that stops the connection
+  except a replacement, and offers "start a new session", the same
+  call.
+- REPLACED: `SESSION_REPLACED` -- another tab on the project took the
+  session over -- shows `replaced`, which says the session continues
+  in the other tab and offers no action: starting a new session there
+  would clear the token the other tab relies on. Reloading the page
+  takes the session back.
 - VERSIONS: a relay refusing this side's protocol
   (`PROTOCOL_VERSION_MISMATCH`) or an editor hello declaring a newer
   makecode protocol (`PEER_SESSION_PROTOCOL_VERSION_NEWER`, held until
-  a later handshake completes) shows `update`: reload the page. It is
-  the one state whose remedy is not in place.
+  a later handshake completes) shows `update`: reload the page. It and
+  `replaced` are the states whose remedy is not in place.
 - LINKS: the header's logotype links to https://wendoo.com in every
   state, and the `code` state adds an "or open the editor" link after
   the type-this-code hint (see "Opening the editor from the simx",

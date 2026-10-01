@@ -25,6 +25,7 @@ const ALL_VIEWS: SimxStatusView[] = [
   viewOf("away"),
   viewOf("confirm", { endFrom: "connected" }),
   viewOf("ended"),
+  viewOf("replaced"),
   viewOf("update"),
 ];
 
@@ -50,7 +51,7 @@ function tone(markup: string): string | undefined {
 
 describe("simx status panel", () => {
   it("marks the panel root with the view's state", () => {
-    for (const state of ["connecting", "code", "connected", "away", "ended", "update"] as const) {
+    for (const state of ["connecting", "code", "connected", "away", "ended", "replaced", "update"] as const) {
       const markup = renderStatusPanel(viewOf(state, state === "code" ? { joinCode: "ribbon-lemur-whistle" } : {}));
       assert.match(markup, new RegExp(`^<section [^>]*data-testid="simx-status"[^>]*data-state="${state}"`));
       assert.equal(tone(markup), state);
@@ -63,7 +64,7 @@ describe("simx status panel", () => {
     assert.match(markup, /data-testid="join-code"[^>]*>ribbon-lemur-whistle</);
     assert.deepEqual(actions(markup), ["copy"]);
     assert.match(markup, /<button type="button"[^>]*aria-label="[^"]+"[^>]*data-action="copy"/);
-    for (const state of ["connecting", "connected", "away", "ended", "update"] as const) {
+    for (const state of ["connecting", "connected", "away", "ended", "replaced", "update"] as const) {
       assert.doesNotMatch(renderStatusPanel(viewOf(state)), /data-testid="join-code"/);
     }
   });
@@ -75,7 +76,7 @@ describe("simx status panel", () => {
     assert.doesNotMatch(markup, /<b /);
   });
 
-  it("offers ending the session from connected and away, confirmation from confirm, and a new session from ended", () => {
+  it("offers ending the session from connected and away, confirmation from confirm, a new session from ended, and nothing from replaced", () => {
     assert.deepEqual(actions(renderStatusPanel(viewOf("connected"))), ["end"]);
     assert.deepEqual(actions(renderStatusPanel(viewOf("away"))), ["end"]);
     assert.deepEqual(actions(renderStatusPanel(viewOf("confirm", { endFrom: "connected" }))), [
@@ -83,6 +84,7 @@ describe("simx status panel", () => {
       "cancel-end",
     ]);
     assert.deepEqual(actions(renderStatusPanel(viewOf("ended"))), ["start-new"]);
+    assert.deepEqual(actions(renderStatusPanel(viewOf("replaced"))), []);
     assert.deepEqual(actions(renderStatusPanel(viewOf("connecting"))), []);
     assert.deepEqual(actions(renderStatusPanel(viewOf("update"))), []);
   });

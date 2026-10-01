@@ -14,7 +14,7 @@ import {
   serializeBrainSource,
 } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
-import { BrainsStore, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
+import { BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
 import type { EditorBrainsChannel } from "./editor-session-store.js";
 
 /** The session readings a brains store follows, driven by the spec. */
@@ -56,6 +56,12 @@ class FakeChannel implements EditorBrainsChannel {
   readonly pulls: string[][] = [];
   /** When set, pushes naming these ids are answered with `WRITE_FAILED`. */
   readonly failingWrites = new Set<string>();
+  /** When set, pushes naming these ids are never answered; closing still rejects them with `CLOSED`. */
+  readonly unansweredWrites = new Set<string>();
+  /** How many of the next lists are answered with `READ_FAILED`. */
+  failingLists = 0;
+  /** How many lists were received. */
+  lists = 0;
   /**
    * Whether the list reports each brain's compiled source hash: the hash its
    * compiled form carries, or `null` when it has none. When `false`, the list
@@ -73,8 +79,13 @@ class FakeChannel implements EditorBrainsChannel {
   }
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
-    return this.answer(() =>
-      [...this.project.values()].map((brain) => {
+    this.lists += 1;
+    return this.answer(() => {
+      if (this.failingLists > 0) {
+        this.failingLists -= 1;
+        throw new MakeCodeBrainsError(MakeCodeBrainsErrorCode.READ_FAILED, "unreadable");
+      }
+      return [...this.project.values()].map((brain) => {
         const summary: MakeCodeBrainSummary = {
           id: brain.id,
           name: brain.name,
@@ -82,8 +93,8 @@ class FakeChannel implements EditorBrainsChannel {
         };
         if (this.reportsCompiled) summary.compiledSourceHash = brain.compiled?.sourceHash ?? null;
         return summary;
-      })
-    );
+      });
+    });
   }
 
   pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]> {
@@ -93,8 +104,9 @@ class FakeChannel implements EditorBrainsChannel {
 
   pushBrain(push: MakeCodeBrainPush): Promise<void> {
     this.pushes.push(push);
+    const id = push.op === "write" ? push.brain.id : push.brainId;
+    if (this.unansweredWrites.has(id)) return this.unanswered();
     return this.answer(() => {
-      const id = push.op === "write" ? push.brain.id : push.brainId;
       if (this.failingWrites.has(id)) {
         throw new MakeCodeBrainsError(MakeCodeBrainsErrorCode.WRITE_FAILED, "unwritable");
       }
@@ -122,6 +134,14 @@ class FakeChannel implements EditorBrainsChannel {
     this._queue.length = 0;
     for (const reject of this._rejects) reject(new MakeCodeBrainsError(MakeCodeBrainsErrorCode.CLOSED, "closed"));
     this._rejects.clear();
+  }
+
+  /** A request the project never answers: it settles only by rejecting with `CLOSED` when the channel closes. */
+  private unanswered(): Promise<never> {
+    if (this._closed) return Promise.reject(new MakeCodeBrainsError(MakeCodeBrainsErrorCode.CLOSED, "closed"));
+    return new Promise<never>((_resolve, reject) => {
+      this._rejects.add(reject);
+    });
   }
 
   private answer<T>(compute: () => T): Promise<T> {
@@ -291,6 +311,12 @@ describe("brains sync", () => {
     const channel = sync.open(binding, project);
     await settle();
     return channel;
+  }
+
+  /** Advances the clock by `ms` and lets the answers it triggers run. */
+  async function elapse(ms: number): Promise<void> {
+    mock.timers.tick(ms);
+    await settle();
   }
 
   describe("push on apply", () => {
@@ -1040,12 +1066,6 @@ describe("brains sync", () => {
       return { store, channel, id };
     }
 
-    /** Advances the clock by `ms` and lets the answers it triggers run. */
-    async function elapse(ms: number): Promise<void> {
-      mock.timers.tick(ms);
-      await settle();
-    }
-
     it("retries a failed push after the first backoff delay, clearing the pend once the retry lands", async () => {
       const { store, channel, id } = await failingBrain();
       const pushes = channel.pushes.length;
@@ -1060,9 +1080,10 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
-    it("backs off through every retry delay, then stops, leaving the pend for the next handshake to push", async () => {
+    it("backs off through every retry delay, then keeps retrying at the last delay until a retry lands", async () => {
       const { store, channel, id } = await failingBrain();
       const pushes = channel.pushes.length;
+      const lastDelay = PUSH_RETRY_DELAYS_MS[PUSH_RETRY_DELAYS_MS.length - 1] ?? 0;
 
       for (const [attempt, delay] of PUSH_RETRY_DELAYS_MS.entries()) {
         await elapse(delay - 1);
@@ -1070,14 +1091,99 @@ describe("brains sync", () => {
         await elapse(1);
         assert.equal(channel.pushes.length, pushes + attempt + 1);
       }
-      await elapse(60_000);
-
-      assert.equal(channel.pushes.length, pushes + PUSH_RETRY_DELAYS_MS.length);
+      for (let round = 1; round <= 3; round++) {
+        await elapse(lastDelay - 1);
+        assert.equal(channel.pushes.length, pushes + PUSH_RETRY_DELAYS_MS.length + round - 1);
+        await elapse(1);
+        assert.equal(channel.pushes.length, pushes + PUSH_RETRY_DELAYS_MS.length + round);
+      }
       assert.deepEqual([...store.getSnapshot().pending], [id]);
+      channel.failingWrites.delete(id);
+      await elapse(lastDelay);
+
+      assert.equal(channel.project.get(id)?.name, "Runner");
+      assert.equal(store.getSnapshot().pending.size, 0);
+      const settled = channel.pushes.length;
+      await elapse(60_000);
+      assert.equal(channel.pushes.length, settled);
+    });
+
+    it("stops the retries at the last delay once disconnected, leaving the pend to the next handshake", async () => {
+      const { store, channel, id } = await failingBrain();
+      for (const delay of PUSH_RETRY_DELAYS_MS) await elapse(delay);
+      const pushes = channel.pushes.length;
       channel.close();
       session.setStatus("disconnected");
+
+      await elapse(60_000);
+      assert.equal(channel.pushes.length, pushes);
       const second = await handshake("token-1", channel.project);
+
       assert.equal(second.project.get(id)?.name, "Runner");
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("pushes again, through the retry delays, a push the project leaves unanswered past the liveness deadline", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      const id = store.addBrain("Chaser");
+      await settle();
+      channel.unansweredWrites.add(id);
+      store.renameBrain(id, "Runner");
+      await settle();
+      const pushes = channel.pushes.length;
+
+      await elapse(PUSH_LIVENESS_DEADLINE_MS - 1);
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      await elapse(1);
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+      channel.unansweredWrites.delete(id);
+      await elapse((PUSH_RETRY_DELAYS_MS[0] ?? 0) - 1);
+      assert.equal(channel.pushes.length, pushes);
+      await elapse(1);
+
+      assert.equal(channel.pushes.length, pushes + 1);
+      assert.equal(channel.project.get(id)?.name, "Runner");
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("keeps the pend of a push past its liveness deadline until it is acknowledged late, then retries nothing", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      const id = store.addBrain("Chaser");
+      await settle();
+      channel.held = true;
+      store.renameBrain(id, "Runner");
+      await elapse(PUSH_LIVENESS_DEADLINE_MS);
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+
+      channel.release();
+      await settle();
+      assert.equal(store.getSnapshot().pending.size, 0);
+      const pushes = channel.pushes.length;
+      await elapse(60_000);
+
+      assert.equal(channel.pushes.length, pushes);
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("ignores the failure of a push past its deadline once a later push of the same edit has landed", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      const id = store.addBrain("Chaser");
+      await settle();
+      channel.unansweredWrites.add(id);
+      store.renameBrain(id, "Runner");
+      await elapse(PUSH_LIVENESS_DEADLINE_MS);
+      channel.unansweredWrites.delete(id);
+      await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
+      assert.equal(store.getSnapshot().pending.size, 0);
+
+      channel.close();
+      session.setStatus("disconnected");
+      await settle();
+
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
@@ -1128,6 +1234,158 @@ describe("brains sync", () => {
 
       assert.equal(second.pushes.length, 1);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
+    });
+  });
+
+  describe("pushes in flight", () => {
+    it("records a push pending from its departure, counting it in flight, until the project acknowledges it", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      channel.held = true;
+
+      const id = store.addBrain("Chaser");
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      channel.release();
+      await settle();
+
+      assert.equal(store.getSnapshot().pending.size, 0);
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+    });
+
+    it("keeps a push the project never answers pending while the handshake stays open", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      const id = store.addBrain("Chaser");
+      await settle();
+      channel.unansweredWrites.add(id);
+
+      store.renameBrain(id, "Runner");
+      await settle();
+
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      assert.equal(channel.project.get(id)?.name, "Chaser");
+    });
+
+    it("counts each unanswered push of a brain in flight, and keeps the pend until the newest is acknowledged", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      const id = store.addBrain("Chaser");
+      await settle();
+      channel.held = true;
+      store.renameBrain(id, "Older");
+      store.renameBrain(id, "Newer");
+      assert.equal(store.getSnapshot().pushesInFlight, 2);
+
+      channel.releaseAt(0);
+      await settle();
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+      channel.releaseAt(0);
+      await settle();
+
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("stops counting the pushes of a closed handshake in flight, keeping their pends", async () => {
+      const store = syncedStore();
+      const channel = await handshake("token-1", projectOf());
+      channel.held = true;
+      const id = store.addBrain("Chaser");
+
+      channel.close();
+      session.setStatus("disconnected");
+      await settle();
+
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+    });
+  });
+
+  describe("reconciliation re-runs", () => {
+    it("re-runs a reconciliation whose list failed while the session stays connected, then pushes edits as made", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      session.setStatus("connected");
+      const channel = sync.open("token-1", projectOf(remote));
+      channel.failingLists = 1;
+      await settle();
+      assert.equal(store.getSnapshot().reconciled, false);
+      const id = store.addBrain("Local");
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+
+      await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
+
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.equal(entryOf(store, remote.id).source, remote.source);
+      assert.equal(channel.project.has(id), true);
+      assert.equal(store.getSnapshot().pending.size, 0);
+      store.renameBrain(id, "Renamed");
+      await settle();
+      assert.equal(channel.project.get(id)?.name, "Renamed");
+    });
+
+    it("re-runs through every delay, then keeps re-running at the last delay until a list succeeds", async () => {
+      const store = syncedStore();
+      session.setStatus("connected");
+      const extraRounds = 3;
+      const channel = sync.open("token-1", projectOf());
+      channel.failingLists = PUSH_RETRY_DELAYS_MS.length + extraRounds;
+      await settle();
+      const lists = () => channel.lists;
+      const lastDelay = PUSH_RETRY_DELAYS_MS[PUSH_RETRY_DELAYS_MS.length - 1] ?? 0;
+      assert.equal(lists(), 1);
+
+      for (const [attempt, delay] of PUSH_RETRY_DELAYS_MS.entries()) {
+        await elapse(delay - 1);
+        assert.equal(lists(), attempt + 1);
+        await elapse(1);
+        assert.equal(lists(), attempt + 2);
+      }
+      for (let round = 1; round <= extraRounds; round++) {
+        assert.equal(store.getSnapshot().reconciled, false);
+        await elapse(lastDelay);
+        assert.equal(lists(), PUSH_RETRY_DELAYS_MS.length + 1 + round);
+      }
+
+      assert.equal(store.getSnapshot().reconciled, true);
+      await elapse(60_000);
+      assert.equal(lists(), PUSH_RETRY_DELAYS_MS.length + 1 + extraRounds);
+    });
+
+    it("drops the scheduled re-run when a new handshake reconciles first", async () => {
+      const store = syncedStore();
+      session.setStatus("connected");
+      const first = sync.open("token-1", projectOf());
+      first.failingLists = 1;
+      await settle();
+
+      const second = sync.open("token-1", first.project);
+      await settle();
+      assert.equal(store.getSnapshot().reconciled, true);
+      await elapse(60_000);
+
+      assert.equal(first.lists, 1);
+      assert.equal(second.lists, 1);
+      assert.equal(store.getSnapshot().reconciled, true);
+    });
+
+    it("stops re-running once the session disconnects, leaving the next handshake to reconcile", async () => {
+      const store = syncedStore();
+      session.setStatus("connected");
+      const first = sync.open("token-1", projectOf());
+      first.failingLists = 1;
+      await settle();
+      first.close();
+      session.setStatus("disconnected");
+
+      await elapse(60_000);
+      assert.equal(first.lists, 1);
+      await handshake("token-1", first.project);
+
+      assert.equal(store.getSnapshot().reconciled, true);
     });
   });
 });
