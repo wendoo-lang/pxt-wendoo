@@ -152,6 +152,15 @@ the declaration shapes and mechanics. The binding rules:
   body.
 - Write type-only imports as a top-level `import type` statement in `.ts` and
   `.tsx` files; do not use inline `import()` type expressions.
+- Never write retry or recovery logic that abandons its goal after a fixed
+  number of attempts. An attempt cap is a made-up number: nothing about the
+  failure changes at attempt N+1. Backoff ramps are fine -- bound the rate,
+  never the resolve: after the last rung, keep retrying at the capped
+  interval while the precondition for success can still arrive. Stopping is
+  legitimate only when the goal is superseded by newer state, when
+  responsibility is explicitly handed to another mechanism that will finish
+  the job, or when the failure is known-permanent -- and a known-permanent
+  failure must surface visibly, never idle silently.
 
 ## User-Facing Copy
 

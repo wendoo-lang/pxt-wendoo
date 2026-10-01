@@ -1,6 +1,7 @@
 import {
   PROJFS_MESSAGE_TYPE,
   ProjfsClient,
+  type ProjfsClientOptions,
   type ProjfsErrorCode,
   type ProjfsFileInfo,
   type ProjfsListenerWindow,
@@ -11,7 +12,11 @@ import {
 /** The most UTF-8 bytes the files under one simulator extension's folder may hold, as MakeCode enforces it. */
 export const PROJFS_SCOPE_QUOTA_BYTES = 512 * 1024;
 
-/** The most writes and deletes one simulator extension may make within {@link PROJFS_RATE_WINDOW_MS}. */
+/**
+ * The most writes and deletes of one simulator extension that apply within
+ * {@link PROJFS_RATE_WINDOW_MS}; MakeCode holds later ones until the window
+ * allows them.
+ */
 export const PROJFS_RATE_LIMIT = 30;
 
 /** The sliding window, in milliseconds, over which {@link PROJFS_RATE_LIMIT} applies. */
@@ -43,14 +48,26 @@ function utf8Length(content: string): number {
  * in-memory project: it serves one simulator extension's folder by the rules
  * the MakeCode editor applies -- scope-relative names, visibility by the
  * pxt.json files list, writes that list their file, one request applied at a
- * time in arrival order, the per-folder quota, and the sliding-window limit
- * on writes and deletes, checked on arrival -- and replies through the
- * message events of the window it stands for.
+ * time in arrival order and answered once it has applied, the per-folder
+ * quota, the sliding-window rate on writes and deletes, over which a write or
+ * delete waits, holding the requests behind it, until the window allows it,
+ * each request bound to the project open when it arrived and refused with
+ * `PROJECT_CLOSED` once that project has closed, and `UNREGISTERED` answers
+ * to a frame MakeCode does not serve -- and replies through the message
+ * events of the window it stands for. The time the rate window reads is
+ * {@link now}, which only a spec moves.
  *
  * It also plays MakeCode's text editor sharing the project: a scope file
  * opened with {@link openInEditor} is shown from a buffer, which a write to
- * the file reloads, and which a switch to another file saves over the stored
- * file, as MakeCode saves the file it is leaving.
+ * the file reloads, which a switch to another file saves over the stored
+ * file, as MakeCode saves the file it is leaving, and which typing saves
+ * after a debounce. A write to the open file is answered once the editor has
+ * reloaded it, and saves of typing wait for that reload.
+ *
+ * Each `false` switch -- {@link defersOverRate}, {@link bindsRequestsToProject},
+ * {@link answersUnregistered}, {@link reloadsOpenFile},
+ * {@link holdsSavesDuringReload} -- plays a MakeCode lacking that rule, for
+ * specs proving that a rule is what their outcome rests on.
  *
  * Pass {@link parent} as a projfs client's target and the host itself as its
  * listener, or take a client from {@link client}.
@@ -68,23 +85,67 @@ export class FakeProjfsHost {
       this.receive(message);
     },
   };
-  /** The current time, in milliseconds, the rate limit reads. */
-  now = 0;
-  /** Whether a project is open; requests to a closed one fail with `FAILED`. */
+  /** Whether a project is open; requests to a closed one are refused with `PROJECT_CLOSED`. */
   open = true;
+  /** Whether MakeCode serves the requesting frame; when false, requests are answered `UNREGISTERED`. */
+  registered = true;
+  /**
+   * Whether writes and deletes over the rate wait for the window. When false,
+   * they are refused on arrival with `RATE_LIMITED`, unapplied.
+   */
+  defersOverRate = true;
+  /**
+   * Whether a request applies only to the project open when it arrived. When
+   * false, a request applies to whichever project is open at its turn.
+   */
+  bindsRequestsToProject = true;
+  /**
+   * Whether a request from a frame MakeCode does not serve is answered. When
+   * false, it is dropped unanswered.
+   */
+  answersUnregistered = true;
   /**
    * Whether a write to the file open in the editor reloads the editor's
    * buffer, as MakeCode does. When false, the buffer keeps the text it
-   * loaded, and the next file switch saves that text over the write.
+   * loaded, and the next save from it writes that text over the write.
    */
   reloadsOpenFile = true;
+  /**
+   * How long, in milliseconds, the editor takes to reload a file a write
+   * changed; 0 reloads it at once.
+   */
+  reloadDelayMs = 0;
+  /**
+   * Whether a write to the open file is answered only once the editor has
+   * reloaded it, with saves of typing waiting for the reload. When false, the
+   * write is answered before the reload, and a save of typing made before the
+   * write can land over it.
+   */
+  holdsSavesDuringReload = true;
+  private _now = 0;
   private _openFile: string | undefined;
   private _buffer = "";
+  private _reloading: Promise<void> | undefined;
+  private _typingSave: ReturnType<typeof setTimeout> | undefined;
+  private _project = 0;
   private readonly _listeners = new Set<(event: { data: unknown; source: unknown }) => void>();
   private _recentMutations: number[] = [];
+  private _windowWaiters: { at: number; resolve: () => void }[] = [];
   private _queue: Promise<void> = Promise.resolve();
   private _held: (() => void) | undefined;
   private _heldGate: Promise<void> = Promise.resolve();
+
+  /** The current time, in milliseconds, the rate window reads; moving it forward lets held writes and deletes apply. */
+  get now(): number {
+    return this._now;
+  }
+
+  set now(time: number) {
+    this._now = time;
+    const due = this._windowWaiters.filter((waiter) => waiter.at <= time);
+    this._windowWaiters = this._windowWaiters.filter((waiter) => waiter.at > time);
+    for (const waiter of due) waiter.resolve();
+  }
 
   addEventListener(_type: "message", listener: (event: { data: unknown; source: unknown }) => void): void {
     this._listeners.add(listener);
@@ -94,9 +155,13 @@ export class FakeProjfsHost {
     this._listeners.delete(listener);
   }
 
-  /** A projfs client served by this host, disposed by the caller. */
-  client(): ProjfsClient {
-    return new ProjfsClient({ target: this.parent, listener: this as unknown as ProjfsListenerWindow });
+  /**
+   * A projfs client served by this host, disposed by the caller.
+   *
+   * @param options - How the client reports replies slower than its threshold.
+   */
+  client(options: Pick<ProjfsClientOptions, "slowReplyMs" | "onSlowReply"> = {}): ProjfsClient {
+    return new ProjfsClient({ ...options, target: this.parent, listener: this as unknown as ProjfsListenerWindow });
   }
 
   /** The content of the scope file `name`, or `undefined` when none is stored. */
@@ -129,12 +194,35 @@ export class FakeProjfsHost {
     this._openFile = undefined;
   }
 
+  /**
+   * Types `text` over the editor's buffer, as a person would, and saves the
+   * buffer over the open file once `debounceMs` pass without more typing,
+   * waiting first for a reload of the file in progress.
+   */
+  typeInEditor(text: string, debounceMs: number): void {
+    this._buffer = text;
+    clearTimeout(this._typingSave);
+    this._typingSave = setTimeout(() => void this.saveTyping(), debounceMs);
+  }
+
   /** Deletes and unlists the scope file `name`, as a person editing the project would. */
   remove(name: string): void {
     const scoped = `${SCOPE}/${name}`;
     this.stored.delete(scoped);
     const index = this.listed.indexOf(scoped);
     if (index >= 0) this.listed.splice(index, 1);
+  }
+
+  /**
+   * Opens another project in MakeCode's tab, holding none of this one's
+   * files; requests that arrived before the switch belong to the closed
+   * project.
+   */
+  switchProject(): void {
+    this._project += 1;
+    this.stored.clear();
+    this.listed.length = 0;
+    this._openFile = undefined;
   }
 
   /** Records `count` writes and deletes as made now, as earlier requests of the extension would have. */
@@ -165,28 +253,36 @@ export class FakeProjfsHost {
     const request = message as ProjfsRequest;
     if (request?.type !== PROJFS_MESSAGE_TYPE) return;
     const id = request.id;
-    const mutates = request.subtype === "write" || request.subtype === "delete";
-    if (mutates && !this.admitMutation()) {
-      this.reply({
-        type: PROJFS_MESSAGE_TYPE,
-        id,
-        subtype: "error",
-        code: "RATE_LIMITED",
-        message: `More than ${PROJFS_RATE_LIMIT} writes and deletes in ${PROJFS_RATE_WINDOW_MS / 1000} seconds.`,
-      });
+    const refuse = (code: ProjfsErrorCode, text: string): void => {
+      this.reply({ type: PROJFS_MESSAGE_TYPE, id, subtype: "error", code, message: text });
+    };
+    if (!this.registered) {
+      if (this.answersUnregistered) refuse("UNREGISTERED", "MakeCode does not serve this frame.");
       return;
     }
+    const mutates = request.subtype === "write" || request.subtype === "delete";
+    if (mutates && !this.defersOverRate && !this.admitMutation()) {
+      refuse(
+        "RATE_LIMITED",
+        `More than ${PROJFS_RATE_LIMIT} writes and deletes in ${PROJFS_RATE_WINDOW_MS / 1000} seconds.`
+      );
+      return;
+    }
+    const project = this.open ? this._project : undefined;
     const gate = this._heldGate;
     this._queue = this._queue
       .then(() => gate)
-      .then(() => this.apply(request))
+      .then(async () => {
+        if (mutates && this.defersOverRate) await this.admitMutationWhenAllowed(project);
+        return this.apply(request, project);
+      })
       .then(
         (reply) => {
           this.reply({ ...reply, type: PROJFS_MESSAGE_TYPE, id } as ProjfsReply);
         },
         (error: unknown) => {
           const refused = error instanceof RefusedRequest ? error : new RefusedRequest("FAILED", String(error));
-          this.reply({ type: PROJFS_MESSAGE_TYPE, id, subtype: "error", code: refused.code, message: refused.message });
+          refuse(refused.code, refused.message);
         }
       );
   }
@@ -196,11 +292,57 @@ export class FakeProjfsHost {
     if (this._openFile !== undefined && this.stored.has(this._openFile)) this.stored.set(this._openFile, this._buffer);
   }
 
+  /** Saves the typed buffer over the file it was typed in, once no reload of it is in progress. */
+  private async saveTyping(): Promise<void> {
+    const typedIn = this._openFile;
+    if (this.holdsSavesDuringReload) {
+      while (this._reloading !== undefined) await this._reloading;
+    }
+    if (typedIn === this._openFile) this.saveEditor();
+  }
+
+  /** Shows `content` in the editor's buffer, now or after {@link reloadDelayMs}; resolves once a write may be answered. */
+  private async reloadEditor(content: string): Promise<void> {
+    if (this.reloadDelayMs === 0) {
+      this._buffer = content;
+      return;
+    }
+    const reloaded = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        this._buffer = content;
+        resolve();
+      }, this.reloadDelayMs);
+    });
+    if (!this.holdsSavesDuringReload) return;
+    const reloading = reloaded.then(() => {
+      if (this._reloading === reloading) this._reloading = undefined;
+    });
+    this._reloading = reloading;
+    await reloading;
+  }
+
   private admitMutation(): boolean {
     this._recentMutations = this._recentMutations.filter((time) => this.now - time < PROJFS_RATE_WINDOW_MS);
     if (this._recentMutations.length >= PROJFS_RATE_LIMIT) return false;
     this._recentMutations.push(this.now);
     return true;
+  }
+
+  /** Resolves once the rate window allows another write or delete, counting it from then. */
+  private async admitMutationWhenAllowed(project: number | undefined): Promise<void> {
+    while (!this.admitMutation()) {
+      this.checkProject(project);
+      const at = (this._recentMutations[0] ?? this.now) + PROJFS_RATE_WINDOW_MS;
+      await new Promise<void>((resolve) => this._windowWaiters.push({ at, resolve }));
+    }
+  }
+
+  /** Refuses with `PROJECT_CLOSED` when no project is open, or when `project`, the one a request arrived in, has closed. */
+  private checkProject(project: number | undefined): void {
+    if (!this.open) throw new RefusedRequest("PROJECT_CLOSED", "No project is open.");
+    if (this.bindsRequestsToProject && project !== this._project) {
+      throw new RefusedRequest("PROJECT_CLOSED", "The project open when the request arrived has closed.");
+    }
   }
 
   private reply(reply: ProjfsReply): void {
@@ -233,8 +375,8 @@ export class FakeProjfsHost {
     return `${SCOPE}/${name}`;
   }
 
-  private async apply(request: ProjfsRequest): Promise<ProjfsReplyBody> {
-    if (!this.open) throw new RefusedRequest("FAILED", "No project is open.");
+  private async apply(request: ProjfsRequest, project: number | undefined): Promise<ProjfsReplyBody> {
+    this.checkProject(project);
     switch (request.subtype) {
       case "list":
         return { subtype: "files", files: this.visibleFiles() };
@@ -254,8 +396,8 @@ export class FakeProjfsHost {
         }
         this.stored.set(scoped, request.content);
         if (!this.listed.includes(scoped)) this.listed.push(scoped);
-        if (scoped === this._openFile && this.reloadsOpenFile) this._buffer = request.content;
         this.mutations.push(`write ${request.name}`);
+        if (scoped === this._openFile && this.reloadsOpenFile) await this.reloadEditor(request.content);
         return { subtype: "ack", name: request.name };
       }
       case "delete": {

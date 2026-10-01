@@ -238,7 +238,8 @@ serves exactly what the last one wrote.
   a write lists its file. The client is pxt's own
   `pxtservices/projfs.ts`, vendored byte-for-byte as
   `makecode/simx/bridge/src/vendor/projfs.ts`; the sibling
-  `PROVENANCE` file records the exact source commit, and the vendored
+  `PROVENANCE` file records the exact source (the pxt commit, or the
+  file's blob until that commit lands), and the vendored
   file is kept out of this repo's lint and formatting so a re-vendor
   is a plain copy. Its frame-parameter helpers (`getSimxChannel`, `getTargetId`,
   `getProjectId`) are how the simx reads its frame URL.
@@ -310,21 +311,44 @@ serves exactly what the last one wrote.
   registration, and a removal drops it. Deleting a source the project
   does not hold counts as done. Every write and delete is an ARTIFACT
   (never `dirty`), so a brain save never restarts the running program;
-  a written file open in MakeCode's text editor reloads to show it.
+  a written file open in MakeCode's text editor reloads to show it,
+  replacing typing not yet saved from it, and the write is answered
+  once the editor shows it, so no later save of the editor's older
+  text can land over an acknowledged push.
 - COALESCING: pushes queue and apply in drains. A drain reads the
   project, then takes every push queued by then -- the latest push of
   each brain, when a brain was pushed more than once, all of its
   requests answered together -- writes `brains.g.ts` once (skipped when
   its text would not change), then each brain's source file. A burst of
   pushes, such as a reconnection's flush, costs one module write plus
-  one write per brain against projfs's limit of 30 writes and deletes
-  per 10 seconds; pushes arriving while a drain writes join the next.
+  one write per brain against projfs's rate of 30 writes and deletes
+  per 10 seconds, over which MakeCode holds the writes and applies them
+  as the window allows; pushes arriving while a drain writes join the
+  next.
+- MAKECODE'S ANSWERS: MakeCode answers every projfs request once,
+  after it has applied or been refused, and applies one simulator
+  extension's requests in the order they arrive. Rate pressure defers:
+  a write or delete over the rate waits, with the requests behind it,
+  until the window allows it, so a drain of any size lands whole.
+  Refusals are known-permanent and coded: `QUOTA_EXCEEDED` (the folder
+  would pass 512 KiB), `INVALID_NAME`, `INVALID_REQUEST`,
+  `PROJECT_CLOSED` (the project open when the request arrived has
+  closed -- a request never applies to a project opened after it
+  arrived), `UNREGISTERED` (MakeCode does not serve the requesting
+  frame), `RATE_LIMITED` (a flood of more than 1000 writes and deletes
+  waiting for answers, which a drain never reaches), and `FAILED` (an
+  error applying the request, which a repeat completes). The client
+  waits for every answer however long it takes and only notes a slow
+  one in the console; when the frame is torn down, its pending
+  requests end with `DISPOSED`, their outcome unknown, and recovery
+  falls to the editor's pend and the next handshake.
 - ACKS AND REFUSALS: a push is acknowledged once its source file has
   landed after its drain's module write, so an acknowledged push is in
-  the project in both forms. A refused write fails the pushes it
-  carried with `MAKECODE_BRAINS_WRITE_FAILED`, the projfs code leading
-  the message (`RATE_LIMITED: ...`, `QUOTA_EXCEEDED: ...`); a refused
-  module write fails every push of its drain and writes no source. The
+  the project in both forms; a push fails only on a refusal, never on
+  a slow answer. A refused write fails the pushes it carried with
+  `MAKECODE_BRAINS_WRITE_FAILED`, the projfs code leading the message
+  (`QUOTA_EXCEEDED: ...`, `PROJECT_CLOSED: ...`); a refused module
+  write fails every push of its drain and writes no source. The
   editor keeps a failed push pending and pushes it again on the next
   reconciled handshake. A list or a pull the project cannot serve fails
   with `MAKECODE_BRAINS_READ_FAILED` and the projfs code likewise.
@@ -907,8 +931,11 @@ the brain sync against a scripted simx and against the real simx
 module serving an in-memory MakeCode project over the same testkit
 (`apps/editor/src/services/brains-sync-relay.spec.ts`; the project is
 `makecode/simx/bridge/src/test-support/projfs-host.ts`, which applies
-MakeCode's projfs rules -- scope, visibility, quota, rate limit -- and
-plays MakeCode's text editor sharing the project: the open file's
-buffer, its reload on a write, and its save-back on a file switch). The
+MakeCode's projfs rules -- scope, visibility, quota, deferral over the
+rate, binding to the project a request arrived in, refusal of an
+unserved frame -- and plays MakeCode's text editor sharing the project:
+the open file's buffer, its reload on a write, its save-back on a file
+switch, and debounced saves of typing that wait for a reload; each rule
+has a switch whose control specs prove a spec's outcome rests on it). The
 relay service's own suite runs the testkit over the service's own
 server (`startTestRelay({ server: startRelayServer })`).

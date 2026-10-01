@@ -11,7 +11,13 @@ const tokens = openBindingTokenStore(() => window.sessionStorage, getProjectId()
 if (!tokens.persistent) {
   console.warn("Wendoo bridge: session storage is unavailable; each reload of this frame starts a new pairing.");
 }
-const files = new ProjfsClient();
+// Project-file client for this frame; warns on the console about each request still unanswered after the slow-reply threshold.
+const files = new ProjfsClient({
+  onSlowReply: (request) => {
+    const name = "name" in request ? ` ${request.name}` : "";
+    console.warn(`Wendoo bridge: still waiting for MakeCode to answer the ${request.subtype}${name} request.`);
+  },
+});
 const bridge = startSimxBridge({
   frame: window,
   bridgeUrl: bridgeUrlFor(window.location.hostname),

@@ -88,7 +88,9 @@ interface QueuedPush {
  *   each brain's source file. Each push is acknowledged once its brain's
  *   source file has landed after that module write; a refused write fails
  *   the pushes it carried, with the refusal's projfs code leading the
- *   message. Every write is an artifact, never flagged as a user edit.
+ *   message. A write waits for MakeCode's answer however long it takes, so
+ *   a push fails only on a refusal, never on a slow answer. Every write is
+ *   an artifact, never flagged as a user edit.
  *
  * A name is read from a source that is not a readable brain document from
  * its registration, or is empty. A damaged brains module yields every

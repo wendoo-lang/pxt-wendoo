@@ -10,7 +10,12 @@ import {
 import { BRAINS_MODULE_FILE, readBrainsModule, writeBrainsModule } from "./brains-module.js";
 import { BrainsProject } from "./brains-project.js";
 import type { SimxLog } from "./simx-bridge.js";
-import { FakeProjfsHost, PROJFS_RATE_LIMIT, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
+import {
+  FakeProjfsHost,
+  PROJFS_RATE_LIMIT,
+  PROJFS_RATE_WINDOW_MS,
+  PROJFS_SCOPE_QUOTA_BYTES,
+} from "./test-support/projfs-host.js";
 import type { ProjfsClient } from "./vendor/projfs.js";
 
 /** How one request was answered. */
@@ -309,37 +314,6 @@ describe("brains project", () => {
   });
 
   describe("refusals", () => {
-    it("fails every push of a drain whose brains module MakeCode rate-limits, carrying RATE_LIMITED, writing nothing", async () => {
-      host.spendMutations(PROJFS_RATE_LIMIT);
-
-      const answers = await Promise.all([
-        push({ op: "write", brain: brain(CHASER, "Chaser") }),
-        push({ op: "remove", brainId: RUNNER }),
-      ]);
-
-      for (const answer of answers) {
-        assert.equal(answer.ok, false);
-        assert.match(answer.ok ? "" : answer.message, /^RATE_LIMITED\b/);
-      }
-      assert.deepEqual(host.mutations, []);
-      assert.ok(log.errors.some((line) => line.includes("RATE_LIMITED")));
-    });
-
-    it("acknowledges each push whose source landed and fails each one MakeCode rate-limited", async () => {
-      host.spendMutations(PROJFS_RATE_LIMIT - 2);
-
-      const answers = await Promise.all([
-        push({ op: "write", brain: brain(CHASER, "Chaser") }),
-        push({ op: "write", brain: brain(RUNNER, "Runner") }),
-      ]);
-
-      assert.equal(answers[0].ok, true);
-      assert.equal(answers[1].ok, false);
-      assert.match(answers[1].ok ? "" : answers[1].message, /^RATE_LIMITED\b/);
-      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser"));
-      assert.equal(host.file(`brains/${RUNNER}.src.json`), undefined);
-    });
-
     it("fails a push whose brains module would exceed the folder's quota, carrying QUOTA_EXCEEDED, writing nothing", async () => {
       const oversized = brain(CHASER, "Chaser", new Uint8Array(PROJFS_SCOPE_QUOTA_BYTES / 2));
 
@@ -350,15 +324,198 @@ describe("brains project", () => {
       assert.deepEqual(host.mutations, []);
     });
 
-    it("fails a list and a pull with the reason when MakeCode cannot serve them", async () => {
+    it("fails a list and a pull with the reason when no project is open in MakeCode", async () => {
       host.open = false;
 
       const listed = await list();
       const pulled = await pull([CHASER]);
 
       assert.equal(listed.ok, false);
-      assert.match(listed.ok ? "" : listed.message, /^FAILED\b/);
+      assert.match(listed.ok ? "" : listed.message, /^PROJECT_CLOSED\b/);
       assert.equal(pulled.ok, false);
+    });
+  });
+
+  describe("MakeCode's rate", () => {
+    /** Brains with distinct ids, `count` of them. */
+    function brains(count: number): MakeCodeBrain[] {
+      return Array.from({ length: count }, (_, index) => brain(`brain${String(index).padStart(11, "0")}`, `B${index}`));
+    }
+
+    it("saves a drain of the brains module and more sources than the rate allows completely, acknowledging every push", async () => {
+      const pushed = brains(PROJFS_RATE_LIMIT + 5);
+      let answered = 0;
+      const answers = pushed.map((written) =>
+        push({ op: "write", brain: written }).then((answer) => {
+          answered += 1;
+          return answer;
+        })
+      );
+      await delay(20);
+      assert.equal(host.mutations.length, PROJFS_RATE_LIMIT);
+      assert.equal(answered, PROJFS_RATE_LIMIT - 1);
+
+      host.now += PROJFS_RATE_WINDOW_MS;
+
+      for (const answer of await Promise.all(answers)) assert.deepEqual(answer, { ok: true, value: undefined });
+      assert.equal(host.mutations.length, pushed.length + 1);
+      assert.deepEqual([...registered().keys()].sort(), pushed.map((written) => written.id).sort());
+      for (const written of pushed) assert.equal(host.file(`brains/${written.id}.src.json`), written.source);
+      assert.deepEqual(log.errors, []);
+    });
+
+    it("loses the pushes over the rate when MakeCode refuses writes over it", async () => {
+      host.defersOverRate = false;
+      const pushed = brains(PROJFS_RATE_LIMIT + 5);
+
+      const answers = await Promise.all(pushed.map((written) => push({ op: "write", brain: written })));
+
+      const refused = answers.filter((answer) => !answer.ok);
+      assert.equal(refused.length, 6);
+      for (const answer of refused) assert.match(answer.ok ? "" : answer.message, /^RATE_LIMITED\b/);
+    });
+
+    it("acknowledges a push only once its own source has landed when the rate holds part of a drain", async () => {
+      host.spendMutations(PROJFS_RATE_LIMIT - 2);
+
+      const chaser = push({ op: "write", brain: brain(CHASER, "Chaser") });
+      const runner = push({ op: "write", brain: brain(RUNNER, "Runner") });
+      assert.deepEqual(await chaser, { ok: true, value: undefined });
+      await delay(20);
+      assert.equal(host.file(`brains/${RUNNER}.src.json`), undefined);
+
+      let runnerAnswered = false;
+      void runner.then(() => {
+        runnerAnswered = true;
+      });
+      await delay(20);
+      assert.equal(runnerAnswered, false);
+      host.now += PROJFS_RATE_WINDOW_MS;
+
+      assert.deepEqual(await runner, { ok: true, value: undefined });
+      assert.equal(host.file(`brains/${RUNNER}.src.json`), sourceOf(RUNNER, "Runner"));
+    });
+  });
+
+  describe("project switches", () => {
+    it("fails the pushes of a drain MakeCode holds when another project opens, writing nothing into it", async () => {
+      host.spendMutations(PROJFS_RATE_LIMIT);
+      const answers = Promise.all([
+        push({ op: "write", brain: brain(CHASER, "Chaser") }),
+        push({ op: "write", brain: brain(RUNNER, "Runner") }),
+      ]);
+      await delay(20);
+
+      host.switchProject();
+      host.now += PROJFS_RATE_WINDOW_MS;
+
+      for (const answer of await answers) {
+        assert.equal(answer.ok, false);
+        assert.match(answer.ok ? "" : answer.message, /^PROJECT_CLOSED\b/);
+      }
+      assert.deepEqual([...host.stored.keys()], []);
+      assert.deepEqual(host.mutations, []);
+    });
+
+    it("writes a held drain into the next project when MakeCode applies requests to whichever project is open", async () => {
+      host.bindsRequestsToProject = false;
+      host.spendMutations(PROJFS_RATE_LIMIT);
+      const answer = push({ op: "write", brain: brain(CHASER, "Chaser") });
+      await delay(20);
+
+      host.switchProject();
+      host.now += PROJFS_RATE_WINDOW_MS;
+
+      assert.ok((await answer).ok);
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser"));
+    });
+  });
+
+  describe("unregistered frames", () => {
+    it("fails a push from a frame MakeCode does not serve, carrying UNREGISTERED", async () => {
+      host.registered = false;
+
+      const answer = await push({ op: "write", brain: brain(CHASER, "Chaser") });
+
+      assert.equal(answer.ok, false);
+      assert.match(answer.ok ? "" : answer.message, /^UNREGISTERED\b/);
+      assert.ok(log.errors.some((line) => line.startsWith("UNREGISTERED")));
+    });
+
+    it("leaves the push unanswered when MakeCode drops an unserved frame's requests", async () => {
+      host.registered = false;
+      host.answersUnregistered = false;
+      let answered = false;
+
+      void push({ op: "write", brain: brain(CHASER, "Chaser") }).then(() => {
+        answered = true;
+      });
+      await delay(50);
+
+      assert.equal(answered, false);
+    });
+  });
+
+  describe("late replies", () => {
+    it("acknowledges a push whose writes MakeCode answers long after the client reports them slow", async () => {
+      client.dispose();
+      const slow: string[] = [];
+      client = host.client({ slowReplyMs: 5, onSlowReply: (request) => slow.push(request.subtype) });
+      project = new BrainsProject(client, log);
+      host.hold();
+      let answered = false;
+      const answer = push({ op: "write", brain: brain(CHASER, "Chaser") }).then((result) => {
+        answered = true;
+        return result;
+      });
+      await delay(40);
+      assert.equal(answered, false);
+      assert.deepEqual(slow, ["list"]);
+
+      host.release();
+
+      assert.deepEqual(await answer, { ok: true, value: undefined });
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser"));
+      assert.deepEqual(log.errors, []);
+    });
+  });
+
+  describe("MakeCode's text editor showing a source", () => {
+    it("keeps a saved push over typing made in the source just before it", async () => {
+      await write(brain(CHASER, "Chaser"));
+      host.openInEditor(`brains/${CHASER}.src.json`);
+      host.reloadDelayMs = 40;
+
+      host.typeInEditor("typed before the push", 20);
+      await write(brain(CHASER, "Renamed"));
+      await delay(60);
+
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Renamed"));
+    });
+
+    it("loses the push to the typing when MakeCode answers before its editor reloads and saves typing meanwhile", async () => {
+      host.holdsSavesDuringReload = false;
+      await write(brain(CHASER, "Chaser"));
+      host.openInEditor(`brains/${CHASER}.src.json`);
+      host.reloadDelayMs = 40;
+
+      host.typeInEditor("typed before the push", 20);
+      await write(brain(CHASER, "Renamed"));
+      await delay(60);
+
+      assert.equal(host.file(`brains/${CHASER}.src.json`), "typed before the push");
+    });
+
+    it("saves typing made after the editor reloads a push, over the push", async () => {
+      await write(brain(CHASER, "Chaser"));
+      host.openInEditor(`brains/${CHASER}.src.json`);
+      host.reloadDelayMs = 20;
+
+      await write(brain(CHASER, "Renamed"));
+      host.typeInEditor("typed after the push", 10);
+      await delay(30);
+
+      assert.equal(host.file(`brains/${CHASER}.src.json`), "typed after the push");
     });
   });
 

@@ -31,7 +31,7 @@ import { type BindingTokenStore, openBindingTokenStore, type TokenStorage } from
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
-import { FakeProjfsHost, PROJFS_RATE_LIMIT } from "./test-support/projfs-host.js";
+import { FakeProjfsHost, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
 import type { ProjfsClient } from "./vendor/projfs.js";
 
 /**
@@ -776,7 +776,7 @@ describe("simx bridge on the relay", () => {
     it("answers a push the project refuses with WRITE_FAILED, the refusal's code leading its message", async () => {
       const { joinCode } = await startSimx(CATALOG_TEXT);
       const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
-      host.spendMutations(PROJFS_RATE_LIMIT);
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
 
       editor.send({
         type: "makecode:brainsPush",
@@ -789,7 +789,7 @@ describe("simx bridge on the relay", () => {
       assert.equal(reply.id, "push-1");
       const payload = reply.payload as { code: string; message: string };
       assert.equal(payload.code, MakeCodeBrainsErrorCode.WRITE_FAILED);
-      assert.match(payload.message, /^RATE_LIMITED\b/);
+      assert.match(payload.message, /^QUOTA_EXCEEDED\b/);
       assert.equal(host.file("brains/abcdabcdabcdabcd.src.json"), undefined);
     });
   });

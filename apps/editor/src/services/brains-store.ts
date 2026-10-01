@@ -15,6 +15,14 @@ import {
 } from "./brain-source";
 import type { EditorBrainsChannel, EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
 
+/**
+ * The delays, in milliseconds, before each retry of a failed push of a
+ * brain's latest edit: the first retry waits the first delay, and each retry
+ * that fails waits the next. After the last, the edit stays pending for the
+ * next handshake to push.
+ */
+export const PUSH_RETRY_DELAYS_MS: readonly number[] = [500, 1000, 2000, 4000, 8000];
+
 /** The session readings a {@link BrainsStore} follows. */
 export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText">;
 
@@ -83,9 +91,14 @@ export interface BrainsViewState {
    * Ids of the brains whose latest edit -- add, apply, rename or removal --
    * the MakeCode project has not acknowledged, in the order first recorded:
    * edits made while no reconciled handshake could carry them, and edits
-   * whose push failed. Each is pushed when the next handshake has
-   * reconciled, and leaves the set when the project acknowledges a push of
-   * its latest edit. An id the brains do not hold names a removal.
+   * whose push failed. A failed push of a brain's latest edit is retried,
+   * unless the brain is listed damaged, after each of
+   * {@link PUSH_RETRY_DELAYS_MS} in turn while the handshake it went out on
+   * stays reconciled and connected; every pend is pushed when the next
+   * handshake has reconciled. An id leaves the set when the project
+   * acknowledges a push carrying its latest edit; acknowledging a push of an
+   * earlier edit leaves it pending. An id the brains do not hold names a
+   * removal.
    */
   readonly pending: ReadonlySet<string>;
   /**
@@ -115,7 +128,9 @@ export interface BrainsViewState {
  *
  * Every document written to the store is compiled at once in the current
  * environment. A failed compile keeps the document and records its
- * diagnostics, beside the last good compile.
+ * diagnostics, beside the last good compile. A document whose source text
+ * equals the source the store holds for its brain changes nothing: it is not
+ * compiled, and no edit is recorded.
  *
  * Given a sync source, the store keeps its brains in step with the MakeCode
  * project over each makecode handshake. When a handshake completes, the
@@ -129,8 +144,9 @@ export interface BrainsViewState {
  * in {@link BrainsViewState.damaged} and never overwritten by itself; a
  * pulled source whose compiled form was not compiled from it is recompiled
  * and, when that compile succeeds, pushed. Once reconciled, each edit is
- * pushed as it is made. A push carries the brain as the store holds it: its
- * source and the compiled form and hash of one compile.
+ * pushed as it is made, and a failed push is retried with backoff (see
+ * {@link BrainsViewState.pending}). A push carries the brain as the store
+ * holds it: its source and the compiled form and hash of one compile.
  */
 export class BrainsStore {
   private readonly _session: BrainsSessionSource;
@@ -145,6 +161,8 @@ export class BrainsStore {
   private _channel: EditorBrainsChannel | undefined;
   /** Whether the latest handshake's reconciliation has finished and the session has stayed connected since. */
   private _reconciled = false;
+  /** The scheduled retry of each brain whose latest push failed, by document id. */
+  private readonly _retries = new Map<string, ReturnType<typeof setTimeout>>();
   private _state: BrainsViewState;
 
   /**
@@ -205,6 +223,8 @@ export class BrainsStore {
   /**
    * Stores `definition` under the document id it carries, replacing any
    * brain held under that id, and compiles it in the current environment.
+   * Does nothing when its source text equals the source the store holds for
+   * that id.
    *
    * @param definition - The brain document, as edited.
    */
@@ -256,10 +276,16 @@ export class BrainsStore {
     this.push(channel, id);
   }
 
-  /** Serializes, compiles and stores `definition`, then records the edit. */
+  /**
+   * Serializes, compiles and stores `definition`, then records the edit.
+   * Does nothing when the store already holds the brain with the same source
+   * text.
+   */
   private store(definition: IBrainDef): void {
     const id = definition.id();
     const source = serializeBrainSource(definition);
+    const held = this._brains.get(id);
+    if (held?.source === source) return;
     const sourceHash = brainSourceHash(source);
     const compile = compileBrainSource(this._environment.environment, source);
     const entry: BrainEntry = {
@@ -267,8 +293,7 @@ export class BrainsStore {
       source,
       sourceHash,
       diagnostics: compile.diagnostics,
-      compiled:
-        compile.bytecode === undefined ? this._brains.get(id)?.compiled : { bytecode: compile.bytecode, sourceHash },
+      compiled: compile.bytecode === undefined ? held?.compiled : { bytecode: compile.bytecode, sourceHash },
     };
     this._brains = new Map(this._brains).set(id, entry);
     this.edited(id);
@@ -288,15 +313,28 @@ export class BrainsStore {
       return;
     }
     const channel = this._channel;
-    if (connected && channel !== undefined && this._reconciled && !this._damaged.has(id)) {
+    if (channel !== undefined && this.pushesOver(channel) && !this._damaged.has(id)) {
       this.push(channel, id);
       return;
     }
     this._pending = new Set(this._pending).add(id);
   }
 
-  /** Pushes the store's latest state of the brain `id` over `channel`: its entry, or its removal when the store holds none. */
-  private push(channel: EditorBrainsChannel, id: string): void {
+  /** Whether edits reach the project over `channel` now: it is the latest handshake's, reconciled, and the session is connected. */
+  private pushesOver(channel: EditorBrainsChannel): boolean {
+    return this._channel === channel && this._reconciled && this._session.getSnapshot().status === "connected";
+  }
+
+  /**
+   * Pushes the store's latest state of the brain `id` over `channel`: its
+   * entry, or its removal when the store holds none. Cancels any retry
+   * scheduled for the brain.
+   *
+   * @param attempt - How many failed pushes of the same state precede this one: 0 for a first push.
+   */
+  private push(channel: EditorBrainsChannel, id: string, attempt = 0): void {
+    clearTimeout(this._retries.get(id));
+    this._retries.delete(id);
     const entry = this._brains.get(id);
     const push: MakeCodeBrainPush =
       entry === undefined
@@ -304,25 +342,53 @@ export class BrainsStore {
         : { op: "write", brain: { id, name: entry.name, source: entry.source, compiled: entry.compiled } };
     channel.pushBrain(push).then(
       () => {
-        this.pushAcknowledged(id);
+        this.pushAcknowledged(id, entry);
       },
       () => {
-        this._pending = new Set(this._pending).add(id);
-        this.publish();
+        this.pushFailed(channel, id, entry, attempt);
       }
     );
   }
 
-  /** Clears the pend and the damage of the brain `id`, whose push the project acknowledged. */
-  private pushAcknowledged(id: string): void {
-    if (!this._pending.has(id) && !this._damaged.has(id)) return;
-    const pending = new Set(this._pending);
-    pending.delete(id);
-    this._pending = pending;
+  /**
+   * Clears the damage of the brain `id`, whose push of `pushed` -- its entry
+   * then, `undefined` for a removal -- the project acknowledged, and clears
+   * its pend when `pushed` is still its latest state.
+   */
+  private pushAcknowledged(id: string, pushed: BrainEntry | undefined): void {
+    const clearsPend = this._pending.has(id) && this._brains.get(id) === pushed;
+    if (!clearsPend && !this._damaged.has(id)) return;
+    if (clearsPend) {
+      const pending = new Set(this._pending);
+      pending.delete(id);
+      this._pending = pending;
+    }
     const damaged = new Map(this._damaged);
     damaged.delete(id);
     this._damaged = damaged;
     this.publish();
+  }
+
+  /**
+   * Handles the failure of the push over `channel` of `pushed` -- the brain
+   * `id`'s entry then, `undefined` for a removal. When `pushed` is still the
+   * brain's latest state, records it pending and, while
+   * {@link PUSH_RETRY_DELAYS_MS} holds a delay at `attempt`, the brain is not
+   * damaged, and edits reach the project over `channel`, retries the push
+   * after that delay, provided edits still reach the project over `channel`
+   * then.
+   */
+  private pushFailed(channel: EditorBrainsChannel, id: string, pushed: BrainEntry | undefined, attempt: number): void {
+    if (this._brains.get(id) !== pushed) return;
+    this._pending = new Set(this._pending).add(id);
+    this.publish();
+    const delay = PUSH_RETRY_DELAYS_MS[attempt];
+    if (delay === undefined || this._damaged.has(id) || !this.pushesOver(channel)) return;
+    const retry = setTimeout(() => {
+      this._retries.delete(id);
+      if (this.pushesOver(channel)) this.push(channel, id, attempt + 1);
+    }, delay);
+    this._retries.set(id, retry);
   }
 
   /** Pushes every pending brain that is not damaged over `channel`. */

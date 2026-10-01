@@ -30,6 +30,7 @@ import {
   FakeProjfsHost,
   PROJFS_RATE_LIMIT,
   PROJFS_RATE_WINDOW_MS,
+  PROJFS_SCOPE_QUOTA_BYTES,
 } from "../../../../makecode/simx/bridge/src/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../../../makecode/simx/bridge/src/vendor/projfs.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
@@ -49,6 +50,9 @@ const CATALOG = '{"packs":[]}';
 
 /** How long a wait in these specs lasts before it fails, in milliseconds. */
 const WAIT_MS = 2000;
+
+/** A file outside the brains that fills the simulator extension's folder to its quota, so MakeCode refuses every brain write. */
+const FILLER = "filler.bin";
 
 /** A brains request the scripted simx received. */
 type ReceivedRequest = MakeCodeBrainsRequestMessage;
@@ -1113,20 +1117,75 @@ describe("brains sync with a scripted simx on the relay", () => {
       assert.ok(moduleWrites() - writesBefore < ids.length);
     });
 
+    it("saves a burst of edits over MakeCode's write rate completely, with no push failing", async () => {
+      const { session, brains } = await pairReal();
+      session.stop();
+      await sessionUntil(session, (state) => state.status === "disconnected", "the editor to disconnect");
+      const ids = Array.from({ length: PROJFS_RATE_LIMIT + 5 }, (_, index) => authorBrain(brains, `B${index}`));
+
+      session.reconnect();
+      await eventually(
+        () => host.mutations.length,
+        (count) => count >= PROJFS_RATE_LIMIT,
+        "MakeCode to apply the writes its rate allows"
+      );
+      await delay(100);
+      assert.ok(brains.getSnapshot().pending.size > 0);
+      host.now += PROJFS_RATE_WINDOW_MS;
+      await saved(brains, "the whole burst to be saved");
+      await brainsUntil(brains, (state) => state.pending.size === 0, "every push to be acknowledged");
+
+      assert.deepEqual([...registrations().keys()].sort(), [...ids].sort());
+    });
+
+    it("leaves part of the same burst pending when MakeCode refuses writes over its rate", async () => {
+      host.defersOverRate = false;
+      const { session, brains } = await pairReal();
+      session.stop();
+      await sessionUntil(session, (state) => state.status === "disconnected", "the editor to disconnect");
+      Array.from({ length: PROJFS_RATE_LIMIT + 5 }, (_, index) => authorBrain(brains, `B${index}`));
+
+      session.reconnect();
+      await brainsUntil(brains, (state) => state.reconciled, "the editor to reconcile");
+      await delay(200);
+
+      assert.ok(brains.getSnapshot().pending.size > 0);
+      assert.ok(host.listed.filter((name) => name.endsWith(".src.json")).length < PROJFS_RATE_LIMIT + 5);
+    });
+
     it("keeps an edit pending while MakeCode refuses the save, and saves it once a later handshake can", async () => {
       const { brains, bridge, simxTokens } = await pairReal();
-      host.spendMutations(PROJFS_RATE_LIMIT);
+      host.edit(FILLER, "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
 
       const id = authorBrain(brains, "Chaser");
       await delay(100);
       assert.deepEqual([...brains.getSnapshot().pending], [id]);
       assert.equal(host.file(`brains/${id}.src.json`), undefined);
-      host.now += PROJFS_RATE_WINDOW_MS;
+      host.remove(FILLER);
       restartSimx(bridge, simxTokens);
 
       await brainsUntil(brains, (state) => state.reconciled && state.pending.size === 0, "the pend to be pushed");
       await saved(brains, "the pend to be saved");
       assert.ok(registrations().has(id));
+    });
+
+    it("saves an edit MakeCode refused once the refusal has passed, by retrying over the same handshake", async () => {
+      const { session, brains } = await pairReal();
+      let handshakes = 0;
+      session.onBrainsChannel(() => {
+        handshakes += 1;
+      });
+      host.edit(FILLER, "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+
+      const id = authorBrain(brains, "Chaser");
+      await delay(100);
+      assert.deepEqual([...brains.getSnapshot().pending], [id]);
+      host.remove(FILLER);
+
+      await brainsUntil(brains, (state) => state.pending.size === 0, "the retry to land");
+      await saved(brains, "the refused edit to be saved");
+      assert.ok(registrations().has(id));
+      assert.equal(handshakes, 0);
     });
 
     it("keeps two brains apart through interleaved edits: a rename and a removal both land", async () => {
