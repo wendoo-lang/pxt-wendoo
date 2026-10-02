@@ -10,9 +10,18 @@
   "include": [
     "*.ts",
     "wendoo-lang/pxt-wendoo/*.ts",
-    "../../../../extensions/vm/lib-stubs.d.ts",
+    "../../../../extensions/vm/*.ts",
+    "../../../../extensions/arcade-base/*.ts",
     "../../../../extensions/arcade/*.ts",
-    "../../../../extensions/arcade/pxt_modules/**/*.ts"
+    "../../../../extensions/arcade/pxt_modules/base/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/core/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/device/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/game/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/hw/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/mixer/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/power/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/screen/**/*.ts",
+    "../../../../extensions/arcade/pxt_modules/settings/**/*.ts"
   ],
   "exclude": ["../../../../extensions/arcade/pxt_modules/**/*test.ts"]
 }

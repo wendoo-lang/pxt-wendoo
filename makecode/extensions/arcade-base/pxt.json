@@ -12,6 +12,8 @@
         "sprite-world.ts",
         "controller-read.ts",
         "direction.ts",
+        "sprite-value.ts",
+        "overlap-read.ts",
         "motion.ts",
         "vocabulary.ts"
     ],

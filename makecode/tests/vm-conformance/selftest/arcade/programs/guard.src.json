@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "guardDpadUpLeft1",
+  "name": "Guard",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0guardUpLt100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0guardUpLt100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.left"
+          ],
+          "children": [],
+          "ruleId": "fRu0guardUpLt100"
+        }
+      ]
+    }
+  ]
+}

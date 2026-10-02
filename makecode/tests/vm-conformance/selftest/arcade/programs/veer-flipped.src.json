@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "veerRightUp00001",
+  "name": "Veer flipped",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0veerRtUp0100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0veerRtUp0100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.right",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0veerRtUp0100"
+        }
+      ]
+    }
+  ]
+}

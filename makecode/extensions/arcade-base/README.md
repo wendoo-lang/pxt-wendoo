@@ -1,16 +1,21 @@
 # Wendoo Arcade Base
 
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
-shares: the tiles a program uses to read the controller and move its
-sprite.
+shares: the tiles a program uses to read the controller, notice what its
+sprite touches, and move its sprite.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
   to just those directions.
-- **move** -- a DO tile that moves the sprite: in the direction its WHEN
-  carries, or rightward when there is none. Add **slowly** or **quickly**
-  (up to three times) to change its speed, or give it a **speed** in
-  pixels per second.
+- **bump** -- a WHEN tile that is on while the sprite touches another
+  sprite, carrying the sprite it touches. When it touches several at once,
+  it carries the nearest.
+- **move** -- a DO tile that moves the sprite. Add **up**, **down**,
+  **left** or **right** to pick its direction -- **up** and **right**
+  together move on the diagonal. Without them it moves in the direction its
+  WHEN carries, or rightward when there is none. Add **slowly** or
+  **quickly** (up to three times) to change its speed, or give it a
+  **speed** in pixels per second.
 
 > **Heads up:** this extension is under development and not ready to use in
 > your projects yet.

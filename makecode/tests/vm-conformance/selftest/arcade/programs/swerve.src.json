@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "swerveLeftQkUp01",
+  "name": "Swerve",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0swerveLQU100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0swerveLQU100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.left",
+            "tile.modifier->modifier.quickly",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0swerveLQU100"
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 /**
  * Directions as Wendoo values: the `Vector2` struct type a direction crosses
  * into a program as, and the arithmetic the arcade vocabulary does on
- * directions -- masking components, clamping to the unit circle, and picking
- * the direction an action acts in.
+ * directions -- masking components, summing chosen cardinals, and clamping
+ * to the unit circle.
  */
 namespace wendoo {
   /** Wendoo type name of a direction value: a struct of two numbers, `x` and `y`, in Arcade's screen convention. */
@@ -92,6 +92,29 @@ namespace wendoo {
     const x = (direction.x < 0 && left) || (direction.x > 0 && right) ? direction.x : 0;
     const y = (direction.y < 0 && up) || (direction.y > 0 && down) ? direction.y : 0;
     return new DirectionVector(x, y);
+  }
+
+  /**
+   * The direction the chosen cardinals specify: the sum of a unit vector for
+   * each flag set -- `up` (0, -1), `down` (0, 1), `left` (-1, 0), `right`
+   * (1, 0) -- scaled to length 1, so two perpendicular cardinals give the
+   * exact diagonal. `undefined` when no flag is set or the chosen cardinals
+   * cancel to the zero vector.
+   *
+   * @param up - Whether up is chosen.
+   * @param down - Whether down is chosen.
+   * @param left - Whether left is chosen.
+   * @param right - Whether right is chosen.
+   */
+  //% hidden
+  export function cardinalDirection(up: boolean, down: boolean, left: boolean, right: boolean): DirectionVector {
+    const x = (right ? 1 : 0) - (left ? 1 : 0);
+    const y = (down ? 1 : 0) - (up ? 1 : 0);
+    if (x === 0 && y === 0) {
+      return undefined;
+    }
+    const length = Math.sqrt(x * x + y * y);
+    return new DirectionVector(x / length, y / length);
   }
 
   /**

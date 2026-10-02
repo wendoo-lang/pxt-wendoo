@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "sprintQuicklyUp1",
+  "name": "Sprint flipped",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sprintQkUp00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sprintQkUp00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.quickly",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0sprintQkUp00"
+        }
+      ]
+    }
+  ]
+}

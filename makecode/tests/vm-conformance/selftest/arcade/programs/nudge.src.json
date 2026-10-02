@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "nudgeBumpMove001",
+  "name": "Nudge",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0nudgeBump100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0nudgeBump100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0nudgeBump100"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "veerUpRight00001",
+  "name": "Veer",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0veerUpRt0100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0veerUpRt0100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.up",
+            "tile.modifier->modifier.direction.right"
+          ],
+          "children": [],
+          "ruleId": "fRu0veerUpRt0100"
+        }
+      ]
+    }
+  ]
+}

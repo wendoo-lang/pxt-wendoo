@@ -7,10 +7,10 @@
  * The arcade selftest: it gives sprites of a running Arcade game the
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
- * game's frames -- among them programs placing the arcade base pack's dpad
- * and move tiles, driven by pressing the controller's buttons from game code,
- * and programs updated while the game runs, through the messages the Wendoo
- * simulator extension posts.
+ * game's frames -- among them programs placing the arcade base pack's dpad,
+ * bump and move tiles, driven by pressing the controller's buttons and
+ * placing sprites from game code, and programs updated while the game runs,
+ * through the messages the Wendoo simulator extension posts.
  *
  * Output grammar, one line each:
  *
@@ -121,9 +121,9 @@ namespace arcadeSelftest {
 
   /**
    * Check the arcade base pack's direction arithmetic directly: the analog
-   * dead band and its live band, the direction modifiers' mask, the move's
-   * direction fallback, and its speed. Call it once the program hosts have
-   * drained registrations.
+   * dead band and its live band, the dpad's modifier mask, the move's
+   * cardinal sum and direction fallback, and its speed. Call it once the
+   * program hosts have drained registrations.
    */
   function checkDirectionArithmetic(): void {
     check(
@@ -151,14 +151,44 @@ namespace arcadeSelftest {
         pointsAt(wendoo.maskDirection(stick, true, true, true, true), 0.6, -0.8)
     );
 
+    const diagonal = 1 / Math.sqrt(2);
+    check(
+      "cardinals-sum-and-normalize",
+      pointsAt(wendoo.cardinalDirection(true, false, false, false), 0, -1) &&
+        pointsAt(wendoo.cardinalDirection(false, true, false, false), 0, 1) &&
+        pointsAt(wendoo.cardinalDirection(false, false, true, false), -1, 0) &&
+        pointsAt(wendoo.cardinalDirection(false, false, false, true), 1, 0) &&
+        pointsAt(wendoo.cardinalDirection(true, false, false, true), diagonal, -diagonal) &&
+        pointsAt(wendoo.cardinalDirection(true, true, true, false), -1, 0)
+    );
+    check(
+      "cancelling-cardinals-specify-no-direction",
+      wendoo.cardinalDirection(false, false, false, false) === undefined &&
+        wendoo.cardinalDirection(true, true, false, false) === undefined &&
+        wendoo.cardinalDirection(false, false, true, true) === undefined &&
+        wendoo.cardinalDirection(true, true, true, true) === undefined
+    );
+
     const leftward = wendoo.vector2Value(new wendoo.DirectionVector(-1, 0));
     const downward = wendoo.vector2Value(new wendoo.DirectionVector(0, 1));
-    check("explicit-direction-beats-when-result", pointsAt(wendoo.moveDirection(leftward, downward), -1, 0));
-    check("when-result-direction-beats-the-default", pointsAt(wendoo.moveDirection(wendoo.NIL_VALUE, downward), 0, 1));
+    const up = wendoo.cardinalDirection(true, false, false, false);
+    check(
+      "direction-modifiers-beat-the-direction-argument",
+      pointsAt(wendoo.moveDirection(up, leftward, downward), 0, -1)
+    );
+    check(
+      "cancelled-modifiers-leave-the-direction-argument",
+      pointsAt(wendoo.moveDirection(wendoo.cardinalDirection(true, true, false, false), leftward, downward), -1, 0)
+    );
+    check("explicit-direction-beats-when-result", pointsAt(wendoo.moveDirection(undefined, leftward, downward), -1, 0));
+    check(
+      "when-result-direction-beats-the-default",
+      pointsAt(wendoo.moveDirection(undefined, wendoo.NIL_VALUE, downward), 0, 1)
+    );
     check(
       "default-direction-without-a-given-or-sensed-one",
-      pointsAt(wendoo.moveDirection(wendoo.NIL_VALUE, wendoo.mkNumber(1)), 1, 0) &&
-        pointsAt(wendoo.moveDirection(wendoo.NIL_VALUE, wendoo.NIL_VALUE), 1, 0)
+      pointsAt(wendoo.moveDirection(undefined, wendoo.NIL_VALUE, wendoo.mkNumber(1)), 1, 0) &&
+        pointsAt(wendoo.moveDirection(undefined, wendoo.NIL_VALUE, wendoo.NIL_VALUE), 1, 0)
     );
     check(
       "move-speed-counts-steps-and-clamps-the-argument",
@@ -236,6 +266,172 @@ namespace arcadeSelftest {
     blend.vy = -12;
     pause(FRAMES_MS);
     check("release-writes-one-zero", movesAt(follow, 25, 0) && movesAt(blend, 0, -12));
+  }
+
+  /**
+   * Give sprites the programs placing the move tile with direction
+   * modifiers, drive the dpad, and check how the sprites move: each cardinal
+   * its own way; two perpendicular cardinals on the exact diagonal, in
+   * either order; a cancelling pair falling through to the default
+   * direction, and to the direction the WHEN produced; speed words composing
+   * before, after and between direction modifiers; and the dpad's modifiers
+   * still masking the dpad in a rule whose move's modifiers name another
+   * direction. Destroys its sprites at the end.
+   */
+  function checkDirectionModifiers(): void {
+    const climb = spriteRunning(wendooPrograms.p_climbMoveUp00001);
+    const sink = spriteRunning(wendooPrograms.p_sinkMoveDown0001);
+    const retreat = spriteRunning(wendooPrograms.p_retreatMoveLeft1);
+    const advance = spriteRunning(wendooPrograms.p_advanceMoveRight);
+    const veer = spriteRunning(wendooPrograms.p_veerUpRight00001);
+    const veerFlipped = spriteRunning(wendooPrograms.p_veerRightUp00001);
+    const stall = spriteRunning(wendooPrograms.p_stallLeftRight01);
+    const steer = spriteRunning(wendooPrograms.p_steerDpadUpDown1);
+    const sprint = spriteRunning(wendooPrograms.p_sprintUpQuickly1);
+    const sprintFlipped = spriteRunning(wendooPrograms.p_sprintQuicklyUp1);
+    const swerve = spriteRunning(wendooPrograms.p_swerveLeftQkUp01);
+    const guard = spriteRunning(wendooPrograms.p_guardDpadUpLeft1);
+    pause(FRAMES_MS);
+    check(
+      "each-direction-modifier-moves-its-way",
+      movesAt(climb, 0, -100) && movesAt(sink, 0, 100) && movesAt(retreat, -100, 0) && movesAt(advance, 100, 0)
+    );
+    const diagonal = 100 / Math.sqrt(2);
+    check(
+      "perpendicular-modifiers-move-on-the-diagonal",
+      movesAt(veer, diagonal, -diagonal) &&
+        near(Math.sqrt(veer.vx * veer.vx + veer.vy * veer.vy), 100, VELOCITY_TOLERANCE)
+    );
+    check("direction-modifier-order-does-not-matter", movesAt(veerFlipped, diagonal, -diagonal));
+    check("cancelling-modifiers-fall-through-to-the-default", movesAt(stall, 100, 0));
+    check(
+      "speed-words-compose-with-direction-modifiers",
+      movesAt(sprint, 0, -200) && movesAt(sprintFlipped, 0, -200) && movesAt(swerve, -2 * diagonal, -2 * diagonal)
+    );
+    const guardQuiet = movesAt(guard, 0, 0) && movesAt(steer, 0, 0);
+
+    controller.right.setPressed(true);
+    pause(FRAMES_MS);
+    const guardMasked = movesAt(guard, 0, 0);
+    const steerFollowsRight = movesAt(steer, 100, 0);
+
+    controller.up.setPressed(true);
+    pause(FRAMES_MS);
+    check("dpad-modifiers-still-mask-beside-move-modifiers", guardQuiet && guardMasked && movesAt(guard, -100, 0));
+    check(
+      "cancelling-modifiers-fall-through-to-the-when-result",
+      steerFollowsRight && movesAt(steer, diagonal, -diagonal)
+    );
+
+    controller.up.setPressed(false);
+    controller.right.setPressed(false);
+    const placed = [
+      climb,
+      sink,
+      retreat,
+      advance,
+      veer,
+      veerFlipped,
+      stall,
+      steer,
+      sprint,
+      sprintFlipped,
+      swerve,
+      guard,
+    ];
+    for (let i = 0; i < placed.length; i++) {
+      placed[i].destroy();
+    }
+    pause(FRAMES_MS);
+  }
+
+  /** A sprite in the current scene wearing a filled `size`-pixel square, centered at `x`, `y`. */
+  function solidSprite(size: number, x: number, y: number): Sprite {
+    const picture = image.create(size, size);
+    picture.fill(1);
+    const sprite = sprites.create(picture, SpriteKind.Player);
+    sprite.setPosition(x, y);
+    return sprite;
+  }
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Sprite` type. */
+  const SPRITE_ATOM = 1025;
+
+  /**
+   * In a scene of its own, check the bump sensor: the `Sprite` type takes
+   * its atom from the project's ids module and its values carry their
+   * sprites; the overlap read returns the touched sprite, nothing while
+   * clear, and the nearest of several, ties going to the sprite created
+   * first whatever order the scene keeps; a bump rule moves its sprite while
+   * it touches another and stops it once they part, a bump rule's direction
+   * modifiers move it on the diagonal, and a program update swaps a running
+   * bump rule live.
+   */
+  function checkBump(): void {
+    game.pushScene();
+    const host = wendoo.sceneProgramHost(game.currentScene());
+
+    const reader = solidSprite(8, 30, 30);
+    const value = wendoo.spriteValue(reader);
+    check(
+      "sprite-type-takes-its-atom-from-the-manifest",
+      wendoo.spriteBinding.atomId === SPRITE_ATOM && wendoo.spriteBinding.typeId === wendoo.structTypeId("Sprite")
+    );
+    check(
+      "sprite-value-carries-its-sprite",
+      value.t === wendoo.ValueTag.Struct && value.typeId === wendoo.structTypeId("Sprite") && value.native === reader
+    );
+    const clear = wendoo.bumpedSprite(reader) === undefined;
+    const right = solidSprite(8, 33, 30);
+    check("bump-reads-the-touched-sprite-or-nothing", clear && wendoo.bumpedSprite(reader) === right);
+    const left = solidSprite(8, 28, 30);
+    const nearest = wendoo.bumpedSprite(reader) === left;
+    const below = solidSprite(8, 30, 32);
+    below.z = -1;
+    pause(FRAMES_MS);
+    const tieKeptBehind = wendoo.bumpedSprite(reader) === left;
+    below.z = 1;
+    pause(FRAMES_MS);
+    check(
+      "bump-picks-the-nearest-sprite-first-created-on-ties",
+      nearest && tieKeptBehind && wendoo.bumpedSprite(reader) === left
+    );
+    reader.destroy();
+    right.destroy();
+    left.destroy();
+    below.destroy();
+
+    const pusher = solidSprite(48, 80, 60);
+    const nudged = solidSprite(8, 20, 100);
+    const fleeing = solidSprite(8, 140, 100);
+    wendoo.runProgram(nudged, wendooPrograms.p_nudgeBumpMove001);
+    wendoo.runProgram(fleeing, wendooPrograms.p_fleeBumpLeftUp01);
+    pause(FRAMES_MS);
+    const waited = movesAt(nudged, 0, 0) && movesAt(fleeing, 0, 0) && nudged.x === 20 && fleeing.x === 140;
+
+    nudged.setPosition(pusher.x, pusher.y);
+    pause(FRAMES_MS);
+    check("bump-rule-moves-its-sprite-while-touching", waited && movesAt(nudged, 100, 0));
+    pause(3 * FRAMES_MS);
+    check(
+      "bump-rule-stops-its-sprite-once-parted",
+      movesAt(nudged, 0, 0) && nudged.x > pusher.x && wendoo.bumpedSprite(nudged) === undefined
+    );
+
+    fleeing.setPosition(pusher.x, pusher.y);
+    pause(FRAMES_MS);
+    const diagonal = 100 / Math.sqrt(2);
+    check("bump-rule-flees-on-the-diagonal", movesAt(fleeing, -diagonal, -diagonal));
+
+    const fleeRuntime = runtimeIn(host, fleeing);
+    fleeing.setPosition(pusher.x, pusher.y);
+    postUpdate(wendooPrograms.p_fleeBumpLeftUp01, wendooPrograms.p_nudgeBumpMove001.bytecode, "00000011");
+    pause(FRAMES_MS);
+    check(
+      "program-update-swaps-a-bump-rule-live",
+      runtimeIn(host, fleeing) !== fleeRuntime && movesAt(fleeing, 100, 0) && faultsInScene() === 0
+    );
+    game.popScene();
   }
 
   /** Append `value` to `out` as a ULEB128 unsigned integer. */
@@ -453,8 +649,8 @@ namespace arcadeSelftest {
    * sharing a name each on its own sprite, the empty program running
    * nothing, a destroyed sprite's program ended, and a pushed scene pausing
    * its programs while the new scene runs its own; then check the arcade
-   * base pack's direction arithmetic, how its tiles move sprites, and how
-   * the running game takes program updates.
+   * base pack's direction arithmetic, how its tiles move sprites, how the
+   * running game takes program updates, and the bump sensor.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -506,7 +702,9 @@ namespace arcadeSelftest {
 
     checkDirectionArithmetic();
     checkMovement();
+    checkDirectionModifiers();
     checkProgramUpdates(twinA);
+    checkBump();
 
     console.log(`CHECKS failed ${failedChecks}`);
     console.log(`SIMCAP PASS ${SELFTEST_CASE_ID}`);

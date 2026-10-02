@@ -141,6 +141,10 @@ const EXPECTED_ARCADE_CHECKS = [
   "when-result-direction-beats-the-default",
   "default-direction-without-a-given-or-sensed-one",
   "move-speed-counts-steps-and-clamps-the-argument",
+  "cardinals-sum-and-normalize",
+  "cancelling-cardinals-specify-no-direction",
+  "direction-modifiers-beat-the-direction-argument",
+  "cancelled-modifiers-leave-the-direction-argument",
   "arcade-pack-registers-without-diagnostics",
   "bare-move-moves-in-the-default-direction",
   "non-direction-when-result-moves-in-the-default-direction",
@@ -153,6 +157,13 @@ const EXPECTED_ARCADE_CHECKS = [
   "modifier-order-does-not-matter",
   "release-stops-the-sprite",
   "release-writes-one-zero",
+  "each-direction-modifier-moves-its-way",
+  "perpendicular-modifiers-move-on-the-diagonal",
+  "direction-modifier-order-does-not-matter",
+  "cancelling-modifiers-fall-through-to-the-default",
+  "speed-words-compose-with-direction-modifiers",
+  "dpad-modifiers-still-mask-beside-move-modifiers",
+  "cancelling-modifiers-fall-through-to-the-when-result",
   "update-waits-for-the-next-frame",
   "update-restarts-the-program-on-its-sprite",
   "update-restarts-every-instance-of-the-program",
@@ -165,6 +176,14 @@ const EXPECTED_ARCADE_CHECKS = [
   "paused-scene-keeps-its-program-until-it-resumes",
   "paused-scene-takes-the-update-on-resume",
   "removal-leaves-the-programs-sprites-running-nothing",
+  "sprite-type-takes-its-atom-from-the-manifest",
+  "sprite-value-carries-its-sprite",
+  "bump-reads-the-touched-sprite-or-nothing",
+  "bump-picks-the-nearest-sprite-first-created-on-ties",
+  "bump-rule-moves-its-sprite-while-touching",
+  "bump-rule-stops-its-sprite-once-parted",
+  "bump-rule-flees-on-the-diagonal",
+  "program-update-swaps-a-bump-rule-live",
 ];
 
 /**
@@ -183,16 +202,23 @@ const ARCADE_HOST_REJECTIONS = [
  * Every refusal the arcade selftest is expected to log, as `<code> <id>`, in
  * order: each scene's program host logs the refused programs at its first
  * frame -- the game's first scene, the scene the selftest pushes to check
- * paused programs, and the scene it pushes to check paused program updates.
+ * paused programs, the scene it pushes to check paused program updates, and
+ * the scene it pushes to check the bump sensor.
  */
-const EXPECTED_ARCADE_REJECTIONS = [...ARCADE_HOST_REJECTIONS, ...ARCADE_HOST_REJECTIONS, ...ARCADE_HOST_REJECTIONS];
+const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+];
 
 /**
  * Every line the arcade selftest's program updates are expected to log, in
  * order, each without its `wendoo ` prefix: the update taken, the three
  * updates refused -- a foreign device profile, then an action id and a type
  * atom the project's ids module does not hold -- the three messages refused,
- * the paused scene's program update taken, and the removal taken.
+ * the paused scene's program update taken, the removal taken, and the bump
+ * rule's update taken.
  */
 const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated driftBareMove001 0000000a",
@@ -204,6 +230,7 @@ const EXPECTED_ARCADE_UPDATE_LINES = [
   "sim-channel-rejected SIM_CHANNEL_FRAME_MALFORMED",
   "program-updated Hq7EB8SthdeOudyP 00000010",
   "program-removed driftBareMove001",
+  "program-updated fleeBumpLeftUp01 00000011",
 ];
 
 /** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */

@@ -338,12 +338,16 @@ the current slice alone.
       registered as the pack `arcade`; it depends on the VM extension and
       Arcade's `device` library. It owns the sprite's program world (the
       `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
-      through), the `Vector2` direction type, the controller read (one
-      module owning every raw read and its dead-banded transform), the
-      `dpad` sensor and `move` actuator, and move arbitration with its
-      motion applicator (the direct applicator sets sprite velocity; a
-      motion model such as physics replaces the applicator and consumes
-      the same verdicts).
+      through), the `Vector2` direction type, the `Sprite` type (an opaque
+      host value: no fields, each value backed by the sprite it stands
+      for), the controller read (one module owning every raw read and its
+      dead-banded transform), the overlap read (one module owning every
+      sprite-touch read, made synchronously at sense time), the `dpad` and
+      `bump` sensors and the `move` actuator (the shared
+      `modifier.direction.*` fragments filter dpad's reading and specify
+      move's direction), and move arbitration with its motion applicator
+      (the direct applicator sets sprite velocity; a motion model such as
+      physics replaces the applicator and consumes the same verdicts).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "steerDpadUpDown1",
+  "name": "Steer",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0steerUpDn100",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0steerUpDn100",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.up",
+            "tile.modifier->modifier.direction.down"
+          ],
+          "children": [],
+          "ruleId": "fRu0steerUpDn100"
+        }
+      ]
+    }
+  ]
+}

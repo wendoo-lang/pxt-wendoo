@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "id": "retreatMoveLeft1",
+  "name": "Retreat",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0retreatMvL00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0retreatMvL00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.left"
+          ],
+          "children": [],
+          "ruleId": "fRu0retreatMvL00"
+        }
+      ]
+    }
+  ]
+}

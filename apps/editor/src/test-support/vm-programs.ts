@@ -130,6 +130,20 @@ const ARCADE_SOURCES = [
   "creep.src.json",
   "paced.src.json",
   "blend.src.json",
+  "climb.src.json",
+  "sink.src.json",
+  "retreat.src.json",
+  "advance.src.json",
+  "veer.src.json",
+  "veer-flipped.src.json",
+  "stall.src.json",
+  "steer.src.json",
+  "sprint.src.json",
+  "sprint-flipped.src.json",
+  "swerve.src.json",
+  "guard.src.json",
+  "nudge.src.json",
+  "flee.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -381,6 +395,11 @@ function unmappedIdProgram(
   const { environment } = buildAuthoringEnvironment(arcadeCatalog(), ids);
   const source = readRepoFile(`${ARCADE_SOURCES_DIR}/${file}`);
   return { id, name, sourceHash: brainSourceHash(source), bytecode: hexOf(compileCleanIn(environment, source)) };
+}
+
+/** The stable codes of the problems binding the arcade selftest's catalog under its allocation reports, in the order reported. */
+export function arcadeBindingDiagnosticCodes(): string[] {
+  return buildAuthoringEnvironment(arcadeCatalog(), arcadeIds()).diagnostics.map((diagnostic) => diagnostic.code);
 }
 
 /**

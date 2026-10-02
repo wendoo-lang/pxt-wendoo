@@ -15,6 +15,9 @@
               "type": "number"
             }
           ]
+        },
+        {
+          "name": "Sprite"
         }
       ],
       "tiles": [
@@ -97,9 +100,47 @@
                   }
                 ]
               }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.direction.up",
+                "modifier": true
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.direction.down",
+                "modifier": true
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.direction.left",
+                "modifier": true
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.direction.right",
+                "modifier": true
+              }
             }
           ],
           "label": "move"
+        },
+        {
+          "name": "sensor.arcade.bump",
+          "kind": "sensor",
+          "returns": "Sprite",
+          "label": "bump"
         }
       ]
     }

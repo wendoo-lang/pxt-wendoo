@@ -1,13 +1,18 @@
 /**
  * The arcade base pack's vocabulary: the `Vector2` direction type, the
- * `dpad` sensor, and the `move` actuator, registered from this file's
- * top-level code at program start.
+ * `Sprite` type, the `dpad` and `bump` sensors, and the `move` actuator,
+ * registered from this file's top-level code at program start.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
  *   its own direction's component, none admits every component, and a
  *   reading masked to nothing is nil.
- * - `DO [move]` moves the program's sprite. It moves in the direction it is
+ * - `WHEN [bump]` reads the sprite the program's sprite touches as a
+ *   `Sprite`, or nil while it touches none; when it touches several, the
+ *   one {@link bumpedSprite} picks.
+ * - `DO [move]` moves the program's sprite. Its direction modifiers specify
+ *   the direction: the chosen cardinals sum, scaled to length 1. Given no
+ *   modifier, or modifiers that cancel, it moves in the direction it is
  *   given; given none, in the direction its rule's WHEN produced; and when
  *   the WHEN produced no direction either, in {@link MOVE_DEFAULT_DIRECTION}.
  *   It moves at {@link MOVE_DEFAULT_SPEED}, halved by each `slowly`, doubled
@@ -27,6 +32,10 @@ namespace wendoo {
   /** Tile name of the move actuator. */
   //% hidden
   export const MOVE_TILE = "actuator.arcade.move";
+
+  /** Tile name of the bump sensor. */
+  //% hidden
+  export const BUMP_TILE = "sensor.arcade.bump";
 
   /** Speed a move goes at when nothing sets it, in pixels per second. */
   //% hidden
@@ -54,11 +63,15 @@ namespace wendoo {
   const DPAD_SLOT_LEFT = 2;
   const DPAD_SLOT_RIGHT = 3;
 
-  /** Argument-buffer positions of the move's direction, `slowly` count, `quickly` count and speed. */
+  /** Argument-buffer positions of the move's direction, `slowly` count, `quickly` count, speed and direction modifiers. */
   const MOVE_SLOT_DIRECTION = 0;
   const MOVE_SLOT_SLOWLY = 1;
   const MOVE_SLOT_QUICKLY = 2;
   const MOVE_SLOT_SPEED = 3;
+  const MOVE_SLOT_UP = 4;
+  const MOVE_SLOT_DOWN = 5;
+  const MOVE_SLOT_LEFT = 6;
+  const MOVE_SLOT_RIGHT = 7;
 
   /** Whether the modifier slot at `slot` of `args` is filled. */
   function hasModifier(args: Value[], slot: number): boolean {
@@ -71,14 +84,19 @@ namespace wendoo {
   }
 
   /**
-   * The direction a move goes in: the direction `explicit` carries; else the
-   * direction `whenResult` carries; else {@link MOVE_DEFAULT_DIRECTION}.
+   * The direction a move goes in: `specified`, when its direction modifiers
+   * specify one; else the direction `explicit` carries; else the direction
+   * `whenResult` carries; else {@link MOVE_DEFAULT_DIRECTION}.
    *
+   * @param specified - The direction the move's direction modifiers specify, as {@link cardinalDirection} sums them; `undefined` when they specify none.
    * @param explicit - The move's direction argument; nil when it is given none.
    * @param whenResult - What the move's rule's WHEN produced.
    */
   //% hidden
-  export function moveDirection(explicit: Value, whenResult: Value): DirectionVector {
+  export function moveDirection(specified: DirectionVector, explicit: Value, whenResult: Value): DirectionVector {
+    if (specified) {
+      return specified;
+    }
     const given = directionOf(explicit);
     if (given) {
       return given;
@@ -129,6 +147,18 @@ namespace wendoo {
     }
   }
 
+  /** `sensor.arcade.bump`: the sprite the program's sprite touches now, as {@link bumpedSprite} picks it, or nil while it touches none. */
+  class BumpSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const bumped = bumpedSprite((ctx.data as SpriteWorld).sprite);
+      return bumped ? spriteValue(bumped) : NIL_VALUE;
+    }
+  }
+
   /** `actuator.arcade.move`: records the program's sprite's move for this frame's arbitration. */
   class MoveActuator extends HostActionBinding {
     constructor() {
@@ -136,7 +166,13 @@ namespace wendoo {
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
-      const direction = clampToUnitCircle(moveDirection(args[MOVE_SLOT_DIRECTION], getWhenResult(ctx)));
+      const specified = cardinalDirection(
+        hasModifier(args, MOVE_SLOT_UP),
+        hasModifier(args, MOVE_SLOT_DOWN),
+        hasModifier(args, MOVE_SLOT_LEFT),
+        hasModifier(args, MOVE_SLOT_RIGHT)
+      );
+      const direction = clampToUnitCircle(moveDirection(specified, args[MOVE_SLOT_DIRECTION], getWhenResult(ctx)));
       const speed = moveSpeed(args[MOVE_SLOT_SLOWLY], args[MOVE_SLOT_QUICKLY], args[MOVE_SLOT_SPEED]);
       const sprite = (ctx.data as SpriteWorld).sprite;
       sceneMotionArbiter(game.currentScene()).addIntent(new MoveIntent(sprite, direction, speed, 1));
@@ -147,6 +183,7 @@ namespace wendoo {
   const arcadePack = pack(ARCADE_PACK_NAME);
 
   arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding);
+  arcadePack.defineStruct(TYPE_SPRITE, [], spriteBinding);
 
   const dpadSpec = new TileSpec(
     TILE_KIND_SENSOR,
@@ -178,9 +215,17 @@ namespace wendoo {
           moveSpeedSlot,
         ])
       ),
+      optional(modifier("modifier.direction.up")),
+      optional(modifier("modifier.direction.down")),
+      optional(modifier("modifier.direction.left")),
+      optional(modifier("modifier.direction.right")),
     ],
     ""
   );
   moveSpec.label = "move";
   arcadePack.bind(MOVE_TILE, new MoveActuator(), moveSpec);
+
+  const bumpSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_SPRITE);
+  bumpSpec.label = "bump";
+  arcadePack.bind(BUMP_TILE, new BumpSensor(), bumpSpec);
 }
