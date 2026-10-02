@@ -206,10 +206,20 @@ const EXPECTED_CATALOG_ENTRIES = {
       returns: "Anchor",
       label: "defer anchor",
     },
+    "actuator.conformance.defer-echo": {
+      name: "actuator.conformance.defer-echo",
+      kind: "actuator",
+      async: true,
+      args: [
+        { name: "value", tileId: "anon.number", type: "number", anonymous: true },
+        { name: "ticks", tileId: "conformance.ticks", type: "number", default: { t: 3, v: 1 } },
+      ],
+      label: "defer echo",
+    },
     "actuator.conformance.emit-all": {
       name: "actuator.conformance.emit-all",
       kind: "actuator",
-      args: [{ name: "value", type: "any", repeated: true }],
+      args: [{ name: "value", tileId: "conformance.value", type: "any", repeated: true, anonymous: true }],
       label: "emit all",
     },
   },

@@ -66,6 +66,61 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The host registries every program of one program run resolves against:
+   * the core host functions computing in the sts-f64 world, the core host
+   * actions, and every pack registration, drained through the project's id
+   * manifest. Obtain them with {@link hostRegistries}.
+   */
+  //% hidden
+  export class HostRegistries {
+    /** Host functions a program's `HOST_CALL` operands resolve against. */
+    functions: HostFunctionRegistry;
+    /** Host actions a program's `HOST_ACTION_CALL` operands resolve against. */
+    actions: HostActionRegistry;
+    /** Struct types a program's type atoms and field hooks resolve against. */
+    types: StructTypeRegistry;
+    /** How many of the type registry's undeclared field accesses a program host has logged. */
+    undeclaredLogged: number = 0;
+
+    constructor(functions: HostFunctionRegistry, actions: HostActionRegistry, types: StructTypeRegistry) {
+      this.functions = functions;
+      this.actions = actions;
+      this.types = types;
+    }
+  }
+
+  /** The registries {@link hostRegistries} drained, once it has. */
+  let drainedRegistries: HostRegistries;
+
+  /**
+   * The host registries of this program run, shared by every program host.
+   * The first call drains every pending pack registration through the
+   * project's id manifest ({@link projectIds}), which closes registration,
+   * and logs each registration diagnostic on record as
+   * `wendoo <code> <name> <pack>`; every later call returns the same
+   * registries. Call it once the program's top-level code has run, so every
+   * pack and the manifest have registered.
+   */
+  //% hidden
+  export function hostRegistries(): HostRegistries {
+    if (drainedRegistries) {
+      return drainedRegistries;
+    }
+    const functions = new HostFunctionRegistry();
+    registerCoreHostFunctions(functions, new F64Numerics());
+    const actions = new HostActionRegistry();
+    registerCoreHostActions(actions);
+    const types = new StructTypeRegistry();
+    applyPendingRegistrations(projectIds(), functions, actions, types);
+    drainedRegistries = new HostRegistries(functions, actions, types);
+    const recorded = registrationDiagnostics();
+    for (let i = 0; i < recorded.length; i++) {
+      console.log(`wendoo ${recorded[i].code} ${recorded[i].name} ${recorded[i].pack}`);
+    }
+    return drainedRegistries;
+  }
+
   /** One request to run a compiled brain on an actor, waiting for the next drain. */
   class AttachRequest {
     world: ActorWorld;
@@ -78,23 +133,20 @@ namespace wendoo {
   }
 
   /**
-   * The host loop of the programs one game scene runs. It owns the host
-   * registries every program resolves against -- the core host functions
-   * computing in the sts-f64 world and the core host actions -- and every
-   * program's runtime, and it is the only caller of those runtimes.
+   * The host loop of the programs one game scene runs. Every program it runs
+   * resolves against this program run's shared {@link hostRegistries}; it
+   * owns every program's runtime, and it is the only caller of those
+   * runtimes.
    *
    * Call {@link ProgramHost.attach} from game code, and
    * {@link ProgramHost.drain} once per frame from the game's frame loop.
    */
   //% hidden
   export class ProgramHost {
-    private functions: HostFunctionRegistry;
-    private actions: HostActionRegistry;
-    private types: StructTypeRegistry;
+    private registries: HostRegistries = undefined;
     private caps: VmCaps;
     private observer: VmObserver;
     private loaded: LoadedProgram[] = [];
-    private registeredLoaded: boolean = false;
     private requests: AttachRequest[] = [];
     private running: HostedProgram[] = [];
 
@@ -102,11 +154,6 @@ namespace wendoo {
      * @param observer - Passive observer of every hosted program's visible effects.
      */
     constructor(observer: VmObserver) {
-      this.functions = new HostFunctionRegistry();
-      registerCoreHostFunctions(this.functions, new F64Numerics());
-      this.actions = new HostActionRegistry();
-      registerCoreHostActions(this.actions);
-      this.types = new StructTypeRegistry();
       this.caps = new VmCaps(STS_F64_DEFAULT_BUDGET, STS_F64_MAX_STACK_SIZE, STS_F64_MAX_HANDLES);
       this.observer = observer;
     }
@@ -125,18 +172,21 @@ namespace wendoo {
     }
 
     /**
-     * Run one pass of the host loop: on the first pass, load every
-     * registered compiled brain, logging each refusal; end the program of
-     * every actor that has ended; start the programs attached since the last
-     * pass, in request order; then think every running program once, in
-     * start order.
+     * Run one pass of the host loop: on the first pass, take this program
+     * run's {@link hostRegistries} -- draining them when no host has yet --
+     * and load every registered compiled brain, logging each refusal; end
+     * the program of every actor that has ended; start the programs attached
+     * since the last pass, in request order; think every running program
+     * once, in start order; then log each field programs addressed that its
+     * registered type does not declare, not logged before by any host, as
+     * `wendoo field-undeclared <typeId> <fieldId>`.
      *
      * @param timeMs - Cumulative scheduled time of this pass, in milliseconds.
      */
     drain(timeMs: number): void {
-      if (!this.registeredLoaded) {
-        this.registeredLoaded = true;
-        this.loaded = loadRegisteredPrograms(this.types);
+      if (!this.registries) {
+        this.registries = hostRegistries();
+        this.loaded = loadRegisteredPrograms(this.registries.types);
         for (let i = 0; i < this.loaded.length; i++) {
           logRefusal(this.loaded[i]);
         }
@@ -152,6 +202,13 @@ namespace wendoo {
 
       for (let i = 0; i < this.running.length; i++) {
         this.running[i].runtime.think(timeMs);
+      }
+
+      const registries = this.registries;
+      const undeclared = registries.types.undeclaredFieldAccesses();
+      for (; registries.undeclaredLogged < undeclared.length; registries.undeclaredLogged++) {
+        const access = undeclared[registries.undeclaredLogged];
+        console.log(`wendoo ${FIELD_UNDECLARED} ${access.typeId} ${access.fieldId}`);
       }
     }
 
@@ -183,9 +240,9 @@ namespace wendoo {
       }
       const runtime = new BrainRuntime(
         loaded.program,
-        this.functions,
-        this.actions,
-        this.types,
+        this.registries.functions,
+        this.registries.actions,
+        this.registries.types,
         this.observer,
         this.caps,
         request.world
@@ -223,7 +280,7 @@ namespace wendoo {
           return this.loaded[i];
         }
       }
-      const loaded = loadCompiledProgram(registration, this.types);
+      const loaded = loadCompiledProgram(registration, this.registries.types);
       logRefusal(loaded);
       this.loaded.push(loaded);
       return loaded;

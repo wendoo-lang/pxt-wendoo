@@ -18,6 +18,7 @@ import {
   type MakeCodeEditorSessionOptions,
   type MakeCodeEditorSessionState,
 } from "./makecode-editor-session.js";
+import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
 import { MAKECODE_SESSION_PROTOCOL_VERSION, MAKECODE_SESSION_ROLE_PATHS } from "./makecode-session.js";
 
 /** A message an app bridge carries. */
@@ -601,6 +602,39 @@ describe("makecode editor session", () => {
       bridge.deliver({ type: "makecode:brainsListReply", id: request?.id, payload: { brains: [] } });
 
       assert.deepEqual(await listed, []);
+    });
+
+    it("carries the manifest requests on the handshake's connection, closing them when the handshake ends", async () => {
+      const { session } = openSession();
+      const channels: MakeCodeBrainsChannel[] = [];
+      session.onBrainsChannel((channel) => {
+        channels.push(channel);
+      });
+      session.start();
+      const bridge = lastBridge();
+      bridge.welcome("token-1");
+      bridge.deliver(MAKECODE_HELLO);
+      await microtasks();
+
+      const read = channels[0].readManifest();
+      const request = bridge.sent.at(-1);
+      assert.equal(request?.type, "makecode:manifestRead");
+      bridge.deliver({ type: "makecode:manifestReadReply", id: request?.id, payload: { manifest: null } });
+      assert.deepEqual(await read, { manifest: null });
+
+      const written = channels[0].writeManifest({
+        actions: [],
+        operators: [],
+        types: [],
+        next: { action: 1024, operator: 1024, atom: 1024 },
+      });
+      assert.equal(bridge.sent.at(-1)?.type, "makecode:manifestWrite");
+      bridge.change({ counterpartAway: true });
+      await assert.rejects(written, (error: unknown) => {
+        assert.ok(error instanceof MakeCodeManifestError);
+        assert.equal(error.code, MakeCodeManifestErrorCode.CLOSED);
+        return true;
+      });
     });
 
     it("closes a handshake's channel when the handshake ends, and hands out a new one for the next handshake", async () => {

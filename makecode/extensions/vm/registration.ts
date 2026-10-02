@@ -6,12 +6,14 @@
  * An extension registers from its own top-level code, which runs at program
  * start, before anything constructs a runtime. Registrations are keyed by
  * name and carry no ids; the drain gives each name the id the project's
- * mapping records for it, and closes registration.
+ * mapping records for it, and closes registration. A struct type's fields
+ * take their ids from the mapping too, so the type's storage layout is the
+ * mapping's, never the order the fields are declared in.
  *
  * A registration also carries its declared shape and catalog metadata --
- * fields, argument slots, returns, outputs, label, group, docs, icon. The
- * drain installs behavior only and ignores all of it; the catalog serializer
- * reads it through {@link writeCatalogEntries}.
+ * fields, argument grammar, returns, outputs, consumed WHEN result, label,
+ * group, docs, icon. The drain installs behavior only and ignores all of it;
+ * the catalog serializer reads it through {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
  * ignored and recorded in {@link registrationDiagnostics}, and the program
@@ -44,7 +46,8 @@ namespace wendoo {
   }
 
   /**
-   * The mapping key of one field of one struct type.
+   * The name one field of one struct type is diagnosed under: the type name
+   * and the field name, joined by a dot.
    *
    * @param typeName - Wendoo type name, as the type is registered.
    * @param fieldName - Field name, as the type declares it.
@@ -52,6 +55,33 @@ namespace wendoo {
   export function structFieldKey(typeName: string, fieldName: string): string {
     return `${typeName}.${fieldName}`;
   }
+
+  /** Diagnostic code: a tile's argument grammar names two of its specs alike, so the tile was ignored. */
+  export const REGISTRATION_CALL_SPEC_DUPLICATE_NAME = "registration-call-spec-duplicate-name";
+
+  /**
+   * Diagnostic code: an argument slot declares both a default and that the
+   * action derives its value, so the tile was ignored.
+   */
+  export const REGISTRATION_ARG_DEFAULT_AND_DERIVED = "registration-arg-default-and-derived";
+
+  /**
+   * Diagnostic code: a slot declared required also declares a default or
+   * that the action derives its value, so the tile was ignored.
+   */
+  export const REGISTRATION_ARG_REQUIRED_WITH_EMPTY_MEANING = "registration-arg-required-with-empty-meaning";
+
+  /** Diagnostic code: an argument slot declares a range carrying neither bound, so the tile was ignored. */
+  export const REGISTRATION_ARG_RANGE_UNBOUNDED = "registration-arg-range-unbounded";
+
+  /** Diagnostic code: an argument slot declares a range whose min is above its max, so the tile was ignored. */
+  export const REGISTRATION_ARG_RANGE_INVERTED = "registration-arg-range-inverted";
+
+  /**
+   * Diagnostic code: an argument slot declares a range and a default that is
+   * not a number, so the tile was ignored.
+   */
+  export const REGISTRATION_ARG_RANGE_NON_NUMERIC = "registration-arg-range-non-numeric";
 
   /**
    * One registration problem. Diagnostics carry machine-readable fields only:
@@ -67,51 +97,118 @@ namespace wendoo {
     pack: string;
     /** Pack holding the registration that stands, or `""` when the code names no second registration. */
     otherPack: string;
+    /** Name of the call spec within the registration the problem is about, or `""` when the code names none. */
+    spec: string;
 
-    constructor(code: string, name: string, pack: string, otherPack: string) {
+    constructor(code: string, name: string, pack: string, otherPack: string, spec: string) {
       this.code = code;
       this.name = name;
       this.pack = pack;
       this.otherPack = otherPack;
+      this.spec = spec;
     }
   }
 
   /**
-   * The name-to-id mapping the drain applies: one id per registered name,
-   * over every kind of registration and over struct fields, whose keys come
-   * from {@link structFieldKey}. Build it from the project's committed
-   * mapping before draining.
+   * The name-to-id mapping the drain applies: one id space per kind of
+   * registration -- host-action ids for tiles, host-function ids for
+   * operators, type-atom ids for struct types -- and, per struct type, the
+   * ids of its fields. Build it from the project's committed mapping before
+   * draining.
    */
   export class RegistrationIdMap {
-    private names: string[] = [];
-    private ids: number[] = [];
+    private actionNames: string[] = [];
+    private actionIds: number[] = [];
+    private operatorNames: string[] = [];
+    private operatorIds: number[] = [];
+    private typeNames: string[] = [];
+    private typeAtomIds: number[] = [];
+    private typeFields: string[][] = [];
 
     constructor() {}
 
     /**
-     * Record `id` for `name`. A name recorded twice keeps the id it was first
-     * recorded with.
+     * Record the host-action id of the tile `name`. A name recorded twice
+     * keeps the id it was first recorded with.
      *
-     * @param name - Registration name or struct-field key.
-     * @param id - Id the drain assigns registrations of that name.
+     * @param name - Tile name.
+     * @param id - Host-action id the drain gives the tile.
      */
-    add(name: string, id: number): void {
-      this.names.push(name);
-      this.ids.push(id);
+    addAction(name: string, id: number): void {
+      this.actionNames.push(name);
+      this.actionIds.push(id);
     }
 
     /**
-     * The id recorded for `name`, or {@link UNASSIGNED_ID} when none is.
+     * Record the host-function id of the operator `name`. A name recorded
+     * twice keeps the id it was first recorded with.
      *
-     * @param name - Registration name or struct-field key.
+     * @param name - Operator name.
+     * @param id - Host-function id the drain gives the operator.
      */
-    idOf(name: string): number {
-      for (let i = 0; i < this.names.length; i++) {
-        if (this.names[i] === name) {
-          return this.ids[i];
-        }
-      }
-      return UNASSIGNED_ID;
+    addOperator(name: string, id: number): void {
+      this.operatorNames.push(name);
+      this.operatorIds.push(id);
+    }
+
+    /**
+     * Record the type-atom id of the struct type `name` and the ids of its
+     * fields: each field's id is its position in `fieldNames`. A name
+     * recorded twice keeps what it was first recorded with.
+     *
+     * @param name - Type name.
+     * @param atomId - Type-atom id the drain gives the type.
+     * @param fieldNames - Every field name the mapping allocates for the type, each at the position that is its id.
+     */
+    addType(name: string, atomId: number, fieldNames: string[]): void {
+      this.typeNames.push(name);
+      this.typeAtomIds.push(atomId);
+      this.typeFields.push(fieldNames);
+    }
+
+    /**
+     * The host-action id recorded for the tile `name`, or
+     * {@link UNASSIGNED_ID} when none is.
+     *
+     * @param name - Tile name.
+     */
+    actionId(name: string): number {
+      const index = this.actionNames.indexOf(name);
+      return index >= 0 ? this.actionIds[index] : UNASSIGNED_ID;
+    }
+
+    /**
+     * The host-function id recorded for the operator `name`, or
+     * {@link UNASSIGNED_ID} when none is.
+     *
+     * @param name - Operator name.
+     */
+    operatorId(name: string): number {
+      const index = this.operatorNames.indexOf(name);
+      return index >= 0 ? this.operatorIds[index] : UNASSIGNED_ID;
+    }
+
+    /**
+     * The type-atom id recorded for the struct type `name`, or
+     * {@link UNASSIGNED_ID} when none is.
+     *
+     * @param name - Type name.
+     */
+    typeAtomId(name: string): number {
+      const index = this.typeNames.indexOf(name);
+      return index >= 0 ? this.typeAtomIds[index] : UNASSIGNED_ID;
+    }
+
+    /**
+     * The id recorded for the field `fieldName` of the struct type
+     * `typeName`, or {@link UNASSIGNED_ID} when none is.
+     *
+     * @param typeName - Type name.
+     * @param fieldName - Field name.
+     */
+    fieldId(typeName: string, fieldName: string): number {
+      const index = this.typeNames.indexOf(typeName);
+      return index >= 0 ? this.typeFields[index].indexOf(fieldName) : UNASSIGNED_ID;
     }
   }
 
@@ -121,8 +218,26 @@ namespace wendoo {
   /** Tile kind of an actuator: a tile a brain acts on the world through. */
   export const TILE_KIND_ACTUATOR = "actuator";
 
-  /** Type name of the any type: a slot of this type accepts every value kind. */
-  export const TYPE_ANY = "any";
+  /*
+   * The core types, each named twice. A `TYPE_*` constant is the type's
+   * name: what a declared field, slot, return, output, operand or
+   * consumed WHEN result refers to the type by, and what the catalog
+   * carries. A `TYPE_ID_*` constant is the type's TypeId: what a runtime
+   * call taking a TypeId, such as {@link setActionOutput}, is given. Both
+   * sets are the reference VM's core types, name for name.
+   */
+
+  /** Type name of the unknown type. */
+  export const TYPE_UNKNOWN = "unknown";
+
+  /** Type name of the void type. */
+  export const TYPE_VOID = "void";
+
+  /** Type name of the nil type. */
+  export const TYPE_NIL = "nil";
+
+  /** Type name of the boolean type. */
+  export const TYPE_BOOLEAN = "boolean";
 
   /** Type name of the number type. */
   export const TYPE_NUMBER = "number";
@@ -130,8 +245,41 @@ namespace wendoo {
   /** Type name of the string type. */
   export const TYPE_STRING = "string";
 
-  /** Type name of the boolean type. */
-  export const TYPE_BOOLEAN = "boolean";
+  /** Type name of the any type: a slot of this type accepts every value kind. */
+  export const TYPE_ANY = "any";
+
+  /** Type name of the function type. */
+  export const TYPE_FUNCTION = "function";
+
+  /** Type name of the buffer type. */
+  export const TYPE_BUFFER = "buffer";
+
+  /** TypeId of the unknown type. */
+  export const TYPE_ID_UNKNOWN = "unknown:<unknown>";
+
+  /** TypeId of the void type. */
+  export const TYPE_ID_VOID = "void:<void>";
+
+  /** TypeId of the nil type. */
+  export const TYPE_ID_NIL = "nil:<nil>";
+
+  /** TypeId of the boolean type. */
+  export const TYPE_ID_BOOLEAN = "boolean:<boolean>";
+
+  /** TypeId of the number type. */
+  export const TYPE_ID_NUMBER = "number:<number>";
+
+  /** TypeId of the string type. */
+  export const TYPE_ID_STRING = "string:<string>";
+
+  /** TypeId of the any type. */
+  export const TYPE_ID_ANY = "any:<any>";
+
+  /** TypeId of the function type. */
+  export const TYPE_ID_FUNCTION = "function:<function>";
+
+  /** TypeId of the buffer type. */
+  export const TYPE_ID_BUFFER = "buffer:<buffer>";
 
   /**
    * Catalog metadata of one registration: what the Wendoo editor shows for
@@ -191,80 +339,525 @@ namespace wendoo {
     return new StructFieldSpec(name, type, true);
   }
 
+  /** Call-spec kind of an argument slot: {@link ArgSlotSpec}. */
+  export const CALL_SPEC_ARG = "arg";
+
+  /** Call-spec kind of a sequence, whose items match in order: {@link SeqSpec}. */
+  export const CALL_SPEC_SEQ = "seq";
+
+  /** Call-spec kind of a choice, of whose options exactly one matches: {@link ChoiceSpec}. */
+  export const CALL_SPEC_CHOICE = "choice";
+
+  /** Call-spec kind of an optional item, matching zero or one time: {@link OptionalSpec}. */
+  export const CALL_SPEC_OPTIONAL = "optional";
+
+  /** Call-spec kind of a repeated item, matching between a min and a max count: {@link RepeatSpec}. */
+  export const CALL_SPEC_REPEAT = "repeat";
+
+  /** Call-spec kind of a bag, whose items match in any order: {@link BagSpec}. */
+  export const CALL_SPEC_BAG = "bag";
+
+  /** Call-spec kind of a conditional, matching one item or another by whether a named spec matched: {@link ConditionalSpec}. */
+  export const CALL_SPEC_CONDITIONAL = "conditional";
+
+  /** Range overflow token: the action holds a value outside the range at the bound it exceeded, and proceeds. */
+  export const ARG_ON_EXCEED_CLAMP = "clamp";
+
+  /** Range overflow token: the action brings a value outside the range back into it by modulus, and proceeds. */
+  export const ARG_ON_EXCEED_WRAP = "wrap";
+
+  /** Range overflow token: the action completes without doing anything when a value is outside the range. */
+  export const ARG_ON_EXCEED_DROP = "drop";
+
   /**
-   * One declared argument slot of a tile: a parameter slot carrying a typed
-   * value, or a modifier slot whose presence alone is the argument.
+   * One node of a tile's argument grammar: an argument slot
+   * ({@link ArgSlotSpec}), or a construct over nodes -- {@link SeqSpec},
+   * {@link ChoiceSpec}, {@link OptionalSpec}, {@link RepeatSpec},
+   * {@link BagSpec} or {@link ConditionalSpec}. Build nodes with the
+   * builders beside these classes; read {@link TileArgSpec.kind} to tell
+   * which class a node is.
    */
   export class TileArgSpec {
-    /** Slot name, as the tile's call surface addresses it. */
+    /** Which construct the node is: one of the `CALL_SPEC_*` kinds. */
+    kind: string;
+    /**
+     * Name identifying the node to the grammar, unique among the names in
+     * one tile's grammar; a {@link ConditionalSpec} tests a name. `""` when
+     * the node is unnamed. Set it after building the node.
+     */
     name: string;
-    /** Type name of the slot's value; `""` on a modifier slot. */
-    type: string;
-    /** Whether the slot is a modifier: present or absent, carrying no value. */
-    isModifier: boolean;
-    /** Whether the slot may be left empty. */
-    optional: boolean;
-    /** Whether several tiles may fill the slot, gathered in source order. */
-    repeated: boolean;
-    /** Fewest fills a repeated slot accepts; `0` puts no lower bound on the count. */
-    minRepeats: number;
 
-    constructor(
-      name: string,
-      type: string,
-      isModifier: boolean,
-      optional: boolean,
-      repeated: boolean,
-      minRepeats: number
-    ) {
+    constructor(kind: string, name: string) {
+      this.kind = kind;
       this.name = name;
-      this.type = type;
-      this.isModifier = isModifier;
-      this.optional = optional;
-      this.repeated = repeated;
-      this.minRepeats = minRepeats;
     }
   }
 
   /**
-   * A required parameter slot.
-   *
-   * @param name - Slot name.
-   * @param type - Type name of the slot's value.
+   * The bounds an action holds a numeric argument slot to, and what it does
+   * with a value outside them. A bound left out is unbounded on its side.
    */
-  export function arg(name: string, type: string): TileArgSpec {
-    return new TileArgSpec(name, type, false, false, false, 0);
+  export class ArgRange {
+    /** Whether the range declares a lower bound. */
+    hasMin: boolean;
+    /** Smallest value the action accepts; read only when {@link ArgRange.hasMin}. */
+    min: number;
+    /** Whether the range declares an upper bound. */
+    hasMax: boolean;
+    /** Largest value the action accepts; read only when {@link ArgRange.hasMax}. */
+    max: number;
+    /** What the action does with a value outside the bounds: one of the `ARG_ON_EXCEED_*` tokens. */
+    onExceed: string;
+
+    constructor(hasMin: boolean, min: number, hasMax: boolean, max: number, onExceed: string) {
+      this.hasMin = hasMin;
+      this.min = min;
+      this.hasMax = hasMax;
+      this.max = max;
+      this.onExceed = onExceed;
+    }
   }
 
   /**
-   * A parameter slot that may be left empty.
+   * A range bounded on both sides.
    *
-   * @param name - Slot name.
-   * @param type - Type name of the slot's value.
+   * @param min - Smallest value the action accepts.
+   * @param max - Largest value the action accepts.
+   * @param onExceed - What the action does with a value outside the range: an `ARG_ON_EXCEED_*` token.
    */
-  export function optionalArg(name: string, type: string): TileArgSpec {
-    return new TileArgSpec(name, type, false, true, false, 0);
+  export function argRange(min: number, max: number, onExceed: string): ArgRange {
+    return new ArgRange(true, min, true, max, onExceed);
   }
 
   /**
-   * A repeated parameter slot: several tiles may fill it, gathered in source
-   * order.
+   * A range bounded below only.
    *
-   * @param name - Slot name.
+   * @param min - Smallest value the action accepts.
+   * @param onExceed - What the action does with a value below it: an `ARG_ON_EXCEED_*` token.
+   */
+  export function argRangeAtLeast(min: number, onExceed: string): ArgRange {
+    return new ArgRange(true, min, false, 0, onExceed);
+  }
+
+  /**
+   * A range bounded above only.
+   *
+   * @param max - Largest value the action accepts.
+   * @param onExceed - What the action does with a value above it: an `ARG_ON_EXCEED_*` token.
+   */
+  export function argRangeAtMost(max: number, onExceed: string): ArgRange {
+    return new ArgRange(false, 0, true, max, onExceed);
+  }
+
+  /**
+   * One argument slot: a parameter slot carrying a typed value, or a
+   * modifier slot whose presence is the argument. Inside a sequence a slot
+   * must be filled unless it is declared not required; wrap it in
+   * {@link optional} to let it be left out wherever it stands.
+   *
+   * A slot is filled by the tile {@link ArgSlotSpec.tileId} names. One tile
+   * may fill several slots of a grammar; name the slots to tell them apart.
+   *
+   * The options after {@link ArgSlotSpec.isModifier} describe the slot for
+   * the editor; the drain reads none of them.
+   */
+  export class ArgSlotSpec extends TileArgSpec {
+    /**
+     * Identity of the tile that fills the slot. A fragment starting
+     * `parameter.` or `modifier.` names a tile shared by every pack and tile
+     * declaring the same fragment; any other fragment names a tile private to
+     * the tile declaring the slot. An anonymous slot is filled by a bare value
+     * expression of its type, so no tile of its own fills it.
+     */
+    tileId: string;
+    /** Type name of the slot's value; `""` on a modifier slot. */
+    type: string;
+    /** Whether the slot is a modifier: matched by its own tile, carrying no value. */
+    isModifier: boolean;
+    /** Whether a bare value expression fills the slot, with no tile of the slot's own before it. */
+    anonymous: boolean = false;
+    /**
+     * The value the action acts on when the slot is left empty, or
+     * `undefined` when none is declared. Nothing substitutes it into a call.
+     * Never declared together with {@link ArgSlotSpec.derived}.
+     */
+    defaultValue: Value;
+    /**
+     * Whether the action chooses the slot's value as it runs when the slot
+     * is left empty. Never declared together with
+     * {@link ArgSlotSpec.defaultValue}.
+     */
+    derived: boolean = false;
+    /** Bounds the action holds the slot's value to, or `undefined` when it accepts any value. Numeric slots only. */
+    range: ArgRange;
+    /** Unit the slot's value is measured in, as the author writes it; `""` when it counts none. */
+    unit: string = "";
+    private requiredDeclared: boolean = false;
+    private requiredValue: boolean = false;
+
+    constructor(tileId: string, type: string, isModifier: boolean) {
+      super(CALL_SPEC_ARG, "");
+      this.tileId = tileId;
+      this.type = type;
+      this.isModifier = isModifier;
+    }
+
+    /**
+     * Declare whether the slot must be filled. A slot declaring neither must
+     * be filled wherever its grammar requires its items; `false` lets it be
+     * left empty there. A slot declared required declares no default and is
+     * not derived.
+     *
+     * @param required - Whether the slot must be filled.
+     */
+    setRequired(required: boolean): void {
+      this.requiredDeclared = true;
+      this.requiredValue = required;
+    }
+
+    /** Whether {@link ArgSlotSpec.setRequired} declared the slot's requirement. */
+    declaresRequired(): boolean {
+      return this.requiredDeclared;
+    }
+
+    /** The requirement {@link ArgSlotSpec.setRequired} declared; `false` when none was declared. */
+    isRequired(): boolean {
+      return this.requiredValue;
+    }
+
+    /** Whether the slot declares a {@link ArgSlotSpec.defaultValue}. */
+    declaresDefault(): boolean {
+      return this.defaultValue !== undefined && this.defaultValue !== null;
+    }
+  }
+
+  /** A sequence: every item matches, in order. */
+  export class SeqSpec extends TileArgSpec {
+    /** The items, in the order they match. */
+    items: TileArgSpec[];
+
+    constructor(items: TileArgSpec[]) {
+      super(CALL_SPEC_SEQ, "");
+      this.items = items;
+    }
+  }
+
+  /** A choice: exactly one option matches. */
+  export class ChoiceSpec extends TileArgSpec {
+    /** The options, in the order they are tried. */
+    options: TileArgSpec[];
+
+    constructor(options: TileArgSpec[]) {
+      super(CALL_SPEC_CHOICE, "");
+      this.options = options;
+    }
+  }
+
+  /** An optional item: it matches zero or one time. */
+  export class OptionalSpec extends TileArgSpec {
+    /** The item that may be left out. */
+    item: TileArgSpec;
+
+    constructor(item: TileArgSpec) {
+      super(CALL_SPEC_OPTIONAL, "");
+      this.item = item;
+    }
+  }
+
+  /**
+   * A repeated item: it matches at least {@link RepeatSpec.min} times and,
+   * when {@link RepeatSpec.hasMax}, at most {@link RepeatSpec.max} times. A
+   * repeated parameter slot gathers its values in source order; a repeated
+   * modifier slot counts its occurrences.
+   */
+  export class RepeatSpec extends TileArgSpec {
+    /** The item that repeats. */
+    item: TileArgSpec;
+    /** Fewest matches the item accepts; `0` puts no lower bound on the count. */
+    min: number;
+    /** Whether the count has an upper bound. */
+    hasMax: boolean;
+    /** Most matches the item accepts; read only when {@link RepeatSpec.hasMax}. */
+    max: number;
+
+    constructor(item: TileArgSpec, min: number, hasMax: boolean, max: number) {
+      super(CALL_SPEC_REPEAT, "");
+      this.item = item;
+      this.min = min;
+      this.hasMax = hasMax;
+      this.max = max;
+    }
+  }
+
+  /** A bag: its items match in any order, each at most once; an item not wrapped in {@link optional} must match. */
+  export class BagSpec extends TileArgSpec {
+    /** The items, in declaration order. */
+    items: TileArgSpec[];
+
+    constructor(items: TileArgSpec[]) {
+      super(CALL_SPEC_BAG, "");
+      this.items = items;
+    }
+  }
+
+  /**
+   * A conditional: {@link ConditionalSpec.thenItem} is available when the
+   * spec named {@link ConditionalSpec.condition} has matched, and
+   * {@link ConditionalSpec.elseItem}, when there is one, otherwise.
+   */
+  export class ConditionalSpec extends TileArgSpec {
+    /** Name of the spec whose match the conditional tests. */
+    condition: string;
+    /** The item available when the named spec matched. */
+    thenItem: TileArgSpec;
+    /** The item available when the named spec did not match, or `undefined` when none is. */
+    elseItem: TileArgSpec;
+
+    constructor(condition: string, thenItem: TileArgSpec, elseItem: TileArgSpec) {
+      super(CALL_SPEC_CONDITIONAL, "");
+      this.condition = condition;
+      this.thenItem = thenItem;
+      this.elseItem = elseItem;
+    }
+  }
+
+  /**
+   * A parameter slot: its tile followed by a value expression. The slot is
+   * unnamed; set its {@link TileArgSpec.name} to name it.
+   *
+   * @param tileId - Identity of the parameter tile that fills the slot; see {@link ArgSlotSpec.tileId}.
+   * @param type - Type name of the slot's value.
+   */
+  export function arg(tileId: string, type: string): ArgSlotSpec {
+    return new ArgSlotSpec(tileId, type, false);
+  }
+
+  /**
+   * A modifier slot: its tile, carrying no value. The slot is unnamed; set
+   * its {@link TileArgSpec.name} to name it.
+   *
+   * @param tileId - Identity of the modifier tile that fills the slot; see {@link ArgSlotSpec.tileId}.
+   */
+  export function modifier(tileId: string): ArgSlotSpec {
+    return new ArgSlotSpec(tileId, "", true);
+  }
+
+  /**
+   * A parameter slot that may be left out: {@link optional} around {@link arg}.
+   *
+   * @param tileId - Identity of the parameter tile that fills the slot.
+   * @param type - Type name of the slot's value.
+   */
+  export function optionalArg(tileId: string, type: string): TileArgSpec {
+    return new OptionalSpec(arg(tileId, type));
+  }
+
+  /**
+   * A repeated parameter slot with no upper bound: {@link repeated} around
+   * {@link arg}. Several tiles may fill it, gathered in source order.
+   *
+   * @param tileId - Identity of the parameter tile that fills the slot.
    * @param type - Type name of each fill's value.
    * @param minRepeats - Fewest fills the slot accepts; `0` puts no lower bound on the count.
    */
-  export function rest(name: string, type: string, minRepeats: number): TileArgSpec {
-    return new TileArgSpec(name, type, false, false, true, minRepeats);
+  export function rest(tileId: string, type: string, minRepeats: number): TileArgSpec {
+    return new RepeatSpec(arg(tileId, type), minRepeats, false, 0);
   }
 
   /**
-   * A modifier slot: present or absent, carrying no value.
+   * A sequence: every item of `items` matches, in order.
    *
-   * @param name - Slot name.
+   * @param items - The items.
    */
-  export function modifier(name: string): TileArgSpec {
-    return new TileArgSpec(name, "", true, false, false, 0);
+  export function seq(items: TileArgSpec[]): SeqSpec {
+    return new SeqSpec(items);
+  }
+
+  /**
+   * A choice: exactly one of `options` matches.
+   *
+   * @param options - The options, in the order they are tried.
+   */
+  export function choice(options: TileArgSpec[]): ChoiceSpec {
+    return new ChoiceSpec(options);
+  }
+
+  /**
+   * An optional item: `item` matches zero or one time.
+   *
+   * @param item - The item that may be left out.
+   */
+  export function optional(item: TileArgSpec): OptionalSpec {
+    return new OptionalSpec(item);
+  }
+
+  /**
+   * A repeated item with no upper bound on its count.
+   *
+   * @param item - The item that repeats.
+   * @param min - Fewest matches the item accepts; `0` puts no lower bound on the count.
+   */
+  export function repeated(item: TileArgSpec, min: number): RepeatSpec {
+    return new RepeatSpec(item, min, false, 0);
+  }
+
+  /**
+   * A repeated item with an upper bound on its count.
+   *
+   * @param item - The item that repeats.
+   * @param min - Fewest matches the item accepts; `0` puts no lower bound on the count.
+   * @param max - Most matches the item accepts.
+   */
+  export function repeatedUpTo(item: TileArgSpec, min: number, max: number): RepeatSpec {
+    return new RepeatSpec(item, min, true, max);
+  }
+
+  /**
+   * A bag: the items of `items` match in any order.
+   *
+   * @param items - The items.
+   */
+  export function bag(items: TileArgSpec[]): BagSpec {
+    return new BagSpec(items);
+  }
+
+  /**
+   * A conditional: `thenItem` is available when the spec named `condition`
+   * has matched, and `elseItem`, when given, otherwise.
+   *
+   * @param condition - Name of the spec whose match the conditional tests.
+   * @param thenItem - The item available when it matched.
+   * @param elseItem - The item available when it did not; omit for none.
+   */
+  export function conditional(condition: string, thenItem: TileArgSpec, elseItem?: TileArgSpec): ConditionalSpec {
+    return new ConditionalSpec(condition, thenItem, elseItem);
+  }
+
+  /**
+   * The nodes directly below `node` in its grammar, in the order the grammar
+   * flattens them into argument slots; empty for an argument slot.
+   */
+  function childSpecs(node: TileArgSpec): TileArgSpec[] {
+    if (node.kind === CALL_SPEC_SEQ) {
+      return (node as SeqSpec).items;
+    }
+    if (node.kind === CALL_SPEC_BAG) {
+      return (node as BagSpec).items;
+    }
+    if (node.kind === CALL_SPEC_CHOICE) {
+      return (node as ChoiceSpec).options;
+    }
+    if (node.kind === CALL_SPEC_OPTIONAL) {
+      return [(node as OptionalSpec).item];
+    }
+    if (node.kind === CALL_SPEC_REPEAT) {
+      return [(node as RepeatSpec).item];
+    }
+    if (node.kind === CALL_SPEC_CONDITIONAL) {
+      const conditional = node as ConditionalSpec;
+      return conditional.elseItem ? [conditional.thenItem, conditional.elseItem] : [conditional.thenItem];
+    }
+    return [];
+  }
+
+  /** The first rule a tile's argument grammar breaks: its diagnostic code, and the spec it breaks it on. */
+  class CallSpecProblem {
+    code: string;
+    spec: string;
+
+    constructor(code: string, spec: string) {
+      this.code = code;
+      this.spec = spec;
+    }
+  }
+
+  /** The first spec under `node`, itself included and visited before its children, whose name `seen` already holds. */
+  function duplicateSpecName(node: TileArgSpec, seen: string[]): CallSpecProblem {
+    if (node.name.length > 0) {
+      if (seen.indexOf(node.name) >= 0) {
+        return new CallSpecProblem(REGISTRATION_CALL_SPEC_DUPLICATE_NAME, node.name);
+      }
+      seen.push(node.name);
+    }
+    const children = childSpecs(node);
+    for (let i = 0; i < children.length; i++) {
+      const problem = duplicateSpecName(children[i], seen);
+      if (problem) {
+        return problem;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The first rule the slot `slot` breaks, or `undefined` when it breaks
+   * none. The problem names the slot by its name, or by its tile identity
+   * when it is unnamed.
+   */
+  function argSlotProblem(slot: ArgSlotSpec): CallSpecProblem {
+    const where = slot.name.length > 0 ? slot.name : slot.tileId;
+    const hasDefault = slot.declaresDefault();
+    if (hasDefault && slot.derived) {
+      return new CallSpecProblem(REGISTRATION_ARG_DEFAULT_AND_DERIVED, where);
+    }
+    if (slot.declaresRequired() && slot.isRequired() && (hasDefault || slot.derived)) {
+      return new CallSpecProblem(REGISTRATION_ARG_REQUIRED_WITH_EMPTY_MEANING, where);
+    }
+    const range = slot.range;
+    if (!range) {
+      return undefined;
+    }
+    if (!range.hasMin && !range.hasMax) {
+      return new CallSpecProblem(REGISTRATION_ARG_RANGE_UNBOUNDED, where);
+    }
+    if (range.hasMin && range.hasMax && range.min > range.max) {
+      return new CallSpecProblem(REGISTRATION_ARG_RANGE_INVERTED, where);
+    }
+    if (hasDefault && slot.defaultValue.t !== ValueTag.Number) {
+      return new CallSpecProblem(REGISTRATION_ARG_RANGE_NON_NUMERIC, where);
+    }
+    return undefined;
+  }
+
+  /** The first rule a slot under `node` breaks, slots visited in flattening order, or `undefined` when none does. */
+  function firstArgSlotProblem(node: TileArgSpec): CallSpecProblem {
+    if (node.kind === CALL_SPEC_ARG) {
+      return argSlotProblem(node as ArgSlotSpec);
+    }
+    const children = childSpecs(node);
+    for (let i = 0; i < children.length; i++) {
+      const problem = firstArgSlotProblem(children[i]);
+      if (problem) {
+        return problem;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The first rule the argument grammar whose top-level items are `items`
+   * breaks, or `undefined` when it breaks none. Names are checked across the
+   * whole grammar first -- names only: one tile may fill several slots, named
+   * apart or unnamed; then each slot, in flattening order, is checked for
+   * a default declared beside derived, a requirement declared beside either,
+   * a range carrying no bound, a range whose min is above its max, and a
+   * range beside a default that is not a number.
+   */
+  function callSpecProblem(items: TileArgSpec[]): CallSpecProblem {
+    const seen: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const problem = duplicateSpecName(items[i], seen);
+      if (problem) {
+        return problem;
+      }
+    }
+    for (let i = 0; i < items.length; i++) {
+      const problem = firstArgSlotProblem(items[i]);
+      if (problem) {
+        return problem;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -302,12 +895,24 @@ namespace wendoo {
   export class TileSpec extends CatalogMeta {
     /** Tile kind: {@link TILE_KIND_SENSOR} or {@link TILE_KIND_ACTUATOR}. */
     kind: string;
-    /** Declared argument slots, in call order. */
+    /**
+     * The tile's argument grammar: its top-level items, which match as the
+     * items of one {@link bag} -- in any order, each item not wrapped in
+     * {@link optional} required. The grammar's argument slots, in the order
+     * the items and the nodes under them are declared, are the positions of
+     * the tile's argument buffer.
+     */
     args: TileArgSpec[];
     /** Type name of the value the tile evaluates to; `""` when it produces none. */
     returns: string;
     /** Named outputs the tile declares. */
     outputs: TileOutputSpec[] = [];
+    /**
+     * Type name of the rule's WHEN result the tile requires; the editor
+     * offers the tile only where a WHEN result of that type is available.
+     * `""` when the tile does not consume the WHEN result.
+     */
+    consumesWhenResult: string = "";
 
     constructor(kind: string, args: TileArgSpec[], returns: string) {
       super();
@@ -352,7 +957,8 @@ namespace wendoo {
 
   /**
    * One registration waiting for the drain. Subclass and override
-   * {@link PendingRegistration.install} to place it in its registry.
+   * {@link PendingRegistration.idIn} and {@link PendingRegistration.install}
+   * to resolve its id and place it in its registry.
    */
   class PendingRegistration {
     /** Name the registration claims. */
@@ -366,10 +972,21 @@ namespace wendoo {
     }
 
     /**
+     * The id `ids` records for the registration, in its kind's id space, or
+     * {@link UNASSIGNED_ID} when none is. The base implementation records
+     * none.
+     *
+     * @param ids - The mapping being applied.
+     */
+    idIn(ids: RegistrationIdMap): number {
+      return UNASSIGNED_ID;
+    }
+
+    /**
      * Place the registration in its registry under `id`. The base
      * implementation registers nothing.
      *
-     * @param id - Id the mapping records for {@link PendingRegistration.name}.
+     * @param id - Id {@link PendingRegistration.idIn} resolved.
      * @param target - Registries being populated, and the mapping.
      */
     install(id: number, target: DrainTarget): void {}
@@ -381,6 +998,15 @@ namespace wendoo {
      */
     warningCode(): string {
       return "";
+    }
+
+    /**
+     * The diagnostic of the problem that keeps this registration from being
+     * honoured at all, or `undefined` when it has none. The base
+     * implementation has none.
+     */
+    declarationProblem(): RegistrationDiagnostic {
+      return undefined;
     }
 
     /**
@@ -405,13 +1031,16 @@ namespace wendoo {
       this.meta = meta;
     }
 
+    idIn(ids: RegistrationIdMap): number {
+      return ids.typeAtomId(this.name);
+    }
+
     install(id: number, target: DrainTarget): void {
       const fieldIds: number[] = [];
       for (let i = 0; i < this.fields.length; i++) {
-        const key = structFieldKey(this.name, this.fields[i].name);
-        const fieldId = target.ids.idOf(key);
+        const fieldId = target.ids.fieldId(this.name, this.fields[i].name);
         if (fieldId === UNASSIGNED_ID) {
-          diagnose(REGISTRATION_UNMAPPED_NAME, key, this.pack, "");
+          diagnose(REGISTRATION_UNMAPPED_NAME, structFieldKey(this.name, this.fields[i].name), this.pack, "");
         }
         fieldIds.push(fieldId);
       }
@@ -441,8 +1070,20 @@ namespace wendoo {
       this.spec = spec;
     }
 
+    idIn(ids: RegistrationIdMap): number {
+      return ids.actionId(this.name);
+    }
+
     install(id: number, target: DrainTarget): void {
       target.actions.register(id, this.name, this.binding);
+    }
+
+    declarationProblem(): RegistrationDiagnostic {
+      if (!this.spec) {
+        return undefined;
+      }
+      const problem = callSpecProblem(this.spec.args);
+      return problem ? new RegistrationDiagnostic(problem.code, this.name, this.pack, "", problem.spec) : undefined;
     }
 
     writeCatalog(catalog: CatalogWriter): void {
@@ -459,6 +1100,10 @@ namespace wendoo {
       super(name, pack);
       this.fn = fn;
       this.spec = spec;
+    }
+
+    idIn(ids: RegistrationIdMap): number {
+      return ids.operatorId(this.name);
     }
 
     install(id: number, target: DrainTarget): void {
@@ -480,12 +1125,17 @@ namespace wendoo {
   let registrationClosed: boolean = false;
 
   function diagnose(code: string, name: string, pack: string, otherPack: string): void {
-    recordedDiagnostics.push(new RegistrationDiagnostic(code, name, pack, otherPack));
+    recordedDiagnostics.push(new RegistrationDiagnostic(code, name, pack, otherPack, ""));
   }
 
   function appendPending(entry: PendingRegistration): void {
     if (registrationClosed) {
       diagnose(REGISTRATION_AFTER_SNAPSHOT, entry.name, entry.pack, "");
+      return;
+    }
+    const problem = entry.declarationProblem();
+    if (problem) {
+      recordedDiagnostics.push(problem);
       return;
     }
     pendingRegistrations.push(entry);
@@ -505,13 +1155,16 @@ namespace wendoo {
     }
 
     /**
-     * Register the struct type `name`, whose fields are `fields` in
-     * declaration order. The drain resolves the type's atom id from the
-     * mapping, resolves each field's id through {@link structFieldKey}, and
-     * gives `binding` the TypeId {@link structTypeId} derives from `name`.
+     * Register the struct type `name`, whose fields are `fields`. The drain
+     * resolves the type's atom id and each field's id from the mapping --
+     * the field ids are the type's storage slots, so the order the fields
+     * are declared in changes nothing a brain observes -- and gives
+     * `binding` the TypeId {@link structTypeId} derives from `name`. A field
+     * the mapping records no id for is diagnosed under its
+     * {@link structFieldKey} and left without one.
      *
      * @param name - Wendoo type name; struct values of the type carry the TypeId derived from it.
-     * @param fields - Field specs in declaration order; the binding's `fieldIds` follow this order.
+     * @param fields - Field specs; the binding's `fieldIds` follow their order.
      * @param binding - Type binding carrying the type's hooks.
      * @param meta - Catalog metadata of the type; the drain ignores it.
      */
@@ -522,6 +1175,11 @@ namespace wendoo {
     /**
      * Register the sensor or actuator `name`. The drain resolves its action
      * id from the mapping and gives `binding` both the id and the name.
+     *
+     * A registration whose argument grammar breaks a rule a call spec is
+     * held to is ignored: it is recorded under the `REGISTRATION_ARG_*` or
+     * {@link REGISTRATION_CALL_SPEC_DUPLICATE_NAME} code of the first rule
+     * it breaks, naming the offending spec, and claims no name.
      *
      * @param name - Tile name; the mapping records the action id under it.
      * @param binding - Action binding carrying the tile's body.
@@ -589,7 +1247,7 @@ namespace wendoo {
         diagnose(REGISTRATION_DUPLICATE_NAME, entry.name, entry.pack, claimedBy[claimed]);
         continue;
       }
-      const id = ids.idOf(entry.name);
+      const id = entry.idIn(ids);
       if (id === UNASSIGNED_ID) {
         diagnose(REGISTRATION_UNMAPPED_NAME, entry.name, entry.pack, "");
         continue;

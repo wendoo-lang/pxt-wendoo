@@ -241,6 +241,14 @@ layer already provides.
   is a flagged decision, never a silent default -- the
   follow-the-pattern rule does not lose to this section without a
   recorded argument.
+- On a surface whose charter is parity with a reference model, the
+  no-over-build test inverts: parity itself is the customer, so "no
+  immediate consumer" carries no weight there. A known divergence
+  from the reference converges in the nearest coherent slice;
+  deferring it is the exception and takes an explicit user ruling,
+  never a planner or agent default. Partial parity -- building only
+  the reference features the current slice consumes -- is a defect
+  pattern, not thrift.
 - Subtraction before done. Before declaring a change complete, try
   to delete each piece you added; if no check breaks and no tracked
   slot claims it, remove it.
@@ -303,8 +311,11 @@ the current slice alone.
       VM in MakeCode static TypeScript (a conforming Wendoo VM per
       `.github/instructions/vm.instructions.md`), the trace emitter, the
       tile bind API, the language-level tiles, the compiled-brain
-      registry, the program loader, the target-blind program host (the
-      single-entry host loop a target's frame loop drains), and the
+      registry, the project id manifest's reader (the calls the generated
+      `ids.g.ts` makes), the program loader, the target-blind program host
+      (the single-entry host loop a target's frame loop drains; every host
+      of a program run shares the one drain of every pack's registrations
+      through the project's id manifest, `hostRegistries`), and the
       empty program `wendooPrograms.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
       NO block definitions -- the compiled-brain type's
@@ -363,10 +374,14 @@ the current slice alone.
     greppably free of platform names; platform content inside a core package
     becomes citable precedent for more of it.
   - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
-    management, compiler integration, and diagnostics. The editor is
+    management, compiler integration, the project's id allocation, and
+    diagnostics. The editor is
     TARGET-BLIND: the tile vocabulary is injected from the MakeCode side
     over the bridge, so the catalog is session data, never build
-    configuration; the one target-aware residue is the per-target theme
+    configuration -- the editor binds the catalog's packs into its
+    authoring environment through the language model's own builders, under
+    the ids it allocates and keeps in the project's id manifest; the one
+    target-aware residue is the per-target theme
     record (the target's display name and theme token overrides), keyed
     by the target id carried in the session hello. Tripwire: this holds because
     user-authored tiles live on the MakeCode side -- a Wendoo-TS user-tile

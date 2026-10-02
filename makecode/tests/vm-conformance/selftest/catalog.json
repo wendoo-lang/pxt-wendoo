@@ -1,0 +1,459 @@
+{
+  "packs": [
+    {
+      "name": "beacon",
+      "types": [
+        {
+          "name": "Beacon",
+          "native": true,
+          "fields": [
+            {
+              "name": "x",
+              "type": "number"
+            },
+            {
+              "name": "y",
+              "type": "number"
+            }
+          ],
+          "label": "Beacon",
+          "docs": "# Beacon\n\nA beacon at a fixed position, read through its field hooks.",
+          "icon": "img<beacon>"
+        }
+      ],
+      "tiles": [
+        {
+          "name": "sensor.beacon.reading",
+          "kind": "sensor",
+          "returns": "string",
+          "outputs": [
+            {
+              "name": "position",
+              "type": "Beacon"
+            }
+          ],
+          "label": "beacon reading",
+          "group": "Beacons",
+          "docs": "# Beacon reading\n\nReads the name of the pack whose \"reading\" tile stands.",
+          "icon": "img<beacon-reading>"
+        }
+      ],
+      "operators": [
+        {
+          "name": "beacon.combine",
+          "operands": ["number", "number"],
+          "returns": "number"
+        }
+      ]
+    },
+    {
+      "name": "chime",
+      "tiles": [
+        {
+          "name": "actuator.chime.ring",
+          "kind": "actuator",
+          "args": [
+            {
+              "tileId": "times",
+              "type": "number",
+              "optional": true
+            },
+            {
+              "tileId": "loudly",
+              "modifier": true,
+              "optional": true
+            }
+          ],
+          "label": "ring the chime",
+          "group": "Chimes",
+          "docs": "# Ring the chime\n\nRings the chime once, or `times` times, louder with `loudly`.",
+          "icon": "img<chime>"
+        },
+        {
+          "name": "sensor.chime.unmapped",
+          "kind": "sensor",
+          "returns": "number",
+          "label": "chime loudness"
+        }
+      ]
+    },
+    {
+      "name": "grammar",
+      "tiles": [
+        {
+          "name": "sensor.grammar.pad",
+          "kind": "sensor",
+          "args": [
+            {
+              "tileId": "up",
+              "modifier": true,
+              "optional": true
+            },
+            {
+              "tileId": "down",
+              "modifier": true,
+              "optional": true
+            },
+            {
+              "tileId": "left",
+              "modifier": true,
+              "optional": true
+            },
+            {
+              "tileId": "right",
+              "modifier": true,
+              "optional": true
+            }
+          ],
+          "returns": "number"
+        },
+        {
+          "name": "actuator.grammar.move",
+          "kind": "actuator",
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "direction",
+                "type": "number",
+                "anonymous": true,
+                "derived": true
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "repeat",
+                    "item": {
+                      "kind": "arg",
+                      "tileId": "slowly",
+                      "modifier": true
+                    },
+                    "min": 1,
+                    "max": 3
+                  },
+                  {
+                    "kind": "repeat",
+                    "item": {
+                      "kind": "arg",
+                      "tileId": "quickly",
+                      "modifier": true
+                    },
+                    "min": 1,
+                    "max": 3
+                  },
+                  {
+                    "kind": "arg",
+                    "tileId": "speed",
+                    "type": "number",
+                    "default": {
+                      "t": 3,
+                      "v": 100
+                    },
+                    "range": {
+                      "min": 0,
+                      "onExceed": "clamp"
+                    },
+                    "unit": "px/s"
+                  }
+                ]
+              }
+            }
+          ],
+          "consumesWhenResult": "number"
+        },
+        {
+          "name": "actuator.grammar.chant",
+          "kind": "actuator",
+          "call": [
+            {
+              "kind": "seq",
+              "name": "words",
+              "items": [
+                {
+                  "kind": "arg",
+                  "tileId": "text",
+                  "type": "string",
+                  "required": true
+                },
+                {
+                  "kind": "optional",
+                  "item": {
+                    "kind": "arg",
+                    "tileId": "pitch",
+                    "type": "number",
+                    "range": {
+                      "min": -12,
+                      "max": 12,
+                      "onExceed": "wrap"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "name": "volume",
+                "options": [
+                  {
+                    "kind": "arg",
+                    "tileId": "loudly",
+                    "modifier": true
+                  },
+                  {
+                    "kind": "arg",
+                    "tileId": "softly",
+                    "modifier": true
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "conditional",
+              "condition": "volume",
+              "then": {
+                "kind": "arg",
+                "tileId": "echo",
+                "type": "boolean",
+                "required": false,
+                "default": {
+                  "t": 2,
+                  "v": true
+                }
+              },
+              "else": {
+                "kind": "repeat",
+                "item": {
+                  "kind": "arg",
+                  "tileId": "again",
+                  "modifier": true
+                }
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "label",
+                "type": "string",
+                "range": {
+                  "max": 3,
+                  "onExceed": "drop"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "sensor.grammar.defaults",
+          "kind": "sensor",
+          "args": [
+            {
+              "tileId": "ratio",
+              "type": "number",
+              "optional": true,
+              "default": {
+                "t": 3,
+                "v": 0.25
+              },
+              "range": {
+                "min": 0,
+                "max": 1.5,
+                "onExceed": "clamp"
+              }
+            },
+            {
+              "tileId": "greeting",
+              "type": "string",
+              "optional": true,
+              "default": {
+                "t": 4,
+                "v": "caf\u00e9"
+              }
+            },
+            {
+              "tileId": "flag",
+              "type": "boolean",
+              "optional": true,
+              "default": {
+                "t": 2,
+                "v": false
+              }
+            },
+            {
+              "tileId": "nothing",
+              "type": "nil",
+              "optional": true,
+              "default": {
+                "t": 1
+              }
+            },
+            {
+              "tileId": "mood",
+              "type": "Mood",
+              "optional": true,
+              "default": {
+                "t": 5,
+                "typeId": "enum:<Mood>",
+                "v": "happy"
+              }
+            },
+            {
+              "tileId": "spot",
+              "type": "Beacon",
+              "optional": true,
+              "default": {
+                "t": 8,
+                "typeId": "struct:<Beacon>",
+                "v": [
+                  {
+                    "t": 3,
+                    "v": 1
+                  },
+                  {
+                    "t": 3,
+                    "v": 2
+                  }
+                ]
+              }
+            },
+            {
+              "tileId": "steps",
+              "type": "any",
+              "optional": true,
+              "default": {
+                "t": 6,
+                "typeId": "list:<number>",
+                "v": [
+                  {
+                    "t": 3,
+                    "v": 1
+                  },
+                  {
+                    "t": 3,
+                    "v": 2
+                  }
+                ]
+              }
+            },
+            {
+              "tileId": "pending",
+              "type": "any",
+              "optional": true,
+              "default": {
+                "t": "handle",
+                "id": 7
+              }
+            }
+          ],
+          "returns": "string"
+        },
+        {
+          "name": "actuator.grammar.travel",
+          "kind": "actuator",
+          "call": [
+            {
+              "kind": "seq",
+              "items": [
+                {
+                  "kind": "arg",
+                  "name": "from",
+                  "tileId": "parameter.grammar.place",
+                  "type": "number"
+                },
+                {
+                  "kind": "arg",
+                  "name": "to",
+                  "tileId": "parameter.grammar.place",
+                  "type": "number"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "registration-arg-default-and-derived",
+      "name": "actuator.grammar.default-and-derived",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-arg-required-with-empty-meaning",
+      "name": "actuator.grammar.required-with-default",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-arg-required-with-empty-meaning",
+      "name": "actuator.grammar.required-with-derived",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-arg-range-unbounded",
+      "name": "actuator.grammar.range-unbounded",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-arg-range-inverted",
+      "name": "actuator.grammar.range-inverted",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-arg-range-non-numeric",
+      "name": "actuator.grammar.range-non-numeric",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-call-spec-duplicate-name",
+      "name": "actuator.grammar.duplicate-name",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-call-spec-duplicate-name",
+      "name": "actuator.grammar.names-checked-first",
+      "pack": "grammar",
+      "spec": "amount"
+    },
+    {
+      "code": "registration-field-writes-unbound",
+      "name": "Beacon",
+      "pack": "beacon"
+    },
+    {
+      "code": "registration-duplicate-name",
+      "name": "sensor.beacon.reading",
+      "pack": "chime",
+      "otherPack": "beacon"
+    },
+    {
+      "code": "registration-unmapped-name",
+      "name": "sensor.chime.unmapped",
+      "pack": "chime"
+    },
+    {
+      "code": "registration-after-snapshot",
+      "name": "actuator.chime.late",
+      "pack": "selftest"
+    },
+    {
+      "code": "catalog-icon-unencodable",
+      "name": "sensor.chime.unmapped",
+      "pack": "chime"
+    }
+  ]
+}

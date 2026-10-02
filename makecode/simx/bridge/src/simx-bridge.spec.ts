@@ -707,6 +707,36 @@ describe("simx bridge on the relay", () => {
     assert.equal(current.errorCode, undefined);
   });
 
+  describe("manifest requests", () => {
+    it("answers the editor's manifest write and read from the project's ids module", async () => {
+      const { joinCode } = await startSimx(CATALOG_TEXT);
+      const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+      const manifest = {
+        actions: [{ name: "actuator.chime.ring", id: 1024 }],
+        operators: [],
+        types: [],
+        next: { action: 1025, operator: 1024, atom: 1024 },
+      };
+
+      editor.send({ type: "makecode:manifestRead", id: "read-1" });
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:manifestReadReply",
+        id: "read-1",
+        payload: { manifest: null },
+      });
+      editor.send({ type: "makecode:manifestWrite", id: "write-1", payload: { manifest } });
+      assert.deepEqual(await editor.nextMessage(), { type: "makecode:manifestAck", id: "write-1" });
+      editor.send({ type: "makecode:manifestRead", id: "read-2" });
+
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:manifestReadReply",
+        id: "read-2",
+        payload: { manifest },
+      });
+      assert.match(host.file("ids.g.ts") ?? "", /^ {4}wendoo\.mapActionId\("actuator\.chime\.ring", 1024\);$/m);
+    });
+  });
+
   describe("brains requests", () => {
     /** A brain as the editor pushes it on the wire, its compiled program covering every byte value. */
     function wireBrain(id: string, name: string): MakeCodeWireBrain {

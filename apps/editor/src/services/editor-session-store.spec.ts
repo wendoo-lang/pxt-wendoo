@@ -95,6 +95,8 @@ function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
       if (push.op === "remove") removed.push(push.brainId);
       return new Promise(() => {});
     },
+    readManifest: () => new Promise(() => {}),
+    writeManifest: () => new Promise(() => {}),
   };
 }
 

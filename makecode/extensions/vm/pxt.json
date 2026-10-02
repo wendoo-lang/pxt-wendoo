@@ -23,6 +23,7 @@
         "runtime.ts",
         "trace.ts",
         "compiled-brains.ts",
+        "project-ids.ts",
         "empty.g.ts",
         "program-loader.ts",
         "program-host.ts",

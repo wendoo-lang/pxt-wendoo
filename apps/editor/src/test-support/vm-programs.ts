@@ -1,13 +1,25 @@
 /**
  * The compiled programs the MakeCode VM extension and its harness carry,
  * rendered from their checked-in brain sources through the editor's own
- * compile path; each rendered file is checked in beside its sources.
+ * compile path; each rendered file is checked in beside its sources. For
+ * the registration selftest that includes the editor's id allocation for the
+ * selftest's catalog, the ids module and brains module the Wendoo simulator
+ * extension writes of it, and the reference VM's trace of the program placing
+ * a pack tile.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { brainSourceHash } from "@wendoo/makecode-session";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
+import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
+import { stream } from "@wendoo/core";
+import { BrainRuntime, linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
+import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
+import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
+import { writeBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
+import { writeIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
+import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
 import { compileBrainSource } from "../services/brain-source.js";
+import { parseCatalog } from "../services/catalog.js";
+import { allocateIds } from "../services/id-allocation.js";
 
 /** The repository root, as an absolute path ending in a separator. */
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -31,7 +43,45 @@ const SELFTEST_SOURCES = [
   "twin-b.src.json",
   "chaser.src.json",
   "unnamed.src.json",
+  "ringer.src.json",
 ];
+
+/** The catalog the registration selftest's packs serialize, which the selftest pins byte for byte. */
+const SELFTEST_CATALOG = "makecode/tests/vm-conformance/selftest/catalog.json";
+
+/** The editor's id allocation for the selftest's catalog, relative to the repository root. */
+export const SELFTEST_IDS_FILE = "makecode/tests/vm-conformance/selftest/ids.g.json";
+
+/** The ids module the selftest project carries, as the simulator extension writes it. */
+export const SELFTEST_IDS_MODULE = "makecode/tests/vm-conformance/selftest/wendoo-lang/pxt-wendoo/ids.g.ts";
+
+/** The brains module the selftest project carries, as the simulator extension writes it. */
+export const SELFTEST_BRAINS_MODULE = "makecode/tests/vm-conformance/selftest/wendoo-lang/pxt-wendoo/brains.g.ts";
+
+/** The reference VM's trace of the program placing a pack tile, relative to the repository root. */
+export const SELFTEST_TRACE_FILE = "makecode/tests/vm-conformance/selftest/ringer.trace";
+
+/** Source of the program placing the chime pack's ring tile. */
+const RINGER_SOURCE = "ringer.src.json";
+
+/** Milliseconds of scheduled time each think of the traced run advances, one think per entry; the selftest runs the same schedule. */
+const RINGER_SCHEDULE = [20, 20, 20];
+
+/**
+ * The allocation the selftest project held before its catalog's current
+ * vocabulary: an earlier beacon pack declared `y` and a field it has since
+ * retired. Its fields keep their ids, so the beacon type's layout is the
+ * allocation's and not its declaration order.
+ */
+const SELFTEST_PRIOR_IDS: MakeCodeIdManifest = {
+  actions: [],
+  operators: [],
+  types: [{ name: "Beacon", atom: 1024, fields: ["y", "retired"] }],
+  next: { action: 1024, operator: 1024, atom: 1025 },
+};
+
+/** The chime pack's tile the allocation predates, which the selftest's drain finds unmapped. */
+const UNALLOCATED_TILE = "sensor.chime.unmapped";
 
 /** Source the selftest's refused programs are compiled from. */
 const REFUSED_PROGRAMS_SOURCE = "ticker.src.json";
@@ -93,9 +143,38 @@ function identityOf(source: string): { id: string; name: string } {
   return { id: document.id, name: document.name };
 }
 
-/** The program the compile path makes of `source`. Throws when the source does not compile clean. */
+/** The selftest's catalog as the session delivers it: the payload text the selftest's packs serialize. */
+function selftestCatalog(): string {
+  return JSON.stringify(JSON.parse(readRepoFile(SELFTEST_CATALOG)));
+}
+
+/**
+ * The editor's allocation for the selftest's catalog: the prior allocation
+ * with every name the catalog declares appended, but for the one tile that
+ * arrived after it was made.
+ */
+function selftestIds(): MakeCodeIdManifest {
+  const catalog = parseCatalog(selftestCatalog());
+  const allocated = {
+    ...catalog,
+    packs: catalog.packs.map((pack) => ({
+      ...pack,
+      tiles: pack.tiles.filter((tile) => tile.name !== UNALLOCATED_TILE),
+    })),
+  };
+  return allocateIds(SELFTEST_PRIOR_IDS, allocated);
+}
+
+/** The program the compile path makes of `source` in the core environment. Throws when the source does not compile clean. */
 function compileClean(source: string): Uint8Array {
-  const { environment } = buildAuthoringEnvironment(undefined);
+  return compileCleanIn(buildAuthoringEnvironment(undefined).environment, source);
+}
+
+/** The program the compile path makes of `source` in `environment`. Throws when the source does not compile clean. */
+function compileCleanIn(
+  environment: ReturnType<typeof buildAuthoringEnvironment>["environment"],
+  source: string
+): Uint8Array {
   const compiled = compileBrainSource(environment, source);
   if (compiled.bytecode === undefined || compiled.diagnostics.length > 0) {
     throw new Error(`source ${identityOf(source).id} does not compile clean`);
@@ -146,11 +225,17 @@ function emptyProgramModule(bytecode: Uint8Array): string {
  * declares a superseded format version.
  */
 function selftestPrograms(): SelftestProgram[] {
+  const { environment } = buildAuthoringEnvironment(selftestCatalog(), selftestIds());
   const programs: SelftestProgram[] = [];
   for (const file of SELFTEST_SOURCES) {
     const source = readRepoFile(`${SELFTEST_SOURCES_DIR}/${file}`);
     const { id, name } = identityOf(source);
-    programs.push({ id, name, sourceHash: brainSourceHash(source), bytecode: hexOf(compileClean(source)) });
+    programs.push({
+      id,
+      name,
+      sourceHash: brainSourceHash(source),
+      bytecode: hexOf(compileCleanIn(environment, source)),
+    });
   }
   const refusedSource = readRepoFile(`${SELFTEST_SOURCES_DIR}/${REFUSED_PROGRAMS_SOURCE}`);
   const refused = compileClean(refusedSource);
@@ -170,11 +255,71 @@ function selftestPrograms(): SelftestProgram[] {
   return programs;
 }
 
+/** The bytes the lowercase hex `hex` spells. */
+function bytesOfHex(hex: string): Uint8Array {
+  return Uint8Array.from({ length: hex.length / 2 }, (_, index) =>
+    Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)
+  );
+}
+
+/**
+ * The reference VM's observable trace of `bytecode` run over
+ * {@link RINGER_SCHEDULE} in the environment binding the selftest's catalog
+ * under its allocation: a tick line before each think, then the actions the
+ * think dispatches.
+ */
+function referenceTrace(bytecode: Uint8Array): string {
+  const { environment } = buildAuthoringEnvironment(selftestCatalog(), selftestIds());
+  const services = environment.brainServices;
+  const decoded = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(bytecode), {
+    precision: MAKECODE_VM_PRECISION,
+    typeRegistry: services.runtime.types,
+  });
+  const writer = new ObservableTraceWriter({ profileId: MAKECODE_VM_PROFILE_ID, precision: MAKECODE_VM_PRECISION });
+  const runtime = new BrainRuntime(
+    decoded.program.program,
+    decoded.program.pages,
+    { runtime: services.runtime, shared: services.shared, app: services.app },
+    undefined,
+    undefined,
+    observableTraceVmEvents(writer)
+  );
+  runtime.startup();
+  let time = 0;
+  for (const [index, advance] of RINGER_SCHEDULE.entries()) {
+    const next = time + advance;
+    writer.tick(index + 1, next, time === 0 ? 0 : next - time);
+    runtime.think(next);
+    time = next;
+  }
+  return writer.render();
+}
+
 /** Every file the compile path renders, from the sources checked in today. */
 export function renderVmPrograms(): RenderedFile[] {
+  const programs = selftestPrograms();
+  const ids = selftestIds();
+  const ringer = programs.find(
+    (program) => program.id === identityOf(readRepoFile(`${SELFTEST_SOURCES_DIR}/${RINGER_SOURCE}`)).id
+  );
+  if (ringer === undefined) throw new Error("no ringer program");
   return [
     { path: EMPTY_PROGRAM_MODULE, text: emptyProgramModule(compileClean(readRepoFile(EMPTY_PROGRAM_SOURCE))) },
-    { path: SELFTEST_PROGRAMS_FILE, text: `${JSON.stringify({ programs: selftestPrograms() }, null, 2)}\n` },
+    { path: SELFTEST_PROGRAMS_FILE, text: `${JSON.stringify({ programs }, null, 2)}\n` },
+    { path: SELFTEST_IDS_FILE, text: `${JSON.stringify(ids, null, 2)}\n` },
+    { path: SELFTEST_IDS_MODULE, text: writeIdsModule(ids) },
+    {
+      path: SELFTEST_BRAINS_MODULE,
+      text: writeBrainsModule(
+        programs.map((program) => ({
+          id: program.id,
+          name: program.name,
+          sourceHash: program.sourceHash,
+          bytecode: bytesOfHex(program.bytecode),
+        }))
+      ),
+    },
+    { path: SELFTEST_TRACE_FILE, text: referenceTrace(bytesOfHex(ringer.bytecode)) },
   ];
 }
 

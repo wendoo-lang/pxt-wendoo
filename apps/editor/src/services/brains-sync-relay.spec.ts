@@ -12,7 +12,13 @@ import type { WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
-import type { MakeCodeBrainSummary, MakeCodeBrainsRequestMessage, MakeCodeWireBrain } from "@wendoo/makecode-session";
+import type {
+  MakeCodeBrainSummary,
+  MakeCodeBrainsRequestMessage,
+  MakeCodeIdManifest,
+  MakeCodeManifestRequestMessage,
+  MakeCodeWireBrain,
+} from "@wendoo/makecode-session";
 import {
   brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
@@ -25,6 +31,7 @@ import {
   type TokenStorage,
 } from "../../../../makecode/simx/bridge/src/binding-token-store.js";
 import { BRAINS_MODULE_FILE, readBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
+import { IDS_MODULE_FILE, readIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../makecode/simx/bridge/src/sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../makecode/simx/bridge/src/simx-bridge.js";
 import {
@@ -50,27 +57,34 @@ import { EditorSessionStore } from "./editor-session-store.js";
 
 const CATALOG = '{"packs":[]}';
 
+/** A catalog whose one pack declares the ring tile. */
+const PACK_CATALOG = JSON.stringify({
+  packs: [{ name: "chime", tiles: [{ name: "actuator.chime.ring", kind: "actuator" }] }],
+});
+
 /** How long a wait in these specs lasts before it fails, in milliseconds. */
 const WAIT_MS = 2000;
 
 /** A file outside the brains that fills the simulator extension's folder to its quota, so MakeCode refuses every brain write. */
 const FILLER = "filler.bin";
 
-/** A brains request the scripted simx received. */
-type ReceivedRequest = MakeCodeBrainsRequestMessage;
+/** A brains or manifest request the scripted simx received. */
+type ReceivedRequest = MakeCodeBrainsRequestMessage | MakeCodeManifestRequestMessage;
 
 /**
  * A simx played by the spec over a raw relay connection: it opens a makecode
- * handshake on every welcome and answers the editor's brains requests from
- * its in-memory project -- or, while held, queues the answers until
- * released. It records every brains request it receives. Its list carries
+ * handshake on every welcome and answers the editor's brains and manifest
+ * requests from its in-memory project -- or, while held, queues the answers
+ * until released. It records every request it receives. Its list carries
  * each brain's compiled source hash only when opened to report it; otherwise
  * it answers as a simx predating that field does.
  */
 class ScriptedSimx {
   /** The brains the project holds, by document id, in the wire form. */
   readonly project: Map<string, MakeCodeWireBrain>;
-  /** Every brains request received, in order. */
+  /** The id manifest the project holds, or `null` when it holds none. */
+  manifest: MakeCodeIdManifest | null = null;
+  /** Every brains and manifest request received, in order. */
   readonly requests: ReceivedRequest[] = [];
   /** The binding token of the latest welcome. */
   bindingToken: string | undefined;
@@ -158,7 +172,9 @@ class ScriptedSimx {
         return;
       case "makecode:brainsList":
       case "makecode:brainsPull":
-      case "makecode:brainsPush": {
+      case "makecode:brainsPush":
+      case "makecode:manifestRead":
+      case "makecode:manifestWrite": {
         const request = message as unknown as ReceivedRequest;
         this.requests.push(request);
         if (request.type === "makecode:brainsPush" && this.dropsPushes) return;
@@ -210,6 +226,11 @@ class ScriptedSimx {
         if (request.payload.op === "write") this.project.set(request.payload.brain.id, request.payload.brain);
         else this.project.delete(request.payload.brainId);
         return { type: "makecode:brainsAck", id: request.id };
+      case "makecode:manifestRead":
+        return { type: "makecode:manifestReadReply", id: request.id, payload: { manifest: this.manifest } };
+      case "makecode:manifestWrite":
+        this.manifest = request.payload.manifest;
+        return { type: "makecode:manifestAck", id: request.id };
     }
   }
 }
@@ -628,7 +649,7 @@ describe("brains sync with a scripted simx on the relay", () => {
     const { simx: returned } = await openSimx(simx.project, simx.bindingToken);
     returned.held = true;
     await eventually(
-      () => returned.requests.length,
+      () => returned.requestsOf("makecode:brainsList").length,
       (count) => count === 1,
       "the held list"
     );
@@ -788,34 +809,34 @@ describe("brains sync with a scripted simx on the relay", () => {
      * keeping its binding token in `tokens`, as MakeCode does on every
      * simulator start; the program posts the catalog.
      */
-    function startSimx(tokens: BindingTokenStore, project: FakeProjfsHost = host): SimxBridge {
+    function startSimx(tokens: BindingTokenStore, project: FakeProjfsHost = host, catalog = CATALOG): SimxBridge {
       const frame = new FakeFrame();
       const files = project.client();
       clients.push(files);
       const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log: silentLog, files });
       bridges.push(bridge);
-      frame.programPosts(CATALOG);
+      frame.programPosts(catalog);
       return bridge;
     }
 
     /** Restarts the simulator: the running simx module goes, and a new one starts over the same project and tokens. */
-    function restartSimx(running: SimxBridge, tokens: BindingTokenStore): SimxBridge {
+    function restartSimx(running: SimxBridge, tokens: BindingTokenStore, catalog = CATALOG): SimxBridge {
       running.dispose();
-      return startSimx(tokens);
+      return startSimx(tokens, host, catalog);
     }
 
     /**
      * Pairs a new editor with a new simx module over the spec's project and
      * resolves once the editor has reconciled, with the simx's token store.
      */
-    async function pairReal(): Promise<{
+    async function pairReal(catalog = CATALOG): Promise<{
       session: EditorSessionStore;
       brains: BrainsStore;
       bridge: SimxBridge;
       simxTokens: BindingTokenStore;
     }> {
       const simxTokens = openBindingTokenStore(() => new MemoryStorage());
-      const bridge = startSimx(simxTokens);
+      const bridge = startSimx(simxTokens, host, catalog);
       const joinCode = await eventually(
         () => bridge.joinCode,
         (code) => code !== undefined,
@@ -873,6 +894,60 @@ describe("brains sync with a scripted simx on the relay", () => {
         what
       );
     }
+
+    it("saves the program's pack vocabulary as ids.g.ts, which a fresh editor session adopts without writing", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal(PACK_CATALOG);
+      await eventually(
+        () => host.file(IDS_MODULE_FILE),
+        (text) => text !== undefined,
+        "the ids module to be written"
+      );
+      const ringId = brains.getSnapshot().environment.brainServices.runtime.actions.getByKey("actuator.chime.ring");
+      assert.equal(ringId?.binding === "host" && ringId.id, 1024);
+      assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), {
+        manifest: {
+          actions: [{ name: "actuator.chime.ring", id: 1024 }],
+          operators: [],
+          types: [],
+          next: { action: 1025, operator: 1024, atom: 1024 },
+        },
+      });
+      session.stop();
+      restartSimx(bridge, simxTokens, PACK_CATALOG);
+      const fresh = editor();
+
+      assert.equal(fresh.session.resume(), true);
+      await brainsUntil(fresh.brains, (state) => state.reconciled, "the fresh editor to reconcile");
+      const adopted = fresh.brains
+        .getSnapshot()
+        .environment.brainServices.runtime.actions.getByKey("actuator.chime.ring");
+
+      assert.equal(adopted?.binding === "host" && adopted.id, 1024);
+      assert.deepEqual(
+        host.mutations.filter((mutation) => mutation === `write ${IDS_MODULE_FILE}`),
+        [`write ${IDS_MODULE_FILE}`]
+      );
+    });
+
+    it("heals an ids module damaged by hand at the next handshake, rewriting it from the allocation", async () => {
+      const { session, bridge, simxTokens } = await pairReal(PACK_CATALOG);
+      const written = await eventually(
+        () => host.file(IDS_MODULE_FILE),
+        (text) => text !== undefined,
+        "the ids module to be written"
+      );
+      session.stop();
+      host.edit(IDS_MODULE_FILE, "// typed over by hand\n");
+      restartSimx(bridge, simxTokens, PACK_CATALOG);
+      const fresh = editor();
+      assert.equal(fresh.session.resume(), true);
+
+      await eventually(
+        () => host.file(IDS_MODULE_FILE),
+        (text) => text === written,
+        "the ids module to be rewritten"
+      );
+    });
 
     it("saves an authored brain in both forms, and a fresh editor session after a simulator restart pulls it back", async () => {
       const { session, brains, bridge, simxTokens } = await pairReal();

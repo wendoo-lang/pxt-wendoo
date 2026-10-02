@@ -93,12 +93,15 @@ export interface MakeCodeEditorSessionState {
 }
 
 /**
- * The brains requests of one makecode handshake with the counterpart: each
- * travels on that handshake and rejects with `MakeCodeBrainsErrorCode.CLOSED`
- * once the handshake ends -- the counterpart leaves, the connection closes,
- * or a further welcome replaces the handshake.
+ * The brains and manifest requests of one makecode handshake with the
+ * counterpart: each travels on that handshake and rejects with its family's
+ * `CLOSED` code once the handshake ends -- the counterpart leaves, the
+ * connection closes, or a further welcome replaces the handshake.
  */
-export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain">;
+export type MakeCodeBrainsChannel = Pick<
+  MakeCodeSession,
+  "listBrains" | "pullBrains" | "pushBrain" | "readManifest" | "writeManifest"
+>;
 
 /** Options for {@link createMakeCodeEditorSession}. */
 export interface MakeCodeEditorSessionOptions {
@@ -425,6 +428,8 @@ class EditorSession implements MakeCodeEditorSession {
           listBrains: () => session.listBrains(),
           pullBrains: (ids) => session.pullBrains(ids),
           pushBrain: (push) => session.pushBrain(push),
+          readManifest: () => session.readManifest(),
+          writeManifest: (manifest) => session.writeManifest(manifest),
         };
         for (const listener of this._brainsChannelListeners) listener(channel);
       },

@@ -857,10 +857,25 @@ namespace wendoo {
 
   /**
    * The profile's name-to-id mapping: one hand-assigned id per registered
-   * name. The corpus goldens pin these profile ids and type-atom ids
-   * verbatim.
+   * name and per struct field. The corpus goldens pin these profile ids,
+   * type-atom ids and field ids verbatim.
    */
   const conformanceIds = new RegistrationIdMap();
+
+  /**
+   * The field names of a struct type in field-id order: the name at each
+   * position is the name of the field whose id is that position.
+   *
+   * @param fields - Field specs in declaration order.
+   * @param fieldIds - Hand-assigned field ids, parallel to `fields`; dense from 0.
+   */
+  function fieldNamesById(fields: StructFieldSpec[], fieldIds: number[]): string[] {
+    const names: string[] = [];
+    for (let id = 0; id < fieldIds.length; id++) {
+      names.push(fields[fieldIds.indexOf(id)].name);
+    }
+    return names;
+  }
 
   /**
    * Register one profile struct type and record the ids the corpus pins for
@@ -880,10 +895,35 @@ namespace wendoo {
     binding: StructTypeBinding
   ): void {
     conformancePack.defineStruct(name, fields, binding);
-    conformanceIds.add(name, atomId);
-    for (let i = 0; i < fields.length; i++) {
-      conformanceIds.add(structFieldKey(name, fields[i].name), fieldIds[i]);
-    }
+    conformanceIds.addType(name, atomId, fieldNamesById(fields, fieldIds));
+  }
+
+  /**
+   * The profile's anonymous `value` slot: filled by a bare value expression
+   * of `type`, the anonymous parameter tile `tileId` standing for it.
+   *
+   * @param tileId - Identity of the slot's parameter tile.
+   * @param type - Type name of the slot's value.
+   */
+  function anonymousValue(tileId: string, type: string): ArgSlotSpec {
+    const slot = arg(tileId, type);
+    slot.name = "value";
+    slot.anonymous = true;
+    return slot;
+  }
+
+  /**
+   * One of the profile's whole-tick number slots, which the action reads as
+   * {@link DEFAULT_WHOLE_TICKS} when it is left empty.
+   *
+   * @param tileId - Identity of the slot's parameter tile.
+   * @param name - Slot name.
+   */
+  function wholeTicks(tileId: string, name: string): ArgSlotSpec {
+    const slot = arg(tileId, TYPE_NUMBER);
+    slot.name = name;
+    slot.defaultValue = mkNumber(DEFAULT_WHOLE_TICKS);
+    return slot;
   }
 
   /**
@@ -922,7 +962,7 @@ namespace wendoo {
    */
   function bindConformanceAction(name: string, actionId: number, binding: HostActionBinding, spec: TileSpec): void {
     conformancePack.bind(name, binding, spec);
-    conformanceIds.add(name, actionId);
+    conformanceIds.addAction(name, actionId);
   }
 
   /**
@@ -936,7 +976,7 @@ namespace wendoo {
    */
   function bindConformanceOperator(name: string, fnId: number, fn: HostFunction, spec: OperatorSpec): void {
     conformancePack.bindOperator(name, fn, spec);
-    conformanceIds.add(name, fnId);
+    conformanceIds.addOperator(name, fnId);
   }
 
   defineConformanceStruct(
@@ -965,25 +1005,25 @@ namespace wendoo {
     "sensor.conformance.echo",
     ConformanceActionId.Echo,
     new EchoSensor(),
-    sensorSpec([arg("value", TYPE_ANY)], TYPE_NUMBER, "echo")
+    sensorSpec([anonymousValue("anon.number", TYPE_NUMBER)], TYPE_NUMBER, "echo")
   );
   bindConformanceAction(
     "actuator.conformance.emit",
     ConformanceActionId.Emit,
     new EmitActuator(),
-    actuatorSpec([arg("value", TYPE_ANY)], "emit")
+    actuatorSpec([anonymousValue("anon.number", TYPE_NUMBER)], "emit")
   );
   bindConformanceAction(
     "actuator.conformance.defer-echo",
     ConformanceActionId.DeferEcho,
     new DeferEchoActuator(),
-    actuatorSpec([arg("value", TYPE_ANY), optionalArg("ticks", TYPE_NUMBER)], "defer echo")
+    actuatorSpec([anonymousValue("anon.number", TYPE_NUMBER), wholeTicks("conformance.ticks", "ticks")], "defer echo")
   );
   bindConformanceAction(
     "actuator.conformance.defer-fail",
     ConformanceActionId.DeferFail,
     new DeferFailActuator(),
-    actuatorSpec([optionalArg("ticks", TYPE_NUMBER)], "defer fail")
+    actuatorSpec([wholeTicks("conformance.ticks", "ticks")], "defer fail")
   );
   bindConformanceAction(
     "actuator.conformance.fault",
@@ -995,7 +1035,7 @@ namespace wendoo {
     "sensor.conformance.signal",
     ConformanceActionId.Signal,
     new SignalSensor(),
-    sensorSpec([optionalArg("period", TYPE_NUMBER)], TYPE_NUMBER, "signal")
+    sensorSpec([wholeTicks("conformance.period", "period")], TYPE_NUMBER, "signal")
   );
   bindConformanceAction(
     "sensor.conformance.counter",
@@ -1007,25 +1047,29 @@ namespace wendoo {
     "actuator.conformance.defer-cancel",
     ConformanceActionId.DeferCancel,
     new DeferCancelActuator(),
-    actuatorSpec([optionalArg("ticks", TYPE_NUMBER)], "defer cancel")
+    actuatorSpec([wholeTicks("conformance.ticks", "ticks")], "defer cancel")
   );
   bindConformanceAction(
     "sensor.conformance.defer-read",
     ConformanceActionId.DeferRead,
     new DeferReadSensor(),
-    sensorSpec([arg("value", TYPE_ANY), optionalArg("ticks", TYPE_NUMBER)], TYPE_NUMBER, "defer read")
+    sensorSpec(
+      [anonymousValue("anon.number", TYPE_NUMBER), wholeTicks("conformance.ticks", "ticks")],
+      TYPE_NUMBER,
+      "defer read"
+    )
   );
   bindConformanceAction(
     "actuator.conformance.emit-text",
     ConformanceActionId.EmitText,
     new EmitTextActuator(),
-    actuatorSpec([arg("value", TYPE_STRING)], "emit text")
+    actuatorSpec([anonymousValue("anon.string", TYPE_STRING)], "emit text")
   );
   bindConformanceAction(
     "actuator.conformance.emit-flag",
     ConformanceActionId.EmitFlag,
     new EmitFlagActuator(),
-    actuatorSpec([arg("value", TYPE_BOOLEAN)], "emit flag")
+    actuatorSpec([anonymousValue("anon.boolean", TYPE_BOOLEAN)], "emit flag")
   );
   bindConformanceAction(
     "sensor.conformance.defer-point",
@@ -1049,7 +1093,7 @@ namespace wendoo {
     "actuator.conformance.emit-all",
     ConformanceActionId.EmitAll,
     new EmitAllActuator(),
-    actuatorSpec([rest("value", TYPE_ANY, 0)], "emit all")
+    actuatorSpec([repeated(anonymousValue("conformance.value", TYPE_ANY), 0)], "emit all")
   );
   bindConformanceAction(
     "actuator.conformance.destroy-anchor",

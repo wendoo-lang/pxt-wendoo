@@ -1017,8 +1017,9 @@ namespace wendoo {
      * Pops a struct and pushes the field at the instruction's field id,
      * dispatching the struct type's registered field getter when it carries
      * one, else reading the indexed field slot; a getter miss and a field id
-     * beyond the field list both push nil. Faults `ScriptError` when the
-     * popped value is not a struct.
+     * beyond the field list both push nil. A field id the registered type
+     * declares no field under is recorded in the type registry. Faults
+     * `ScriptError` when the popped value is not a struct.
      */
     private execStructGetField(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const source = this.pop(fiber);
@@ -1027,6 +1028,9 @@ namespace wendoo {
         return StepOutcome.Continue;
       }
       const binding = this.types.getByTypeId(source.typeId);
+      if (binding && binding.fieldIds.indexOf(ins.a) < 0) {
+        this.types.noteUndeclaredField(binding, ins.a);
+      }
       // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
       if (binding && binding.hasFieldGetter) {
         const result = binding.fieldGetter(source, ins.a, fiber.ctx);
@@ -1043,8 +1047,9 @@ namespace wendoo {
      * slot in place (a pure store -- the value is not copied), and pushes
      * the struct back. The write dispatches the struct type's registered
      * field setter when it carries one, else it writes the indexed field
-     * slot. Faults `ScriptError` when the popped source is not a struct and
-     * when the field setter rejects the write.
+     * slot. A field id the registered type declares no field under is
+     * recorded in the type registry. Faults `ScriptError` when the popped
+     * source is not a struct and when the field setter rejects the write.
      */
     private execStructSetField(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const value = this.pop(fiber);
@@ -1054,6 +1059,9 @@ namespace wendoo {
         return StepOutcome.Continue;
       }
       const binding = this.types.getByTypeId(source.typeId);
+      if (binding && binding.fieldIds.indexOf(ins.a) < 0) {
+        this.types.noteUndeclaredField(binding, ins.a);
+      }
       // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
       if (binding && binding.hasFieldSetter) {
         if (!binding.fieldSetter(source, ins.a, value, fiber.ctx)) {

@@ -41,6 +41,30 @@ export type {
 } from "./makecode-editor-session.js";
 export { createMakeCodeEditorSession, DEFAULT_MAKECODE_BRIDGE_URL } from "./makecode-editor-session.js";
 export type {
+  MakeCodeIdEntry,
+  MakeCodeIdManifest,
+  MakeCodeIdWatermarks,
+  MakeCodeManifestAckMessage,
+  MakeCodeManifestErrorMessage,
+  MakeCodeManifestErrorPayload,
+  MakeCodeManifestReading,
+  MakeCodeManifestReadMessage,
+  MakeCodeManifestReadReplyMessage,
+  MakeCodeManifestReadRequest,
+  MakeCodeManifestReplyMessage,
+  MakeCodeManifestRequest,
+  MakeCodeManifestRequestMessage,
+  MakeCodeManifestWriteMessage,
+  MakeCodeManifestWritePayload,
+  MakeCodeManifestWriteRequest,
+  MakeCodeTypeIdEntry,
+} from "./makecode-manifest.js";
+export {
+  MakeCodeManifestError,
+  MakeCodeManifestErrorCode,
+  MakeCodeManifestProblemCode,
+} from "./makecode-manifest.js";
+export type {
   MakeCodeCatalogMessage,
   MakeCodeCatalogPayload,
   MakeCodeHelloMessage,

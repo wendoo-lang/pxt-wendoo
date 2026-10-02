@@ -3,8 +3,10 @@
  * program host, drained once per frame from the scene's own update loop, and
  * each sprite given a program is an actor of its scene's host.
  *
- * The hosts run the core vocabulary. A sprite's world carries the sprite,
- * and a host-bound tile reaches its sprite through the world.
+ * Every scene's host runs the core vocabulary and every pack's, bound
+ * through the project's id manifest by the one drain the hosts share. A
+ * sprite's world carries the sprite, and a host-bound tile reaches its
+ * sprite through the world.
  */
 namespace wendoo {
   /** The world of one sprite a program runs on: the sprite, as its program's actor. */

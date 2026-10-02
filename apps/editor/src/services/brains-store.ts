@@ -1,8 +1,14 @@
 import type { IBrainDef, WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
-import type { MakeCodeBrain, MakeCodeBrainPush, MakeCodeBrainSummary } from "@wendoo/makecode-session";
-import { brainSourceHash } from "@wendoo/makecode-session";
+import type {
+  MakeCodeBrain,
+  MakeCodeBrainPush,
+  MakeCodeBrainSummary,
+  MakeCodeIdManifest,
+  MakeCodeManifestReading,
+} from "@wendoo/makecode-session";
+import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import type { AuthoringEnvironment, CatalogDiagnostic } from "./authoring-environment";
 import { buildAuthoringEnvironment } from "./authoring-environment";
 import type { BrainSourceCompile } from "./brain-source";
@@ -13,7 +19,9 @@ import {
   readBrainSource,
   serializeBrainSource,
 } from "./brain-source";
+import { parseCatalog } from "./catalog";
 import type { EditorBrainsChannel, EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
+import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "./id-allocation";
 
 /**
  * The delays, in milliseconds, before each retry of a failed push of a
@@ -93,9 +101,9 @@ export interface BrainDamage {
 
 /** What the editor reads from the brains store. */
 export interface BrainsViewState {
-  /** The environment built from the session's latest catalog, for reading, editing and compiling brains. */
+  /** The environment built from the session's latest catalog and the id allocation held, for reading, editing and compiling brains. */
   readonly environment: WendooEnvironment;
-  /** Problems found in the session's latest catalog, in catalog order. */
+  /** Problems found in the session's latest catalog, in catalog order, then the manifest problem when there is one. */
   readonly catalogDiagnostics: readonly CatalogDiagnostic[];
   /** The brains, keyed by document id, in the order they were first stored. */
   readonly brains: ReadonlyMap<string, BrainEntry>;
@@ -145,11 +153,26 @@ export interface BrainsViewState {
  * equals the source the store holds for its brain changes nothing: it is not
  * compiled, and no edit is recorded.
  *
+ * The environment binds the catalog's packs under the project's id
+ * allocation, which the store holds once a handshake has read the project's
+ * manifest: it adopts what the manifest holds over its own allocation
+ * (`mergeIdManifests`), allocates every name the catalog declares that it
+ * lacks (`allocateIds`), and writes the whole allocation to the project
+ * whenever it differs from what the project holds -- never over a manifest of
+ * a newer format, which leaves every pack unbound. A catalog arriving with
+ * new vocabulary is allocated and written the same way. A failed manifest
+ * write, or one unanswered for {@link PUSH_LIVENESS_DEADLINE_MS}, is retried
+ * after each of {@link PUSH_RETRY_DELAYS_MS} in turn, then after the last of
+ * them again and again, while its handshake stays connected. Whenever the
+ * environment is rebuilt, every brain is recompiled in it; one whose
+ * compiled form changes is recorded as edited, and pushed.
+ *
  * Given a sync source, the store keeps its brains in step with the MakeCode
  * project over each makecode handshake. When a handshake completes, the
  * store reconciles: a handshake of a different binding than the previous
- * one first replaces the brains, discarding every local brain and pend; it
- * lists the project's brains, pulls those whose source differs from the
+ * one first replaces the brains, discarding every local brain and pend and
+ * the id allocation; it reads the project's manifest and lists the
+ * project's brains, pulls those whose source differs from the
  * store's or whose compiled form the list reports missing or compiled from
  * other source, adopts each pulled brain it holds no pending edit of, drops
  * each brain the project no longer holds that has no pending edit, then
@@ -158,8 +181,9 @@ export interface BrainsViewState {
  * after the last of them again and again, while the session stays connected
  * and no later handshake has completed. A pulled source that is not a brain
  * document is listed in {@link BrainsViewState.damaged} and never overwritten
- * by itself; a pulled source whose compiled form was not compiled from it is
- * recompiled and, when that compile succeeds, pushed. Once reconciled, each
+ * by itself; a pulled source whose compiled form was not compiled from it,
+ * or whose compile now makes another program, is recompiled and, when that
+ * compile succeeds, pushed. Once reconciled, each
  * edit is pushed as it is made, pending until the project acknowledges it.
  * A push left unanswered for {@link PUSH_LIVENESS_DEADLINE_MS} counts as
  * failed. A failed push of a brain's latest edit is retried, unless the brain
@@ -174,6 +198,21 @@ export class BrainsStore {
   private readonly _sync: BrainsSyncSource | undefined;
   private readonly _listeners = new Set<() => void>();
   private _catalogText: string | undefined;
+  /** The id allocation held for the current binding, or `undefined` until a handshake has read the project's manifest. */
+  private _ids: MakeCodeIdManifest | undefined;
+  /**
+   * The allocation the project holds as far as the store knows: from the
+   * latest manifest read, an absent manifest reading as allocating nothing,
+   * and from each acknowledged write; `undefined` when the project's
+   * manifest needs replacing whatever the store holds.
+   */
+  private _projectIds: MakeCodeIdManifest | undefined;
+  /** Whether the project's manifest is of a newer format than this editor reads. */
+  private _manifestNewer = false;
+  /** Whether a manifest write is awaiting its answer. */
+  private _manifestWriting = false;
+  /** The scheduled retry of a failed manifest write, if any. */
+  private _manifestRetry: ReturnType<typeof setTimeout> | undefined;
   private _environment: AuthoringEnvironment;
   private _brains: ReadonlyMap<string, BrainEntry> = new Map();
   private _pending: ReadonlySet<string> = new Set();
@@ -195,7 +234,7 @@ export class BrainsStore {
     this._session = session;
     this._sync = sync;
     this._catalogText = session.getSnapshot().catalogText;
-    this._environment = buildAuthoringEnvironment(this._catalogText);
+    this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
     this._state = this.readState();
     session.subscribe(() => {
       this.sessionChanged();
@@ -461,6 +500,10 @@ export class BrainsStore {
       this._brains = new Map();
       this._pending = new Set();
       this._damaged = new Map();
+      this._ids = undefined;
+      this._projectIds = undefined;
+      this._manifestNewer = false;
+      this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
       this.publish();
     } else if (wasReconciled) {
       this.publish();
@@ -484,8 +527,11 @@ export class BrainsStore {
     let wanted: string[];
     let pulled: MakeCodeBrain[];
     try {
-      listed = await channel.listBrains();
+      const [reading, list] = await Promise.all([channel.readManifest(), channel.listBrains()]);
       if (this._channel !== channel) return;
+      this.adoptManifest(reading);
+      this.writeManifest(channel);
+      listed = list;
       wanted = listed.filter((summary) => this.wantsPull(summary)).map((summary) => summary.id);
       pulled = wanted.length === 0 ? [] : await channel.pullBrains(wanted);
     } catch {
@@ -573,7 +619,118 @@ export class BrainsStore {
       diagnostics: compile.diagnostics,
       compiled: compile.bytecode === undefined ? brain.compiled : { bytecode: compile.bytecode, sourceHash },
     };
-    return { entry, recompiled: compile.bytecode !== undefined && brain.compiled?.sourceHash !== sourceHash };
+    const recompiled = compile.bytecode !== undefined && !sameCompiled(brain.compiled, entry.compiled);
+    return { entry, recompiled };
+  }
+
+  /**
+   * Adopts the project's manifest as `reading` reports it: a manifest of a
+   * newer format leaves the store holding no allocation; otherwise the store
+   * adopts the project's entries over its own, allocates what the catalog
+   * declares beyond them, and records what the project holds -- nothing to
+   * keep when the manifest was unreadable or damaged. Rebuilds the
+   * environment when the allocation changed.
+   */
+  private adoptManifest(reading: MakeCodeManifestReading): void {
+    if (reading.problem === MakeCodeManifestProblemCode.FORMAT_NEWER) {
+      this._manifestNewer = true;
+      this._projectIds = undefined;
+      this.setIds(undefined);
+      return;
+    }
+    this._manifestNewer = false;
+    this._projectIds = reading.problem === undefined ? (reading.manifest ?? emptyIdManifest()) : undefined;
+    this.setIds(this.allocated(mergeIdManifests(reading.manifest, this._ids)));
+  }
+
+  /** `ids` with every name the session's catalog declares allocated. */
+  private allocated(ids: MakeCodeIdManifest): MakeCodeIdManifest {
+    return this._catalogText === undefined ? ids : allocateIds(ids, parseCatalog(this._catalogText));
+  }
+
+  /** Holds `ids` as the allocation, rebuilding the environment and recompiling every brain when it differs from the one held. */
+  private setIds(ids: MakeCodeIdManifest | undefined): void {
+    const held = this._ids;
+    const same = held === undefined || ids === undefined ? held === ids : sameIdManifest(held, ids);
+    this._ids = ids;
+    if (!same) this.rebuild();
+  }
+
+  /**
+   * Writes the allocation held to the project over `channel` when it differs
+   * from what the project holds, one write at a time: a write asked while
+   * one is awaiting its answer goes out once that one is answered. A failed
+   * write, or one unanswered for {@link PUSH_LIVENESS_DEADLINE_MS}, is
+   * retried after the delay {@link PUSH_RETRY_DELAYS_MS} holds at `attempt`,
+   * or its last delay past the end, while `channel` is the latest handshake's
+   * and the session is connected.
+   *
+   * @param attempt - How many failed writes precede this one: 0 for a first write.
+   */
+  private writeManifest(channel: EditorBrainsChannel, attempt = 0): void {
+    const ids = this._ids;
+    if (ids === undefined || this._manifestNewer || this._manifestWriting || !this.reconcilesOver(channel)) return;
+    if (this._projectIds !== undefined && sameIdManifest(this._projectIds, ids)) return;
+    clearTimeout(this._manifestRetry);
+    this._manifestRetry = undefined;
+    this._manifestWriting = true;
+    let live = true;
+    /** Ends the write's wait; returns whether it was still waiting. */
+    const land = (): boolean => {
+      if (!live) return false;
+      live = false;
+      clearTimeout(deadline);
+      this._manifestWriting = false;
+      return true;
+    };
+    const failed = (): void => {
+      if (!this.reconcilesOver(channel)) return;
+      this._manifestRetry = setTimeout(() => {
+        this._manifestRetry = undefined;
+        this.writeManifest(channel, attempt + 1);
+      }, retryDelay(attempt));
+    };
+    const deadline = setTimeout(() => {
+      if (land()) failed();
+    }, PUSH_LIVENESS_DEADLINE_MS);
+    channel.writeManifest(ids).then(
+      () => {
+        if (!land()) return;
+        if (this._channel === channel) this._projectIds = ids;
+        this.writeManifest(channel);
+      },
+      () => {
+        if (land()) failed();
+      }
+    );
+  }
+
+  /**
+   * Rebuilds the environment from the session's catalog and the allocation
+   * held, then recompiles every brain in it: a brain whose compiled form
+   * changes is recorded as edited, and so is a pending brain whose
+   * diagnostics alone change, so its pend clears on the push of its new
+   * entry.
+   */
+  private rebuild(): void {
+    this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
+    const brains = new Map(this._brains);
+    const edited: string[] = [];
+    for (const [id, held] of this._brains) {
+      let compile: BrainSourceCompile;
+      try {
+        compile = compileBrainSource(this._environment.environment, held.source);
+      } catch {
+        continue;
+      }
+      const compiled =
+        compile.bytecode === undefined ? held.compiled : { bytecode: compile.bytecode, sourceHash: held.sourceHash };
+      if (sameCompiled(compiled, held.compiled) && sameDiagnostics(compile.diagnostics, held.diagnostics)) continue;
+      brains.set(id, { ...held, diagnostics: compile.diagnostics, compiled });
+      if (!sameCompiled(compiled, held.compiled) || this._pending.has(id)) edited.push(id);
+    }
+    this._brains = brains;
+    for (const id of edited) this.edited(id);
   }
 
   /**
@@ -587,7 +744,10 @@ export class BrainsStore {
     if (unreconciled) this._reconciled = false;
     if (catalogText !== this._catalogText) {
       this._catalogText = catalogText;
-      this._environment = buildAuthoringEnvironment(catalogText);
+      const ids = this._ids === undefined ? undefined : this.allocated(this._ids);
+      this._ids = ids;
+      this.rebuild();
+      if (this._channel !== undefined) this.writeManifest(this._channel);
     } else if (!unreconciled) {
       return;
     }
@@ -597,7 +757,9 @@ export class BrainsStore {
   private readState(): BrainsViewState {
     return {
       environment: this._environment.environment,
-      catalogDiagnostics: this._environment.diagnostics,
+      catalogDiagnostics: this._manifestNewer
+        ? [...this._environment.diagnostics, { code: MakeCodeManifestProblemCode.FORMAT_NEWER }]
+        : this._environment.diagnostics,
       brains: this._brains,
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,
@@ -611,4 +773,19 @@ export class BrainsStore {
     this._state = this.readState();
     for (const listener of this._listeners) listener();
   }
+}
+
+/** Whether `a` and `b` are the same compiled form: both absent, or the same bytes compiled from the same source. */
+function sameCompiled(a: CompiledBrain | undefined, b: CompiledBrain | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.sourceHash !== b.sourceHash || a.bytecode.length !== b.bytecode.length) return false;
+  return a.bytecode.every((byte, index) => byte === b.bytecode[index]);
+}
+
+/** Whether `a` and `b` report the same diagnostics, code for code and message for message. */
+function sameDiagnostics(a: readonly BrainBuildDiagnostic[], b: readonly BrainBuildDiagnostic[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((diagnostic, index) => diagnostic.code === b[index]?.code && diagnostic.message === b[index]?.message)
+  );
 }

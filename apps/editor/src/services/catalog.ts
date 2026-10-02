@@ -1,63 +1,463 @@
 /** Stable code of a catalog text the editor cannot read as a catalog document. */
 export const CATALOG_UNREADABLE = "CATALOG_UNREADABLE";
 
-/** One tile of a pack, as the catalog document declares it. */
-export interface CatalogTile {
+/**
+ * Stable codes of the problems {@link parseCatalog} finds in a catalog entry.
+ * An entry carrying one stays listed, but no tile can be made of it; the rest
+ * of its pack reads on.
+ */
+export const CatalogProblemCode = {
+  /** A tile names a kind other than `sensor` or `actuator`; the token is the kind. */
+  TILE_KIND_UNKNOWN: "CATALOG_TILE_KIND_UNKNOWN",
+  /** A tile declares no kind and no argument grammar: its registration declared no shape. */
+  TILE_SHAPE_UNDECLARED: "CATALOG_TILE_SHAPE_UNDECLARED",
+  /** A node of a tile's argument grammar names a construct the grammar does not have; the token is the construct. */
+  CALL_SPEC_KIND_UNKNOWN: "CATALOG_CALL_SPEC_KIND_UNKNOWN",
+  /** A slot's range names an overflow behavior other than `clamp`, `wrap` or `drop`; the token is the behavior. */
+  ON_EXCEED_UNKNOWN: "CATALOG_ON_EXCEED_UNKNOWN",
+  /** Part of an entry does not have the shape the catalog grammar gives it. */
+  ENTRY_MALFORMED: "CATALOG_ENTRY_MALFORMED",
+} as const;
+
+/** Union of all {@link CatalogProblemCode} values. */
+export type CatalogProblemCode = (typeof CatalogProblemCode)[keyof typeof CatalogProblemCode];
+
+/** One problem {@link parseCatalog} found in a catalog entry. */
+export interface CatalogProblem {
+  /** What the problem is. */
+  readonly code: CatalogProblemCode;
+  /** Name of the pack holding the entry. */
+  readonly pack: string;
+  /** Name of the entry. */
+  readonly name: string;
+  /** The token the entry carries where the code names one: an unknown kind, construct or overflow behavior. */
+  readonly token?: string;
+}
+
+/** The catalog metadata of an entry: what the editor shows for it. Each field is absent when undeclared. */
+export interface CatalogMeta {
+  /** Display label. */
+  readonly label?: string;
+  /** Palette group the entry is listed under. */
+  readonly group?: string;
+  /** Markdown document of the entry. */
+  readonly docs?: string;
+  /** Icon, in the session target's own text form. */
+  readonly icon?: string;
+}
+
+/** One declared field of a struct type. */
+export interface CatalogField {
+  /** Field name. */
+  readonly name: string;
+  /** Type name of the field's value. */
+  readonly type: string;
+  /** Whether brains can only read the field. */
+  readonly readOnly: boolean;
+}
+
+/** One struct type of a pack. */
+export interface CatalogType extends CatalogMeta {
+  /** Type name. */
+  readonly name: string;
+  /** Whether values of the type are backed by host objects. */
+  readonly native: boolean;
+  /** Declared fields, in declaration order. */
+  readonly fields: readonly CatalogField[];
+}
+
+/** What an action does with a numeric argument outside a slot's range. */
+export type CatalogOnExceed = "clamp" | "wrap" | "drop";
+
+/** The bounds an action holds a numeric slot's value to. A bound left out is unbounded on its side. */
+export interface CatalogRange {
+  /** Smallest value the action accepts. */
+  readonly min?: number;
+  /** Largest value the action accepts. */
+  readonly max?: number;
+  /** What the action does with a value outside the bounds. */
+  readonly onExceed: CatalogOnExceed;
+}
+
+/** One argument slot of a tile's grammar. */
+export interface CatalogArgSlot {
+  readonly kind: "arg";
+  /** Name identifying the slot to the grammar, or absent when the slot is unnamed. */
+  readonly name?: string;
+  /** Identity of the tile that fills the slot, as the pack declares it. */
+  readonly tileId: string;
+  /** Whether the slot is a modifier, carrying no value. */
+  readonly modifier: boolean;
+  /** Type name of a parameter slot's value; absent on a modifier slot. */
+  readonly type?: string;
+  /** Whether the slot must be filled, or absent when the slot does not declare it. */
+  readonly required?: boolean;
+  /** Whether a bare value expression fills the slot. */
+  readonly anonymous: boolean;
+  /** The value the action acts on when the slot is left empty, as its tagged JSON value, or absent. */
+  readonly default?: unknown;
+  /** Whether the action chooses the slot's value as it runs when the slot is left empty. */
+  readonly derived: boolean;
+  /** Bounds the action holds the slot's value to, or absent. */
+  readonly range?: CatalogRange;
+  /** Unit the slot's value is measured in, or absent. */
+  readonly unit?: string;
+}
+
+/** A sequence or a bag of grammar nodes. */
+export interface CatalogListNode {
+  readonly kind: "seq" | "bag";
+  readonly name?: string;
+  readonly items: readonly CatalogArgNode[];
+}
+
+/** A choice among grammar nodes. */
+export interface CatalogChoiceNode {
+  readonly kind: "choice";
+  readonly name?: string;
+  readonly options: readonly CatalogArgNode[];
+}
+
+/** An optional grammar node. */
+export interface CatalogOptionalNode {
+  readonly kind: "optional";
+  readonly name?: string;
+  readonly item: CatalogArgNode;
+}
+
+/** A repeated grammar node. */
+export interface CatalogRepeatNode {
+  readonly kind: "repeat";
+  readonly name?: string;
+  readonly item: CatalogArgNode;
+  /** Fewest matches; absent for no lower bound. */
+  readonly min?: number;
+  /** Most matches; absent for no upper bound. */
+  readonly max?: number;
+}
+
+/** A conditional grammar node. */
+export interface CatalogConditionalNode {
+  readonly kind: "conditional";
+  readonly name?: string;
+  /** Name of the node whose match the conditional tests. */
+  readonly condition: string;
+  /** The node available when the named node matched. */
+  readonly then: CatalogArgNode;
+  /** The node available when it did not, or absent. */
+  readonly else?: CatalogArgNode;
+}
+
+/** One node of a tile's argument grammar. */
+export type CatalogArgNode =
+  | CatalogArgSlot
+  | CatalogListNode
+  | CatalogChoiceNode
+  | CatalogOptionalNode
+  | CatalogRepeatNode
+  | CatalogConditionalNode;
+
+/** One named output a tile declares. */
+export interface CatalogOutput {
+  readonly name: string;
+  readonly type: string;
+}
+
+/** One tile of a pack. */
+export interface CatalogTile extends CatalogMeta {
   /** The tile's name. */
   readonly name: string;
   /** The tile's kind, or `undefined` when the registration declared none. */
   readonly kind: string | undefined;
+  /** Whether the tile's binding is asynchronous. */
+  readonly async: boolean;
+  /**
+   * The tile's argument grammar: its top-level items, which match as the
+   * items of one bag. `undefined` when a problem was found in it.
+   */
+  readonly grammar: readonly CatalogArgNode[] | undefined;
+  /** Type name of the value the tile evaluates to, or absent. */
+  readonly returns?: string;
+  /** Named outputs the tile declares. */
+  readonly outputs: readonly CatalogOutput[];
+  /** Type name of the WHEN result the tile requires, or absent. */
+  readonly consumesWhenResult?: string;
+}
+
+/** One operator of a pack. */
+export interface CatalogOperator {
+  /** The operator's name. */
+  readonly name: string;
+  /** Whether the operator's host function is asynchronous. */
+  readonly async: boolean;
+  /** Type names of the operand slots, in operand order. */
+  readonly operands: readonly string[];
+  /** Type name of the value the operator evaluates to, or absent when the registration declared no shape. */
+  readonly returns?: string;
 }
 
 /** One vocabulary pack of the catalog. */
 export interface CatalogPack {
   /** The pack's name. */
   readonly name: string;
+  /** The pack's struct types, in registration order. */
+  readonly types: readonly CatalogType[];
   /** The pack's tiles, in registration order. */
   readonly tiles: readonly CatalogTile[];
+  /** The pack's operators, in registration order. */
+  readonly operators: readonly CatalogOperator[];
 }
 
-/** A catalog document read for showing. */
+/** A catalog document read in full. */
 export interface ParsedCatalog {
   /** The catalog's packs, in registration order. Empty when the document declares none. */
   readonly packs: readonly CatalogPack[];
+  /** The problems found in the packs' entries, in catalog order. */
+  readonly problems: readonly CatalogProblem[];
   /** {@link CATALOG_UNREADABLE} when the text could not be read, and `undefined` when it was. */
   readonly errorCode: typeof CATALOG_UNREADABLE | undefined;
 }
 
-/** Whether `value` is an object with a string `name`, the shape every named catalog entry carries. */
-function isNamed(value: unknown): value is { name: string } {
-  return typeof value === "object" && value !== null && typeof (value as { name?: unknown }).name === "string";
+/** The grammar constructs a node may name. */
+const NODE_KINDS = new Set(["arg", "seq", "choice", "optional", "repeat", "bag", "conditional"]);
+
+/** The overflow behaviors a range may name. */
+const ON_EXCEED_TOKENS = new Set(["clamp", "wrap", "drop"]);
+
+/** The tile kinds a tile may name. */
+const TILE_KINDS = new Set(["sensor", "actuator"]);
+
+/** A JSON object, read field by field. */
+type JsonObject = { readonly [key: string]: unknown };
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNamed(value: unknown): value is JsonObject & { name: string } {
+  return isObject(value) && typeof value.name === "string";
+}
+
+function stringField(entry: JsonObject, key: string): string | undefined {
+  const value = entry[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberField(entry: JsonObject, key: string): number | undefined {
+  const value = entry[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function arrayField(entry: JsonObject, key: string): readonly unknown[] {
+  const value = entry[key];
+  return Array.isArray(value) ? value : [];
+}
+
+/** The metadata fields `entry` declares. */
+function metaOf(entry: JsonObject): CatalogMeta {
+  const meta: { label?: string; group?: string; docs?: string; icon?: string } = {};
+  for (const key of ["label", "group", "docs", "icon"] as const) {
+    const value = stringField(entry, key);
+    if (value !== undefined) meta[key] = value;
+  }
+  return meta;
+}
+
+/** Thrown while reading a grammar: the problem that makes it unreadable. */
+class GrammarProblem {
+  constructor(
+    readonly code: CatalogProblemCode,
+    readonly token?: string
+  ) {}
+}
+
+/** The range `value` declares. Throws a {@link GrammarProblem} when it is not one. */
+function rangeOf(value: unknown): CatalogRange {
+  if (!isObject(value)) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  const onExceed = stringField(value, "onExceed");
+  if (onExceed === undefined) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  if (!ON_EXCEED_TOKENS.has(onExceed)) throw new GrammarProblem(CatalogProblemCode.ON_EXCEED_UNKNOWN, onExceed);
+  const range: { min?: number; max?: number; onExceed: CatalogOnExceed } = { onExceed: onExceed as CatalogOnExceed };
+  const min = numberField(value, "min");
+  const max = numberField(value, "max");
+  if (min !== undefined) range.min = min;
+  if (max !== undefined) range.max = max;
+  return range;
+}
+
+/** The slot `entry` declares, its slot fields read; throws a {@link GrammarProblem} when it is not one. */
+function slotOf(entry: JsonObject): CatalogArgSlot {
+  const tileId = stringField(entry, "tileId");
+  const modifier = entry.modifier === true;
+  const type = stringField(entry, "type");
+  if (tileId === undefined || (!modifier && type === undefined)) {
+    throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  }
+  const slot: {
+    kind: "arg";
+    name?: string;
+    tileId: string;
+    modifier: boolean;
+    type?: string;
+    required?: boolean;
+    anonymous: boolean;
+    default?: unknown;
+    derived: boolean;
+    range?: CatalogRange;
+    unit?: string;
+  } = { kind: "arg", tileId, modifier, anonymous: entry.anonymous === true, derived: entry.derived === true };
+  const name = stringField(entry, "name");
+  if (name !== undefined) slot.name = name;
+  if (!modifier) slot.type = type;
+  if (typeof entry.required === "boolean") slot.required = entry.required;
+  if (entry.default !== undefined) slot.default = entry.default;
+  if (entry.range !== undefined) slot.range = rangeOf(entry.range);
+  const unit = stringField(entry, "unit");
+  if (unit !== undefined) slot.unit = unit;
+  return slot;
+}
+
+/** The grammar node `value` declares, and every node under it. Throws a {@link GrammarProblem} when it is not one. */
+function nodeOf(value: unknown): CatalogArgNode {
+  if (!isObject(value)) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  const kind = stringField(value, "kind");
+  if (kind === undefined) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  if (!NODE_KINDS.has(kind)) throw new GrammarProblem(CatalogProblemCode.CALL_SPEC_KIND_UNKNOWN, kind);
+  const name = stringField(value, "name");
+  const named = name === undefined ? {} : { name };
+  switch (kind) {
+    case "arg":
+      return slotOf(value);
+    case "seq":
+    case "bag":
+      return { kind, ...named, items: arrayField(value, "items").map(nodeOf) };
+    case "choice":
+      return { kind, ...named, options: arrayField(value, "options").map(nodeOf) };
+    case "optional":
+      return { kind, ...named, item: nodeOf(value.item) };
+    case "repeat": {
+      const min = numberField(value, "min");
+      const max = numberField(value, "max");
+      return {
+        kind,
+        ...named,
+        item: nodeOf(value.item),
+        ...(min === undefined ? {} : { min }),
+        ...(max === undefined ? {} : { max }),
+      };
+    }
+    default: {
+      const condition = stringField(value, "condition");
+      if (condition === undefined) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+      const otherwise = value.else === undefined ? {} : { else: nodeOf(value.else) };
+      // biome-ignore lint/suspicious/noThenProperty: a conditional node's branch keys are the reference call spec's then/else.
+      return { kind: "conditional", ...named, condition, then: nodeOf(value.then), ...otherwise };
+    }
+  }
 }
 
 /**
- * Reads a catalog's serialized text into the packs and tiles the editor
- * shows. Entries without the declared shape are dropped; text that is not a
- * JSON document at all yields no packs and {@link CATALOG_UNREADABLE}.
+ * The grammar node of one flat `args` entry: the slot, wrapped in an
+ * optional when the entry is `optional`, or in a repeat when it is
+ * `repeated`. Throws a {@link GrammarProblem} when it is not one.
+ */
+function flatNodeOf(value: unknown): CatalogArgNode {
+  if (!isObject(value)) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
+  const slot = slotOf(value);
+  if (value.optional === true) return { kind: "optional", item: slot };
+  if (value.repeated === true) {
+    const min = numberField(value, "min");
+    return { kind: "repeat", item: slot, ...(min === undefined ? {} : { min }) };
+  }
+  return slot;
+}
+
+/** The tile `entry` declares, recording each problem found in it in `problems`. */
+function tileOf(pack: string, entry: JsonObject & { name: string }, problems: CatalogProblem[]): CatalogTile {
+  const kind = stringField(entry, "kind");
+  let grammar: CatalogArgNode[] | undefined;
+  try {
+    grammar = Array.isArray(entry.call) ? entry.call.map(nodeOf) : arrayField(entry, "args").map(flatNodeOf);
+  } catch (error) {
+    if (!(error instanceof GrammarProblem)) throw error;
+    problems.push({
+      code: error.code,
+      pack,
+      name: entry.name,
+      ...(error.token === undefined ? {} : { token: error.token }),
+    });
+  }
+  if (kind === undefined) {
+    problems.push({ code: CatalogProblemCode.TILE_SHAPE_UNDECLARED, pack, name: entry.name });
+  } else if (!TILE_KINDS.has(kind)) {
+    problems.push({ code: CatalogProblemCode.TILE_KIND_UNKNOWN, pack, name: entry.name, token: kind });
+  }
+  const outputs = arrayField(entry, "outputs").flatMap((output) =>
+    isNamed(output) && typeof output.type === "string" ? [{ name: output.name, type: output.type }] : []
+  );
+  const returns = stringField(entry, "returns");
+  const consumesWhenResult = stringField(entry, "consumesWhenResult");
+  return {
+    name: entry.name,
+    kind,
+    async: entry.async === true,
+    grammar,
+    ...(returns === undefined ? {} : { returns }),
+    outputs,
+    ...(consumesWhenResult === undefined ? {} : { consumesWhenResult }),
+    ...metaOf(entry),
+  };
+}
+
+/** The struct type `entry` declares. */
+function typeOf(entry: JsonObject & { name: string }): CatalogType {
+  const fields = arrayField(entry, "fields").flatMap((field) =>
+    isNamed(field) && typeof field.type === "string"
+      ? [{ name: field.name, type: field.type, readOnly: field.readOnly === true }]
+      : []
+  );
+  return { name: entry.name, native: entry.native === true, fields, ...metaOf(entry) };
+}
+
+/** The operator `entry` declares. */
+function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
+  const operands = arrayField(entry, "operands").flatMap((operand) => (typeof operand === "string" ? [operand] : []));
+  const returns = stringField(entry, "returns");
+  return { name: entry.name, async: entry.async === true, operands, ...(returns === undefined ? {} : { returns }) };
+}
+
+/**
+ * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
+ * extension's catalog serializer writes, into its packs, each with its types,
+ * tiles and operators. A token the grammar does not have -- a tile kind, a
+ * grammar construct, a range's overflow behavior -- is never dropped
+ * silently: the entry carrying it is recorded in the result's problems by
+ * stable code and keeps no grammar, and the rest of the catalog reads on.
+ * Entries without a name are dropped; text that is not a JSON document at all
+ * yields no packs and {@link CATALOG_UNREADABLE}. Never throws.
  */
 export function parseCatalog(text: string): ParsedCatalog {
   let document: unknown;
   try {
     document = JSON.parse(text);
   } catch {
-    return { packs: [], errorCode: CATALOG_UNREADABLE };
+    return { packs: [], problems: [], errorCode: CATALOG_UNREADABLE };
   }
-  const declared = (document as { packs?: unknown } | null)?.packs;
+  const declared = isObject(document) ? document.packs : undefined;
   const packs: CatalogPack[] = [];
+  const problems: CatalogProblem[] = [];
   if (Array.isArray(declared)) {
     for (const pack of declared) {
       if (!isNamed(pack)) continue;
-      const tiles: CatalogTile[] = [];
-      const declaredTiles = (pack as { tiles?: unknown }).tiles;
-      if (Array.isArray(declaredTiles)) {
-        for (const tile of declaredTiles) {
-          if (!isNamed(tile)) continue;
-          const kind = (tile as { kind?: unknown }).kind;
-          tiles.push({ name: tile.name, kind: typeof kind === "string" ? kind : undefined });
-        }
-      }
-      packs.push({ name: pack.name, tiles });
+      packs.push({
+        name: pack.name,
+        types: arrayField(pack, "types").filter(isNamed).map(typeOf),
+        tiles: arrayField(pack, "tiles")
+          .filter(isNamed)
+          .map((tile) => tileOf(pack.name, tile, problems)),
+        operators: arrayField(pack, "operators").filter(isNamed).map(operatorOf),
+      });
     }
   }
-  return { packs, errorCode: undefined };
+  return { packs, problems, errorCode: undefined };
 }

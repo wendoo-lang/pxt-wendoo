@@ -8,6 +8,7 @@ import {
 } from "@wendoo/bridge-protocol";
 import type {
   MakeCodeBrainsRequest,
+  MakeCodeManifestRequest,
   MakeCodeSession,
   MakeCodeSessionMessage,
   MakeCodeSessionPort,
@@ -15,6 +16,7 @@ import type {
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
 import type { BindingTokenStore } from "./binding-token-store.js";
 import { BrainsProject, type ProjectFiles } from "./brains-project.js";
+import { ManifestProject } from "./manifest-project.js";
 import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 
 /** Messages the bridge service sends that the simulator extension reads. */
@@ -44,7 +46,8 @@ export interface SimxBridgeOptions {
   tokens: BindingTokenStore;
   /**
    * The MakeCode project's files in this simulator extension's folder, which
-   * the editor's brains requests are answered from and written to.
+   * the editor's brains and manifest requests are answered from and written
+   * to.
    */
   files: ProjectFiles;
   /**
@@ -148,6 +151,7 @@ class CounterpartSession {
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, if any.
    * @param serve - Answers each brains request the counterpart sends once the session is established.
+   * @param serveManifest - Answers each manifest request the counterpart sends once the session is established.
    * @param settled - Called once the counterpart's hello is read: with
    *   `undefined` when the session is established, or with
    *   `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER` when the hello declared a
@@ -158,6 +162,7 @@ class CounterpartSession {
     target: string | undefined,
     latestCatalog: () => string | undefined,
     serve: (request: MakeCodeBrainsRequest) => void,
+    serveManifest: (request: MakeCodeManifestRequest) => void,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
   ) {
     const port: MakeCodeSessionPort = {
@@ -183,6 +188,7 @@ class CounterpartSession {
           session.publishCatalog(catalog);
         }
         session.onBrainsRequest(serve);
+        session.onManifestRequest(serveManifest);
         settled(undefined);
       },
       () => {
@@ -216,8 +222,9 @@ class CounterpartSession {
  * new makecode session with the counterpart, declaring `target` when one is
  * given, and disposes the previous one, and its binding token is saved to
  * `tokens`; a connection that closes
- * disposes its session. Each session's brains requests are answered from the
- * project's `files`, and its pushes are written to them. The
+ * disposes its session. Each session's brains and manifest requests are
+ * answered from the project's `files`, and its pushes and manifest writes are
+ * written to them. The
  * program's messages are read on `channel`. The latest catalog the program posted is published
  * into each session once it is established, and every later catalog into the
  * current one. A rejected message from the program is logged by its code and
@@ -234,6 +241,10 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const brains = new BrainsProject(options.files, log);
   const serveBrains = (request: MakeCodeBrainsRequest): void => {
     brains.serve(request);
+  };
+  const manifest = new ManifestProject(options.files, log);
+  const serveManifest = (request: MakeCodeManifestRequest): void => {
+    manifest.serve(request);
   };
   const listeners = new Set<() => void>();
   let relay: ProjectSession<WsMessage, RelayMessage>;
@@ -284,7 +295,14 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
         counterpartAway = false;
         counterpartConnected = true;
         counterpart?.close();
-        counterpart = new CounterpartSession(session, options.target, () => catalog, serveBrains, handshakeSettled);
+        counterpart = new CounterpartSession(
+          session,
+          options.target,
+          () => catalog,
+          serveBrains,
+          serveManifest,
+          handshakeSettled
+        );
         changed();
       }),
       session.on("session:joinCode", (message) => {

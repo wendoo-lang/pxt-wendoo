@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-09-30
+updated: 2026-10-01
 ---
 
 # Session Management in pxt-wendoo
@@ -23,9 +23,10 @@ kind's whole identity, and nothing else in the repository declares
 session wire surface:
 
 - the kind name `makecode` and its message namespace (`makecode:*`);
-- the wire messages: `makecode:hello`, `makecode:catalog`, and the
+- the wire messages: `makecode:hello`, `makecode:catalog`, the
   `makecode:brains*` payload family (see "The brains payload family",
-  below);
+  below), and the `makecode:manifest*` payload family (see "The manifest
+  payload family", below);
 - the hello's declaration, `MakeCodeSessionDeclaration` (see "The
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
@@ -34,10 +35,13 @@ session wire surface:
   which endpoints pass to the role-generic client as their wsPath;
 - `connectMakeCodeSession`, binding the upstream peer-session
   mechanism to the kind over any payload-capable port, whose session
-  both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and
-  serves them (`onBrainsRequest`);
+  both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and the
+  id manifest (`readManifest`, `writeManifest`) and serves them
+  (`onBrainsRequest`, `onManifestRequest`);
 - `createMakeCodeEditorSession`, the editor role's session object
   (described below);
+- the id manifest's shape, `MakeCodeIdManifest` (see "The manifest
+  payload family", below);
 - the brain contracts both sides of the family must agree on:
   `brainSourceHash` (32-bit FNV-1a over UTF-16 code units, eight
   lowercase hex digits) and the device profile compiled brains carry
@@ -102,8 +106,8 @@ The four-hop path assigns the session parts as follows.
   connects at the simx role path, opens or refreshes its
   connection-scoped handshake on every welcome, publishes the
   current catalog into the session, and answers the editor's brains
-  requests from the project's files (see "The simx write path",
-  below).
+  and manifest requests from the project's files (see "The simx write
+  path" and "The id manifest", below).
 - `apps/bridge` is the relay service: an adapter plus a deployment
   identity over the upstream session engine,
   `@wendoo/bridge-session`, which holds every session rule. The
@@ -223,6 +227,49 @@ everything else).
   a later answer, or any answer after the session is disposed, is not
   sent. The simx serves them from the project (see "The simx write
   path", below).
+
+## The manifest payload family
+
+The editor allocates the ids the MakeCode project's packs' vocabulary is
+compiled and bound under -- host-action ids for tiles, host-function ids
+for operators, type-atom and field ids for struct types -- and the project
+keeps them in its id manifest (see "The id manifest", below). The manifest
+travels as a request-reply family under the kind's namespace, on the same
+discipline as the brains family: every request carries an envelope `id`
+its reply carries back, ids are minted with the session's random prefix,
+there is no timeout, and a request rejects with `MAKECODE_MANIFEST_CLOSED`
+when its handshake ends. The editor session object's brains channel
+carries the manifest requests beside the brains requests.
+
+- `makecode:manifestRead` (editor -> project): answered by
+  `makecode:manifestReadReply` carrying `{ manifest, problem? }` -- the
+  entries the project's manifest holds, `null` when the project holds none,
+  and the coded problem the serving party found reading it:
+  `MAKECODE_MANIFEST_UNREADABLE` (no format it reads; `manifest` is
+  `null`), `MAKECODE_MANIFEST_FORMAT_NEWER` (written by a newer simx;
+  `manifest` is `null`), or `MAKECODE_MANIFEST_ENTRY_MALFORMED` (part of it
+  damaged; `manifest` holds the rest).
+- `makecode:manifestWrite` (editor -> project) with `{ manifest }`, the
+  editor's WHOLE allocation, which replaces the project's: answered by
+  `makecode:manifestAck` once written.
+- `makecode:manifestError` answers any request that failed, carrying `{
+  code, message }`: `MAKECODE_MANIFEST_READ_FAILED` for a read,
+  `MAKECODE_MANIFEST_WRITE_FAILED` for a write.
+- THE MANIFEST: `{ actions, operators, types, next }`. `actions` and
+  `operators` are `{ name, id }` entries; `types` are `{ name, atom, fields
+  }`, a field's id being its position in `fields`, which only grows; `next`
+  holds the next id of each space, `{ action, operator, atom }`, above every
+  id the space ever handed out. Entries are append-only and in allocation
+  order.
+- VERSIONING: the family is additive under
+  `MAKECODE_SESSION_PROTOCOL_VERSION` 1. Every party ignores a `makecode:*`
+  type it does not know, and no producer speaking version 1 without the
+  family was ever deployed, so no peer exists that receives a manifest
+  request it cannot answer.
+- Only the editor requests; the party serving the project answers, through
+  `onManifestRequest` (buffered until the first listener attaches), with
+  `reply` or `fail` for a read and `ack` or `fail` for a write, each
+  request answered once.
 
 ## The simx write path
 
@@ -363,6 +410,76 @@ serves exactly what the last one wrote.
   edited, damaged, or deleted there, is healed at the next handshake
   (an editor reload or a reconnection); a simulator restart that keeps
   the simx frame opens no new handshake.
+
+## The id manifest
+
+The project's id manifest is `ids.g.ts`, at the simx folder's root beside
+`brains.g.ts`: projfs confines every simx write to that folder, so the
+file needs no prefix of its own to mark it the simx's. It is ONE generated
+module the project compiles with the rest of its code. After two comment
+lines it declares `// wendoo-ids-format 1`, then the watermarks as `//
+next-ids action <n> operator <n> atom <n>`, then a blank line, then the
+namespace `wendooIds` carrying one call per allocation, in allocation
+order:
+
+```ts
+namespace wendooIds {
+    wendoo.mapActionId("actuator.chime.ring", 1024);
+    wendoo.mapOperatorId("beacon.combine", 1024);
+    wendoo.mapTypeIds("Beacon", 1024, ["y", "retired", "x"]);
+}
+```
+
+- SCOPE: the manifest allocates for HOST-REGISTERED pack vocabulary only
+  -- the tiles, operators and struct types a pack registers through the VM
+  extension's registration surface. Struct types a Wendoo-TS program
+  declares are program-local: they carry no type atom and their fields'
+  ids travel in the program's own type table, so the manifest never holds
+  them.
+- ALLOCATION: the editor is the single allocator. At every handshake it
+  reads the manifest, adopts what it holds over its own allocation (the
+  project's entries win; its own other entries stay where their ids are
+  free), allocates every name the session catalog declares beyond them --
+  first sight allocates, in catalog order, above each space's watermark --
+  and writes the whole allocation whenever it differs from what the
+  project holds; a catalog arriving with new vocabulary mid-session is
+  allocated and written the same way. Nothing ever renumbers: a name the
+  catalog stops declaring keeps its id, which is never handed out again; a
+  rename is a new name. A struct type's layout is the manifest's -- each
+  field's id is its position in the type's field list -- so a pack
+  reordering its fields changes nothing, a new field appends, and a removed
+  field keeps its id.
+- WRITE: a write replaces `ids.g.ts`, skipped when its text would not
+  change, as an ARTIFACT (never `dirty`); a refused write fails with
+  `MAKECODE_MANIFEST_WRITE_FAILED`, the projfs code leading the message,
+  and the editor retries it after each of `PUSH_RETRY_DELAYS_MS`, then at
+  the last delay, while its handshake stays connected. A manifest of a newer
+  format is never rewritten: writes fail with its code leading the message,
+  and the editor binds no pack while it stands.
+- READING A DAMAGED MANIFEST: the reader never throws. A file declaring no
+  format reads as no manifest (`MAKECODE_MANIFEST_UNREADABLE`); an
+  allocation line that does not follow the format, a second line naming
+  one registration, or a damaged watermark line is skipped
+  (`MAKECODE_MANIFEST_ENTRY_MALFORMED`) and the rest is read. Each problem
+  is written to the console by its code, and the editor's next write --
+  made at once, since the allocation it adopted differs from what the
+  project holds -- replaces the damaged file from the editor's allocation.
+  A file hand-edited while a handshake stays open is healed at the next
+  handshake.
+- THE PROGRAM: `writeIdsModule` and `readIdsModule`
+  (`makecode/simx/bridge/src/ids-module.ts`) are a writer and reader pair.
+  The VM extension's registration selftest compiles the module's generated
+  form in real Arcade and micro:bit projects, the allocation it declares
+  made by the editor's allocator from the selftest's catalog. In the
+  program, the module's calls record each id before any code runs a
+  program; the first drain of any program host drains every pack's
+  registrations through the manifest once, for every host of the run, and
+  logs each registration problem as `wendoo <code> <name> <pack>` -- a
+  registration the manifest allocates no id for
+  (`registration-unmapped-name`) is left unbound and the rest of the game
+  runs. A program addressing a struct field its type no longer declares
+  reads nil, and the host logs `wendoo field-undeclared <typeId>
+  <fieldId>` once.
 
 ## Simx credential continuity
 
@@ -645,10 +762,12 @@ it keys on a session id.
   token hooks; the store owns nothing else durable.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
   the catalog, from which it builds the environment brains are edited
-  and compiled in (rebuilt whenever a different catalog arrives), and
-  the status, and it syncs its brains with the MakeCode project over
-  each handshake's brains channel (see "Brain sync", below). The
-  brains are kept through every status.
+  and compiled in -- the catalog's packs bound under the project's id
+  allocation (see "The id manifest", above), rebuilt whenever a different
+  catalog arrives or the allocation changes, every brain recompiled in
+  each rebuild -- and the status, and it syncs its brains with the
+  MakeCode project over each handshake's brains channel (see "Brain
+  sync", below). The brains are kept through every status.
 - The BRAIN LIST renders the brains store in every status, so
   authoring continues while the project is away. Each row is keyed by
   the brain's document id; the name is display data, and two brains
@@ -700,11 +819,38 @@ it keys on a session id.
   other controls. The store clears the damage on the project's ack
   or a later reconciliation, and the notice goes with it.
 - The CATALOG DIAGNOSTICS the store reports while building its
-  environment render as one coded line each above the catalog panel:
-  `CATALOG_UNREADABLE` for catalog text it cannot read (brains keep
-  the built-in tiles), and `CATALOG_PACK_UNBOUND` per pack whose
-  tiles brains cannot use yet. They inform and never block
+  environment render as one coded line each above the catalog panel,
+  each carrying its code as `data-code` and, where it names them, the pack
+  as `data-pack`, the entry as `data-name` and the offending token as
+  `data-token`: `CATALOG_UNREADABLE` for catalog text it cannot read
+  (brains keep the built-in tiles); `CATALOG_PACK_UNBOUND` per pack while
+  the store holds no id allocation (until a handshake reads the project's
+  manifest); `MAKECODE_MANIFEST_FORMAT_NEWER` while the project's manifest
+  is of a newer format; and one line per catalog entry no tile can be made
+  of -- a token the catalog grammar does not have
+  (`CATALOG_TILE_KIND_UNKNOWN`, `CATALOG_CALL_SPEC_KIND_UNKNOWN`,
+  `CATALOG_ON_EXCEED_UNKNOWN`), a tile whose registration declared no
+  shape (`CATALOG_TILE_SHAPE_UNDECLARED`), a malformed entry
+  (`CATALOG_ENTRY_MALFORMED`), a reference to no type
+  (`CATALOG_TYPE_UNKNOWN`), an unreadable default
+  (`CATALOG_DEFAULT_UNREADABLE`), a shared slot tile declared with another
+  type (`CATALOG_SHARED_TILE_CONFLICT`), an operator of an unsupported
+  shape (`CATALOG_OPERATOR_SHAPE_UNSUPPORTED`), or an entry the language
+  model refuses (`CATALOG_TILE_REJECTED`) -- the rest of its pack bound.
+  These are show-all-tier diagnostics, rendered unconditionally while the
+  product's only users are its developers. They inform and never block
   authoring.
+- PACK BINDING: the store's environment binds each catalog pack through
+  the upstream model's own builders: each struct type under its allocated
+  atom, its fields at their allocated ids; each tile as a host sensor or
+  actuator under its allocated action id, its grammar built as the
+  upstream call spec, with a slot's tile private to its tile
+  (`<pack>:user.<tile>.<fragment>`) unless its fragment starts
+  `parameter.` or `modifier.`, which names a tile shared across packs, and
+  an anonymous slot filled by the anonymous parameter tile of its type
+  (`anon.<TypeName>`); and each operator as its own operator under its
+  allocated host-function id, infix over two operands, prefix over one.
+  Pack actions run nothing in the editor.
 
 ## Brain sync
 
@@ -725,8 +871,9 @@ channel, then pushes each edit as it is made:
   binding was ever held are pending, so the first binding merges: they
   push to it, and its brains are pulled beside them. Carrying brains
   from one project to another is not done.
-- RECONCILIATION: list; pull every listed brain the store holds no copy
-  of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
+- RECONCILIATION: read the project's id manifest and list, adopting the
+  manifest (see "The id manifest", above); pull every listed brain the
+  store holds no copy of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
   is `null` or differs from its `sourceHash` (a summary without
   `compiledSourceHash` pulls on the source rule alone); adopt each
   pulled brain the store holds no pending edit of (a pending edit wins,
@@ -757,11 +904,14 @@ channel, then pushes each edit as it is made:
   stays reconciled and connected and the brain is not damaged; a newer
   edit's push takes over from the retries. Pends flush on the next
   reconciled handshake; until acknowledged they survive every status.
-- STALENESS: a pulled brain whose compiled form is absent or was
+- STALENESS: a pulled brain whose compiled form is absent, was
   compiled from other source (its `sourceHash` differs from the
-  source's hash -- someone edited the source out of band) is recompiled
-  from the pulled source and, when that compile succeeds, the fresh
-  pair is pushed. A pulled source that parses but fails to compile is
+  source's hash -- someone edited the source out of band), or differs
+  from the program the store's environment compiles of the source -- its
+  pack vocabulary bound under other ids -- is recompiled from the pulled
+  source and, when that compile succeeds, the fresh pair is pushed. The
+  same holds for every held brain whenever the environment is rebuilt: a
+  brain whose compiled form changes is pushed. A pulled source that parses but fails to compile is
   held with its diagnostics beside the project's compiled form as the
   last good one, and nothing is pushed.
 - COMPILED-FORM HEALING: because the list reports the compiled form, a

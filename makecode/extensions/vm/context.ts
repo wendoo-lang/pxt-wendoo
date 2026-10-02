@@ -809,6 +809,26 @@ namespace wendoo {
     }
   }
 
+  /** Diagnostic code: a program addressed a field id its struct type declares no field under. */
+  export const FIELD_UNDECLARED = "field-undeclared";
+
+  /**
+   * One field a program addressed that its registered struct type does not
+   * declare -- a field the type's pack has since removed, whose id the
+   * project's mapping keeps for it.
+   */
+  export class UndeclaredFieldAccess {
+    /** TypeId of the struct type. */
+    typeId: string;
+    /** The field id the program addressed. */
+    fieldId: number;
+
+    constructor(typeId: string, fieldId: number) {
+      this.typeId = typeId;
+      this.fieldId = fieldId;
+    }
+  }
+
   /**
    * The struct types a program's values and TYPS atom entries resolve
    * against: field-hook dispatch looks types up by typeId, and program
@@ -816,8 +836,32 @@ namespace wendoo {
    */
   export class StructTypeRegistry {
     private types: StructTypeBinding[] = [];
+    private undeclared: UndeclaredFieldAccess[] = [];
 
     constructor() {}
+
+    /**
+     * Record that a program addressed the field `fieldId` of `binding`'s
+     * type, which declares no field under that id. Each type and field id is
+     * recorded once, however often it is addressed. Recording changes nothing
+     * the program observes.
+     *
+     * @param binding - The registered type the program addressed.
+     * @param fieldId - The field id the program addressed.
+     */
+    noteUndeclaredField(binding: StructTypeBinding, fieldId: number): void {
+      for (let i = 0; i < this.undeclared.length; i++) {
+        if (this.undeclared[i].typeId === binding.typeId && this.undeclared[i].fieldId === fieldId) {
+          return;
+        }
+      }
+      this.undeclared.push(new UndeclaredFieldAccess(binding.typeId, fieldId));
+    }
+
+    /** Every undeclared field programs addressed, each once, in the order first addressed. */
+    undeclaredFieldAccesses(): UndeclaredFieldAccess[] {
+      return this.undeclared;
+    }
 
     /**
      * Register `binding` under `typeId`, `atomId` and `fieldIds`, which become

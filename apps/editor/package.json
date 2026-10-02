@@ -38,6 +38,7 @@
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "@wendoo/bridge-session": "file:../../external/wendoo-lang/packages/bridge-session",
+    "@wendoo/conformance": "file:../../external/wendoo-lang/packages/conformance",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",

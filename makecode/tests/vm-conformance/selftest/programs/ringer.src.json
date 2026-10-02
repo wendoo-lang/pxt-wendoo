@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "ringerRingerRing",
+  "name": "Ringer",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "hO8df3c5y5FaPe0c",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 3,
+      "valueLabel": "3",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "hO8df3c5y5FaPe0c",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.chime.ring",
+            {
+              "k": "arg",
+              "area": "parameter",
+              "action": "actuator.chime.ring",
+              "name": "times",
+              "ns": "chime"
+            },
+            "tile.literal->number:<number>->3",
+            {
+              "k": "arg",
+              "area": "modifier",
+              "action": "actuator.chime.ring",
+              "name": "loudly",
+              "ns": "chime"
+            }
+          ],
+          "children": [],
+          "ruleId": "7aU9HxCmIS822e7q"
+        }
+      ]
+    }
+  ]
+}

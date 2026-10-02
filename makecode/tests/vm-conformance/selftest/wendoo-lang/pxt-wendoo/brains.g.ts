@@ -43,6 +43,14 @@ namespace wendooPrograms {
         00000200010001000002000101000000
     `);
 
+    // source-hash 5ec52ccc
+    //% fixedInstance block="Ringer"
+    export const p_ringerRingerRing = wendoo.registerCompiledBrain("ringerRingerRing", "Ringer", hex`
+        894d425004d10f07010010684f38646633633579354661506530630002000600
+        020101010000000b480000000004000601040106002c810802004900001f0000
+        01000001000001000100008108
+    `);
+
     // source-hash d98799e6
     //% fixedInstance block="Wrong format"
     export const p_staleFormat00001 = wendoo.registerCompiledBrain("staleFormat00001", "Wrong format", hex`

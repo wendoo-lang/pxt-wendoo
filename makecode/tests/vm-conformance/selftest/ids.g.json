@@ -1,0 +1,54 @@
+{
+  "actions": [
+    {
+      "name": "sensor.beacon.reading",
+      "id": 1024
+    },
+    {
+      "name": "actuator.chime.ring",
+      "id": 1025
+    },
+    {
+      "name": "sensor.grammar.pad",
+      "id": 1026
+    },
+    {
+      "name": "actuator.grammar.move",
+      "id": 1027
+    },
+    {
+      "name": "actuator.grammar.chant",
+      "id": 1028
+    },
+    {
+      "name": "sensor.grammar.defaults",
+      "id": 1029
+    },
+    {
+      "name": "actuator.grammar.travel",
+      "id": 1030
+    }
+  ],
+  "operators": [
+    {
+      "name": "beacon.combine",
+      "id": 1024
+    }
+  ],
+  "types": [
+    {
+      "name": "Beacon",
+      "atom": 1024,
+      "fields": [
+        "y",
+        "retired",
+        "x"
+      ]
+    }
+  ],
+  "next": {
+    "action": 1031,
+    "operator": 1025,
+    "atom": 1025
+  }
+}

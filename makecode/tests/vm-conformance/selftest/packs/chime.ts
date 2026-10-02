@@ -59,10 +59,10 @@ namespace chime {
 
   const pack = wendoo.pack(PACK_NAME);
 
-  /** Declared shape of the ring tile: an optional count, a modifier, and sample metadata the catalog assertions pin. */
+  /** Declared shape of the ring tile: an optional count, an optional modifier, and sample metadata the catalog assertions pin. */
   const ringSpec = new wendoo.TileSpec(
     wendoo.TILE_KIND_ACTUATOR,
-    [wendoo.optionalArg("times", wendoo.TYPE_NUMBER), wendoo.modifier("loudly")],
+    [wendoo.optionalArg("times", wendoo.TYPE_NUMBER), wendoo.optional(wendoo.modifier("loudly"))],
     ""
   );
   ringSpec.label = "ring the chime";

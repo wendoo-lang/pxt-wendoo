@@ -2,7 +2,7 @@
  * Runs the registration selftest through the MakeCode VM extension on every
  * pinned target checkout.
  *
- * For each target: provision it, generate the selftest project and the two
+ * For each target: provision it, generate the selftest project and the three
  * pack extensions it depends on, build the project JS-only, capture its run,
  * and hold the capture to the contract below.
  *
@@ -13,9 +13,11 @@
  *   `EXPECTED_DIAGNOSTICS`, and no other;
  * - one `wendoo program-rejected <code> <id>` line per entry in
  *   `EXPECTED_REJECTIONS`, in that order, and no other;
- * - one `CATALOG <payload>` line whose payload holds the same fields as
- *   `EXPECTED_CATALOG`, and, across the runs of one target, byte-identical
- *   payloads;
+ * - `TRACE <line>` lines whose lines, in order, are the reference VM's trace
+ *   of the same program over the same schedule, `selftest/ringer.trace`,
+ *   byte for byte;
+ * - one `CATALOG <payload>` line whose payload is `EXPECTED_CATALOG`'s
+ *   bytes, and, across the runs of one target, byte-identical payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
  *   only reaches by surviving every diagnostic.
  *
@@ -55,6 +57,7 @@ const EXPECTED_CHECKS = [
   "late-registration-diagnosed",
   "late-registration-not-bound",
   "action-output-readable-by-name",
+  "action-output-core-typed-readable-by-name",
   "catalog-serialize-repeatable",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
@@ -70,20 +73,49 @@ const EXPECTED_CHECKS = [
   "host-thinks-each-running-program-once-per-drain",
   "host-replaces-an-actors-program",
   "host-ends-an-ended-actors-program",
+  "call-spec-well-formed-tiles-registered",
+  "call-spec-rejects-default-and-derived",
+  "call-spec-rejects-required-with-default",
+  "call-spec-rejects-required-with-derived",
+  "call-spec-rejects-range-without-bounds",
+  "call-spec-rejects-inverted-range",
+  "call-spec-rejects-range-on-non-numeric-default",
+  "call-spec-rejects-duplicate-name",
+  "call-spec-checks-names-before-slots",
+  "call-spec-tile-fills-two-named-slots",
+  "type-layout-from-manifest",
+  "golden-program-runs",
 ];
 
 /**
- * Every refusal a program host is expected to log, as `<code> <id>`, in
- * order: the programs the brains module declares for a superseded format
- * and for a foreign device profile.
+ * Every refusal one program host is expected to log, as `<code> <id>`, in
+ * order, at its first drain: the programs the brains module declares for a
+ * superseded format and for a foreign device profile.
  */
-const EXPECTED_REJECTIONS = [
+const HOST_REJECTIONS = [
   "WENDOO_BINARY_CODEC_UNSUPPORTED_FORMAT_VERSION staleFormat00001",
   "WENDOO_BINARY_CODEC_UNSUPPORTED_DEVICE_PROFILE wrongProfile0001",
 ];
 
+/**
+ * Every refusal the selftest is expected to log, in order: its program host
+ * check's host, then the host the pack-tile program is traced on.
+ */
+const EXPECTED_REJECTIONS = [...HOST_REJECTIONS, ...HOST_REJECTIONS];
+
+/** The reference VM's trace of the pack-tile program over the selftest's schedule, rendered by the editor's tooling. */
+const EXPECTED_TRACE = fs.readFileSync(path.join(__dirname, "selftest", "ringer.trace"), "utf8");
+
 /** Every registration diagnostic the run is expected to record, as `<code> <name>`. */
 const EXPECTED_DIAGNOSTICS = [
+  "registration-arg-default-and-derived actuator.grammar.default-and-derived",
+  "registration-arg-required-with-empty-meaning actuator.grammar.required-with-default",
+  "registration-arg-required-with-empty-meaning actuator.grammar.required-with-derived",
+  "registration-arg-range-unbounded actuator.grammar.range-unbounded",
+  "registration-arg-range-inverted actuator.grammar.range-inverted",
+  "registration-arg-range-non-numeric actuator.grammar.range-non-numeric",
+  "registration-call-spec-duplicate-name actuator.grammar.duplicate-name",
+  "registration-call-spec-duplicate-name actuator.grammar.names-checked-first",
   "registration-duplicate-name sensor.beacon.reading",
   "registration-unmapped-name sensor.chime.unmapped",
   "registration-field-writes-unbound Beacon",
@@ -106,7 +138,7 @@ const EXPECTED_ARCADE_CHECKS = [
  * order: each scene's program host logs the refused programs at its first
  * frame, the game's first scene and then the scene the selftest pushes.
  */
-const EXPECTED_ARCADE_REJECTIONS = [...EXPECTED_REJECTIONS, ...EXPECTED_REJECTIONS];
+const EXPECTED_ARCADE_REJECTIONS = [...HOST_REJECTIONS, ...HOST_REJECTIONS];
 
 /** The kinds of the frames the arcade selftest must post on the simulator extension's channel, in order. */
 const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
@@ -115,70 +147,18 @@ const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
 const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
 
 /**
- * The catalog payload the selftest run is expected to print: the two packs'
- * registered vocabulary under first-wins resolution, the sample metadata the
- * packs declare, and every diagnostic the run provokes.
+ * The catalog payload the selftest run is expected to print, byte for byte:
+ * the three packs' registered vocabulary under first-wins resolution, the
+ * sample metadata and argument grammars the packs declare, and every
+ * diagnostic the run provokes. Key order in every object is the payload's
+ * own key order; {@link asciiJson} renders it to the expected bytes. The
+ * editor's golden-program tooling reads the same file as the session catalog
+ * its allocation and programs are made from.
  */
-const EXPECTED_CATALOG = {
-  packs: [
-    {
-      name: "beacon",
-      types: [
-        {
-          name: "Beacon",
-          native: true,
-          fields: [
-            { name: "x", type: "number" },
-            { name: "y", type: "number" },
-          ],
-          label: "Beacon",
-          docs: "# Beacon\n\nA beacon at a fixed position, read through its field hooks.",
-          icon: "img<beacon>",
-        },
-      ],
-      tiles: [
-        {
-          name: "sensor.beacon.reading",
-          kind: "sensor",
-          returns: "string",
-          outputs: [{ name: "position", type: "Beacon" }],
-          label: "beacon reading",
-          group: "Beacons",
-          docs: '# Beacon reading\n\nReads the name of the pack whose "reading" tile stands.',
-          icon: "img<beacon-reading>",
-        },
-      ],
-      operators: [{ name: "beacon.combine", operands: ["number", "number"], returns: "number" }],
-    },
-    {
-      name: "chime",
-      tiles: [
-        {
-          name: "actuator.chime.ring",
-          kind: "actuator",
-          args: [
-            { name: "times", type: "number", optional: true },
-            { name: "loudly", modifier: true },
-          ],
-          label: "ring the chime",
-          group: "Chimes",
-          docs: "# Ring the chime\n\nRings the chime once, or `times` times, louder with `loudly`.",
-          icon: "img<chime>",
-        },
-        { name: "sensor.chime.unmapped", kind: "sensor", returns: "number", label: "chime loudness" },
-      ],
-    },
-  ],
-  diagnostics: [
-    { code: "registration-field-writes-unbound", name: "Beacon", pack: "beacon" },
-    { code: "registration-duplicate-name", name: "sensor.beacon.reading", pack: "chime", otherPack: "beacon" },
-    { code: "registration-unmapped-name", name: "sensor.chime.unmapped", pack: "chime" },
-    { code: "registration-after-snapshot", name: "actuator.chime.late", pack: "selftest" },
-    { code: "catalog-icon-unencodable", name: "sensor.chime.unmapped", pack: "chime" },
-  ],
-};
+const EXPECTED_CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, "selftest", "catalog.json"), "utf8"));
 
 const CHECK_PREFIX = "CHECK ";
+const TRACE_PREFIX = "TRACE ";
 const DIAG_PREFIX = "DIAG registration ";
 const REJECTION_PREFIX = "wendoo program-rejected ";
 const FAILED_CHECKS_LINE = "CHECKS failed 0";
@@ -238,23 +218,38 @@ function reportedRejections(log) {
     .map((line) => line.slice(REJECTION_PREFIX.length));
 }
 
+/** The trace the capture's `TRACE` lines carry, one line each, in order. */
+function reportedTrace(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(TRACE_PREFIX))
+    .map((line) => `${line.slice(TRACE_PREFIX.length)}\n`)
+    .join("");
+}
+
 /** Whether `actual` and `expected` hold the same entries, in any order. */
 function sameEntries(actual, expected) {
   return [...actual].sort().join("\n") === [...expected].sort().join("\n");
 }
 
-/** The ways the capture's catalog payload misses `EXPECTED_CATALOG`; empty when it matches. */
+/**
+ * JSON text of `value` as the catalog serializer writes it: keys in
+ * insertion order, no whitespace, and every code unit outside printable
+ * ASCII escaped to a lowercase `\uXXXX`.
+ */
+function asciiJson(value) {
+  return JSON.stringify(value).replace(
+    /[\u007f-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+}
+
+/** The ways the capture's catalog payload misses `EXPECTED_CATALOG`; empty when it matches byte for byte. */
 function catalogFailures(log) {
   const payload = catalog.payloadOf(log);
   if (payload === null) return ["no single CATALOG line"];
-  let parsed;
-  try {
-    parsed = JSON.parse(payload);
-  } catch (error) {
-    return [`catalog payload is not JSON: ${error.message}`];
-  }
-  if (!catalog.sameJson(parsed, EXPECTED_CATALOG)) {
-    return [`catalog payload is ${JSON.stringify(catalog.canonical(parsed))}`];
+  const expected = asciiJson(EXPECTED_CATALOG);
+  if (payload !== expected) {
+    return [`catalog payload is ${payload}`, `expected payload is ${expected}`];
   }
   return [];
 }
@@ -281,6 +276,10 @@ function contractFailures(exitCode, log) {
     failures.push(`program refusals logged: ${rejections.join(" | ")}`);
   }
   failures.push(...catalogFailures(log));
+  const trace = reportedTrace(log);
+  if (trace !== EXPECTED_TRACE) {
+    failures.push(`traced ${JSON.stringify(trace)}`, `reference trace ${JSON.stringify(EXPECTED_TRACE)}`);
+  }
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
   return failures;
 }

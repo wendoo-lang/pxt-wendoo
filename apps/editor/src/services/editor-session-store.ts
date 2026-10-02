@@ -247,6 +247,8 @@ export class EditorSessionStore {
           listBrains: () => channel.listBrains(),
           pullBrains: (ids) => channel.pullBrains(ids),
           pushBrain: (push) => channel.pushBrain(push),
+          readManifest: () => channel.readManifest(),
+          writeManifest: (manifest) => channel.writeManifest(manifest),
         };
         for (const listener of this._brainsChannelListeners) listener(bound);
       })

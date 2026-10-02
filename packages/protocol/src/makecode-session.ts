@@ -18,6 +18,15 @@ import type {
   MakeCodeWireBrainPush,
 } from "./makecode-brains.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
+import type {
+  MakeCodeIdManifest,
+  MakeCodeManifestErrorPayload,
+  MakeCodeManifestReading,
+  MakeCodeManifestReplyMessage,
+  MakeCodeManifestRequest,
+  MakeCodeManifestRequestMessage,
+} from "./makecode-manifest.js";
+import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
 
 /** Newest version of the makecode-session protocol this build speaks. */
 export const MAKECODE_SESSION_PROTOCOL_VERSION = 1;
@@ -90,7 +99,9 @@ export type MakeCodeSessionMessage =
   | MakeCodeHelloMessage
   | MakeCodeCatalogMessage
   | MakeCodeBrainsRequestMessage
-  | MakeCodeBrainsReplyMessage;
+  | MakeCodeBrainsReplyMessage
+  | MakeCodeManifestRequestMessage
+  | MakeCodeManifestReplyMessage;
 
 /**
  * Transport carrying makecode-session messages between this party and its
@@ -170,9 +181,31 @@ export interface MakeCodeSession {
    */
   onBrainsRequest(listener: (request: MakeCodeBrainsRequest) => void): () => void;
   /**
-   * Detach from the port. Every brains request still awaiting its reply
-   * rejects with `CLOSED`, as does every request made afterwards; an answer
-   * to a request from the peer is no longer sent.
+   * Ask the peer serving the project for the project's manifest. Resolves
+   * with what the peer read of it; rejects with a `MakeCodeManifestError`
+   * carrying the code of the peer's error reply, or `CLOSED` when the session
+   * is disposed before the reply arrives. A peer that does not answer leaves
+   * the request pending until the session is disposed.
+   */
+  readManifest(): Promise<MakeCodeManifestReading>;
+  /**
+   * Ask the peer serving the project to replace the project's manifest with
+   * `manifest`. Resolves once the peer acknowledges it; rejects as
+   * {@link readManifest} does.
+   *
+   * @param manifest - The editor's whole allocation.
+   */
+  writeManifest(manifest: MakeCodeIdManifest): Promise<void>;
+  /**
+   * Subscribe to the manifest requests the peer sends, for the party serving
+   * the project to answer, delivered as {@link onBrainsRequest} delivers
+   * brains requests. Returns an unsubscribe function.
+   */
+  onManifestRequest(listener: (request: MakeCodeManifestRequest) => void): () => void;
+  /**
+   * Detach from the port. Every brains and manifest request still awaiting
+   * its reply rejects with its family's `CLOSED`, as does every request made
+   * afterwards; an answer to a request from the peer is no longer sent.
    */
   dispose(): void;
 }
@@ -199,12 +232,20 @@ export async function connectMakeCodeSession(options: MakeCodeSessionOptions): P
 /** The messages of a makecode session other than its hello. */
 type SessionTraffic = Exclude<MakeCodeSessionMessage, MakeCodeHelloMessage>;
 
-/** A brains request awaiting its reply. */
+/** Every reply a request this session sent can be answered by. */
+type RequestReplyMessage = MakeCodeBrainsReplyMessage | MakeCodeManifestReplyMessage;
+
+/** The error reply types, one per request family. */
+type ErrorReplyType = "makecode:brainsError" | "makecode:manifestError";
+
+/** A brains or manifest request awaiting its reply. */
 interface PendingRequest {
   /** Type of the reply that answers the request, beside an error reply. */
-  readonly replyType: Exclude<MakeCodeBrainsReplyMessage["type"], "makecode:brainsError">;
-  resolve(reply: MakeCodeBrainsReplyMessage): void;
-  reject(error: MakeCodeBrainsError): void;
+  readonly replyType: Exclude<RequestReplyMessage["type"], ErrorReplyType>;
+  /** Type of the error reply of the request's family. */
+  readonly errorType: ErrorReplyType;
+  resolve(reply: RequestReplyMessage): void;
+  reject(error: Error): void;
 }
 
 class EstablishedSession implements MakeCodeSession {
@@ -219,6 +260,9 @@ class EstablishedSession implements MakeCodeSession {
   private readonly _requestListeners = new Set<(request: MakeCodeBrainsRequest) => void>();
   /** Requests from the peer received while no request listener was attached, in arrival order. */
   private readonly _bufferedRequests: MakeCodeBrainsRequest[] = [];
+  private readonly _manifestListeners = new Set<(request: MakeCodeManifestRequest) => void>();
+  /** Manifest requests from the peer received while no manifest listener was attached, in arrival order. */
+  private readonly _bufferedManifestRequests: MakeCodeManifestRequest[] = [];
   /**
    * Prefix of every request id this session mints, random per session, so a
    * late reply to an earlier session's request on the same connection never
@@ -266,6 +310,23 @@ class EstablishedSession implements MakeCodeSession {
     await this.request((id) => ({ type: "makecode:brainsPush", id, payload: pushToWire(push) }), "makecode:brainsAck");
   }
 
+  async readManifest(): Promise<MakeCodeManifestReading> {
+    const reply = await this.request((id) => ({ type: "makecode:manifestRead", id }), "makecode:manifestReadReply");
+    return reply.payload;
+  }
+
+  async writeManifest(manifest: MakeCodeIdManifest): Promise<void> {
+    await this.request((id) => ({ type: "makecode:manifestWrite", id, payload: { manifest } }), "makecode:manifestAck");
+  }
+
+  onManifestRequest(listener: (request: MakeCodeManifestRequest) => void): () => void {
+    this._manifestListeners.add(listener);
+    for (const request of this._bufferedManifestRequests.splice(0)) listener(request);
+    return () => {
+      this._manifestListeners.delete(listener);
+    };
+  }
+
   onBrainsRequest(listener: (request: MakeCodeBrainsRequest) => void): () => void {
     this._requestListeners.add(listener);
     for (const request of this._bufferedRequests.splice(0)) listener(request);
@@ -282,26 +343,31 @@ class EstablishedSession implements MakeCodeSession {
     const pending = [...this._pending.values()];
     this._pending.clear();
     for (const request of pending) {
-      request.reject(closedError());
+      request.reject(closedError(request.errorType));
     }
   }
 
   /**
    * Sends the request `build` makes under a freshly minted id and resolves
    * with the reply of `replyType` carrying that id; rejects on an error reply
-   * carrying it, and with `CLOSED` once the session is disposed.
+   * of the request's family carrying it, and with the family's `CLOSED` once
+   * the session is disposed.
    */
   private request<TReply extends PendingRequest["replyType"]>(
-    build: (id: string) => MakeCodeBrainsRequestMessage,
+    build: (id: string) => MakeCodeBrainsRequestMessage | MakeCodeManifestRequestMessage,
     replyType: TReply
-  ): Promise<Extract<MakeCodeBrainsReplyMessage, { type: TReply }>> {
-    if (this._disposed) return Promise.reject(closedError());
+  ): Promise<Extract<RequestReplyMessage, { type: TReply }>> {
+    const errorType: ErrorReplyType = replyType.startsWith("makecode:manifest")
+      ? "makecode:manifestError"
+      : "makecode:brainsError";
+    if (this._disposed) return Promise.reject(closedError(errorType));
     const id = `${this._requestPrefix}-${++this._requestCount}`;
     return new Promise((resolve, reject) => {
       this._pending.set(id, {
         replyType,
+        errorType,
         resolve: (reply) => {
-          resolve(reply as Extract<MakeCodeBrainsReplyMessage, { type: TReply }>);
+          resolve(reply as Extract<RequestReplyMessage, { type: TReply }>);
         },
         reject,
       });
@@ -310,8 +376,9 @@ class EstablishedSession implements MakeCodeSession {
   }
 
   /**
-   * Routes one message from the peer: catalogs to their listeners, requests
-   * to the request listeners, replies to their requests; drops the rest.
+   * Routes one message from the peer: catalogs to their listeners, brains and
+   * manifest requests to their family's request listeners, replies to their
+   * requests; drops the rest.
    */
   private receive(message: SessionTraffic): void {
     if (message.type === "makecode:catalog") {
@@ -336,11 +403,25 @@ class EstablishedSession implements MakeCodeSession {
       for (const listener of this._requestListeners) listener(request);
       return;
     }
+    if (message.type === "makecode:manifestRead" || message.type === "makecode:manifestWrite") {
+      const request = this.incomingManifest(message);
+      if (this._manifestListeners.size === 0) {
+        this._bufferedManifestRequests.push(request);
+        return;
+      }
+      for (const listener of this._manifestListeners) listener(request);
+      return;
+    }
     const pending = typeof message.id === "string" ? this._pending.get(message.id) : undefined;
     if (pending === undefined) return;
-    if (message.type === "makecode:brainsError") {
+    if (message.type === "makecode:brainsError" && pending.errorType === message.type) {
       this._pending.delete(message.id);
       pending.reject(new MakeCodeBrainsError(message.payload.code, message.payload.message));
+      return;
+    }
+    if (message.type === "makecode:manifestError" && pending.errorType === message.type) {
+      this._pending.delete(message.id);
+      pending.reject(new MakeCodeManifestError(message.payload.code, message.payload.message));
       return;
     }
     if (message.type !== pending.replyType) return;
@@ -394,14 +475,58 @@ class EstablishedSession implements MakeCodeSession {
         };
     }
   }
+
+  /**
+   * The manifest request `message` from the peer carries, whose first answer
+   * is sent to the peer carrying the message's `id` unless this session is
+   * disposed.
+   */
+  private incomingManifest(message: MakeCodeManifestRequestMessage): MakeCodeManifestRequest {
+    const { id } = message;
+    let answered = false;
+    const answer = (reply: MakeCodeManifestReplyMessage): void => {
+      if (answered || this._disposed) return;
+      answered = true;
+      this._session.postMessage(reply);
+    };
+    const failWith =
+      (code: MakeCodeManifestErrorPayload["code"]) =>
+      (text: string): void => {
+        answer({ type: "makecode:manifestError", id, payload: { code, message: text } });
+      };
+    switch (message.type) {
+      case "makecode:manifestRead":
+        return {
+          kind: "read",
+          reply: (reading) => {
+            answer({ type: "makecode:manifestReadReply", id, payload: reading });
+          },
+          fail: failWith(MakeCodeManifestErrorCode.READ_FAILED),
+        };
+      case "makecode:manifestWrite":
+        return {
+          kind: "write",
+          manifest: message.payload.manifest,
+          ack: () => {
+            answer({ type: "makecode:manifestAck", id });
+          },
+          fail: failWith(MakeCodeManifestErrorCode.WRITE_FAILED),
+        };
+    }
+  }
 }
 
-/** The rejection of a brains request whose session was disposed before its reply. */
-function closedError(): MakeCodeBrainsError {
-  return new MakeCodeBrainsError(
-    MakeCodeBrainsErrorCode.CLOSED,
-    "The makecode session ended before the brains request was answered."
-  );
+/** The rejection of a request of the family answered by `errorType` whose session was disposed before its reply. */
+function closedError(errorType: ErrorReplyType): Error {
+  return errorType === "makecode:manifestError"
+    ? new MakeCodeManifestError(
+        MakeCodeManifestErrorCode.CLOSED,
+        "The makecode session ended before the manifest request was answered."
+      )
+    : new MakeCodeBrainsError(
+        MakeCodeBrainsErrorCode.CLOSED,
+        "The makecode session ended before the brains request was answered."
+      );
 }
 
 /** `brain` as the program-as-bytes API carries it, its compiled program decoded from base64. */
