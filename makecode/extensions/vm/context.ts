@@ -553,6 +553,18 @@ namespace wendoo {
   }
 
   /**
+   * The value the WHEN side of the running rule last evaluated to, as its
+   * WHEN gate captured it into {@link WHEN_RESULT_VAR}; when the running rule
+   * has captured none, the nearest enclosing rule's. Nil when the body runs
+   * under no rule or no such rule has captured one.
+   *
+   * @param ctx - Execution context of the running action.
+   */
+  export function getWhenResult(ctx: ExecutionContext): Value {
+    return ctx.services.ruleVars.getByName(ctx.currentRuleFuncId, WHEN_RESULT_VAR);
+  }
+
+  /**
    * One host function, dispatched by `HOST_CALL` (or its async form) against
    * its stable funcId. Subclass and override {@link HostFunction.exec} for a
    * synchronous function; an asynchronous one sets {@link HostFunction.isAsync}

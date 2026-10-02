@@ -18,6 +18,11 @@ namespace wendoo {
     name: string;
     /** The compiled program, in the binary form the VM decodes. */
     bytecode: Buffer;
+    /**
+     * How many program updates have replaced {@link bytecode} since program
+     * start: 0 for the program the brains module registered.
+     */
+    revision: number = 0;
 
     constructor(id: string, name: string, bytecode: Buffer) {
       this.id = id;

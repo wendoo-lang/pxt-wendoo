@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "cornerUpLeft0001",
+  "name": "Corner",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0cornerUpLft1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0cornerUpLft1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad",
+            "tile.modifier->modifier.direction.up",
+            "tile.modifier->modifier.direction.left"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0cornerUpLft1"
+        }
+      ]
+    }
+  ]
+}

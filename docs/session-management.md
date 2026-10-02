@@ -372,6 +372,37 @@ serves exactly what the last one wrote.
   per 10 seconds, over which MakeCode holds the writes and applies them
   as the window allows; pushes arriving while a drain writes join the
   next.
+- LIVE UPDATE: a push also reaches the running game at once, apart from
+  the drain. The moment a push arrives, before it joins a drain, the simx
+  posts a program update to the running program over the extension
+  channel (see "The extension channel"): a write carrying a compiled form
+  whose source hash differs from the last update the simx posted for that
+  brain posts that compiled form; a write carrying the compiled form it
+  posted last (a source edit that does not compile pushes the last good
+  compiled form beside it) or carrying none posts nothing; a removal
+  posts an update carrying no program. The post never waits on projfs:
+  the game takes a save at the channel's speed while the project write
+  trails at the drain's pace, the same bytes at two speeds. The simx
+  keeps the last update it posted for each brain and posts them all again
+  at every program start (the extension's ping), so a game restarted
+  before a drain landed still runs the latest save. In the program, the
+  channel handler only queues an update; the next program host drain
+  applies it to the compiled-brain registration of its document id,
+  through the loader's checks as at cold start, plus one: an update
+  referencing a host-function, host-action, or type-atom id the id
+  manifest did not hold when the run started is refused with
+  `WENDOO_PROGRAM_UPDATE_UNMAPPED_ID`, and the next restart binds it. A
+  refused update leaves the registration and its programs running as they
+  were (`wendoo program-update-rejected <code> <id>`); an update carrying
+  the program the registration holds, or for an id no registration holds
+  (a brain authored after the run started, which no game code names yet),
+  changes nothing. An accepted update replaces the registration's program
+  (`wendoo program-updated <id> <source-hash>`), and a removal replaces it
+  with the empty program (`wendoo program-removed <id>`); at its next
+  drain, each program host restarts every actor running that registration
+  on the same actor -- the old instance dropped, the new one starting from
+  its first page -- so a scene paused under another takes the update when
+  it resumes, and every later spawn runs the new program.
 - MAKECODE'S ANSWERS: MakeCode answers every projfs request once,
   after it has applied or been refused, and applies one simulator
   extension's requests in the order they arrive. Rate pressure defers:
@@ -1061,7 +1092,7 @@ from and beneath the session:
   the channel MakeCode names in its frame URL's `channel` parameter,
   falling back to its own `SIMX_CHANNEL` constant for a frame URL
   that names none; it reads the program's messages on that channel
-  only, and posts its catalog requests on it. The conformance
+  only, and posts its catalog requests and program updates on it. The conformance
   harness checks the extension's key against the fallback constant. This
   equality is a ROUTING fact, not a
   trust fact: pxt never checks a message's channel field against
@@ -1070,11 +1101,13 @@ from and beneath the session:
   is the frame itself (pxt tags each simx iframe with its key at
   creation); anything deriving identity from this wire must key on
   the frame, never on the channel field a sender writes.
-- Three packet kinds exist: a ping (extension to simx, posted once
+- Four packet kinds exist: a ping (extension to simx, posted once
   from the extension's own load-time init, before any user code
   runs), a catalog emission (extension to simx, posted by
-  `publishCatalog`), and a request (simx to extension, answered
-  with a fresh serialization once `publishCatalog` has run). pxt
+  `publishCatalog`), a request (simx to extension, answered
+  with a fresh serialization once `publishCatalog` has run), and a
+  program update (simx to extension, see "LIVE UPDATE" under the
+  brains, above). The simx reads each ping as a program start. pxt
   creates -- or, from an earlier run, restarts -- the simx frame on
   the first packet of a run on its channel, and that packet is lost
   to it. The ping is that first packet, so the frame -- its status
@@ -1096,8 +1129,18 @@ from and beneath the session:
   (`SIM_CHANNEL_VERSION_NEWER`, `SIM_CHANNEL_FRAME_MALFORMED`)
   written to the console, and the simx drops its cached catalog so
   no older one outlives it. The simx's request carries no bytes.
-  The conformance harness pins the extension's declared version and
-  its channel to the simx's.
+  A program update is one frame under the simx's channel version:
+  the version in decimal and a line feed, then the brain's document
+  id, name, and source hash, each a ULEB128 byte length followed by
+  that many UTF-8 bytes, then the program's byte length as a ULEB128
+  followed by the program bytes verbatim -- none for a removal. pxt
+  carries a message's bytes by structured clone end to end, with no
+  size limit of its own. The extension reads any version up to its
+  own `SIM_CHANNEL_VERSION`; a newer version, or a frame that does
+  not follow the framing, is refused with the same stable codes,
+  logged as `wendoo sim-channel-rejected <code>`. The conformance
+  harness pins the extension's declared version and its channel to
+  the simx's.
 - CATALOG CURRENCY RULE: the extension is the sole authority for
   the current catalog. The simx's in-memory copy and the session's
   buffering are delivery conveniences; neither may outlive a

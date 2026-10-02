@@ -16,6 +16,7 @@ import type {
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
 import type { BindingTokenStore } from "./binding-token-store.js";
 import { BrainsProject, type ProjectFiles } from "./brains-project.js";
+import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
 import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 
@@ -224,7 +225,10 @@ class CounterpartSession {
  * `tokens`; a connection that closes
  * disposes its session. Each session's brains and manifest requests are
  * answered from the project's `files`, and its pushes and manifest writes are
- * written to them. The
+ * written to them. Each push that changes what a program runs is also posted
+ * to the running program as a program update the moment it arrives, without
+ * waiting on the project write, and the last update of every program is
+ * posted again each time the program starts. The
  * program's messages are read on `channel`. The latest catalog the program posted is published
  * into each session once it is established, and every later catalog into the
  * current one. A rejected message from the program is logged by its code and
@@ -239,7 +243,11 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const { tokens, log } = options;
   const channel = connectSimChannel(options.frame, options.channel);
   const brains = new BrainsProject(options.files, log);
+  const live = new LivePrograms((update) => {
+    channel.postProgramUpdate(update);
+  });
   const serveBrains = (request: MakeCodeBrainsRequest): void => {
+    if (request.kind === "push") live.push(request.push);
     brains.serve(request);
   };
   const manifest = new ManifestProject(options.files, log);
@@ -337,6 +345,9 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
       catalog = posted;
       channelVersion = version;
       counterpart?.publish(posted);
+    }),
+    channel.onProgramStart(() => {
+      live.repost();
     }),
     channel.onRejected((code) => {
       catalog = undefined;

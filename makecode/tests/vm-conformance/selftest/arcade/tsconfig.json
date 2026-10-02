@@ -9,7 +9,7 @@
   },
   "include": [
     "*.ts",
-    "../wendoo-lang/pxt-wendoo/*.ts",
+    "wendoo-lang/pxt-wendoo/*.ts",
     "../../../../extensions/vm/lib-stubs.d.ts",
     "../../../../extensions/arcade/*.ts",
     "../../../../extensions/arcade/pxt_modules/**/*.ts"

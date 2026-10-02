@@ -21,6 +21,8 @@ namespace wendoo {
   export class LoadedProgram {
     /** The compiled brain that was loaded. */
     registration: CompiledBrainRegistration;
+    /** The registration's {@link CompiledBrainRegistration.revision} when it was loaded. */
+    revision: number;
     /**
      * Stable code of the reason the program was refused -- a decode failure
      * code or {@link LOAD_ERROR_UNSUPPORTED_DEVICE_PROFILE} -- or `""` when it
@@ -29,11 +31,18 @@ namespace wendoo {
     errorCode: string;
     /** The decoded program, meaningful only when {@link errorCode} is empty. */
     program: Program;
+    /**
+     * The type atom that refused the program with
+     * `WENDOO_BINARY_CODEC_UNKNOWN_TYPE_ATOM`, or -1 when no type atom did.
+     */
+    unknownTypeAtomId: number;
 
-    constructor(registration: CompiledBrainRegistration, errorCode: string, program: Program) {
+    constructor(registration: CompiledBrainRegistration, errorCode: string, decoded: DecodedProgram) {
       this.registration = registration;
+      this.revision = registration.revision;
       this.errorCode = errorCode;
-      this.program = program;
+      this.program = decoded.program;
+      this.unknownTypeAtomId = decoded.unknownTypeAtomId;
     }
   }
 
@@ -52,12 +61,12 @@ namespace wendoo {
   ): LoadedProgram {
     const decoded = decodeProgram(registration.bytecode.toArray(NumberFormat.UInt8LE), types);
     if (decoded.errorCode.length > 0) {
-      return new LoadedProgram(registration, decoded.errorCode, decoded.program);
+      return new LoadedProgram(registration, decoded.errorCode, decoded);
     }
     if (decoded.profileId !== STS_F64_PROFILE_ID) {
-      return new LoadedProgram(registration, LOAD_ERROR_UNSUPPORTED_DEVICE_PROFILE, decoded.program);
+      return new LoadedProgram(registration, LOAD_ERROR_UNSUPPORTED_DEVICE_PROFILE, decoded);
     }
-    return new LoadedProgram(registration, "", decoded.program);
+    return new LoadedProgram(registration, "", decoded);
   }
 
   /**

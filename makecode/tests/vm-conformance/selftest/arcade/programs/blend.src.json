@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "blendTwoRules001",
+  "name": "Blend",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0blendTwoRul1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0blendTwoRul1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad",
+            "tile.modifier->modifier.direction.right"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0blendRight01"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad",
+            "tile.modifier->modifier.direction.down"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0blendDown001"
+        }
+      ]
+    }
+  ]
+}

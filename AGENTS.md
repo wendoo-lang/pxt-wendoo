@@ -333,15 +333,31 @@ the current slice alone.
       tilemap, tile, animation) and built-in types (arcade: sprite). It
       reserves a base set of common tile vocabulary shared by its target's
       packs; tiles land there only by explicit ruling, never by drift.
+      Arcade's is `makecode/extensions/arcade-base`
+      (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-base`),
+      registered as the pack `arcade`; it depends on the VM extension and
+      Arcade's `device` library. It owns the sprite's program world (the
+      `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
+      through), the `Vector2` direction type, the controller read (one
+      module owning every raw read and its dead-banded transform), the
+      `dpad` sensor and `move` actuator, and move arbitration with its
+      motion applicator (the direct applicator sets sprite velocity; a
+      motion model such as physics replaces the applicator and consumes
+      the same verdicts).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
-      depends on the VM extension and Arcade's `device` library, and on
-      the arcade base pack once that exists. It owns the arcade-bound
-      pieces: the spawn block (`wendoo.runProgram`, its program picked
-      by name from the project's compiled brains), sprite pairing and
-      hosting (one program host per game scene, drained from the scene's
-      own update loop), and the catalog publication on the game's first
-      frame; the WendooBrain asset blocks and the simx binding join it.
+      depends on the VM extension, Arcade's `device` library, and the
+      arcade base pack, and declares no vocabulary of its own. It owns the
+      arcade-bound pieces: the spawn block (`wendoo.runProgram`, its
+      program picked by name from the project's compiled brains), sprite
+      pairing and hosting (one program host per game scene, drained from
+      the scene's own update loop), and the catalog publication on the
+      game's first frame; the WendooBrain asset blocks and the simx
+      binding join it. Naming: the bare target name belongs to this
+      front-door extension -- the one coordinate a user adds, which
+      pulls the rest in; the base pack is `<target>-base`, and genre
+      extensions are `<target>-<genre>` siblings of the front door
+      atop the base.
     - FEATURE PACKS supply host-bound tiles for one genre of game. A
       feature pack depends on its target's base pack (and through it the
       VM extension), never on another feature pack; packs compose by

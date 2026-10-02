@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "creepSlowly00001",
+  "name": "Creep",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0creepSlowly1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0creepSlowly1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.slowly"
+          ],
+          "children": [],
+          "ruleId": "fRu0creepSlowly1"
+        }
+      ]
+    }
+  ]
+}

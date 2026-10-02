@@ -24,9 +24,11 @@
  * On an Arcade target it also builds and captures the arcade selftest
  * project, whose capture must carry one `CHECK <name> ok` line per name in
  * `EXPECTED_ARCADE_CHECKS` and no other check line, the program refusals in
- * `EXPECTED_ARCADE_REJECTIONS` in that order, `CHECKS failed 0`, its
+ * `EXPECTED_ARCADE_REJECTIONS` in that order, the program-update lines in
+ * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, `CHECKS failed 0`, its
  * `SIMCAP PASS` verdict, and exactly two messages on the simulator
- * extension's channel: the startup ping, then one catalog.
+ * extension's channel: the startup ping, then one catalog whose payload is
+ * `EXPECTED_ARCADE_CATALOG`'s bytes.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -131,17 +133,99 @@ const EXPECTED_ARCADE_CHECKS = [
   "pushed-scene-runs-its-own-programs",
   "pushed-scene-pauses-programs-below-it",
   "popped-scene-resumes-its-programs",
+  "dead-band-reads-zero-inside-the-band",
+  "live-band-rises-from-zero-at-the-band-edge",
+  "live-band-rescales-to-full-deflection",
+  "modifier-mask-keeps-only-admitted-components",
+  "explicit-direction-beats-when-result",
+  "when-result-direction-beats-the-default",
+  "default-direction-without-a-given-or-sensed-one",
+  "move-speed-counts-steps-and-clamps-the-argument",
+  "arcade-pack-registers-without-diagnostics",
+  "bare-move-moves-in-the-default-direction",
+  "non-direction-when-result-moves-in-the-default-direction",
+  "quiet-frames-leave-a-game-set-velocity-alone",
+  "dpad-move-follows-the-dpad",
+  "slowly-quickly-and-speed-set-the-speed",
+  "diagonal-moves-at-cardinal-speed",
+  "direction-modifiers-mask-the-dpad",
+  "two-moving-rules-blend-by-average",
+  "modifier-order-does-not-matter",
+  "release-stops-the-sprite",
+  "release-writes-one-zero",
+  "update-waits-for-the-next-frame",
+  "update-restarts-the-program-on-its-sprite",
+  "update-restarts-every-instance-of-the-program",
+  "update-ends-the-old-instances-cleanly",
+  "update-leaves-other-programs-running",
+  "later-spawns-run-the-update",
+  "identical-update-restarts-nothing",
+  "refused-updates-keep-the-old-program-running",
+  "unread-frames-and-unknown-programs-change-nothing",
+  "paused-scene-keeps-its-program-until-it-resumes",
+  "paused-scene-takes-the-update-on-resume",
+  "removal-leaves-the-programs-sprites-running-nothing",
+];
+
+/**
+ * Every refusal one arcade selftest program host is expected to log, as
+ * `<code> <id>`, in order, at its first drain: the programs the brains
+ * module declares for a superseded format, for a Vector2 atom the project's
+ * ids module does not hold, and for a foreign device profile.
+ */
+const ARCADE_HOST_REJECTIONS = [
+  "WENDOO_BINARY_CODEC_UNSUPPORTED_FORMAT_VERSION staleFormat00001",
+  "WENDOO_BINARY_CODEC_UNKNOWN_TYPE_ATOM unmappedType0001",
+  "WENDOO_BINARY_CODEC_UNSUPPORTED_DEVICE_PROFILE wrongProfile0001",
 ];
 
 /**
  * Every refusal the arcade selftest is expected to log, as `<code> <id>`, in
  * order: each scene's program host logs the refused programs at its first
- * frame, the game's first scene and then the scene the selftest pushes.
+ * frame -- the game's first scene, the scene the selftest pushes to check
+ * paused programs, and the scene it pushes to check paused program updates.
  */
-const EXPECTED_ARCADE_REJECTIONS = [...HOST_REJECTIONS, ...HOST_REJECTIONS];
+const EXPECTED_ARCADE_REJECTIONS = [...ARCADE_HOST_REJECTIONS, ...ARCADE_HOST_REJECTIONS, ...ARCADE_HOST_REJECTIONS];
+
+/**
+ * Every line the arcade selftest's program updates are expected to log, in
+ * order, each without its `wendoo ` prefix: the update taken, the three
+ * updates refused -- a foreign device profile, then an action id and a type
+ * atom the project's ids module does not hold -- the three messages refused,
+ * the paused scene's program update taken, and the removal taken.
+ */
+const EXPECTED_ARCADE_UPDATE_LINES = [
+  "program-updated driftBareMove001 0000000a",
+  "program-update-rejected WENDOO_BINARY_CODEC_UNSUPPORTED_DEVICE_PROFILE driftBareMove001",
+  "program-update-rejected WENDOO_PROGRAM_UPDATE_UNMAPPED_ID driftBareMove001",
+  "program-update-rejected WENDOO_PROGRAM_UPDATE_UNMAPPED_ID driftBareMove001",
+  "sim-channel-rejected SIM_CHANNEL_VERSION_NEWER",
+  "sim-channel-rejected SIM_CHANNEL_FRAME_MALFORMED",
+  "sim-channel-rejected SIM_CHANNEL_FRAME_MALFORMED",
+  "program-updated Hq7EB8SthdeOudyP 00000010",
+  "program-removed driftBareMove001",
+];
+
+/** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */
+const UPDATE_LINE_PREFIXES = [
+  "wendoo program-updated ",
+  "wendoo program-removed ",
+  "wendoo program-update-rejected ",
+  "wendoo sim-channel-rejected ",
+];
 
 /** The kinds of the frames the arcade selftest must post on the simulator extension's channel, in order. */
 const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
+
+/**
+ * The catalog payload the arcade selftest game is expected to post, byte for
+ * byte: the arcade base pack's vocabulary. The editor's golden-program
+ * tooling reads the same file as the session catalog the arcade selftest's
+ * allocation and programs are made from.
+ */
+const EXPECTED_ARCADE_CATALOG = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "selftest", "arcade", "catalog.json"), "utf8")
+);
 
 /** The simulator extension's channel, which every message the Wendoo extensions post rides. */
 const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
@@ -216,6 +300,13 @@ function reportedRejections(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(REJECTION_PREFIX))
     .map((line) => line.slice(REJECTION_PREFIX.length));
+}
+
+/** Every program-update line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedUpdateLines(log) {
+  return linesOf(log)
+    .filter((line) => UPDATE_LINE_PREFIXES.some((prefix) => line.startsWith(prefix)))
+    .map((line) => line.slice("wendoo ".length));
 }
 
 /** The trace the capture's `TRACE` lines carry, one line each, in order. */
@@ -305,12 +396,22 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (rejections.join("\n") !== EXPECTED_ARCADE_REJECTIONS.join("\n")) {
     failures.push(`program refusals logged: ${rejections.join(" | ")}`);
   }
-  const kinds = catalog
+  const updates = reportedUpdateLines(log);
+  if (updates.join("\n") !== EXPECTED_ARCADE_UPDATE_LINES.join("\n")) {
+    failures.push(`program updates logged: ${updates.join(" | ")}`);
+  }
+  const frames = catalog
     .channelMessages(simxLog)
     .filter((message) => message.channel === SIMX_CHANNEL)
-    .map((message) => catalog.frameOf(message.text)?.kind ?? "malformed");
+    .map((message) => catalog.frameOf(message.text));
+  const kinds = frames.map((frame) => frame?.kind ?? "malformed");
   if (kinds.join(" ") !== EXPECTED_ARCADE_FRAME_KINDS.join(" ")) {
     failures.push(`posted [${kinds.join(", ")}] on the simulator extension's channel`);
+  }
+  const posted = frames.find((frame) => frame?.kind === "catalog");
+  const expected = asciiJson(EXPECTED_ARCADE_CATALOG);
+  if (posted && posted.payload !== expected) {
+    failures.push(`posted catalog ${posted.payload}`, `expected catalog ${expected}`);
   }
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
   return failures;

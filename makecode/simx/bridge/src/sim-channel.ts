@@ -46,6 +46,51 @@ interface MessagePacket {
 const VERSION_DECLARATION = /^[1-9][0-9]*$/;
 
 /**
+ * One program update for the running program: the latest compiled form of
+ * one program, or the program's removal.
+ */
+export interface ProgramUpdate {
+  /** The program's document id. */
+  documentId: string;
+  /** The program's display name; any text, including empty. Empty for a removal. */
+  name: string;
+  /** `brainSourceHash` of the source the program was compiled from. Empty for a removal. */
+  sourceHash: string;
+  /** The compiled program, in the binary form the MakeCode Wendoo VM loads. Empty for a removal. */
+  bytecode: Uint8Array;
+}
+
+/** `value` as a ULEB128 unsigned integer: seven bits per byte, least significant group first. */
+function varUint(value: number): number[] {
+  const out: number[] = [];
+  let rest = value;
+  while (rest >= 0x80) {
+    out.push((rest % 0x80) | 0x80);
+    rest = Math.floor(rest / 0x80);
+  }
+  out.push(rest);
+  return out;
+}
+
+/** The frame {@link SimChannel.postProgramUpdate} posts for `update`. */
+function programUpdateFrame(update: ProgramUpdate): Uint8Array {
+  const encoder = new TextEncoder();
+  const parts: Uint8Array[] = [encoder.encode(`${SIM_CHANNEL_VERSION}\n`)];
+  for (const text of [update.documentId, update.name, update.sourceHash]) {
+    const bytes = encoder.encode(text);
+    parts.push(Uint8Array.from(varUint(bytes.length)), bytes);
+  }
+  parts.push(Uint8Array.from(varUint(update.bytecode.length)), update.bytecode);
+  const frame = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    frame.set(part, offset);
+    offset += part.length;
+  }
+  return frame;
+}
+
+/**
  * The window this simulator extension runs in: the message events MakeCode
  * delivers to it, and the parent window it posts to MakeCode through.
  */
@@ -62,9 +107,11 @@ export interface SimxFrame {
  * Every message the program posts is one frame, read as UTF-8 text: the
  * channel version its Wendoo extension declares in decimal, a line feed, then
  * the payload. A frame whose payload is empty is the ping the extension posts
- * when the program starts, and is ignored; any other payload is the
- * serialized tile catalog. Every message posted to the program is a request
- * for the catalog, and carries no bytes.
+ * when the program starts; any other payload is the serialized tile catalog.
+ *
+ * A message posted to the program that carries no bytes is a request for the
+ * catalog. Any other is a program update, framed as {@link postProgramUpdate}
+ * describes.
  */
 export interface SimChannel {
   /**
@@ -73,10 +120,23 @@ export interface SimChannel {
    * unsubscribe function.
    */
   onCatalog(listener: (catalog: string, version: number) => void): () => void;
+  /**
+   * Subscribe to the program's starts, each announced by the ping of a frame
+   * this extension reads. Returns an unsubscribe function.
+   */
+  onProgramStart(listener: () => void): () => void;
   /** Subscribe to the frames this extension rejects, each reported by its code. Returns an unsubscribe function. */
   onRejected(listener: (code: SimChannelErrorCode) => void): () => void;
   /** Ask the program to post its catalog. A program whose vocabulary is not registered yet answers once it is. */
   requestCatalog(): void;
+  /**
+   * Post `update` to the program, as one frame declaring
+   * {@link SIM_CHANNEL_VERSION}: the version in decimal and a line feed, then
+   * the document id, the name, and the source hash, each as its UTF-8 byte
+   * length in ULEB128 followed by those bytes, then the program's byte length
+   * in ULEB128 followed by the program bytes, verbatim.
+   */
+  postProgramUpdate(update: ProgramUpdate): void;
   /** Stop listening to `frame`. */
   dispose(): void;
 }
@@ -90,6 +150,7 @@ export interface SimChannel {
  */
 export function connectSimChannel(frame: SimxFrame, channel: string = SIMX_CHANNEL): SimChannel {
   const catalogListeners = new Set<(catalog: string, version: number) => void>();
+  const startListeners = new Set<() => void>();
   const rejectionListeners = new Set<(code: SimChannelErrorCode) => void>();
   const decoder = new TextDecoder();
   const reject = (code: SimChannelErrorCode): void => {
@@ -116,7 +177,9 @@ export function connectSimChannel(frame: SimxFrame, channel: string = SIMX_CHANN
     }
     const catalog = text.slice(lineEnd + 1);
     if (catalog.length === 0) {
-      // The program's ping, which carries nothing to read.
+      for (const listener of startListeners) {
+        listener();
+      }
       return;
     }
     for (const listener of catalogListeners) {
@@ -132,6 +195,12 @@ export function connectSimChannel(frame: SimxFrame, channel: string = SIMX_CHANN
         catalogListeners.delete(listener);
       };
     },
+    onProgramStart(listener) {
+      startListeners.add(listener);
+      return () => {
+        startListeners.delete(listener);
+      };
+    },
     onRejected(listener) {
       rejectionListeners.add(listener);
       return () => {
@@ -141,6 +210,10 @@ export function connectSimChannel(frame: SimxFrame, channel: string = SIMX_CHANN
     requestCatalog() {
       const request: MessagePacket = { type: "messagepacket", channel, data: new Uint8Array(0) };
       frame.parent.postMessage(request, "*");
+    },
+    postProgramUpdate(update) {
+      const message: MessagePacket = { type: "messagepacket", channel, data: programUpdateFrame(update) };
+      frame.parent.postMessage(message, "*");
     },
     dispose() {
       frame.removeEventListener("message", receive);

@@ -5,7 +5,8 @@
     "license": "MIT",
     "dependencies": {
         "device": "*",
-        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm"
+        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm",
+        "wendoo-arcade-base": "github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-base"
     },
     "files": [
         "README.md",

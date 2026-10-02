@@ -36,6 +36,7 @@ import {
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
+import { postedProgramUpdates } from "./test-support/program-update-frame.js";
 import { FakeProjfsHost, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
 import type { ProjfsClient } from "./vendor/projfs.js";
 
@@ -131,13 +132,34 @@ class RecordingWebSocket extends WebSocket {
 /** The window of a simulator extension frame, driven by the spec in place of MakeCode. */
 class FakeFrame implements SimxFrame {
   private readonly _listeners = new Set<(event: { data: unknown }) => void>();
+  private readonly _postWatchers = new Set<() => void>();
   /** Every message the extension posted to MakeCode. */
   readonly posted: unknown[] = [];
   readonly parent = {
     postMessage: (message: unknown) => {
       this.posted.push(message);
+      for (const watcher of this._postWatchers) watcher();
     },
   };
+
+  /**
+   * Resolves once `check` holds over the messages the extension posted: at
+   * once when it already does, otherwise at the first post after which it does.
+   */
+  postedSoThat(check: (posted: readonly unknown[]) => boolean, what: string): Promise<void> {
+    return within(
+      new Promise<void>((resolve) => {
+        const test = (): void => {
+          if (!check(this.posted)) return;
+          this._postWatchers.delete(test);
+          resolve();
+        };
+        this._postWatchers.add(test);
+        test();
+      }),
+      what
+    );
+  }
 
   addEventListener(_type: "message", listener: (event: { data: unknown }) => void): void {
     this._listeners.add(listener);
@@ -826,6 +848,88 @@ describe("simx bridge on the relay", () => {
       assert.equal(payload.code, MakeCodeBrainsErrorCode.WRITE_FAILED);
       assert.match(payload.message, /^QUOTA_EXCEEDED\b/);
       assert.equal(host.file("brains/abcdabcdabcdabcd.src.json"), undefined);
+    });
+
+    describe("program updates to the running program", () => {
+      /** The compiled program `wireBrain` pushes, as bytes. */
+      const PUSHED_BYTES = Uint8Array.from({ length: 256 }, (_, index) => index);
+
+      it("posts a pushed program to the running program at once, before the project's write lands", async () => {
+        const { joinCode } = await startSimx(CATALOG_TEXT);
+        const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+        const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+        host.hold();
+
+        editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+        await frame.postedSoThat((posted) => postedProgramUpdates(posted).length === 1, "the program update");
+
+        assert.deepEqual(postedProgramUpdates(frame.posted), [
+          {
+            version: SIM_CHANNEL_VERSION,
+            documentId: chaser.id,
+            name: "Chaser",
+            sourceHash: brainSourceHash(chaser.source),
+            bytecode: PUSHED_BYTES,
+          },
+        ]);
+        assert.equal(host.file(`brains/${chaser.id}.src.json`), undefined);
+        assert.equal(host.file("brains.g.ts"), undefined);
+        host.release();
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+        assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
+      });
+
+      it("posts nothing for a push carrying the compiled form it posted last, though its source changed", async () => {
+        const { joinCode } = await startSimx(CATALOG_TEXT);
+        const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+        const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+        const halfBuilt = { ...chaser, source: `${chaser.source}\n` };
+
+        editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+        editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "write", brain: halfBuilt } });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+
+        assert.equal(postedProgramUpdates(frame.posted).length, 1);
+        assert.equal(host.file(`brains/${chaser.id}.src.json`), halfBuilt.source);
+      });
+
+      it("posts a removal to the running program as an update carrying no program", async () => {
+        const { joinCode } = await startSimx(CATALOG_TEXT);
+        const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+        const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+        editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+
+        editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "remove", brainId: chaser.id } });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+
+        assert.deepEqual(postedProgramUpdates(frame.posted).at(-1), {
+          version: SIM_CHANNEL_VERSION,
+          documentId: chaser.id,
+          name: "",
+          sourceHash: "",
+          bytecode: new Uint8Array(0),
+        });
+      });
+
+      it("re-posts the last update of every program when the program starts again", async () => {
+        const { joinCode } = await startSimx(CATALOG_TEXT);
+        const { editor } = await joinEditor(joinCode, CATALOG_TEXT);
+        const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+        const runner = wireBrain("efghefghefghefgh", "Runner");
+        editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+        editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "write", brain: runner } });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+
+        frame.programPings();
+
+        assert.deepEqual(
+          postedProgramUpdates(frame.posted).map((update) => update.documentId),
+          [chaser.id, runner.id, chaser.id, runner.id]
+        );
+      });
     });
   });
 

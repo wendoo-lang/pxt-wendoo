@@ -1,0 +1,33 @@
+# Wendoo Arcade Base
+
+The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
+shares: the tiles a program uses to read the controller and move its
+sprite.
+
+- **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
+  direction it points. Add **up**, **down**, **left** or **right** to listen
+  to just those directions.
+- **move** -- a DO tile that moves the sprite: in the direction its WHEN
+  carries, or rightward when there is none. Add **slowly** or **quickly**
+  (up to three times) to change its speed, or give it a **speed** in
+  pixels per second.
+
+> **Heads up:** this extension is under development and not ready to use in
+> your projects yet.
+
+Most people will never add this extension directly -- the Wendoo arcade
+extension depends on it and pulls it in. To give sprites programs, add that
+extension instead:
+
+   https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/arcade
+
+---
+
+Developers: the source lives in the
+[pxt-wendoo](https://github.com/wendoo-lang/pxt-wendoo) repository. This
+extension builds on the Wendoo VM extension, which it pulls in; see the
+repository README for how the project fits together.
+
+#### Metadata (used for search, rendering)
+
+- for PXT/arcade

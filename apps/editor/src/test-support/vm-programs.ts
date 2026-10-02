@@ -5,7 +5,9 @@
  * the registration selftest that includes the editor's id allocation for the
  * selftest's catalog, the ids module and brains module the Wendoo simulator
  * extension writes of it, and the reference VM's trace of the program placing
- * a pack tile.
+ * a pack tile; for the arcade selftest, the ids module and brains module of
+ * its programs, compiled against the arcade base pack's catalog under the
+ * editor's allocation for it.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -103,6 +105,67 @@ const FORMAT_VERSION_OFFSET = 4;
 
 /** Byte offset of the ULEB128 device-profile id in a program envelope, after the format version. */
 const PROFILE_ID_OFFSET = 5;
+
+/**
+ * The catalog the arcade selftest's game serializes -- the arcade base
+ * pack's vocabulary -- which the arcade selftest pins byte for byte.
+ */
+const ARCADE_CATALOG = "makecode/tests/vm-conformance/selftest/arcade/catalog.json";
+
+/** Directory of the arcade selftest's own program sources, relative to the repository root. */
+const ARCADE_SOURCES_DIR = "makecode/tests/vm-conformance/selftest/arcade/programs";
+
+/** The registration selftest's program sources the arcade selftest also runs, by file name. */
+const ARCADE_SHARED_SOURCES = ["ticker.src.json", "twin-a.src.json", "twin-b.src.json"];
+
+/** The arcade selftest's own program sources, by file name: each places the arcade base pack's tiles. */
+const ARCADE_SOURCES = [
+  "follow.src.json",
+  "rails.src.json",
+  "corner.src.json",
+  "corner-flipped.src.json",
+  "drift.src.json",
+  "counted.src.json",
+  "dash.src.json",
+  "creep.src.json",
+  "paced.src.json",
+  "blend.src.json",
+];
+
+/** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
+export const ARCADE_REFUSED_SOURCE = "doubled-up.src.json";
+
+/** The ids module the arcade selftest project carries, as the simulator extension writes it. */
+export const ARCADE_IDS_MODULE = "makecode/tests/vm-conformance/selftest/arcade/wendoo-lang/pxt-wendoo/ids.g.ts";
+
+/** The brains module the arcade selftest project carries, as the simulator extension writes it. */
+export const ARCADE_BRAINS_MODULE = "makecode/tests/vm-conformance/selftest/arcade/wendoo-lang/pxt-wendoo/brains.g.ts";
+
+/**
+ * Document id of the arcade selftest program placing the move tile under an
+ * action id the arcade selftest's allocation does not hold: the drift source
+ * compiled under an allocation whose action ids start at
+ * {@link UNMAPPED_ID_BASE}.
+ */
+const UNMAPPED_ACTION_PROGRAM_ID = "unmappedMove0001";
+
+/**
+ * Document id of the arcade selftest program typed by a Vector2 atom the
+ * arcade selftest's allocation does not hold: the dash source compiled under
+ * an allocation whose type atoms start at {@link UNMAPPED_ID_BASE}.
+ */
+const UNMAPPED_ATOM_PROGRAM_ID = "unmappedType0001";
+
+/** First id the allocations of the unmapped-id programs hand out: beyond every id the arcade selftest's allocation holds. */
+const UNMAPPED_ID_BASE = 1100;
+
+/** The allocation an arcade project holds before its first catalog: none. */
+const EMPTY_IDS: MakeCodeIdManifest = {
+  actions: [],
+  operators: [],
+  types: [],
+  next: { action: 1024, operator: 1024, atom: 1024 },
+};
 
 /** One program of the selftest's programs file. */
 export interface SelftestProgram {
@@ -226,33 +289,110 @@ function emptyProgramModule(bytecode: Uint8Array): string {
  */
 function selftestPrograms(): SelftestProgram[] {
   const { environment } = buildAuthoringEnvironment(selftestCatalog(), selftestIds());
-  const programs: SelftestProgram[] = [];
-  for (const file of SELFTEST_SOURCES) {
-    const source = readRepoFile(`${SELFTEST_SOURCES_DIR}/${file}`);
-    const { id, name } = identityOf(source);
-    programs.push({
-      id,
-      name,
-      sourceHash: brainSourceHash(source),
-      bytecode: hexOf(compileCleanIn(environment, source)),
-    });
-  }
+  return [
+    ...SELFTEST_SOURCES.map((file) => compiledProgram(environment, `${SELFTEST_SOURCES_DIR}/${file}`)),
+    ...refusedPrograms(),
+  ];
+}
+
+/** The program `environment` compiles from the source at `path`, relative to the repository root. Throws when it does not compile clean. */
+function compiledProgram(
+  environment: ReturnType<typeof buildAuthoringEnvironment>["environment"],
+  path: string
+): SelftestProgram {
+  const source = readRepoFile(path);
+  const { id, name } = identityOf(source);
+  return { id, name, sourceHash: brainSourceHash(source), bytecode: hexOf(compileCleanIn(environment, source)) };
+}
+
+/**
+ * The two programs the loader refuses, both compiled from the ticker source:
+ * one whose envelope carries a foreign device-profile id, one whose envelope
+ * declares a superseded format version.
+ */
+function refusedPrograms(): SelftestProgram[] {
   const refusedSource = readRepoFile(`${SELFTEST_SOURCES_DIR}/${REFUSED_PROGRAMS_SOURCE}`);
   const refused = compileClean(refusedSource);
   const sourceHash = brainSourceHash(refusedSource);
-  programs.push({
-    id: WRONG_PROFILE_ID,
-    name: "Wrong profile",
-    sourceHash,
-    bytecode: hexOf(withForeignProfile(refused)),
-  });
-  programs.push({
-    id: WRONG_FORMAT_ID,
-    name: "Wrong format",
-    sourceHash,
-    bytecode: hexOf(withSupersededFormat(refused)),
-  });
-  return programs;
+  return [
+    { id: WRONG_PROFILE_ID, name: "Wrong profile", sourceHash, bytecode: hexOf(withForeignProfile(refused)) },
+    { id: WRONG_FORMAT_ID, name: "Wrong format", sourceHash, bytecode: hexOf(withSupersededFormat(refused)) },
+  ];
+}
+
+/** The arcade selftest's catalog as the session delivers it: the payload text the arcade base pack serializes. */
+function arcadeCatalog(): string {
+  return JSON.stringify(JSON.parse(readRepoFile(ARCADE_CATALOG)));
+}
+
+/** The editor's allocation for the arcade selftest's catalog, made in a project holding none. */
+function arcadeIds(): MakeCodeIdManifest {
+  return allocateIds(EMPTY_IDS, parseCatalog(arcadeCatalog()));
+}
+
+/** The environment binding the arcade selftest's catalog under its allocation. */
+function arcadeEnvironment(): ReturnType<typeof buildAuthoringEnvironment>["environment"] {
+  return buildAuthoringEnvironment(arcadeCatalog(), arcadeIds()).environment;
+}
+
+/**
+ * The arcade selftest's programs: the registration selftest's ticker and
+ * twins, the arcade selftest's own programs, the two programs the loader
+ * refuses, and the two programs referencing ids the arcade selftest's
+ * allocation does not hold.
+ */
+function arcadePrograms(): SelftestProgram[] {
+  const environment = arcadeEnvironment();
+  return [
+    ...ARCADE_SHARED_SOURCES.map((file) => compiledProgram(environment, `${SELFTEST_SOURCES_DIR}/${file}`)),
+    ...ARCADE_SOURCES.map((file) => compiledProgram(environment, `${ARCADE_SOURCES_DIR}/${file}`)),
+    ...refusedPrograms(),
+    ...unmappedIdPrograms(),
+  ];
+}
+
+/**
+ * The two arcade selftest programs referencing ids the arcade selftest's
+ * allocation does not hold, as a program compiled after the allocation grew
+ * does: the drift source compiled with every action id from
+ * {@link UNMAPPED_ID_BASE}, and the dash source compiled with every type atom
+ * from it.
+ */
+function unmappedIdPrograms(): SelftestProgram[] {
+  return [
+    unmappedIdProgram({ action: UNMAPPED_ID_BASE }, "drift.src.json", UNMAPPED_ACTION_PROGRAM_ID, "Unmapped move"),
+    unmappedIdProgram({ atom: UNMAPPED_ID_BASE }, "dash.src.json", UNMAPPED_ATOM_PROGRAM_ID, "Unmapped type"),
+  ];
+}
+
+/**
+ * The program `id`, named `name`, compiled from the arcade selftest's
+ * program source `file` in the environment binding the arcade selftest's
+ * catalog under an allocation made in a project holding none, its next ids
+ * replaced by `next`. Throws when the source does not compile clean.
+ */
+function unmappedIdProgram(
+  next: Partial<MakeCodeIdManifest["next"]>,
+  file: string,
+  id: string,
+  name: string
+): SelftestProgram {
+  const ids = allocateIds({ ...EMPTY_IDS, next: { ...EMPTY_IDS.next, ...next } }, parseCatalog(arcadeCatalog()));
+  const { environment } = buildAuthoringEnvironment(arcadeCatalog(), ids);
+  const source = readRepoFile(`${ARCADE_SOURCES_DIR}/${file}`);
+  return { id, name, sourceHash: brainSourceHash(source), bytecode: hexOf(compileCleanIn(environment, source)) };
+}
+
+/**
+ * The stable codes of the diagnostics compiling the arcade selftest's
+ * program source `file` reports in the environment binding the arcade
+ * selftest's catalog, in the order reported.
+ *
+ * @param file - File name of the source, in the arcade selftest's program sources.
+ */
+export function arcadeCompileDiagnosticCodes(file: string): number[] {
+  const compiled = compileBrainSource(arcadeEnvironment(), readRepoFile(`${ARCADE_SOURCES_DIR}/${file}`));
+  return compiled.diagnostics.map((diagnostic) => diagnostic.code);
 }
 
 /** The bytes the lowercase hex `hex` spells. */
@@ -308,19 +448,23 @@ export function renderVmPrograms(): RenderedFile[] {
     { path: SELFTEST_PROGRAMS_FILE, text: `${JSON.stringify({ programs }, null, 2)}\n` },
     { path: SELFTEST_IDS_FILE, text: `${JSON.stringify(ids, null, 2)}\n` },
     { path: SELFTEST_IDS_MODULE, text: writeIdsModule(ids) },
-    {
-      path: SELFTEST_BRAINS_MODULE,
-      text: writeBrainsModule(
-        programs.map((program) => ({
-          id: program.id,
-          name: program.name,
-          sourceHash: program.sourceHash,
-          bytecode: bytesOfHex(program.bytecode),
-        }))
-      ),
-    },
+    { path: SELFTEST_BRAINS_MODULE, text: brainsModuleOf(programs) },
     { path: SELFTEST_TRACE_FILE, text: referenceTrace(bytesOfHex(ringer.bytecode)) },
+    { path: ARCADE_IDS_MODULE, text: writeIdsModule(arcadeIds()) },
+    { path: ARCADE_BRAINS_MODULE, text: brainsModuleOf(arcadePrograms()) },
   ];
+}
+
+/** The text of the brains module the simulator extension writes for `programs`. */
+function brainsModuleOf(programs: readonly SelftestProgram[]): string {
+  return writeBrainsModule(
+    programs.map((program) => ({
+      id: program.id,
+      name: program.name,
+      sourceHash: program.sourceHash,
+      bytecode: bytesOfHex(program.bytecode),
+    }))
+  );
 }
 
 /** The checked-in text of the rendered file at `path`, relative to the repository root. */

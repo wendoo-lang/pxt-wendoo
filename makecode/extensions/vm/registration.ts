@@ -210,6 +210,33 @@ namespace wendoo {
       const index = this.typeNames.indexOf(typeName);
       return index >= 0 ? this.typeFields[index].indexOf(fieldName) : UNASSIGNED_ID;
     }
+
+    /**
+     * Whether some tile is recorded under the host-action id `id`.
+     *
+     * @param id - Host-action id.
+     */
+    hasActionId(id: number): boolean {
+      return this.actionIds.indexOf(id) >= 0;
+    }
+
+    /**
+     * Whether some operator is recorded under the host-function id `id`.
+     *
+     * @param id - Host-function id.
+     */
+    hasOperatorId(id: number): boolean {
+      return this.operatorIds.indexOf(id) >= 0;
+    }
+
+    /**
+     * Whether some struct type is recorded under the type-atom id `atomId`.
+     *
+     * @param atomId - Type-atom id.
+     */
+    hasTypeAtomId(atomId: number): boolean {
+      return this.typeAtomIds.indexOf(atomId) >= 0;
+    }
   }
 
   /** Tile kind of a sensor: a tile a brain reads a value through. */

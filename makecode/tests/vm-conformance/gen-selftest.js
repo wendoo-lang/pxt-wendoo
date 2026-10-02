@@ -14,10 +14,12 @@
  * into a project, at the paths it writes them to.
  *
  * On an Arcade target it also writes the arcade selftest project: a project
- * carrying the same brains module and depending on the Wendoo arcade
- * extension, whose selftest gives the running game's sprites programs. The
- * extension is copied beside the project, its dependencies pointed at the
- * target checkout's own libraries and the VM extension here.
+ * depending on the Wendoo arcade extension, carrying the ids module and
+ * brains module rendered for the arcade base pack's vocabulary, whose
+ * selftest gives the running game's sprites programs. The arcade extension
+ * and the arcade base pack are copied beside the project, their dependencies
+ * pointed at the target checkout's own libraries, the VM extension here, and
+ * each other's copies.
  *
  * Usage: node gen-selftest.js <target-dir>
  */
@@ -52,6 +54,18 @@ const SELFTEST_CASE_ID = "registration-selftest";
 /** The Wendoo arcade extension, which the arcade selftest project depends on. */
 const ARCADE_EXTENSION_DIR = path.resolve(__dirname, "..", "..", "extensions", "arcade");
 const ARCADE_EXTENSION_NAME = "wendoo-arcade";
+
+/** The Wendoo arcade base pack, which the arcade extension depends on. */
+const ARCADE_BASE_EXTENSION_DIR = path.resolve(__dirname, "..", "..", "extensions", "arcade-base");
+const ARCADE_BASE_EXTENSION_NAME = "wendoo-arcade-base";
+
+/**
+ * Directory of the ids module and brains module the arcade selftest project
+ * carries: the editor's allocation for the arcade base pack's catalog and
+ * the arcade selftest's programs compiled under it, rendered by the editor's
+ * golden-program tooling.
+ */
+const ARCADE_SELFTEST_DIR = path.join(SELFTEST_DIR, "arcade");
 
 /** Target id of the MakeCode target the arcade selftest runs on. */
 const ARCADE_TARGET_ID = "arcade";
@@ -165,25 +179,37 @@ function generate(targetDir) {
 }
 
 /**
- * Copies the arcade extension's declared files into `destDir`, its manifest
- * depending on `corepkgPath` for the target's core library and on the VM
- * extension here.
+ * Copies the declared files of the extension at `sourceDir` into `destDir`,
+ * its manifest's dependencies replaced by `dependencies`.
  */
-function copyArcadeExtension(destDir, corepkg, corepkgPath) {
-  const config = JSON.parse(fs.readFileSync(path.join(ARCADE_EXTENSION_DIR, "pxt.json"), "utf8"));
-  const dependencies = {};
-  dependencies[corepkg] = corepkgPath;
-  dependencies[EXTENSION_NAME] = `file:${toPosix(path.relative(destDir, EXTENSION_DIR))}`;
+function copyExtension(sourceDir, destDir, dependencies) {
+  const config = JSON.parse(fs.readFileSync(path.join(sourceDir, "pxt.json"), "utf8"));
   fs.mkdirSync(destDir, { recursive: true });
   writeJson(path.join(destDir, "pxt.json"), { ...config, dependencies });
   for (const file of config.files) {
-    fs.copyFileSync(path.join(ARCADE_EXTENSION_DIR, file), path.join(destDir, file));
+    fs.copyFileSync(path.join(sourceDir, file), path.join(destDir, file));
   }
 }
 
 /**
- * Writes the arcade selftest project, and the copy of the arcade extension
- * it depends on, into `targetDir` when it is an Arcade target checkout.
+ * The dependencies of an arcade extension copied into `destDir`: the
+ * target's core library at `corepkgDir` and the VM extension here, plus
+ * `extra`, each `{ name, dir }` of another copied extension.
+ */
+function arcadeDependencies(destDir, corepkg, corepkgDir, extra) {
+  const dependencies = {};
+  dependencies[corepkg] = `file:${toPosix(path.relative(destDir, corepkgDir))}`;
+  dependencies[EXTENSION_NAME] = `file:${toPosix(path.relative(destDir, EXTENSION_DIR))}`;
+  for (const extension of extra) {
+    dependencies[extension.name] = `file:${toPosix(path.relative(destDir, extension.dir))}`;
+  }
+  return dependencies;
+}
+
+/**
+ * Writes the arcade selftest project, and the copies of the arcade extension
+ * and the arcade base pack it depends on, into `targetDir` when it is an
+ * Arcade target checkout.
  *
  * @param targetDir Absolute path of a pxt target checkout.
  * @returns `{ id, dir }` of the generated project, or null for a target
@@ -198,25 +224,25 @@ function generateArcade(targetDir) {
 
   const outRoot = path.join(targetDir, ARCADE_PROJECTS_SUBDIR);
   const projectDir = path.join(outRoot, "project");
-  const extensionDir = path.join(outRoot, ARCADE_EXTENSION_NAME);
-  copyArcadeExtension(extensionDir, corepkg, `file:${toPosix(path.relative(extensionDir, corepkgDir))}`);
+  const base = { name: ARCADE_BASE_EXTENSION_NAME, dir: path.join(outRoot, ARCADE_BASE_EXTENSION_NAME) };
+  const arcade = { name: ARCADE_EXTENSION_NAME, dir: path.join(outRoot, ARCADE_EXTENSION_NAME) };
+  copyExtension(ARCADE_BASE_EXTENSION_DIR, base.dir, arcadeDependencies(base.dir, corepkg, corepkgDir, []));
+  copyExtension(ARCADE_EXTENSION_DIR, arcade.dir, arcadeDependencies(arcade.dir, corepkg, corepkgDir, [base]));
   fs.mkdirSync(projectDir, { recursive: true });
 
-  const dependencies = {};
-  dependencies[corepkg] = `file:${toPosix(path.relative(projectDir, corepkgDir))}`;
-  dependencies[EXTENSION_NAME] = `file:${toPosix(path.relative(projectDir, EXTENSION_DIR))}`;
-  dependencies[ARCADE_EXTENSION_NAME] = `file:${toPosix(path.relative(projectDir, extensionDir))}`;
   writeJson(path.join(projectDir, "pxt.json"), {
     name: "wendoo-arcade-selftest",
     description: "Wendoo arcade extension selftest (generated)",
-    dependencies,
-    files: [ARCADE_SELFTEST_NAME, "main.ts", BRAINS_MODULE_NAME],
+    dependencies: arcadeDependencies(projectDir, corepkg, corepkgDir, [base, arcade]),
+    // The brains and ids modules follow main.ts, as a simulator extension's write appends them to a project's files.
+    files: [ARCADE_SELFTEST_NAME, "main.ts", BRAINS_MODULE_NAME, IDS_MODULE_NAME],
     targetVersions: { target: version },
     supportedTargets: [target.id],
   });
-  fs.copyFileSync(path.join(SELFTEST_DIR, "arcade", ARCADE_SELFTEST_NAME), path.join(projectDir, ARCADE_SELFTEST_NAME));
+  fs.copyFileSync(path.join(ARCADE_SELFTEST_DIR, ARCADE_SELFTEST_NAME), path.join(projectDir, ARCADE_SELFTEST_NAME));
   fs.mkdirSync(path.dirname(path.join(projectDir, BRAINS_MODULE_NAME)), { recursive: true });
-  fs.copyFileSync(path.join(SELFTEST_DIR, BRAINS_MODULE_NAME), path.join(projectDir, BRAINS_MODULE_NAME));
+  fs.copyFileSync(path.join(ARCADE_SELFTEST_DIR, BRAINS_MODULE_NAME), path.join(projectDir, BRAINS_MODULE_NAME));
+  fs.copyFileSync(path.join(ARCADE_SELFTEST_DIR, IDS_MODULE_NAME), path.join(projectDir, IDS_MODULE_NAME));
   fs.writeFileSync(
     path.join(projectDir, "main.ts"),
     [

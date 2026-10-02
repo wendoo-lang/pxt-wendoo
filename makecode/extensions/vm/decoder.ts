@@ -213,6 +213,11 @@ namespace wendoo {
     profileId: number;
     /** The decoded program, meaningful only when {@link errorCode} is empty. */
     program: Program;
+    /**
+     * The TYPS atom id that failed the decode with
+     * {@link DECODE_ERROR_UNKNOWN_TYPE_ATOM}, or -1 when no atom did.
+     */
+    unknownTypeAtomId: number = -1;
 
     constructor(errorCode: string, profileId: number, program: Program) {
       this.errorCode = errorCode;
@@ -273,7 +278,8 @@ namespace wendoo {
   /**
    * Decodes a binary program artifact. A TYPS atom entry naming an atom that
    * is outside the core range and that the registry does not resolve rejects
-   * the artifact with {@link DECODE_ERROR_UNKNOWN_TYPE_ATOM}.
+   * the artifact with {@link DECODE_ERROR_UNKNOWN_TYPE_ATOM}, reporting the
+   * atom as {@link DecodedProgram.unknownTypeAtomId}.
    *
    * @param bytes - The artifact bytes.
    * @param types - Struct type registry the TYPS atom entries resolve against.
@@ -281,6 +287,7 @@ namespace wendoo {
   export function decodeProgram(bytes: number[], types: StructTypeRegistry): DecodedProgram {
     const r = new ByteReader(bytes);
     const program = new Program();
+    const unknownAtom = new UnknownTypeAtom();
 
     for (let i = 0; i < MAGIC.length; i++) {
       if (r.u8() !== MAGIC[i]) {
@@ -295,7 +302,7 @@ namespace wendoo {
 
     const strings = readCstr(r);
     program.constStrings = strings.constStrings;
-    program.types = readTyps(r, strings.all, types);
+    program.types = readTyps(r, strings.all, types, unknownAtom);
     program.constNumbers = readCnum(r);
     program.constValues = readCval(r, strings.all, program.types);
     program.functions = readFunc(r);
@@ -314,7 +321,16 @@ namespace wendoo {
     }
     program.pages = readPage(r, strings.all);
 
-    return new DecodedProgram(r.errorCode, profileId, program);
+    const decoded = new DecodedProgram(r.errorCode, profileId, program);
+    decoded.unknownTypeAtomId = unknownAtom.atomId;
+    return decoded;
+  }
+
+  /** The TYPS atom id a decode found unresolvable, or -1 while it has found none. */
+  class UnknownTypeAtom {
+    atomId: number = -1;
+
+    constructor() {}
   }
 
   /** The artifact's string table and the constant-pool prefix of it. */
@@ -348,7 +364,12 @@ namespace wendoo {
     return strings[index];
   }
 
-  function readTyps(r: ByteReader, strings: string[], types: StructTypeRegistry): ProgramTypeEntry[] {
+  function readTyps(
+    r: ByteReader,
+    strings: string[],
+    types: StructTypeRegistry,
+    unknownAtom: UnknownTypeAtom
+  ): ProgramTypeEntry[] {
     const count = r.varUint();
     const entries: ProgramTypeEntry[] = [];
     for (let i = 0; i < count && !r.failed(); i++) {
@@ -358,6 +379,9 @@ namespace wendoo {
         const binding = types.getByAtomId(atomId);
         if (!binding && atomId >= CORE_TYPE_ATOM_COUNT) {
           r.fail(DECODE_ERROR_UNKNOWN_TYPE_ATOM);
+          if (r.errorCode === DECODE_ERROR_UNKNOWN_TYPE_ATOM) {
+            unknownAtom.atomId = atomId;
+          }
           return entries;
         }
         const entry = new ProgramTypeEntry(tag);

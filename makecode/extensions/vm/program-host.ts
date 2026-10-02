@@ -173,10 +173,14 @@ namespace wendoo {
 
     /**
      * Run one pass of the host loop: on the first pass, take this program
-     * run's {@link hostRegistries} -- draining them when no host has yet --
-     * and load every registered compiled brain, logging each refusal; end
-     * the program of every actor that has ended; start the programs attached
-     * since the last pass, in request order; think every running program
+     * run's {@link hostRegistries} -- draining them when no host has yet;
+     * apply every queued program update ({@link applyProgramUpdates}); on
+     * the first pass, load every registered compiled brain, logging each
+     * refusal; end the program of every actor that has ended; restart, on
+     * its own actor, every running program whose registration an update has
+     * replaced since it started, in start order, then start the programs
+     * attached since the last pass, in request order -- each restart and
+     * start ending the program its actor ran; think every running program
      * once, in start order; then log each field programs addressed that its
      * registered type does not declare, not logged before by any host, as
      * `wendoo field-undeclared <typeId> <fieldId>`.
@@ -184,8 +188,12 @@ namespace wendoo {
      * @param timeMs - Cumulative scheduled time of this pass, in milliseconds.
      */
     drain(timeMs: number): void {
-      if (!this.registries) {
+      const firstPass = !this.registries;
+      if (firstPass) {
         this.registries = hostRegistries();
+      }
+      applyProgramUpdates(this.registries);
+      if (firstPass) {
         this.loaded = loadRegisteredPrograms(this.registries.types);
         for (let i = 0; i < this.loaded.length; i++) {
           logRefusal(this.loaded[i]);
@@ -194,7 +202,10 @@ namespace wendoo {
 
       this.endEndedPrograms();
 
-      const requests = this.requests;
+      const requests = this.restartsOfUpdatedPrograms();
+      for (let i = 0; i < this.requests.length; i++) {
+        requests.push(this.requests[i]);
+      }
       this.requests = [];
       for (let i = 0; i < requests.length; i++) {
         this.start(requests[i]);
@@ -217,7 +228,7 @@ namespace wendoo {
       return this.running;
     }
 
-    /** Every compiled brain loaded so far that was refused, in load order. */
+    /** Every compiled brain whose current program was refused when loaded, in load order. */
     rejections(): LoadedProgram[] {
       const refused: LoadedProgram[] = [];
       for (let i = 0; i < this.loaded.length; i++) {
@@ -251,6 +262,22 @@ namespace wendoo {
       this.running.push(new HostedProgram(request.world, loaded, runtime));
     }
 
+    /**
+     * A request to run each running program again on its own actor, in start
+     * order, for every one whose registration an update has replaced since
+     * the program was loaded.
+     */
+    private restartsOfUpdatedPrograms(): AttachRequest[] {
+      const restarts: AttachRequest[] = [];
+      for (let i = 0; i < this.running.length; i++) {
+        const loaded = this.running[i].loaded;
+        if (loaded.revision !== loaded.registration.revision) {
+          restarts.push(new AttachRequest(this.running[i].world, loaded.registration));
+        }
+      }
+      return restarts;
+    }
+
     /** Drop every running program whose actor has ended. */
     private endEndedPrograms(): void {
       const kept: HostedProgram[] = [];
@@ -273,10 +300,17 @@ namespace wendoo {
       this.running = kept;
     }
 
-    /** The loaded form of `registration`, loading it on first use. */
+    /**
+     * The loaded form of `registration`'s current program, loading it on
+     * first use and again once an update has replaced it.
+     */
     private load(registration: CompiledBrainRegistration): LoadedProgram {
       for (let i = 0; i < this.loaded.length; i++) {
         if (this.loaded[i].registration === registration) {
+          if (this.loaded[i].revision !== registration.revision) {
+            this.loaded[i] = loadCompiledProgram(registration, this.registries.types);
+            logRefusal(this.loaded[i]);
+          }
           return this.loaded[i];
         }
       }

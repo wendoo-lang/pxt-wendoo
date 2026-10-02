@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "pacedSpeed000001",
+  "name": "Paced",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0pacedSpeed01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 30,
+      "valueLabel": "30",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0pacedSpeed01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.parameter->parameter.speed",
+            "tile.literal->number:<number>->30"
+          ],
+          "children": [],
+          "ruleId": "fRu0pacedSpeed01"
+        }
+      ]
+    }
+  ]
+}

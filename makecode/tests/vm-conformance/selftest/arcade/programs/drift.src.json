@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "driftBareMove001",
+  "name": "Drift",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0driftBareMv1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0driftBareMv1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0driftBareMv1"
+        }
+      ]
+    }
+  ]
+}

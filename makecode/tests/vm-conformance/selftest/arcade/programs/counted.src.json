@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "countedWhenMove1",
+  "name": "Counted",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0countedWhen1",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0countedWhen1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.literal->number:<number>->1"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0countedWhen1"
+        }
+      ]
+    }
+  ]
+}

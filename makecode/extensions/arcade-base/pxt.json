@@ -1,0 +1,22 @@
+{
+    "name": "wendoo-arcade-base",
+    "version": "0.0.0",
+    "description": "The Wendoo vocabulary every MakeCode Arcade game shares",
+    "license": "MIT",
+    "dependencies": {
+        "device": "*",
+        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm"
+    },
+    "files": [
+        "README.md",
+        "sprite-world.ts",
+        "controller-read.ts",
+        "direction.ts",
+        "motion.ts",
+        "vocabulary.ts"
+    ],
+    "supportedTargets": [
+        "arcade"
+    ],
+    "preferredEditor": "tsprj"
+}

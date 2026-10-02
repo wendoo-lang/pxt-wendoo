@@ -4,40 +4,11 @@
  * each sprite given a program is an actor of its scene's host.
  *
  * Every scene's host runs the core vocabulary and every pack's, bound
- * through the project's id manifest by the one drain the hosts share. A
- * sprite's world carries the sprite, and a host-bound tile reaches its
- * sprite through the world.
+ * through the project's id manifest by the one drain the hosts share. Each
+ * sprite runs its program in a {@link SpriteWorld}, through which a
+ * host-bound tile reaches the sprite.
  */
 namespace wendoo {
-  /** The world of one sprite a program runs on: the sprite, as its program's actor. */
-  //% hidden
-  export class SpriteWorld extends ActorWorld {
-    /** The sprite the program runs on. */
-    sprite: Sprite;
-
-    /**
-     * @param sprite - The sprite the program runs on.
-     */
-    constructor(sprite: Sprite) {
-      super();
-      this.sprite = sprite;
-    }
-
-    /** Whether the sprite has been destroyed. */
-    hasEnded(): boolean {
-      return (this.sprite.flags & sprites.Flag.Destroyed) !== 0;
-    }
-
-    /**
-     * Whether `other` is the world of this same sprite.
-     *
-     * @param other - World of the actor a program is being attached to.
-     */
-    isSameActor(other: ActorWorld): boolean {
-      return other instanceof SpriteWorld && (other as SpriteWorld).sprite === this.sprite;
-    }
-  }
-
   /** Key the program host of a scene is kept under in the scene's data. */
   const SCENE_HOST_KEY = "wendoo.programHost";
 

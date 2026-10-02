@@ -26,6 +26,7 @@
         "project-ids.ts",
         "empty.g.ts",
         "program-loader.ts",
+        "program-updates.ts",
         "program-host.ts",
         "sim-channel.ts"
     ],
