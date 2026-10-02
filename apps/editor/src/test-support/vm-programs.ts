@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { stream } from "@wendoo/core";
+import { mkModifierTileId } from "@wendoo/core/app";
 import { BrainRuntime, linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
@@ -144,6 +145,18 @@ const ARCADE_SOURCES = [
   "guard.src.json",
   "nudge.src.json",
   "flee.src.json",
+  "chase.src.json",
+  "shy.src.json",
+  "waver.src.json",
+  "waver-flipped.src.json",
+  "stalk.src.json",
+  "stalk-flipped.src.json",
+  "dodge.src.json",
+  "lunge.src.json",
+  "skulk.src.json",
+  "tether.src.json",
+  "homing.src.json",
+  "skittish.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -400,6 +413,19 @@ function unmappedIdProgram(
 /** The stable codes of the problems binding the arcade selftest's catalog under its allocation reports, in the order reported. */
 export function arcadeBindingDiagnosticCodes(): string[] {
   return buildAuthoringEnvironment(arcadeCatalog(), arcadeIds()).diagnostics.map((diagnostic) => diagnostic.code);
+}
+
+/**
+ * Whether the environment binding the arcade selftest's catalog under its
+ * allocation holds the shared modifier tile declared as `modifierId`.
+ *
+ * @param modifierId - The modifier's declared fragment, such as `modifier.direction.up`.
+ */
+export function arcadeHoldsModifier(modifierId: string): boolean {
+  const tileId = mkModifierTileId(modifierId);
+  return arcadeEnvironment()
+    .tileCatalogs()
+    .some((catalog) => catalog.has(tileId));
 }
 
 /**

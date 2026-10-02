@@ -5,6 +5,7 @@ import {
   ARCADE_REFUSED_SOURCE,
   arcadeBindingDiagnosticCodes,
   arcadeCompileDiagnosticCodes,
+  arcadeHoldsModifier,
   checkedInText,
   renderVmPrograms,
 } from "./vm-programs.js";
@@ -18,6 +19,11 @@ describe("the MakeCode VM extension's compiled programs", () => {
 
   it("binds the arcade catalog clean, dpad and move sharing the direction modifiers", () => {
     assert.deepEqual(arcadeBindingDiagnosticCodes(), []);
+  });
+
+  it("binds the move's toward and away as shared modifier tiles", () => {
+    assert.ok(arcadeHoldsModifier("modifier.movement.toward"));
+    assert.ok(arcadeHoldsModifier("modifier.movement.away"));
   });
 
   it("refuses a dpad given one direction modifier twice", (t) => {

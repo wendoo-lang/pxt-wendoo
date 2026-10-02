@@ -345,9 +345,12 @@ the current slice alone.
       sprite-touch read, made synchronously at sense time), the `dpad` and
       `bump` sensors and the `move` actuator (the shared
       `modifier.direction.*` fragments filter dpad's reading and specify
-      move's direction), and move arbitration with its motion applicator
-      (the direct applicator sets sprite velocity; a motion model such as
-      physics replaces the applicator and consumes the same verdicts).
+      move's direction; move's `modifier.movement.toward` and
+      `modifier.movement.away` add the direction toward or away from the
+      sprite its WHEN produced, summed with the cardinals), and move
+      arbitration with its motion applicator (the direct applicator sets
+      sprite velocity; a motion model such as physics replaces the
+      applicator and consumes the same verdicts).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the

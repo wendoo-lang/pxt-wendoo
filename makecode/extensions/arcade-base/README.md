@@ -12,10 +12,14 @@ sprite touches, and move its sprite.
   it carries the nearest.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
-  together move on the diagonal. Without them it moves in the direction its
-  WHEN carries, or rightward when there is none. Add **slowly** or
-  **quickly** (up to three times) to change its speed, or give it a
-  **speed** in pixels per second.
+  together move on the diagonal. Add **toward** or **away** to chase or flee
+  the sprite its WHEN carries -- **WHEN bump DO move away** runs from
+  whatever it bumps for as long as they touch, turning as that sprite
+  moves. They mix with the other directions: **toward** and **up** together
+  chase while drifting upward. Without a direction to go, it moves in the
+  direction its WHEN carries, or rightward when there is none. Add
+  **slowly** or **quickly** (up to three times) to change its speed, or
+  give it a **speed** in pixels per second.
 
 > **Heads up:** this extension is under development and not ready to use in
 > your projects yet.

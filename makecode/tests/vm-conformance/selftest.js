@@ -184,6 +184,17 @@ const EXPECTED_ARCADE_CHECKS = [
   "bump-rule-stops-its-sprite-once-parted",
   "bump-rule-flees-on-the-diagonal",
   "program-update-swaps-a-bump-rule-live",
+  "pursuit-closes-on-a-still-sprite",
+  "flight-runs-from-a-still-sprite",
+  "flight-turns-as-its-subject-moves",
+  "toward-and-away-cancel-to-the-fallback",
+  "toward-with-a-direction-modifier-bends-pursuit",
+  "away-with-a-direction-modifier-bends-flight",
+  "relational-modifiers-compose-with-speed",
+  "a-shared-center-adds-nothing-to-pursuit",
+  "toward-without-a-sprite-moves-in-the-default-direction",
+  "away-under-a-dpad-follows-the-dpad",
+  "program-update-turns-pursuit-to-flight-live",
 ];
 
 /**
@@ -202,10 +213,12 @@ const ARCADE_HOST_REJECTIONS = [
  * Every refusal the arcade selftest is expected to log, as `<code> <id>`, in
  * order: each scene's program host logs the refused programs at its first
  * frame -- the game's first scene, the scene the selftest pushes to check
- * paused programs, the scene it pushes to check paused program updates, and
- * the scene it pushes to check the bump sensor.
+ * paused programs, the scene it pushes to check paused program updates, the
+ * scene it pushes to check the bump sensor, and the scene it pushes to check
+ * the move's toward and away modifiers.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -217,8 +230,8 @@ const EXPECTED_ARCADE_REJECTIONS = [
  * order, each without its `wendoo ` prefix: the update taken, the three
  * updates refused -- a foreign device profile, then an action id and a type
  * atom the project's ids module does not hold -- the three messages refused,
- * the paused scene's program update taken, the removal taken, and the bump
- * rule's update taken.
+ * the paused scene's program update taken, the removal taken, the bump
+ * rule's update taken, and the pursuit rule's update to flight taken.
  */
 const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated driftBareMove001 0000000a",
@@ -231,6 +244,7 @@ const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated Hq7EB8SthdeOudyP 00000010",
   "program-removed driftBareMove001",
   "program-updated fleeBumpLeftUp01 00000011",
+  "program-updated chaseBumpToward1 00000012",
 ];
 
 /** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */

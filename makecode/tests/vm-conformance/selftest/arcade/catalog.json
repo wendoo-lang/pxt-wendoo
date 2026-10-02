@@ -132,6 +132,22 @@
                 "tileId": "modifier.direction.right",
                 "modifier": true
               }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.movement.toward",
+                "modifier": true
+              }
+            },
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "arg",
+                "tileId": "modifier.movement.away",
+                "modifier": true
+              }
             }
           ],
           "label": "move"

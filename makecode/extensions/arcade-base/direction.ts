@@ -1,8 +1,8 @@
 /**
  * Directions as Wendoo values: the `Vector2` struct type a direction crosses
  * into a program as, and the arithmetic the arcade vocabulary does on
- * directions -- masking components, summing chosen cardinals, and clamping
- * to the unit circle.
+ * directions -- masking components, summing chosen direction modifiers, and
+ * clamping to the unit circle.
  */
 namespace wendoo {
   /** Wendoo type name of a direction value: a struct of two numbers, `x` and `y`, in Arcade's screen convention. */
@@ -95,21 +95,45 @@ namespace wendoo {
   }
 
   /**
-   * The direction the chosen cardinals specify: the sum of a unit vector for
-   * each flag set -- `up` (0, -1), `down` (0, 1), `left` (-1, 0), `right`
-   * (1, 0) -- scaled to length 1, so two perpendicular cardinals give the
-   * exact diagonal. `undefined` when no flag is set or the chosen cardinals
-   * cancel to the zero vector.
+   * The direction the chosen direction modifiers specify: the sum of a unit
+   * vector for each flag set -- `up` (0, -1), `down` (0, 1), `left` (-1, 0),
+   * `right` (1, 0), `toward` the direction `bearing` holds, and `away` its
+   * opposite -- scaled to length 1. So two perpendicular cardinals give the
+   * exact diagonal, a cardinal bends `toward` or `away`, and opposite pairs,
+   * `toward` with `away` among them, cancel. `toward` and `away` add nothing
+   * while `bearing` is `undefined`. `undefined` when no flag adds anything or
+   * the chosen modifiers cancel to the zero vector.
    *
    * @param up - Whether up is chosen.
    * @param down - Whether down is chosen.
    * @param left - Whether left is chosen.
    * @param right - Whether right is chosen.
+   * @param toward - Whether toward is chosen.
+   * @param away - Whether away is chosen.
+   * @param bearing - The direction `toward` adds, 1 long; `undefined` when there is none.
    */
   //% hidden
-  export function cardinalDirection(up: boolean, down: boolean, left: boolean, right: boolean): DirectionVector {
-    const x = (right ? 1 : 0) - (left ? 1 : 0);
-    const y = (down ? 1 : 0) - (up ? 1 : 0);
+  export function specifiedDirection(
+    up: boolean,
+    down: boolean,
+    left: boolean,
+    right: boolean,
+    toward: boolean,
+    away: boolean,
+    bearing: DirectionVector
+  ): DirectionVector {
+    let x = (right ? 1 : 0) - (left ? 1 : 0);
+    let y = (down ? 1 : 0) - (up ? 1 : 0);
+    if (bearing) {
+      if (toward) {
+        x += bearing.x;
+        y += bearing.y;
+      }
+      if (away) {
+        x -= bearing.x;
+        y -= bearing.y;
+      }
+    }
     if (x === 0 && y === 0) {
       return undefined;
     }

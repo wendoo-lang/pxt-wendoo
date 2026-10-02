@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "lungeTowardQuick",
+  "name": "Lunge",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0lungeTwQk000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0lungeTwQk000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.modifier->modifier.quickly"
+          ],
+          "children": [],
+          "ruleId": "fRu0lungeTwQk000"
+        }
+      ]
+    }
+  ]
+}

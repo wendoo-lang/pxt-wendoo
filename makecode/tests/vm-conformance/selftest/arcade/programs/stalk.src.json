@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "stalkTowardUp001",
+  "name": "Stalk",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0stalkTwUp000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0stalkTwUp000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0stalkTwUp000"
+        }
+      ]
+    }
+  ]
+}

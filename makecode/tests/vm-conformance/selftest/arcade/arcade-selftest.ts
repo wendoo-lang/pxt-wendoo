@@ -9,8 +9,8 @@
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
  * bump and move tiles, driven by pressing the controller's buttons and
- * placing sprites from game code, and programs updated while the game runs,
- * through the messages the Wendoo simulator extension posts.
+ * placing and moving sprites from game code, and programs updated while the
+ * game runs, through the messages the Wendoo simulator extension posts.
  *
  * Output grammar, one line each:
  *
@@ -107,6 +107,39 @@ namespace arcadeSelftest {
     return near(sprite.vx, vx, VELOCITY_TOLERANCE) && near(sprite.vy, vy, VELOCITY_TOLERANCE);
   }
 
+  /** Whether `sprite` moves at `speed` pixels per second in the direction of `x`, `y`, which must not be the zero vector. */
+  function movesAlong(sprite: Sprite, x: number, y: number, speed: number): boolean {
+    const length = Math.sqrt(x * x + y * y);
+    return movesAt(sprite, (speed * x) / length, (speed * y) / length);
+  }
+
+  /** The direction from the center of `from` to the center of `to`, scaled to length 1; they must not share a center. */
+  function unitToward(from: Sprite, to: Sprite): wendoo.DirectionVector {
+    const x = to.x - from.x;
+    const y = to.y - from.y;
+    const length = Math.sqrt(x * x + y * y);
+    return new wendoo.DirectionVector(x / length, y / length);
+  }
+
+  /** Whether `sprite` moves at `speed` pixels per second straight toward the center of `subject`. */
+  function pursues(sprite: Sprite, subject: Sprite, speed: number): boolean {
+    const toward = unitToward(sprite, subject);
+    return movesAlong(sprite, toward.x, toward.y, speed);
+  }
+
+  /** Whether `sprite` moves at `speed` pixels per second straight away from the center of `subject`. */
+  function flees(sprite: Sprite, subject: Sprite, speed: number): boolean {
+    const toward = unitToward(sprite, subject);
+    return movesAlong(sprite, -toward.x, -toward.y, speed);
+  }
+
+  /** The distance between the centers of `a` and `b`, in pixels. */
+  function distanceBetween(a: Sprite, b: Sprite): number {
+    const x = b.x - a.x;
+    const y = b.y - a.y;
+    return Math.sqrt(x * x + y * y);
+  }
+
   /** Whether `direction` is `x`, `y`. */
   function pointsAt(direction: wendoo.DirectionVector, x: number, y: number): boolean {
     return near(direction.x, x, NUMBER_TOLERANCE) && near(direction.y, y, NUMBER_TOLERANCE);
@@ -117,6 +150,11 @@ namespace arcadeSelftest {
     const sprite = newSprite(SpriteKind.Player);
     wendoo.runProgram(sprite, program);
     return sprite;
+  }
+
+  /** The direction the chosen cardinals specify, as the move's direction modifiers sum them with neither `toward` nor `away`. */
+  function cardinals(up: boolean, down: boolean, left: boolean, right: boolean): wendoo.DirectionVector {
+    return wendoo.specifiedDirection(up, down, left, right, false, false, undefined);
   }
 
   /**
@@ -154,31 +192,31 @@ namespace arcadeSelftest {
     const diagonal = 1 / Math.sqrt(2);
     check(
       "cardinals-sum-and-normalize",
-      pointsAt(wendoo.cardinalDirection(true, false, false, false), 0, -1) &&
-        pointsAt(wendoo.cardinalDirection(false, true, false, false), 0, 1) &&
-        pointsAt(wendoo.cardinalDirection(false, false, true, false), -1, 0) &&
-        pointsAt(wendoo.cardinalDirection(false, false, false, true), 1, 0) &&
-        pointsAt(wendoo.cardinalDirection(true, false, false, true), diagonal, -diagonal) &&
-        pointsAt(wendoo.cardinalDirection(true, true, true, false), -1, 0)
+      pointsAt(cardinals(true, false, false, false), 0, -1) &&
+        pointsAt(cardinals(false, true, false, false), 0, 1) &&
+        pointsAt(cardinals(false, false, true, false), -1, 0) &&
+        pointsAt(cardinals(false, false, false, true), 1, 0) &&
+        pointsAt(cardinals(true, false, false, true), diagonal, -diagonal) &&
+        pointsAt(cardinals(true, true, true, false), -1, 0)
     );
     check(
       "cancelling-cardinals-specify-no-direction",
-      wendoo.cardinalDirection(false, false, false, false) === undefined &&
-        wendoo.cardinalDirection(true, true, false, false) === undefined &&
-        wendoo.cardinalDirection(false, false, true, true) === undefined &&
-        wendoo.cardinalDirection(true, true, true, true) === undefined
+      cardinals(false, false, false, false) === undefined &&
+        cardinals(true, true, false, false) === undefined &&
+        cardinals(false, false, true, true) === undefined &&
+        cardinals(true, true, true, true) === undefined
     );
 
     const leftward = wendoo.vector2Value(new wendoo.DirectionVector(-1, 0));
     const downward = wendoo.vector2Value(new wendoo.DirectionVector(0, 1));
-    const up = wendoo.cardinalDirection(true, false, false, false);
+    const up = cardinals(true, false, false, false);
     check(
       "direction-modifiers-beat-the-direction-argument",
       pointsAt(wendoo.moveDirection(up, leftward, downward), 0, -1)
     );
     check(
       "cancelled-modifiers-leave-the-direction-argument",
-      pointsAt(wendoo.moveDirection(wendoo.cardinalDirection(true, true, false, false), leftward, downward), -1, 0)
+      pointsAt(wendoo.moveDirection(cardinals(true, true, false, false), leftward, downward), -1, 0)
     );
     check("explicit-direction-beats-when-result", pointsAt(wendoo.moveDirection(undefined, leftward, downward), -1, 0));
     check(
@@ -434,6 +472,132 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /**
+   * In a scene of its own, check the move's toward and away modifiers, each
+   * steering by the sprite its rule's bump touches: pursuit closes on a still
+   * sprite and flight runs from it; flight turns as the sprite it flees
+   * moves; toward and away together cancel, in either order, to the move's
+   * fallback; each composes with a direction modifier, in either order, and
+   * with the speed words and the speed argument; two sprites sharing one
+   * center add nothing to each other's pursuit; a rule whose WHEN produces no
+   * sprite moves in the default direction, or in the direction its WHEN
+   * produced; and a program update turns a running pursuit to flight live.
+   */
+  function checkRelationalModifiers(): void {
+    game.pushScene();
+    const host = wendoo.sceneProgramHost(game.currentScene());
+    const subject = solidSprite(80, 80, 60);
+
+    const chasing = solidSprite(8, 104, 78);
+    const fleeing = solidSprite(8, 68, 51);
+    wendoo.runProgram(chasing, wendooPrograms.p_chaseBumpToward1);
+    wendoo.runProgram(fleeing, wendooPrograms.p_shyBumpAway00001);
+    const chasingStart = distanceBetween(chasing, subject);
+    const fleeingStart = distanceBetween(fleeing, subject);
+    pause(FRAMES_MS);
+    check(
+      "pursuit-closes-on-a-still-sprite",
+      pursues(chasing, subject, 100) && distanceBetween(chasing, subject) < chasingStart
+    );
+    check(
+      "flight-runs-from-a-still-sprite",
+      flees(fleeing, subject, 100) && distanceBetween(fleeing, subject) > fleeingStart
+    );
+    chasing.destroy();
+
+    fleeing.setPosition(subject.x + 2, subject.y - 10);
+    pause(FRAMES_MS);
+    const firstHeading = fleeing.vx > 0 && flees(fleeing, subject, 100);
+    subject.vx = 80;
+    pause(FRAMES_MS);
+    check("flight-turns-as-its-subject-moves", firstHeading && fleeing.vx < 0 && flees(fleeing, subject, 100));
+    subject.vx = 0;
+    subject.setPosition(80, 60);
+    fleeing.destroy();
+
+    const wavering = solidSprite(8, 52, 30);
+    const waveringFlipped = solidSprite(8, 52, 90);
+    const stalking = solidSprite(8, 115, 30);
+    const stalkingFlipped = solidSprite(8, 110, 80);
+    const dodging = solidSprite(8, 70, 70);
+    const lunging = solidSprite(8, 106, 46);
+    const skulking = solidSprite(8, 90, 85);
+    const tethered = solidSprite(8, 60, 45);
+    const twin = solidSprite(8, 140, 110);
+    const twinShadow = solidSprite(8, 140, 110);
+    const homing = solidSprite(8, 10, 110);
+    wendoo.runProgram(wavering, wendooPrograms.p_waverTowardAway1);
+    wendoo.runProgram(waveringFlipped, wendooPrograms.p_waverAwayToward1);
+    wendoo.runProgram(stalking, wendooPrograms.p_stalkTowardUp001);
+    wendoo.runProgram(stalkingFlipped, wendooPrograms.p_stalkUpToward001);
+    wendoo.runProgram(dodging, wendooPrograms.p_dodgeAwayLeft001);
+    wendoo.runProgram(lunging, wendooPrograms.p_lungeTowardQuick);
+    wendoo.runProgram(skulking, wendooPrograms.p_skulkSlowlyAway1);
+    wendoo.runProgram(tethered, wendooPrograms.p_tetherAwaySpeed1);
+    wendoo.runProgram(twin, wendooPrograms.p_chaseBumpToward1);
+    wendoo.runProgram(twinShadow, wendooPrograms.p_chaseBumpToward1);
+    wendoo.runProgram(homing, wendooPrograms.p_homingAlwaysTwd1);
+    pause(FRAMES_MS);
+    check("toward-and-away-cancel-to-the-fallback", movesAt(wavering, 100, 0) && movesAt(waveringFlipped, 100, 0));
+    const stalkingToward = unitToward(stalking, subject);
+    const stalkingFlippedToward = unitToward(stalkingFlipped, subject);
+    check(
+      "toward-with-a-direction-modifier-bends-pursuit",
+      movesAlong(stalking, stalkingToward.x, stalkingToward.y - 1, 100) &&
+        movesAlong(stalkingFlipped, stalkingFlippedToward.x, stalkingFlippedToward.y - 1, 100)
+    );
+    const dodgingToward = unitToward(dodging, subject);
+    check("away-with-a-direction-modifier-bends-flight", movesAlong(dodging, -dodgingToward.x - 1, -dodgingToward.y, 100));
+    check(
+      "relational-modifiers-compose-with-speed",
+      pursues(lunging, subject, 200) && flees(skulking, subject, 50) && flees(tethered, subject, 30)
+    );
+    check(
+      "a-shared-center-adds-nothing-to-pursuit",
+      movesAt(twin, 100, 0) && movesAt(twinShadow, 100, 0) && twin.x === twinShadow.x && twin.y === twinShadow.y
+    );
+    check("toward-without-a-sprite-moves-in-the-default-direction", movesAt(homing, 100, 0));
+    const placed = [
+      wavering,
+      waveringFlipped,
+      stalking,
+      stalkingFlipped,
+      dodging,
+      lunging,
+      skulking,
+      tethered,
+      twin,
+      twinShadow,
+      homing,
+    ];
+    for (let i = 0; i < placed.length; i++) {
+      placed[i].destroy();
+    }
+
+    const skittish = solidSprite(8, 10, 10);
+    wendoo.runProgram(skittish, wendooPrograms.p_skittishDpadAwy1);
+    pause(FRAMES_MS);
+    const skittishQuiet = movesAt(skittish, 0, 0);
+    controller.up.setPressed(true);
+    pause(FRAMES_MS);
+    check("away-under-a-dpad-follows-the-dpad", skittishQuiet && movesAt(skittish, 0, -100));
+    controller.up.setPressed(false);
+    skittish.destroy();
+
+    const pursuer = solidSprite(8, 104, 78);
+    wendoo.runProgram(pursuer, wendooPrograms.p_chaseBumpToward1);
+    pause(FRAMES_MS);
+    const pursuing = pursues(pursuer, subject, 100);
+    const pursuitRuntime = runtimeIn(host, pursuer);
+    postUpdate(wendooPrograms.p_chaseBumpToward1, wendooPrograms.p_shyBumpAway00001.bytecode, "00000012");
+    pause(FRAMES_MS);
+    check(
+      "program-update-turns-pursuit-to-flight-live",
+      pursuing && runtimeIn(host, pursuer) !== pursuitRuntime && flees(pursuer, subject, 100) && faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
   /** Append `value` to `out` as a ULEB128 unsigned integer. */
   function appendVarUint(out: number[], value: number): void {
     let rest = value;
@@ -650,7 +814,8 @@ namespace arcadeSelftest {
    * nothing, a destroyed sprite's program ended, and a pushed scene pausing
    * its programs while the new scene runs its own; then check the arcade
    * base pack's direction arithmetic, how its tiles move sprites, how the
-   * running game takes program updates, and the bump sensor.
+   * running game takes program updates, the bump sensor, and the move's
+   * toward and away modifiers.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -705,6 +870,7 @@ namespace arcadeSelftest {
     checkDirectionModifiers();
     checkProgramUpdates(twinA);
     checkBump();
+    checkRelationalModifiers();
 
     console.log(`CHECKS failed ${failedChecks}`);
     console.log(`SIMCAP PASS ${SELFTEST_CASE_ID}`);
