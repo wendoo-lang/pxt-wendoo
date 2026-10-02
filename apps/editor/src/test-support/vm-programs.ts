@@ -21,6 +21,7 @@ import { writeBrainsModule } from "../../../../makecode/simx/bridge/src/brains-m
 import { writeIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
 import { compileBrainSource } from "../services/brain-source.js";
+import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
 import { allocateIds } from "../services/id-allocation.js";
 
@@ -426,6 +427,60 @@ export function arcadeHoldsModifier(modifierId: string): boolean {
   return arcadeEnvironment()
     .tileCatalogs()
     .some((catalog) => catalog.has(tileId));
+}
+
+/**
+ * The label the environment binding the arcade selftest's catalog under its
+ * allocation gives the shared modifier tile declared as `modifierId`: what
+ * the tile picker displays for it. `undefined` when no catalog holds it.
+ *
+ * @param modifierId - The modifier's declared fragment, such as `modifier.direction.up`.
+ */
+export function arcadeModifierLabel(modifierId: string): string | undefined {
+  const tileId = mkModifierTileId(modifierId);
+  for (const catalog of arcadeEnvironment().tileCatalogs()) {
+    const found = catalog.get(tileId);
+    if (found !== undefined) return found.metadata?.label;
+  }
+  return undefined;
+}
+
+/** The grammar nodes directly below `node`, in declaration order; empty for a slot. */
+function childNodes(node: CatalogArgNode): readonly CatalogArgNode[] {
+  switch (node.kind) {
+    case "arg":
+      return [];
+    case "seq":
+    case "bag":
+      return node.items;
+    case "choice":
+      return node.options;
+    case "optional":
+    case "repeat":
+      return [node.item];
+    case "conditional":
+      return node.else === undefined ? [node.then] : [node.then, node.else];
+  }
+}
+
+/** Every slot in the grammar nodes `nodes` and the nodes under them, in declaration order. */
+function slotsOf(nodes: readonly CatalogArgNode[]): CatalogArgSlot[] {
+  return nodes.flatMap((node) => (node.kind === "arg" ? [node] : slotsOf(childNodes(node))));
+}
+
+/**
+ * The label the arcade selftest's catalog carries on the slot of the tile
+ * `tileName` that `slotTileId` fills, or `undefined` when that slot carries
+ * none or the tile has no such slot.
+ *
+ * @param tileName - The tile's name, such as `actuator.arcade.move`.
+ * @param slotTileId - The slot's declared fragment.
+ */
+export function arcadeCarriedSlotLabel(tileName: string, slotTileId: string): string | undefined {
+  const tile = parseCatalog(arcadeCatalog())
+    .packs.flatMap((pack) => pack.tiles)
+    .find((entry) => entry.name === tileName);
+  return slotsOf(tile?.grammar ?? []).find((slot) => slot.tileId === slotTileId)?.label;
 }
 
 /**

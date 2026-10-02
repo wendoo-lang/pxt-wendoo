@@ -61,6 +61,7 @@ const EXPECTED_CHECKS = [
   "action-output-readable-by-name",
   "action-output-core-typed-readable-by-name",
   "catalog-serialize-repeatable",
+  "slot-builders-carry-labels",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
   "compiled-brain-declarations-bound-by-id",

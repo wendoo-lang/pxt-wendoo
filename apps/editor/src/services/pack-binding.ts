@@ -132,9 +132,9 @@ interface SlotTiles {
   readonly modifiers: ModifierTile[];
 }
 
-/** The label of a slot tile: its declared fragment after the last dot. */
-function slotLabel(tileId: string): string {
-  return tileId.slice(tileId.lastIndexOf(".") + 1);
+/** The label of the tile filling `slot`: the label the slot carries, or its declared fragment after the last dot when it carries none. */
+function slotLabel(slot: CatalogArgSlot): string {
+  return slot.label ?? slot.tileId.slice(slot.tileId.lastIndexOf(".") + 1);
 }
 
 /** The default `json` declares, read as a value. Throws an {@link EntryProblem} when it is not a tagged value. */
@@ -236,7 +236,7 @@ class PackBinder {
       const id = shared ? slot.tileId : mkPrivateArgId(pack, tile, slot.tileId);
       tiles.modifiers.push({
         id,
-        label: slotLabel(slot.tileId),
+        label: slotLabel(slot),
         ...(shared ? {} : { userArg: { namespace: pack, actionId: tile, argName: slot.tileId } }),
       });
       return { ...mod(id), ...this.slotOptions(slot) };
@@ -248,12 +248,12 @@ class PackBinder {
       parameter = {
         id: mkAnonParameterId(typeName),
         dataType,
-        label: typeName,
+        label: slot.label ?? typeName,
         hidden: true,
         anonType: { localName: typeName },
       };
     } else if (slot.tileId.startsWith(SHARED_PARAMETER_PREFIX)) {
-      parameter = { id: slot.tileId, dataType, label: slotLabel(slot.tileId), hidden: false };
+      parameter = { id: slot.tileId, dataType, label: slotLabel(slot), hidden: false };
       const declared = this.sharedParameters.get(slot.tileId);
       if (declared !== undefined && declared !== dataType) {
         throw new EntryProblem(PackBindingCode.SHARED_TILE_CONFLICT, slot.tileId);
@@ -262,7 +262,7 @@ class PackBinder {
       parameter = {
         id: mkPrivateArgId(pack, tile, slot.tileId),
         dataType,
-        label: slotLabel(slot.tileId),
+        label: slotLabel(slot),
         hidden: false,
         userArg: { namespace: pack, actionId: tile, argName: slot.tileId },
       };

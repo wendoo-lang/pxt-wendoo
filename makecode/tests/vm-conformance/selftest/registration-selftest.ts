@@ -269,6 +269,28 @@ namespace registrationSelftest {
     console.log(`CATALOG ${first}`);
   }
 
+  /** Label the slot builder check declares. */
+  const BUILDER_LABEL = "builder label";
+
+  /** Each slot builder puts a label it is given on the slot it builds, and declares none when given none. */
+  function checkSlotBuilderLabels(): void {
+    const optionalSlot = (wendoo.optionalArg("o", wendoo.TYPE_NUMBER, BUILDER_LABEL) as wendoo.OptionalSpec)
+      .item as wendoo.ArgSlotSpec;
+    const restSlot = (wendoo.rest("r", wendoo.TYPE_NUMBER, 0, BUILDER_LABEL) as wendoo.RepeatSpec)
+      .item as wendoo.ArgSlotSpec;
+    const unlabeledRestSlot = (wendoo.rest("r", wendoo.TYPE_NUMBER, 0) as wendoo.RepeatSpec).item as wendoo.ArgSlotSpec;
+    check(
+      "slot-builders-carry-labels",
+      wendoo.arg("a", wendoo.TYPE_NUMBER, BUILDER_LABEL).label === BUILDER_LABEL &&
+        wendoo.modifier("m", BUILDER_LABEL).label === BUILDER_LABEL &&
+        optionalSlot.label === BUILDER_LABEL &&
+        restSlot.label === BUILDER_LABEL &&
+        wendoo.arg("a", wendoo.TYPE_NUMBER).label === "" &&
+        wendoo.modifier("m").label === "" &&
+        unlabeledRestSlot.label === ""
+    );
+  }
+
   /** Tiles the grammar pack registers with well-formed argument grammars. */
   const WELL_FORMED_GRAMMAR_TILES = [
     "sensor.grammar.pad",
@@ -711,6 +733,7 @@ namespace registrationSelftest {
     checkActionOutput();
     checkCoreTypedActionOutput();
     checkCatalog();
+    checkSlotBuilderLabels();
     checkCompiledBrains();
     checkLoader();
     checkProgramHost();

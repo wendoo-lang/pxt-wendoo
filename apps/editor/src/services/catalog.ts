@@ -102,6 +102,8 @@ export interface CatalogArgSlot {
   readonly range?: CatalogRange;
   /** Unit the slot's value is measured in, or absent. */
   readonly unit?: string;
+  /** Display label of the tile that fills the slot, or absent when the slot declares none. */
+  readonly label?: string;
 }
 
 /** A sequence or a bag of grammar nodes. */
@@ -305,6 +307,7 @@ function slotOf(entry: JsonObject): CatalogArgSlot {
     derived: boolean;
     range?: CatalogRange;
     unit?: string;
+    label?: string;
   } = { kind: "arg", tileId, modifier, anonymous: entry.anonymous === true, derived: entry.derived === true };
   const name = stringField(entry, "name");
   if (name !== undefined) slot.name = name;
@@ -314,6 +317,8 @@ function slotOf(entry: JsonObject): CatalogArgSlot {
   if (entry.range !== undefined) slot.range = rangeOf(entry.range);
   const unit = stringField(entry, "unit");
   if (unit !== undefined) slot.unit = unit;
+  const label = stringField(entry, "label");
+  if (label !== undefined) slot.label = label;
   return slot;
 }
 

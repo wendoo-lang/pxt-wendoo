@@ -41,7 +41,7 @@ const FULL_CATALOG = JSON.stringify({
           kind: "actuator",
           args: [
             { tileId: "times", type: "number", optional: true },
-            { tileId: "modifier.loudly", modifier: true, repeated: true, min: 1 },
+            { tileId: "modifier.loudly", modifier: true, repeated: true, min: 1, label: "nice and loud" },
             { name: "pitch", tileId: "pitch", type: "number", required: false, default: { t: 3, v: 2 } },
           ],
         },
@@ -66,6 +66,7 @@ const FULL_CATALOG = JSON.stringify({
                     type: "number",
                     range: { min: 0, onExceed: "clamp" },
                     unit: "px/s",
+                    label: "how fast",
                   },
                 ],
               },
@@ -134,7 +135,14 @@ describe("parseCatalog", () => {
       {
         kind: "repeat",
         min: 1,
-        item: { kind: "arg", tileId: "modifier.loudly", modifier: true, anonymous: false, derived: false },
+        item: {
+          kind: "arg",
+          tileId: "modifier.loudly",
+          modifier: true,
+          anonymous: false,
+          derived: false,
+          label: "nice and loud",
+        },
       },
       {
         kind: "arg",
@@ -180,6 +188,7 @@ describe("parseCatalog", () => {
               derived: false,
               range: { min: 0, onExceed: "clamp" },
               unit: "px/s",
+              label: "how fast",
             },
           ],
         },

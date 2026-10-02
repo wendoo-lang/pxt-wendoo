@@ -230,7 +230,7 @@ namespace wendoo {
       optional(modifier("modifier.direction.left")),
       optional(modifier("modifier.direction.right")),
       optional(modifier("modifier.movement.toward")),
-      optional(modifier("modifier.movement.away")),
+      optional(modifier("modifier.movement.away", "away from")),
     ],
     ""
   );

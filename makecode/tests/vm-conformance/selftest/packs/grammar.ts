@@ -68,22 +68,24 @@ namespace grammar {
   );
 
   // A derived anonymous slot, and a choice of bounded repeats against a slot
-  // carrying a default, a unit and a one-sided range; the tile consumes a
-  // number WHEN result.
-  const direction = wendoo.arg("direction", wendoo.TYPE_NUMBER);
+  // carrying a default, a unit and a one-sided range; the anonymous slot,
+  // one repeated modifier and the ranged slot carry labels. The tile
+  // consumes a number WHEN result.
+  const direction = wendoo.arg("direction", wendoo.TYPE_NUMBER, "heading");
   direction.anonymous = true;
   direction.derived = true;
   const speed = wendoo.arg("speed", wendoo.TYPE_NUMBER);
   speed.defaultValue = wendoo.mkNumber(100);
   speed.unit = "px/s";
   speed.range = wendoo.argRangeAtLeast(0, wendoo.ARG_ON_EXCEED_CLAMP);
+  speed.label = "how fast";
   const moveSpec = new wendoo.TileSpec(
     wendoo.TILE_KIND_ACTUATOR,
     [
       wendoo.optional(direction),
       wendoo.optional(
         wendoo.choice([
-          wendoo.repeatedUpTo(wendoo.modifier("slowly"), 1, 3),
+          wendoo.repeatedUpTo(wendoo.modifier("slowly", "at a crawl"), 1, 3),
           wendoo.repeatedUpTo(wendoo.modifier("quickly"), 1, 3),
           speed,
         ])

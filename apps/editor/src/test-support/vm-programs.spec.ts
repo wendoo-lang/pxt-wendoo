@@ -4,8 +4,10 @@ import { CompilationDiagCode, ParseDiagCode } from "@wendoo/core/brain/compiler"
 import {
   ARCADE_REFUSED_SOURCE,
   arcadeBindingDiagnosticCodes,
+  arcadeCarriedSlotLabel,
   arcadeCompileDiagnosticCodes,
   arcadeHoldsModifier,
+  arcadeModifierLabel,
   checkedInText,
   renderVmPrograms,
 } from "./vm-programs.js";
@@ -24,6 +26,13 @@ describe("the MakeCode VM extension's compiled programs", () => {
   it("binds the move's toward and away as shared modifier tiles", () => {
     assert.ok(arcadeHoldsModifier("modifier.movement.toward"));
     assert.ok(arcadeHoldsModifier("modifier.movement.away"));
+  });
+
+  it("shows the move's away modifier by the label its slot carries", () => {
+    const carried = arcadeCarriedSlotLabel("actuator.arcade.move", "modifier.movement.away");
+
+    assert.notEqual(carried, undefined, "the arcade base pack declares a label on the away slot");
+    assert.equal(arcadeModifierLabel("modifier.movement.away"), carried);
   });
 
   it("refuses a dpad given one direction modifier twice", (t) => {

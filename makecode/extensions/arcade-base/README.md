@@ -12,9 +12,9 @@ sprite touches, and move its sprite.
   it carries the nearest.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
-  together move on the diagonal. Add **toward** or **away** to chase or flee
-  the sprite its WHEN carries -- **WHEN bump DO move away** runs from
-  whatever it bumps for as long as they touch, turning as that sprite
+  together move on the diagonal. Add **toward** or **away from** to chase or
+  flee the sprite its WHEN carries -- **WHEN bump DO move away from** runs
+  from whatever it bumps for as long as they touch, turning as that sprite
   moves. They mix with the other directions: **toward** and **up** together
   chase while drifting upward. Without a direction to go, it moves in the
   direction its WHEN carries, or rightward when there is none. Add

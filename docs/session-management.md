@@ -879,8 +879,12 @@ it keys on a session id.
   (`<pack>:user.<tile>.<fragment>`) unless its fragment starts
   `parameter.` or `modifier.`, which names a tile shared across packs, and
   an anonymous slot filled by the anonymous parameter tile of its type
-  (`anon.<TypeName>`); and each operator as its own operator under its
-  allocated host-function id, infix over two operands, prefix over one.
+  (`anon.<TypeName>`); a slot's tile is labelled by the label the slot
+  carries, or, when it carries none, by its fragment after the last dot
+  (an anonymous slot's by its type name), and a shared tile keeps the
+  label of its first declaration; and each operator as its own operator
+  under its allocated host-function id, infix over two operands, prefix
+  over one.
   Pack actions run nothing in the editor.
 
 ## Brain sync

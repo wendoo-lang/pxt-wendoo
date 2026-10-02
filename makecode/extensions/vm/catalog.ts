@@ -23,17 +23,19 @@
  *   `tileId` (the identity of the tile that fills it), then `modifier` or
  *   `type`, then `optional` (the item is the slot wrapped in an optional), or
  *   `repeated` and `min` (the slot wrapped in a repeat with no upper bound),
- *   then the slot's argument options. An item has a flat form when it is a
- *   slot, or an unnamed optional or unnamed unbounded repeat directly around
- *   a slot.
+ *   then the slot's argument options, then its `label`. An item has a flat
+ *   form when it is a slot, or an unnamed optional or unnamed unbounded
+ *   repeat directly around a slot.
  * - `call` holds one grammar node per item. Every node carries `kind` (`arg`,
  *   `seq`, `choice`, `optional`, `repeat`, `bag` or `conditional`) and
  *   `name`. An `arg` node carries `tileId`, then `modifier` or `type`, then
- *   its argument options; `seq` and `bag` carry `items`; `choice` carries `options`;
- *   `optional` carries `item`; `repeat` carries `item`, `min` and `max`; and
- *   `conditional` carries `condition` (the name it tests), `then` and `else`.
+ *   its argument options, then its `label`; `seq` and `bag` carry `items`;
+ *   `choice` carries `options`; `optional` carries `item`; `repeat` carries
+ *   `item`, `min` and `max`; and `conditional` carries `condition` (the name
+ *   it tests), `then` and `else`.
  * - The argument options are `required`, `anonymous`, `default` (a tagged
- *   value), `derived`, `range` (`min`, `max` and `onExceed`) and `unit`.
+ *   value), `derived`, `range` (`min`, `max` and `onExceed`) and `unit`. A
+ *   slot's `label` is the display label of the tile that fills it.
  * - A tagged value is an object holding the value's native type id under
  *   `t`, with `v` for a boolean, number or string; `typeId` and `v` for an
  *   enum symbol; `typeId` and a `v` array of tagged values for a list or a
@@ -201,6 +203,11 @@ namespace wendoo {
     return out;
   }
 
+  /** The slot's `"label"` field, prefixed by its separating comma; `""` when the slot declares no label. */
+  function slotLabelText(slot: ArgSlotSpec): string {
+    return slot.label.length > 0 ? `,"label":${jsonQuote(slot.label)}` : "";
+  }
+
   /**
    * The slot's own identity fields, each prefixed by its separating comma:
    * its `"tileId"`, then `"modifier":true` or its `"type"`. The text starts
@@ -250,7 +257,7 @@ namespace wendoo {
         out += `,"min":${jsonNumber(min)}`;
       }
     }
-    return `${out}${argOptionsText(slot)}}`;
+    return `${out}${argOptionsText(slot)}${slotLabelText(slot)}}`;
   }
 
   /** JSON array text of `nodes`, each rendered as a grammar node. */
@@ -270,7 +277,7 @@ namespace wendoo {
     }
     if (node.kind === CALL_SPEC_ARG) {
       const slot = node as ArgSlotSpec;
-      return `${out}${slotKindText(slot)}${argOptionsText(slot)}}`;
+      return `${out}${slotKindText(slot)}${argOptionsText(slot)}${slotLabelText(slot)}}`;
     }
     if (node.kind === CALL_SPEC_SEQ || node.kind === CALL_SPEC_BAG) {
       const items = node.kind === CALL_SPEC_SEQ ? (node as SeqSpec).items : (node as BagSpec).items;

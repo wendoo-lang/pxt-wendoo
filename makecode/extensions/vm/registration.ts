@@ -11,8 +11,8 @@
  * mapping's, never the order the fields are declared in.
  *
  * A registration also carries its declared shape and catalog metadata --
- * fields, argument grammar, returns, outputs, consumed WHEN result, label,
- * group, docs, icon. The drain installs behavior only and ignores all of it;
+ * fields, argument grammar (each slot with its tile's display label),
+ * returns, outputs, consumed WHEN result, label, group, docs, icon. The drain installs behavior only and ignores all of it;
  * the catalog serializer reads it through {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
@@ -519,6 +519,13 @@ namespace wendoo {
     range: ArgRange;
     /** Unit the slot's value is measured in, as the author writes it; `""` when it counts none. */
     unit: string = "";
+    /**
+     * Display label of the tile that fills the slot, such as `"away from"`;
+     * `""` when none is declared, and the editor labels the tile from
+     * {@link ArgSlotSpec.tileId}. Declare one label on every slot a shared
+     * tile fills: the editor displays the label of the first one registered.
+     */
+    label: string = "";
     private requiredDeclared: boolean = false;
     private requiredValue: boolean = false;
 
@@ -648,15 +655,24 @@ namespace wendoo {
     }
   }
 
+  /** `slot`, carrying `label` as its {@link ArgSlotSpec.label} when `label` is given and not empty. */
+  function labeled(slot: ArgSlotSpec, label: string): ArgSlotSpec {
+    if (label) {
+      slot.label = label;
+    }
+    return slot;
+  }
+
   /**
    * A parameter slot: its tile followed by a value expression. The slot is
    * unnamed; set its {@link TileArgSpec.name} to name it.
    *
    * @param tileId - Identity of the parameter tile that fills the slot; see {@link ArgSlotSpec.tileId}.
    * @param type - Type name of the slot's value.
+   * @param label - Display label of the parameter tile; omit to declare none. See {@link ArgSlotSpec.label}.
    */
-  export function arg(tileId: string, type: string): ArgSlotSpec {
-    return new ArgSlotSpec(tileId, type, false);
+  export function arg(tileId: string, type: string, label?: string): ArgSlotSpec {
+    return labeled(new ArgSlotSpec(tileId, type, false), label);
   }
 
   /**
@@ -664,9 +680,10 @@ namespace wendoo {
    * its {@link TileArgSpec.name} to name it.
    *
    * @param tileId - Identity of the modifier tile that fills the slot; see {@link ArgSlotSpec.tileId}.
+   * @param label - Display label of the modifier tile, such as `"away from"`; omit to declare none. See {@link ArgSlotSpec.label}.
    */
-  export function modifier(tileId: string): ArgSlotSpec {
-    return new ArgSlotSpec(tileId, "", true);
+  export function modifier(tileId: string, label?: string): ArgSlotSpec {
+    return labeled(new ArgSlotSpec(tileId, "", true), label);
   }
 
   /**
@@ -674,9 +691,10 @@ namespace wendoo {
    *
    * @param tileId - Identity of the parameter tile that fills the slot.
    * @param type - Type name of the slot's value.
+   * @param label - Display label of the parameter tile; omit to declare none. See {@link ArgSlotSpec.label}.
    */
-  export function optionalArg(tileId: string, type: string): TileArgSpec {
-    return new OptionalSpec(arg(tileId, type));
+  export function optionalArg(tileId: string, type: string, label?: string): TileArgSpec {
+    return new OptionalSpec(arg(tileId, type, label));
   }
 
   /**
@@ -686,9 +704,10 @@ namespace wendoo {
    * @param tileId - Identity of the parameter tile that fills the slot.
    * @param type - Type name of each fill's value.
    * @param minRepeats - Fewest fills the slot accepts; `0` puts no lower bound on the count.
+   * @param label - Display label of the parameter tile; omit to declare none. See {@link ArgSlotSpec.label}.
    */
-  export function rest(tileId: string, type: string, minRepeats: number): TileArgSpec {
-    return new RepeatSpec(arg(tileId, type), minRepeats, false, 0);
+  export function rest(tileId: string, type: string, minRepeats: number, label?: string): TileArgSpec {
+    return new RepeatSpec(arg(tileId, type, label), minRepeats, false, 0);
   }
 
   /**

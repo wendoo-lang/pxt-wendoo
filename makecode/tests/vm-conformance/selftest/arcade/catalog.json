@@ -146,7 +146,8 @@
               "item": {
                 "kind": "arg",
                 "tileId": "modifier.movement.away",
-                "modifier": true
+                "modifier": true,
+                "label": "away from"
               }
             }
           ],

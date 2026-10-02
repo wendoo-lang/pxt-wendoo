@@ -100,6 +100,61 @@ const PACK_MANIFEST: MakeCodeIdManifest = {
   next: { action: 1034, operator: 1041, atom: 1051 },
 };
 
+/** The display labels {@link LABELED_CATALOG}'s slots carry, keyed by slot. */
+const SLOT_LABELS = {
+  times: "times rung",
+  loudly: "nice and loud",
+  hush: "very softly",
+  pitch: "bell pitch",
+  toward: "facing",
+} as const;
+
+/** The fragment of {@link LABELED_CATALOG}'s one unlabeled slot, whose tile's label falls back to the fragment's last segment. */
+const UNLABELED_FRAGMENT = "beat.count";
+
+/**
+ * A catalog whose slots carry display labels: on a private parameter, a
+ * private modifier, a shared modifier and a shared parameter in flat form,
+ * and on an anonymous slot in a call tree; one slot carries none. A second
+ * tile declares the shared modifier again, unlabeled.
+ */
+const LABELED_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "bell",
+      types: [{ name: "Bell" }],
+      tiles: [
+        {
+          name: "actuator.bell.ring",
+          kind: "actuator",
+          args: [
+            { tileId: "times", type: "number", optional: true, label: SLOT_LABELS.times },
+            { tileId: "loudly", modifier: true, optional: true, label: SLOT_LABELS.loudly },
+            { tileId: "modifier.bell.hush", modifier: true, optional: true, label: SLOT_LABELS.hush },
+            { tileId: "parameter.bell.pitch", type: "number", optional: true, label: SLOT_LABELS.pitch },
+            { tileId: UNLABELED_FRAGMENT, type: "number", optional: true },
+          ],
+        },
+        {
+          name: "actuator.bell.face",
+          kind: "actuator",
+          call: [
+            {
+              kind: "optional",
+              item: { kind: "arg", tileId: "toward", type: "Bell", anonymous: true, label: SLOT_LABELS.toward },
+            },
+          ],
+        },
+        {
+          name: "actuator.bell.toll",
+          kind: "actuator",
+          args: [{ tileId: "modifier.bell.hush", modifier: true, optional: true }],
+        },
+      ],
+    },
+  ],
+});
+
 /** Whether any of `environment`'s tile catalogs holds the tile `tileId`. */
 function hasTile(environment: WendooEnvironment, tileId: string): boolean {
   return environment.tileCatalogs().some((catalog) => catalog.has(tileId));
@@ -193,6 +248,36 @@ describe("buildAuthoringEnvironment", () => {
     assert.ok(hasTile(environment, mkParameterTileId("parameter.beacon.pitch")));
     assert.ok(hasTile(environment, mkParameterTileId("parameter.beacon.place")));
     assert.ok(hasTile(environment, mkParameterTileId("anon.Beacon")));
+  });
+
+  it("labels each slot's tile with the label its slot carries", () => {
+    const built = buildAuthoringEnvironment(LABELED_CATALOG, emptyIdManifest());
+    const { environment } = built;
+    const labelOf = (tileId: string) => tile(environment, tileId).metadata?.label;
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.equal(labelOf(mkParameterTileId(mkPrivateArgId("bell", "actuator.bell.ring", "times"))), SLOT_LABELS.times);
+    assert.equal(labelOf(mkModifierTileId(mkPrivateArgId("bell", "actuator.bell.ring", "loudly"))), SLOT_LABELS.loudly);
+    assert.equal(labelOf(mkModifierTileId("modifier.bell.hush")), SLOT_LABELS.hush);
+    assert.equal(labelOf(mkParameterTileId("parameter.bell.pitch")), SLOT_LABELS.pitch);
+    assert.equal(labelOf(mkParameterTileId("anon.Bell")), SLOT_LABELS.toward);
+  });
+
+  it("labels an unlabeled slot's tile with its fragment's last segment", () => {
+    const { environment } = buildAuthoringEnvironment(LABELED_CATALOG, emptyIdManifest());
+    const tileId = mkParameterTileId(mkPrivateArgId("bell", "actuator.bell.ring", UNLABELED_FRAGMENT));
+
+    assert.equal(
+      tile(environment, tileId).metadata?.label,
+      UNLABELED_FRAGMENT.slice(UNLABELED_FRAGMENT.lastIndexOf(".") + 1)
+    );
+  });
+
+  it("keeps a shared slot tile's first declaration's label when a later tile declares it unlabeled", () => {
+    const { environment } = buildAuthoringEnvironment(LABELED_CATALOG, emptyIdManifest());
+
+    assert.ok(hasTile(environment, mkActuatorTileId("actuator.bell.toll")));
+    assert.equal(tile(environment, mkModifierTileId("modifier.bell.hush")).metadata?.label, SLOT_LABELS.hush);
   });
 
   it("registers a struct type under the allocation's atom, its layout taken from the allocation, never declaration order", () => {
