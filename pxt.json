@@ -1,7 +1,7 @@
 {
   "name": "pxt-wendoo",
   "version": "0.0.0",
-  "description": "Monorepo root. pxt requires a top-level extension for the nested extensions under makecode/extensions/ to resolve; this one carries no code of its own.",
+  "description": "Wendoo for MakeCode Arcade -- give your sprites brains",
   "license": "MIT",
   "dependencies": {},
   "files": [

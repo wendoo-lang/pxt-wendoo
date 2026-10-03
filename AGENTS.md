@@ -362,7 +362,7 @@ the current slice alone.
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the
       arcade base pack, and declares no vocabulary of its own. It owns the
-      arcade-bound pieces: the spawn block (`wendoo.runProgram`, its
+      arcade-bound pieces: the spawn block (`wendoo.runBrain`, its
       program picked by name from the project's compiled brains), sprite
       pairing and hosting (one program host per game scene, drained from
       the scene's own update loop), and the catalog publication on the
@@ -371,7 +371,10 @@ the current slice alone.
       front-door extension -- the one coordinate a user adds, which
       pulls the rest in; the base pack is `<target>-base`, and genre
       extensions are `<target>-<genre>` siblings of the front door
-      atop the base.
+      atop the base. Block text and every API identifier a kid meets
+      in the JavaScript view say "brain"; block IDs are never shown
+      and are permanent, because saved blocks match on them (the
+      spawn block's is `wendoo_run_program`).
     - FEATURE PACKS supply host-bound tiles for one genre of game. A
       feature pack depends on its target's base pack (and through it the
       VM extension), never on another feature pack; packs compose by

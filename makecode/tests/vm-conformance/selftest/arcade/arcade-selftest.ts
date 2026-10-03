@@ -149,7 +149,7 @@ namespace arcadeSelftest {
   /** A sprite running `program` from the next frame. */
   function spriteRunning(program: wendoo.CompiledBrainRegistration): Sprite {
     const sprite = newSprite(SpriteKind.Player);
-    wendoo.runProgram(sprite, program);
+    wendoo.runBrain(sprite, program);
     return sprite;
   }
 
@@ -443,8 +443,8 @@ namespace arcadeSelftest {
     const pusher = solidSprite(48, 80, 60);
     const nudged = solidSprite(8, 20, 100);
     const fleeing = solidSprite(8, 140, 100);
-    wendoo.runProgram(nudged, wendooBrains.p_nudgeBumpMove001);
-    wendoo.runProgram(fleeing, wendooBrains.p_fleeBumpLeftUp01);
+    wendoo.runBrain(nudged, wendooBrains.p_nudgeBumpMove001);
+    wendoo.runBrain(fleeing, wendooBrains.p_fleeBumpLeftUp01);
     pause(FRAMES_MS);
     const waited = movesAt(nudged, 0, 0) && movesAt(fleeing, 0, 0) && nudged.x === 20 && fleeing.x === 140;
 
@@ -491,8 +491,8 @@ namespace arcadeSelftest {
 
     const chasing = solidSprite(8, 104, 78);
     const fleeing = solidSprite(8, 68, 51);
-    wendoo.runProgram(chasing, wendooBrains.p_chaseBumpToward1);
-    wendoo.runProgram(fleeing, wendooBrains.p_shyBumpAway00001);
+    wendoo.runBrain(chasing, wendooBrains.p_chaseBumpToward1);
+    wendoo.runBrain(fleeing, wendooBrains.p_shyBumpAway00001);
     const chasingStart = distanceBetween(chasing, subject);
     const fleeingStart = distanceBetween(fleeing, subject);
     pause(FRAMES_MS);
@@ -527,17 +527,17 @@ namespace arcadeSelftest {
     const twin = solidSprite(8, 140, 110);
     const twinShadow = solidSprite(8, 140, 110);
     const homing = solidSprite(8, 10, 110);
-    wendoo.runProgram(wavering, wendooBrains.p_waverTowardAway1);
-    wendoo.runProgram(waveringFlipped, wendooBrains.p_waverAwayToward1);
-    wendoo.runProgram(stalking, wendooBrains.p_stalkTowardUp001);
-    wendoo.runProgram(stalkingFlipped, wendooBrains.p_stalkUpToward001);
-    wendoo.runProgram(dodging, wendooBrains.p_dodgeAwayLeft001);
-    wendoo.runProgram(lunging, wendooBrains.p_lungeTowardQuick);
-    wendoo.runProgram(skulking, wendooBrains.p_skulkSlowlyAway1);
-    wendoo.runProgram(tethered, wendooBrains.p_tetherAwaySpeed1);
-    wendoo.runProgram(twin, wendooBrains.p_chaseBumpToward1);
-    wendoo.runProgram(twinShadow, wendooBrains.p_chaseBumpToward1);
-    wendoo.runProgram(homing, wendooBrains.p_homingAlwaysTwd1);
+    wendoo.runBrain(wavering, wendooBrains.p_waverTowardAway1);
+    wendoo.runBrain(waveringFlipped, wendooBrains.p_waverAwayToward1);
+    wendoo.runBrain(stalking, wendooBrains.p_stalkTowardUp001);
+    wendoo.runBrain(stalkingFlipped, wendooBrains.p_stalkUpToward001);
+    wendoo.runBrain(dodging, wendooBrains.p_dodgeAwayLeft001);
+    wendoo.runBrain(lunging, wendooBrains.p_lungeTowardQuick);
+    wendoo.runBrain(skulking, wendooBrains.p_skulkSlowlyAway1);
+    wendoo.runBrain(tethered, wendooBrains.p_tetherAwaySpeed1);
+    wendoo.runBrain(twin, wendooBrains.p_chaseBumpToward1);
+    wendoo.runBrain(twinShadow, wendooBrains.p_chaseBumpToward1);
+    wendoo.runBrain(homing, wendooBrains.p_homingAlwaysTwd1);
     pause(FRAMES_MS);
     check("toward-and-away-cancel-to-the-fallback", movesAt(wavering, 100, 0) && movesAt(waveringFlipped, 100, 0));
     const stalkingToward = unitToward(stalking, subject);
@@ -579,7 +579,7 @@ namespace arcadeSelftest {
     }
 
     const skittish = solidSprite(8, 10, 10);
-    wendoo.runProgram(skittish, wendooBrains.p_skittishDpadAwy1);
+    wendoo.runBrain(skittish, wendooBrains.p_skittishDpadAwy1);
     pause(FRAMES_MS);
     const skittishQuiet = movesAt(skittish, 0, 0);
     controller.up.setPressed(true);
@@ -589,7 +589,7 @@ namespace arcadeSelftest {
     skittish.destroy();
 
     const pursuer = solidSprite(8, 104, 78);
-    wendoo.runProgram(pursuer, wendooBrains.p_chaseBumpToward1);
+    wendoo.runBrain(pursuer, wendooBrains.p_chaseBumpToward1);
     pause(FRAMES_MS);
     const pursuing = pursues(pursuer, subject, 100);
     const pursuitRuntime = runtimeIn(host, pursuer);
@@ -619,8 +619,8 @@ namespace arcadeSelftest {
   function pairMovesAt(program: wendoo.CompiledBrainRegistration, distance: number, vx: number, vy: number): boolean {
     const left = solidSprite(8, 40, 60);
     const right = solidSprite(8, 40 + distance, 60);
-    wendoo.runProgram(left, program);
-    wendoo.runProgram(right, program);
+    wendoo.runBrain(left, program);
+    wendoo.runBrain(right, program);
     pause(FRAMES_MS);
     const moved = movesAt(left, vx, vy) && movesAt(right, vx, vy);
     left.destroy();
@@ -679,7 +679,7 @@ namespace arcadeSelftest {
     const host = wendoo.sceneProgramHost(game.currentScene());
 
     const lone = solidSprite(8, 80, 60);
-    wendoo.runProgram(lone, wendooBrains.p_eitherInUpOutDn1);
+    wendoo.runBrain(lone, wendooBrains.p_eitherInUpOutDn1);
     pause(FRAMES_MS);
     lone.vx = 37;
     pause(FRAMES_MS);
@@ -718,7 +718,7 @@ namespace arcadeSelftest {
     const leashed = solidSprite(8, 150, 100);
     const owner = solidSprite(8, 20, 40);
     const decoy = solidSprite(8, 150, 270);
-    wendoo.runProgram(leashed, wendooBrains.p_leashOutToward01);
+    wendoo.runBrain(leashed, wendooBrains.p_leashOutToward01);
     const leashStart = distanceBetween(leashed, owner);
     pause(FRAMES_MS);
     check(
@@ -738,7 +738,7 @@ namespace arcadeSelftest {
     const shy = solidSprite(8, 80, 60);
     const nearest = solidSprite(8, 100, 60);
     const farther = solidSprite(8, 80, 20);
-    wendoo.runProgram(shy, wendooBrains.p_keepAwayInAway01);
+    wendoo.runBrain(shy, wendooBrains.p_keepAwayInAway01);
     pause(FRAMES_MS);
     check(
       "keep-away-opens-distance-from-the-nearest-sprite",
@@ -757,7 +757,7 @@ namespace arcadeSelftest {
     const chooser = solidSprite(8, 130, 110);
     const first = solidSprite(8, 30, 110);
     const second = solidSprite(8, 130, 10);
-    wendoo.runProgram(chooser, wendooBrains.p_leashOutToward01);
+    wendoo.runBrain(chooser, wendooBrains.p_leashOutToward01);
     pause(FRAMES_MS);
     const tieFirst = pursues(chooser, first, 100);
     chooser.setPosition(130, 110);
@@ -777,7 +777,7 @@ namespace arcadeSelftest {
 
     const holder = solidSprite(8, 50, 60);
     const target = solidSprite(8, 80, 60);
-    wendoo.runProgram(holder, wendooBrains.p_standoffInOut001);
+    wendoo.runBrain(holder, wendooBrains.p_standoffInOut001);
     pause(6 * FRAMES_MS);
     const settled = near(distanceBetween(holder, target), DEFAULT_RANGE, RANGE_TOLERANCE);
     target.vx = 40;
@@ -796,14 +796,14 @@ namespace arcadeSelftest {
 
     const hurrying = solidSprite(8, 150, 60);
     const hurryTarget = solidSprite(8, 10, 60);
-    wendoo.runProgram(hurrying, wendooBrains.p_leashQuickly0001);
+    wendoo.runBrain(hurrying, wendooBrains.p_leashQuickly0001);
     pause(FRAMES_MS);
     const hurried = pursues(hurrying, hurryTarget, 200);
     hurrying.destroy();
     hurryTarget.destroy();
     const dawdling = solidSprite(8, 80, 60);
     const dawdleTarget = solidSprite(8, 100, 60);
-    wendoo.runProgram(dawdling, wendooBrains.p_keepAwaySlowly01);
+    wendoo.runBrain(dawdling, wendooBrains.p_keepAwaySlowly01);
     pause(FRAMES_MS);
     check("speed-words-compose-with-range-rules", hurried && flees(dawdling, dawdleTarget, 50));
     dawdling.destroy();
@@ -811,8 +811,8 @@ namespace arcadeSelftest {
 
     const swappedLeft = solidSprite(8, 20, 30);
     const swappedRight = solidSprite(8, 50, 30);
-    wendoo.runProgram(swappedLeft, wendooBrains.p_nearInRangeMove1);
-    wendoo.runProgram(swappedRight, wendooBrains.p_nearInRangeMove1);
+    wendoo.runBrain(swappedLeft, wendooBrains.p_nearInRangeMove1);
+    wendoo.runBrain(swappedRight, wendooBrains.p_nearInRangeMove1);
     pause(FRAMES_MS);
     const movedInRange = movesAt(swappedLeft, 100, 0) && movesAt(swappedRight, 100, 0);
     const inRangeRuntime = runtimeIn(host, swappedLeft);
@@ -1059,10 +1059,10 @@ namespace arcadeSelftest {
     const twinA = newSprite(SpriteKind.Player);
     const twinB = newSprite(SpriteKind.Enemy);
     const idle = newSprite(SpriteKind.Enemy);
-    wendoo.runProgram(ticker, wendooBrains.p_akBQz0nySKaYx37w);
-    wendoo.runProgram(twinA, wendooBrains.p_Hq7EB8SthdeOudyP);
-    wendoo.runProgram(twinB, wendooBrains.p_LBddvitRopf1wCnj);
-    wendoo.runProgram(idle, wendooBrains.none);
+    wendoo.runBrain(ticker, wendooBrains.p_akBQz0nySKaYx37w);
+    wendoo.runBrain(twinA, wendooBrains.p_Hq7EB8SthdeOudyP);
+    wendoo.runBrain(twinB, wendooBrains.p_LBddvitRopf1wCnj);
+    wendoo.runBrain(idle, wendooBrains.none);
     check("program-waits-for-the-next-frame", programOf(ticker) === NOT_RUNNING);
 
     pause(FRAMES_MS);
@@ -1092,7 +1092,7 @@ namespace arcadeSelftest {
     const pausedTicks = ticksOf(twinA);
     game.pushScene();
     const pushed = newSprite(SpriteKind.Player);
-    wendoo.runProgram(pushed, wendooBrains.p_akBQz0nySKaYx37w);
+    wendoo.runBrain(pushed, wendooBrains.p_akBQz0nySKaYx37w);
     pause(FRAMES_MS);
     check("pushed-scene-runs-its-own-programs", programOf(pushed) === TICKER_ID && ticksOf(pushed) > 0);
     game.popScene();

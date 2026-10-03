@@ -16,7 +16,7 @@ namespace wendoo {
   //% sprite.shadow=variables_get sprite.defl=mySprite
   //% brain.defl=wendooBrains.none
   //% weight=100
-  export function runProgram(sprite: Sprite, brain: CompiledBrainRegistration): void {
+  export function runBrain(sprite: Sprite, brain: CompiledBrainRegistration): void {
     if (!sprite || !brain) {
       return;
     }
