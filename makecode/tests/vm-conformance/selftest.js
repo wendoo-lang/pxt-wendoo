@@ -16,6 +16,8 @@
  * - `TRACE <line>` lines whose lines, in order, are the reference VM's trace
  *   of the same program over the same schedule, `selftest/ringer.trace`,
  *   byte for byte;
+ * - one `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` line per entry in
+ *   `EXPECTED_ASSET_LINES`, in that order, and no other;
  * - one `CATALOG <payload>` line whose payload is `EXPECTED_CATALOG`'s
  *   bytes, and, across the runs of one target, byte-identical payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
@@ -25,10 +27,12 @@
  * project, whose capture must carry one `CHECK <name> ok` line per name in
  * `EXPECTED_ARCADE_CHECKS` and no other check line, the program refusals in
  * `EXPECTED_ARCADE_REJECTIONS` in that order, the program-update lines in
- * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, `CHECKS failed 0`, its
- * `SIMCAP PASS` verdict, and exactly two messages on the simulator
- * extension's channel: the startup ping, then one catalog whose payload is
- * `EXPECTED_ARCADE_CATALOG`'s bytes.
+ * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, the
+ * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
+ * no other, `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
+ * messages on the simulator extension's channel: the startup ping, then one
+ * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its tiles and
+ * modifier slots carrying 16 by 16 icons.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -89,7 +93,16 @@ const EXPECTED_CHECKS = [
   "call-spec-tile-fills-two-named-slots",
   "type-layout-from-manifest",
   "golden-program-runs",
+  "asset-type-takes-its-atom-and-field-from-the-manifest",
+  "asset-type-reads-the-asset-id-of-its-own-values",
 ];
+
+/**
+ * Every unresolved-asset line the selftest is expected to log, in order,
+ * each without its `wendoo ` prefix: one per asset id it reports unresolved,
+ * however many times it reports it.
+ */
+const EXPECTED_ASSET_LINES = ["WENDOO_ASSET_UNRESOLVED tune gone", "WENDOO_ASSET_UNRESOLVED tune lost"];
 
 /**
  * Every refusal one program host is expected to log, as `<code> <id>`, in
@@ -211,7 +224,56 @@ const EXPECTED_ARCADE_CHECKS = [
   "standoff-holds-its-distance-from-a-moving-sprite",
   "speed-words-compose-with-range-rules",
   "program-update-swaps-in-range-to-out-of-range-live",
+  "image-type-takes-its-atom-and-field-from-the-manifest",
+  "look-like-wears-the-image-its-asset-resolves-to",
+  "image-resolves-when-it-is-used",
+  "look-like-wears-the-image-the-other-sprite-wears-now",
+  "look-like-keeps-its-image-when-the-asset-is-gone",
+  "look-like-keeps-its-image-given-no-sprite",
+  "bump-given-an-image-reads-the-nearest-touched-sprite-that-looks-like-it",
+  "bump-given-no-image-reads-the-nearest-touched-sprite",
+  "bump-given-an-image-gone-from-the-project-reads-nothing",
+  "bump-given-an-image-no-touched-sprite-looks-like-reads-nothing",
+  "toward-reads-only-a-sprite-value",
+  "icon-encoder-writes-the-size-then-one-digit-per-pixel",
+  "icon-encoder-renders-nothing-for-what-is-no-image",
 ];
+
+/**
+ * Every unresolved-asset line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: the late image, used once before
+ * its factory is registered, then the deleted image, which look like and bump
+ * each use more than once.
+ */
+const EXPECTED_ARCADE_ASSET_LINES = ["WENDOO_ASSET_UNRESOLVED image image9", "WENDOO_ASSET_UNRESOLVED image image404"];
+
+/** The prefix of the line the VM extension logs for an asset id no factory holds. */
+const ASSET_LINE_PREFIX = "wendoo WENDOO_ASSET_UNRESOLVED ";
+
+/** The arcade base pack's tiles whose catalog entries must carry an icon. */
+const ARCADE_ICONED_TILES = [
+  "sensor.arcade.dpad",
+  "actuator.arcade.move",
+  "sensor.arcade.bump",
+  "sensor.arcade.in-range",
+  "sensor.arcade.out-of-range",
+  "actuator.arcade.look-like",
+];
+
+/** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
+const ARCADE_ICONED_MODIFIERS = [
+  "modifier.direction.up",
+  "modifier.direction.down",
+  "modifier.direction.left",
+  "modifier.direction.right",
+  "modifier.movement.toward",
+  "modifier.movement.away",
+  "modifier.slowly",
+  "modifier.quickly",
+];
+
+/** Width and height, in pixels, of every arcade base pack icon. */
+const ARCADE_ICON_SIZE = 16;
 
 /**
  * Every refusal one arcade selftest program host is expected to log, as
@@ -370,6 +432,91 @@ function reportedUpdateLines(log) {
     .map((line) => line.slice("wendoo ".length));
 }
 
+/** Every unresolved-asset line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedAssetLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(ASSET_LINE_PREFIX))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/**
+ * The width, height and pixel count an icon's catalog text declares, and the
+ * number of pixel digits it carries: lowercase hex of a ULEB128 width and
+ * height, then one digit per pixel, row by row, padded to a whole byte.
+ * `null` when the text is not hex or its header is cut short.
+ */
+function iconShape(text) {
+  if (typeof text !== "string" || !/^([0-9a-f]{2})+$/.test(text)) return null;
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 2) bytes.push(Number.parseInt(text.slice(i, i + 2), 16));
+  let offset = 0;
+  const readVarUint = () => {
+    let value = 0;
+    let scale = 1;
+    while (offset < bytes.length) {
+      const byte = bytes[offset++];
+      value += (byte & 0x7f) * scale;
+      if ((byte & 0x80) === 0) return value;
+      scale *= 0x80;
+    }
+    return null;
+  };
+  const width = readVarUint();
+  const height = readVarUint();
+  if (width === null || height === null) return null;
+  return { width, height, digits: text.length - offset * 2 };
+}
+
+/** The ways the icon text `text` misses a 16 by 16 icon's shape, each naming `what`. */
+function iconProblems(what, text) {
+  if (text === undefined) return [`${what} carries no icon`];
+  const shape = iconShape(text);
+  const pixels = ARCADE_ICON_SIZE * ARCADE_ICON_SIZE;
+  if (
+    shape === null ||
+    shape.width !== ARCADE_ICON_SIZE ||
+    shape.height !== ARCADE_ICON_SIZE ||
+    shape.digits !== pixels + (pixels % 2)
+  ) {
+    return [`${what} carries an icon of shape ${JSON.stringify(shape)}`];
+  }
+  return [];
+}
+
+/** Every slot entry in the grammar nodes `nodes`, flat `args` entries included, in declaration order. */
+function grammarSlots(nodes) {
+  return (nodes || []).flatMap((node) => {
+    if (node.kind === undefined || node.kind === "arg") return [node];
+    return grammarSlots(
+      [...(node.items || []), ...(node.options || []), node.item, node.then, node.else].filter(Boolean)
+    );
+  });
+}
+
+/**
+ * The ways the arcade catalog payload `payload` misses its icons: each tile
+ * in `ARCADE_ICONED_TILES`, and each slot of any tile a modifier in
+ * `ARCADE_ICONED_MODIFIERS` fills, carries an icon of 16 by 16 pixels.
+ */
+function arcadeIconFailures(payload) {
+  const pack = JSON.parse(payload).packs.find((entry) => entry.name === "arcade");
+  const tiles = pack ? pack.tiles : [];
+  const failures = [];
+  for (const name of ARCADE_ICONED_TILES) {
+    const tile = tiles.find((entry) => entry.name === name);
+    failures.push(...(tile ? iconProblems(`tile ${name}`, tile.icon) : [`no tile ${name}`]));
+  }
+  for (const tileId of ARCADE_ICONED_MODIFIERS) {
+    const slots = tiles.flatMap((tile) =>
+      grammarSlots(tile.args || tile.call).map((slot) => ({ tile: tile.name, slot }))
+    );
+    const filling = slots.filter((entry) => entry.slot.tileId === tileId);
+    if (filling.length === 0) failures.push(`no slot ${tileId}`);
+    for (const entry of filling) failures.push(...iconProblems(`slot ${tileId} of ${entry.tile}`, entry.slot.icon));
+  }
+  return failures;
+}
+
 /** The trace the capture's `TRACE` lines carry, one line each, in order. */
 function reportedTrace(log) {
   return linesOf(log)
@@ -427,6 +574,10 @@ function contractFailures(exitCode, log) {
   if (rejections.join("\n") !== EXPECTED_REJECTIONS.join("\n")) {
     failures.push(`program refusals logged: ${rejections.join(" | ")}`);
   }
+  const assetLines = reportedAssetLines(log);
+  if (assetLines.join("\n") !== EXPECTED_ASSET_LINES.join("\n")) {
+    failures.push(`unresolved assets logged: ${assetLines.join(" | ")}`);
+  }
   failures.push(...catalogFailures(log));
   const trace = reportedTrace(log);
   if (trace !== EXPECTED_TRACE) {
@@ -461,6 +612,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (updates.join("\n") !== EXPECTED_ARCADE_UPDATE_LINES.join("\n")) {
     failures.push(`program updates logged: ${updates.join(" | ")}`);
   }
+  const assetLines = reportedAssetLines(log);
+  if (assetLines.join("\n") !== EXPECTED_ARCADE_ASSET_LINES.join("\n")) {
+    failures.push(`unresolved assets logged: ${assetLines.join(" | ")}`);
+  }
   const frames = catalog
     .channelMessages(simxLog)
     .filter((message) => message.channel === SIMX_CHANNEL)
@@ -474,6 +629,7 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (posted && posted.payload !== expected) {
     failures.push(`posted catalog ${posted.payload}`, `expected catalog ${expected}`);
   }
+  if (posted) failures.push(...arcadeIconFailures(posted.payload));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
   return failures;
 }

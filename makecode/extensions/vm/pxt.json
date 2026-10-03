@@ -15,6 +15,7 @@
         "decoder.ts",
         "handle.ts",
         "context.ts",
+        "asset-types.ts",
         "registration.ts",
         "catalog.ts",
         "numerics.ts",

@@ -310,7 +310,11 @@ the current slice alone.
     - `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
       VM in MakeCode static TypeScript (a conforming Wendoo VM per
       `.github/instructions/vm.instructions.md`), the trace emitter, the
-      tile bind API, the language-level tiles, the compiled-brain
+      tile bind API (asset types included: `defineAssetType` declares a
+      struct type whose values name a project asset of a pack-given kind
+      by its id, in one read-only `asset` field, the catalog carrying the
+      kind -- the mechanism only, every asset kind declared by a target's
+      pack), the language-level tiles, the compiled-brain
       registry, the project id manifest's reader (the calls the generated
       `ids.g.ts` makes), the program loader, the target-blind program host
       (the single-entry host loop a target's frame loop drains; every host
@@ -340,14 +344,25 @@ the current slice alone.
       `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
       through), the `Vector2` direction type, the `Sprite` type (an opaque
       host value: no fields, each value backed by the sprite it stands
-      for), the controller read (one module owning every raw read and its
-      dead-banded transform), the proximity read (one module owning the
+      for), the `Image` asset type (a plain struct holding the pxt asset
+      id of one of the project's images, resolved through pxt's image
+      factories when a tile uses it, never baked into a program; an id no
+      factory holds resolves to nothing, logged once per id, and the game
+      runs on), the arcade icon encoder (each tile icon, an img literal,
+      carried in the catalog as its size and palette-index pixels) with
+      the pack's tile icons, the controller read (one module owning every
+      raw read and its dead-banded transform), the proximity read (one
+      module owning the
       nearest-sprite scan and its center-distance metric, made
       synchronously at sense time), the overlap read (one module owning
       every sprite-touch read, picking among touched sprites through the
       proximity read's scan), the `dpad`, `bump`, `in range` and
-      `out of range` sensors and the `move` actuator (each of the range
-      pair reads the nearest sprite against its range -- an optional
+      `out of range` sensors and the `move` and `look like` actuators
+      (bump given an image reads only a touched sprite whose image has
+      the same pixels; look like requires an image or a sprite and dresses
+      its sprite in that image, or in the image that sprite wears, at the
+      moment it acts; each of the range pair reads the nearest sprite
+      against its range -- an optional
       anonymous number of pixels, else the shared default -- so at equal
       ranges exactly one of the pair fires whenever another sprite exists,
       and neither fires in an empty scene;
@@ -366,7 +381,8 @@ the current slice alone.
       program picked by name from the project's compiled brains), sprite
       pairing and hosting (one program host per game scene, drained from
       the scene's own update loop), and the catalog publication on the
-      game's first frame; the WendooBrain asset blocks and the simx
+      game's first frame, icons rendered by the base pack's arcade icon
+      encoder; the WendooBrain asset blocks and the simx
       binding join it. Naming: the bare target name belongs to this
       front-door extension -- the one coordinate a user adds, which
       pulls the rest in; the base pack is `<target>-base`, and genre

@@ -11,7 +11,9 @@
  * bump, in-range, out-of-range and move tiles, driven by pressing the
  * controller's buttons and placing and moving sprites from game code, and
  * programs updated while the game runs, through the messages the Wendoo
- * simulator extension posts.
+ * simulator extension posts. It also calls the bump and look-like tiles'
+ * bodies directly with image asset values, resolved through an image factory
+ * registered the way a project's images module registers one.
  *
  * Output grammar, one line each:
  *
@@ -25,6 +27,8 @@
  *   `wendoo sim-channel-rejected <code>` -- one per program update taken,
  *   removal taken, update refused, and message refused, as the VM extension
  *   logs them.
+ * - `wendoo WENDOO_ASSET_UNRESOLVED image <id>` -- one per image asset id no
+ *   factory held when a tile first used it, as the VM extension logs it.
  * - `SIMCAP PASS <case>` -- the run reached its end.
  */
 namespace arcadeSelftest {
@@ -833,6 +837,230 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** Tile name of the look-like actuator. */
+  const LOOK_LIKE_TILE = "actuator.arcade.look-like";
+
+  /** Wendoo type name of an image asset value. */
+  const IMAGE_TYPE = "Image";
+
+  /** The one field of an image asset value: the asset's id. */
+  const IMAGE_ASSET_FIELD = "asset";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Image` type. */
+  const IMAGE_ATOM = 1026;
+
+  /** Asset id of the hero image the selftest's image factory holds, as a project's jres gives it. */
+  const HERO_ASSET_ID = "image3";
+
+  /** Display name of the hero image, which the selftest's image factory also answers to. */
+  const HERO_DISPLAY_NAME = "hero";
+
+  /** Asset id the selftest's late image factory holds, registered only once the game is running. */
+  const LATE_ASSET_ID = "image9";
+
+  /** Asset id no factory holds: an image the project has since deleted. */
+  const DELETED_ASSET_ID = "image404";
+
+  /** The hero image's pixels: palette indices 1 to 15 and transparent pixels, every row and column touching. */
+  function heroPicture(): Image {
+    return img`
+      . 1 2 3 4 5 6 7
+      8 9 a b c d e f
+      2 2 2 2 2 2 2 .
+      4 . 4 4 4 4 4 4
+      6 6 6 6 6 6 6 6
+      8 8 8 8 8 8 8 8
+      a a a a a a a a
+      c c c c c c c c
+    `;
+  }
+
+  /** The late image's pixels. */
+  function latePicture(): Image {
+    return img`
+      5 5 5 5
+      5 . . 5
+      5 . . 5
+      5 5 5 5
+    `;
+  }
+
+  /** The project's image factory, as the project's images module registers it: by asset id and by display name. */
+  helpers._registerFactory("image", (name: string) => {
+    if (name === HERO_ASSET_ID || name === HERO_DISPLAY_NAME) {
+      return heroPicture();
+    }
+    return null;
+  });
+
+  /**
+   * The `Image` value a compiled program carries for the asset `assetId`: a
+   * plain struct holding the asset id at the field id the project's ids
+   * module allocates the type's asset field.
+   */
+  function imageLiteral(assetId: string): wendoo.Value {
+    const fieldId = wendoo.projectIds().fieldId(IMAGE_TYPE, IMAGE_ASSET_FIELD);
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i <= fieldId; i++) {
+      slots.push(wendoo.NIL_VALUE);
+    }
+    slots[fieldId] = wendoo.mkString(assetId);
+    return wendoo.mkStruct(wendoo.structTypeId(IMAGE_TYPE), slots);
+  }
+
+  /** A context whose world is `sprite`'s, for calling a tile's body directly. */
+  function contextOn(sprite: Sprite): wendoo.ExecutionContext {
+    const services = new wendoo.BrainServices(
+      new wendoo.Program(),
+      new wendoo.RuleSubtreeLiveness(),
+      new wendoo.BrainPageServices()
+    );
+    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), new wendoo.SpriteWorld(sprite));
+  }
+
+  /** The bound body of the tile `tileName`, or `undefined` when no registration holds it. */
+  function tileBody(tileName: string): wendoo.HostActionBinding {
+    return wendoo.hostRegistries().actions.getById(wendoo.projectIds().actionId(tileName));
+  }
+
+  /** What the tile body `body` returns given `args` on `sprite`'s behalf; nil when there is no body. */
+  function act(body: wendoo.HostActionBinding, sprite: Sprite, args: wendoo.Value[]): wendoo.Value {
+    return body ? body.execSync(contextOn(sprite), args) : wendoo.NIL_VALUE;
+  }
+
+  /** Whether `value` is the `Sprite` value standing for `sprite`. */
+  function standsFor(value: wendoo.Value, sprite: Sprite): boolean {
+    return (
+      value.t === wendoo.ValueTag.Struct && value.typeId === wendoo.structTypeId("Sprite") && value.native === sprite
+    );
+  }
+
+  /**
+   * In a scene of its own, check image assets and the two tiles reading them,
+   * each tile's body called directly with the values a compiled program
+   * passes it: the `Image` type takes its atom and its one field from the
+   * project's ids module; look like wears the image an asset id or display
+   * name resolves to at the moment it acts, or the image another sprite wears
+   * at that moment -- the same image, not a copy -- and leaves the sprite as
+   * it was given an image no factory holds or a value standing for no sprite;
+   * bump given an image reads the nearest touched sprite whose image has the
+   * same pixels, whatever image object it wears, reads nothing while no
+   * touched sprite looks like it or when no factory holds it, and given no
+   * image -- a nil image slot, or an argument buffer with no image slot at
+   * all -- reads the nearest touched sprite; and the direction toward a
+   * value is read only from a `Sprite` value.
+   */
+  function checkImageAssets(): void {
+    game.pushScene();
+    const imageType = wendoo.hostRegistries().types.getByTypeId(wendoo.structTypeId(IMAGE_TYPE));
+    check(
+      "image-type-takes-its-atom-and-field-from-the-manifest",
+      imageType !== undefined &&
+        imageType.atomId === IMAGE_ATOM &&
+        imageType.fieldIds.length === 1 &&
+        imageType.fieldIds[0] === wendoo.projectIds().fieldId(IMAGE_TYPE, IMAGE_ASSET_FIELD)
+    );
+
+    const lookLike = tileBody(LOOK_LIKE_TILE);
+    const byId = solidSprite(8, 20, 20);
+    const byName = solidSprite(8, 40, 20);
+    act(lookLike, byId, [imageLiteral(HERO_ASSET_ID), wendoo.NIL_VALUE]);
+    act(lookLike, byName, [imageLiteral(HERO_DISPLAY_NAME), wendoo.NIL_VALUE]);
+    check(
+      "look-like-wears-the-image-its-asset-resolves-to",
+      byId.image.equals(heroPicture()) && byName.image.equals(heroPicture())
+    );
+
+    const late = solidSprite(8, 60, 20);
+    const lateLiteral = imageLiteral(LATE_ASSET_ID);
+    const beforeLate = late.image;
+    act(lookLike, late, [lateLiteral, wendoo.NIL_VALUE]);
+    const unchangedBeforeLate = late.image === beforeLate;
+    helpers._registerFactory("image", (name: string) => (name === LATE_ASSET_ID ? latePicture() : null));
+    act(lookLike, late, [lateLiteral, wendoo.NIL_VALUE]);
+    check("image-resolves-when-it-is-used", unchangedBeforeLate && late.image.equals(latePicture()));
+
+    const model = solidSprite(8, 80, 20);
+    const mimic = solidSprite(8, 100, 20);
+    act(lookLike, mimic, [wendoo.NIL_VALUE, wendoo.spriteValue(model)]);
+    const wornFirst = mimic.image === model.image;
+    const changed = image.create(6, 6);
+    changed.fill(9);
+    model.setImage(changed);
+    act(lookLike, mimic, [wendoo.NIL_VALUE, wendoo.spriteValue(model)]);
+    check("look-like-wears-the-image-the-other-sprite-wears-now", wornFirst && mimic.image === changed);
+
+    const steady = solidSprite(8, 120, 20);
+    const steadyImage = steady.image;
+    act(lookLike, steady, [imageLiteral(DELETED_ASSET_ID), wendoo.NIL_VALUE]);
+    act(lookLike, steady, [imageLiteral(DELETED_ASSET_ID), wendoo.NIL_VALUE]);
+    check("look-like-keeps-its-image-when-the-asset-is-gone", steady.image === steadyImage);
+    act(lookLike, steady, [wendoo.NIL_VALUE, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)]);
+    check("look-like-keeps-its-image-given-no-sprite", steady.image === steadyImage);
+
+    const bump = tileBody(wendoo.BUMP_TILE);
+    const reader = solidSprite(8, 30, 60);
+    const plainNear = solidSprite(8, 32, 60);
+    const twinPicture = image.create(8, 8);
+    twinPicture.drawImage(heroPicture(), 0, 0);
+    const twin = sprites.create(twinPicture, SpriteKind.Player);
+    twin.setPosition(36, 60);
+    const filter = imageLiteral(HERO_ASSET_ID);
+    check(
+      "bump-given-an-image-reads-the-nearest-touched-sprite-that-looks-like-it",
+      twin.image !== heroPicture() &&
+        standsFor(act(bump, reader, [filter]), twin) &&
+        standsFor(act(bump, reader, [imageLiteral(HERO_DISPLAY_NAME)]), twin)
+    );
+    check(
+      "bump-given-no-image-reads-the-nearest-touched-sprite",
+      standsFor(act(bump, reader, [wendoo.NIL_VALUE]), plainNear) && standsFor(act(bump, reader, []), plainNear)
+    );
+    check(
+      "bump-given-an-image-gone-from-the-project-reads-nothing",
+      act(bump, reader, [imageLiteral(DELETED_ASSET_ID)]).t === wendoo.ValueTag.Nil
+    );
+    twin.destroy();
+    check(
+      "bump-given-an-image-no-touched-sprite-looks-like-reads-nothing",
+      act(bump, reader, [filter]).t === wendoo.ValueTag.Nil
+    );
+
+    check(
+      "toward-reads-only-a-sprite-value",
+      wendoo.directionToward(reader, wendoo.spriteValue(model)) !== undefined &&
+        wendoo.directionToward(reader, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)) === undefined &&
+        wendoo.directionToward(reader, filter) === undefined
+    );
+    game.popScene();
+  }
+
+  /**
+   * Check the arcade icon encoder: it writes an image's width and height,
+   * each a ULEB128, then one digit per pixel -- its palette index, 0 when
+   * transparent -- row by row, padded to whole bytes; and it renders nothing
+   * for an icon that is no image.
+   */
+  function checkIconEncoder(): void {
+    const encoder = new wendoo.ImageIconEncoder();
+    let wide = "820101";
+    for (let i = 0; i < 130; i++) {
+      wide += "0";
+    }
+    check(
+      "icon-encoder-writes-the-size-then-one-digit-per-pixel",
+      encoder.encode(img`
+        . 1 f
+        a . 2
+      `) === "030201fa02" &&
+        encoder.encode(img`
+          1 2 3
+        `) === "03011230" &&
+        encoder.encode(image.create(130, 1)) === wide
+    );
+    check("icon-encoder-renders-nothing-for-what-is-no-image", encoder.encode("dpad") === "");
+  }
+
   /** Append `value` to `out` as a ULEB128 unsigned integer. */
   function appendVarUint(out: number[], value: number): void {
     let rest = value;
@@ -1050,7 +1278,8 @@ namespace arcadeSelftest {
    * its programs while the new scene runs its own; then check the arcade
    * base pack's direction arithmetic, how its tiles move sprites, how the
    * running game takes program updates, the bump sensor, the move's toward
-   * and away modifiers, and the in-range and out-of-range sensors.
+   * and away modifiers, the in-range and out-of-range sensors, image assets
+   * with the tiles reading them, and the arcade icon encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -1107,6 +1336,8 @@ namespace arcadeSelftest {
     checkBump();
     checkRelationalModifiers();
     checkRangeSensors();
+    checkImageAssets();
+    checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);
     console.log(`SIMCAP PASS ${SELFTEST_CASE_ID}`);

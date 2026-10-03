@@ -13,9 +13,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { stream } from "@wendoo/core";
-import { BrainDef, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
+import { BrainDef, List, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { BrainRuntime, linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
+import { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
+import {
+  BrainRuntime,
+  linkedBrainProgramFromBytes,
+  mkActuatorTileId,
+  mkClosedStructValue,
+  mkStringValue,
+  mkTypeId,
+  NativeType,
+} from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
 import { writeBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
@@ -583,6 +592,54 @@ export function arcadeCarriedSlotLabel(tileName: string, slotTileId: string): st
 export function arcadeCompileDiagnosticCodes(file: string): number[] {
   const compiled = compileBrainSource(arcadeEnvironment(), readRepoFile(`${ARCADE_SOURCES_DIR}/${file}`));
   return compiled.diagnostics.map((diagnostic) => diagnostic.code);
+}
+
+/** Asset id the image literal tile of {@link arcadeImageRuleDiagnosticCodes} carries. */
+const IMAGE_LITERAL_ASSET_ID = "image1";
+
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding an `Image` value. */
+export const IMAGE_LITERAL = "<image literal>";
+
+/**
+ * The stable codes of the diagnostics linking a one-rule program in the
+ * environment binding the arcade selftest's catalog, in the order reported:
+ * its WHEN side the tiles `when` names, its DO side the tiles `act` names,
+ * each entry the name of a sensor (on the WHEN side) or an actuator (on the
+ * DO side), or {@link IMAGE_LITERAL} for a literal tile holding an `Image`
+ * value. The literal tile is minted into the environment for the program
+ * only, holding the asset id {@link IMAGE_LITERAL_ASSET_ID}.
+ *
+ * @param when - The WHEN side's entries, such as `["sensor.arcade.bump", IMAGE_LITERAL]`.
+ * @param act - The DO side's entries, such as `["actuator.arcade.look-like", IMAGE_LITERAL]`.
+ */
+export function arcadeImageRuleDiagnosticCodes(when: string[], act: string[]): number[] {
+  const environment = arcadeEnvironment();
+  const services = environment.brainServices;
+  const imageType = mkTypeId(NativeType.Struct, "Image");
+  const literal = new BrainTileLiteralDef(
+    imageType,
+    mkClosedStructValue(imageType, List.from([mkStringValue(IMAGE_LITERAL_ASSET_ID)])),
+    { persist: false, valueLabel: IMAGE_LITERAL_ASSET_ID },
+    services
+  );
+  services.edit.tiles.add(literal);
+  const tileOf = (entry: string, tileId: (name: string) => string) => {
+    if (entry === IMAGE_LITERAL) return literal;
+    const found = environment
+      .tileCatalogs()
+      .map((catalog) => catalog.get(tileId(entry)))
+      .find((tile) => tile !== undefined);
+    if (found === undefined) throw new Error(`no tile ${entry}`);
+    return found;
+  };
+  const brainDef = BrainDef.emptyBrainDef(services, "image-rule");
+  const rule = (brainDef.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+  for (const entry of when) rule.when().appendTile(tileOf(entry, mkSensorTileId));
+  for (const entry of act) rule.do().appendTile(tileOf(entry, mkActuatorTileId));
+  return environment
+    .linkBrain(brainDef)
+    .diagnostics.toArray()
+    .map((diagnostic) => diagnostic.code);
 }
 
 /** The bytes the lowercase hex `hex` spells. */

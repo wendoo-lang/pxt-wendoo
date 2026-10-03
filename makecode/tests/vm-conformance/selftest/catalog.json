@@ -53,6 +53,19 @@
     },
     {
       "name": "chime",
+      "types": [
+        {
+          "name": "Tune",
+          "asset": "tune",
+          "fields": [
+            {
+              "name": "asset",
+              "type": "string",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
       "tiles": [
         {
           "name": "actuator.chime.ring",
@@ -71,7 +84,8 @@
               "label": "nice and loud",
               "language": {
                 "form": "loudly"
-              }
+              },
+              "icon": "img<loudly>"
             }
           ],
           "label": "ring the chime",
@@ -470,6 +484,12 @@
       "code": "registration-after-snapshot",
       "name": "actuator.chime.late",
       "pack": "selftest"
+    },
+    {
+      "code": "catalog-icon-unencodable",
+      "name": "actuator.chime.ring",
+      "pack": "chime",
+      "spec": "times"
     },
     {
       "code": "catalog-icon-unencodable",

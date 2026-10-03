@@ -26,7 +26,7 @@
  *
  * The selftest also serializes the packs' catalog, twice, checking the two
  * payloads are byte-identical, and prints it for the node-side runner to
- * assert.
+ * assert; and it checks the asset type one pack declares.
  *
  * The project also carries a brains module, as the Wendoo simulator
  * extension writes it, declaring programs the editor compiled; the selftest
@@ -50,6 +50,8 @@
  * - `CATALOG <payload>` -- the serialized catalog, verbatim.
  * - `wendoo program-rejected <code> <id>` -- one per program a host
  *   refused, as the host logs it.
+ * - `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` -- one per asset id the
+ *   asset type check reports unresolved, as the VM extension logs it.
  * - `TRACE <line>` -- one per line of the observable trace of the pack-tile
  *   program's run.
  * - `SIMCAP PASS <case>` -- the run reached its end.
@@ -481,6 +483,52 @@ namespace registrationSelftest {
     check("action-output-core-typed-readable-by-name", isNumber(readBack, CORE_OUTPUT_VALUE));
   }
 
+  /** Field name of every asset type's one field, which holds the asset's id. */
+  const ASSET_FIELD_NAME = "asset";
+
+  /** Asset id of the tune value the asset-type checks read. */
+  const TUNE_ASSET_ID = "tune1";
+
+  /** The tune value a compiled program carries holding `asset` in its asset field, at the field id the manifest allocates. */
+  function tuneLiteral(asset: wendoo.Value): wendoo.Value {
+    const fieldId = wendoo.projectIds().fieldId(chime.TUNE_TYPE, ASSET_FIELD_NAME);
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i <= fieldId; i++) {
+      slots.push(wendoo.NIL_VALUE);
+    }
+    slots[fieldId] = asset;
+    return wendoo.mkStruct(wendoo.structTypeId(chime.TUNE_TYPE), slots);
+  }
+
+  /**
+   * The chime pack's asset type was registered under the manifest's atom,
+   * its one asset field under the manifest's field id; it reads the asset id
+   * of a value of its own type and of no other value; and it reports each
+   * asset id it is told is unresolved once, however often it is told, for the
+   * node-side runner to hold to its expected lines.
+   */
+  function checkAssetType(ids: wendoo.RegistrationIdMap, types: wendoo.StructTypeRegistry): void {
+    const binding = chime.tuneBinding;
+    check(
+      "asset-type-takes-its-atom-and-field-from-the-manifest",
+      types.getByTypeId(wendoo.structTypeId(chime.TUNE_TYPE)) === binding &&
+        binding.atomId === ids.typeAtomId(chime.TUNE_TYPE) &&
+        binding.assetKind === chime.TUNE_ASSET_KIND &&
+        binding.fieldIds.length === 1 &&
+        binding.fieldIds[0] === ids.fieldId(chime.TUNE_TYPE, ASSET_FIELD_NAME)
+    );
+    check(
+      "asset-type-reads-the-asset-id-of-its-own-values",
+      binding.assetIdOf(tuneLiteral(wendoo.mkString(TUNE_ASSET_ID))) === TUNE_ASSET_ID &&
+        binding.assetIdOf(wendoo.mkStruct(wendoo.structTypeId(TYPE_NAME), [wendoo.mkString(TUNE_ASSET_ID)])) === "" &&
+        binding.assetIdOf(wendoo.mkString(TUNE_ASSET_ID)) === "" &&
+        binding.assetIdOf(wendoo.NIL_VALUE) === ""
+    );
+    binding.reportUnresolved("gone");
+    binding.reportUnresolved("lost");
+    binding.reportUnresolved("gone");
+  }
+
   /** Document id of the ticker program: one rule restarting its page on every think. */
   const TICKER_ID = "akBQz0nySKaYx37w";
 
@@ -771,6 +819,7 @@ namespace registrationSelftest {
     checkCatalog();
     checkSlotBuilderLabels();
     checkLanguageBuilders();
+    checkAssetType(ids, types);
     checkCompiledBrains();
     checkLoader();
     checkProgramHost();

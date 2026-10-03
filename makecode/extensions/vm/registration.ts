@@ -11,10 +11,12 @@
  * mapping's, never the order the fields are declared in.
  *
  * A registration also carries its declared shape and catalog metadata --
- * fields, argument grammar (each slot with its tile's display label, and
- * each modifier slot with its tile's sentence words), returns, outputs,
- * consumed WHEN result, label, group, docs, icon, sentence words. The drain installs behavior only and ignores all of it;
- * the catalog serializer reads it through {@link writeCatalogEntries}.
+ * fields, an asset type's asset kind, argument grammar (each slot with its
+ * tile's display label and icon, and each modifier slot with its tile's
+ * sentence words), returns, outputs, consumed WHEN result, label, group,
+ * docs, icon, sentence words. The drain installs behavior only and ignores
+ * all of it; the catalog serializer reads it through
+ * {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
  * ignored and recorded in {@link registrationDiagnostics}, and the program
@@ -591,6 +593,15 @@ namespace wendoo {
      * registered.
      */
     language: TileLanguage = new TileLanguage();
+    /**
+     * Icon of the tile that fills the slot, in the host target's own icon
+     * form, or `undefined` when none is declared. Opaque: only a
+     * host-supplied {@link CatalogIconEncoder} renders it. Declare the same
+     * icon on every slot a shared tile fills: the editor shows the icon of
+     * the first one registered.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    icon: any;
     private requiredDeclared: boolean = false;
     private requiredValue: boolean = false;
 
@@ -1141,12 +1152,22 @@ namespace wendoo {
     private fields: StructFieldSpec[];
     private binding: StructTypeBinding;
     private meta: CatalogMeta;
+    /** Kind of the project assets an asset type's values name; `""` for any other struct type. */
+    private assetKind: string;
 
-    constructor(name: string, pack: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta: CatalogMeta) {
+    constructor(
+      name: string,
+      pack: string,
+      fields: StructFieldSpec[],
+      binding: StructTypeBinding,
+      meta: CatalogMeta,
+      assetKind: string
+    ) {
       super(name, pack);
       this.fields = fields;
       this.binding = binding;
       this.meta = meta;
+      this.assetKind = assetKind;
     }
 
     idIn(ids: RegistrationIdMap): number {
@@ -1173,7 +1194,7 @@ namespace wendoo {
 
     writeCatalog(catalog: CatalogWriter): void {
       const native = this.binding.hasFieldGetter || this.binding.hasFieldSetter || this.binding.hasSnapshotNative;
-      catalog.struct(this.pack, this.name, this.fields, native, this.meta);
+      catalog.struct(this.pack, this.name, this.fields, native, this.assetKind, this.meta);
     }
   }
 
@@ -1287,7 +1308,23 @@ namespace wendoo {
      * @param meta - Catalog metadata of the type; the drain ignores it.
      */
     defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: CatalogMeta): void {
-      appendPending(new PendingStructType(name, this.name, fields, binding, meta));
+      appendPending(new PendingStructType(name, this.name, fields, binding, meta, ""));
+    }
+
+    /**
+     * Register the asset type `name`: a struct type whose values each name
+     * one of the project's assets of `binding`'s asset kind, by the id the
+     * project gives it, in one read-only string field, {@link ASSET_FIELD}.
+     * The drain resolves the type's atom id and the field's id from the
+     * project's mapping; the catalog entry carries the asset kind.
+     *
+     * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
+     * @param binding - The type's binding, carrying the asset kind; read asset ids through it once the drain has run.
+     * @param meta - Catalog metadata of the type; the drain ignores it.
+     */
+    defineAssetType(name: string, binding: AssetTypeBinding, meta?: CatalogMeta): void {
+      const fields = [readOnlyField(ASSET_FIELD, TYPE_STRING)];
+      appendPending(new PendingStructType(name, this.name, fields, binding, meta, binding.assetKind));
     }
 
     /**

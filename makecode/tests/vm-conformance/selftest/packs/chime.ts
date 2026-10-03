@@ -9,9 +9,10 @@
  * that can be rung.
  *
  * Every registration is made from this file's top-level code, which pxt runs
- * at program start, before the selftest constructs anything. Two of the three
+ * at program start, before the selftest constructs anything. Two of the four
  * registrations cannot be honoured: one claims the tile name the other pack
- * claims, and one claims a name the project's mapping records no id for.
+ * claims, and one claims a name the project's mapping records no id for. The
+ * pack also declares an asset type, the tunes a chime can play.
  */
 namespace chime {
   /** `actuator.chime.ring`: rings the chime, counting the rings. */
@@ -57,23 +58,40 @@ namespace chime {
   /** Name this pack's registrations are diagnosed under, and the value its reading tile returns. */
   export const PACK_NAME = "chime";
 
+  /** Type name of the chime's tune asset type. */
+  export const TUNE_TYPE = "Tune";
+
+  /** Asset kind of the project assets a tune value names. */
+  export const TUNE_ASSET_KIND = "tune";
+
+  /** The tune asset type's binding: each value names one of the project's tunes by its asset id. */
+  export const tuneBinding = new wendoo.AssetTypeBinding(TUNE_ASSET_KIND);
+
   const pack = wendoo.pack(PACK_NAME);
 
-  /** The ring tile's count slot: a labeled parameter slot declaring sentence words the catalog leaves out. */
-  const timesSlot = wendoo.arg("times", wendoo.TYPE_NUMBER, "times to ring");
-  timesSlot.language = wendoo.tileLanguage("this many times");
+  pack.defineAssetType(TUNE_TYPE, tuneBinding);
 
   /**
-   * Declared shape of the ring tile: an optional count, an optional modifier
-   * declaring a sentence form, both labeled, and sample metadata, a sentence
-   * form included, the catalog assertions pin.
+   * The ring tile's count slot: a labeled parameter slot declaring sentence
+   * words the catalog leaves out, and an icon the selftest's encoder refuses
+   * to render.
+   */
+  const timesSlot = wendoo.arg("times", wendoo.TYPE_NUMBER, "times to ring");
+  timesSlot.language = wendoo.tileLanguage("this many times");
+  timesSlot.icon = "unencodable";
+
+  /** The ring tile's loudness slot: a labeled modifier slot declaring a sentence form and an icon. */
+  const loudlySlot = wendoo.modifier("loudly", "nice and loud", wendoo.tileLanguage("loudly"));
+  loudlySlot.icon = "loudly";
+
+  /**
+   * Declared shape of the ring tile: an optional count and an optional
+   * modifier, and sample metadata, a sentence form included, the catalog
+   * assertions pin.
    */
   const ringSpec = new wendoo.TileSpec(
     wendoo.TILE_KIND_ACTUATOR,
-    [
-      wendoo.optional(timesSlot),
-      wendoo.optional(wendoo.modifier("loudly", "nice and loud", wendoo.tileLanguage("loudly"))),
-    ],
+    [wendoo.optional(timesSlot), wendoo.optional(loudlySlot)],
     ""
   );
   ringSpec.label = "ring the chime";

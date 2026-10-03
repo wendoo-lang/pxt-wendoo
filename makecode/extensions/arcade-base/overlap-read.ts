@@ -6,15 +6,16 @@
  */
 namespace wendoo {
   /**
-   * The sprite `sprite` touches now in the current scene, or `undefined`
-   * while it touches none. When it touches several, the one
-   * {@link nearestSprite} picks among them: nearest center first, ties to
-   * the sprite created first.
+   * The sprite `sprite` touches now in the current scene, among those
+   * `admits` admits, or `undefined` while it touches none of them. When it
+   * touches several, the one {@link nearestSprite} picks among them: nearest
+   * center first, ties to the sprite created first.
    *
    * @param sprite - The sprite whose touch is read.
+   * @param admits - Whether a touched sprite may be picked; omit to admit every touched sprite.
    */
   //% hidden
-  export function bumpedSprite(sprite: Sprite): Sprite {
-    return nearestSprite(sprite, (other: Sprite) => sprite.overlapsWith(other));
+  export function bumpedSprite(sprite: Sprite, admits?: (other: Sprite) => boolean): Sprite {
+    return nearestSprite(sprite, (other: Sprite) => sprite.overlapsWith(other) && (!admits || admits(other)));
   }
 }

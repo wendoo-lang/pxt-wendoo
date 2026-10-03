@@ -44,11 +44,18 @@
         "retired",
         "x"
       ]
+    },
+    {
+      "name": "Tune",
+      "atom": 1025,
+      "fields": [
+        "asset"
+      ]
     }
   ],
   "next": {
     "action": 1031,
     "operator": 1025,
-    "atom": 1025
+    "atom": 1026
   }
 }

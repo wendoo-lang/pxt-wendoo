@@ -9,11 +9,13 @@ import {
   arcadeCarriedTileLanguage,
   arcadeCompileDiagnosticCodes,
   arcadeHoldsModifier,
+  arcadeImageRuleDiagnosticCodes,
   arcadeLoneSensorSentence,
   arcadeModifierLabel,
   arcadeSensorLabel,
   arcadeSensorNames,
   checkedInText,
+  IMAGE_LITERAL,
   renderVmPrograms,
 } from "./vm-programs.js";
 
@@ -61,6 +63,18 @@ describe("the MakeCode VM extension's compiled programs", () => {
       }
     });
   }
+
+  it("compiles look like given an image, and refuses it given nothing", () => {
+    const lookLike = "actuator.arcade.look-like";
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [lookLike, IMAGE_LITERAL]), []);
+    assert.ok(arcadeImageRuleDiagnosticCodes([], [lookLike]).includes(ParseDiagCode.ActionCallParseFailure));
+  });
+
+  it("compiles bump given an image, and given none", () => {
+    const move = "actuator.arcade.move";
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes(["sensor.arcade.bump", IMAGE_LITERAL], [move]), []);
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes(["sensor.arcade.bump"], [move]), []);
+  });
 
   it("refuses a dpad given one direction modifier twice", (t) => {
     const warn = t.mock.method(console, "warn", () => {});

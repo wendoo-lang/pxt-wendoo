@@ -2,14 +2,16 @@
 
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
 shares: the tiles a brain uses to read the controller, notice what its
-sprite touches and what is near it, and move its sprite.
+sprite touches and what is near it, move its sprite, and change how it
+looks.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
   to just those directions.
 - **bump** -- a WHEN tile that is on while the sprite touches another
   sprite, carrying the sprite it touches. When it touches several at once,
-  it carries the nearest.
+  it carries the nearest. Give it one of your project's images to notice
+  only sprites that look exactly like that image.
 - **in range** and **out of range** -- a pair of WHEN tiles that watch the
   sprite nearest yours, carrying it: **in range** is on while that sprite is
   within 60 pixels, center to center, and **out of range** while it is
@@ -28,6 +30,8 @@ sprite touches and what is near it, and move its sprite.
   direction its WHEN carries, or rightward when there is none. Add
   **slowly** or **quickly** (up to three times) to change its speed, or
   give it a **speed** in pixels per second.
+- **look like** -- a DO tile that changes the sprite's picture. Give it one
+  of your project's images to wear, or a sprite to dress just like.
 
 > **Heads up:** this extension is under development and not ready to use in
 > your projects yet.

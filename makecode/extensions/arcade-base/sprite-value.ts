@@ -1,7 +1,7 @@
 /**
  * Sprites as Wendoo values: the `Sprite` type an Arcade sprite crosses into
- * a program as, and the direction toward the sprite a value stands for. A
- * `Sprite` value is opaque -- the type declares no fields -- and is backed
+ * a program as, the sprite a value stands for, and the direction toward it.
+ * A `Sprite` value is opaque -- the type declares no fields -- and is backed
  * by the sprite it stands for.
  */
 namespace wendoo {
@@ -28,6 +28,20 @@ namespace wendoo {
   }
 
   /**
+   * The sprite `value` stands for, or `undefined` when `value` is not a
+   * `Sprite` value, nil included.
+   *
+   * @param value - Any value a program produced.
+   */
+  //% hidden
+  export function spriteOf(value: Value): Sprite {
+    if (!value || value.t !== ValueTag.Struct || value.typeId !== structTypeId(TYPE_SPRITE)) {
+      return undefined;
+    }
+    return value.native as Sprite;
+  }
+
+  /**
    * The direction from the center of `sprite` to the center of the sprite
    * `subject` stands for, scaled to length 1, read from where both sprites
    * are now. `undefined` when `subject` is not a `Sprite` value -- nil
@@ -38,10 +52,10 @@ namespace wendoo {
    */
   //% hidden
   export function directionToward(sprite: Sprite, subject: Value): DirectionVector {
-    if (!subject || subject.t !== ValueTag.Struct || subject.typeId !== structTypeId(TYPE_SPRITE)) {
+    const other = spriteOf(subject);
+    if (!other) {
       return undefined;
     }
-    const other = subject.native as Sprite;
     const x = other.x - sprite.x;
     const y = other.y - sprite.y;
     if (x === 0 && y === 0) {

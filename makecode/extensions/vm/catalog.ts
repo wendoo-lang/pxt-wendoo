@@ -10,8 +10,9 @@
  *   `name` plus its `types`, `tiles` and `operators` entry arrays, each in
  *   registration order.
  * - A type entry carries `name`, `native` (backed by host objects through
- *   registered hooks), `fields` (each with `name`, `type`, `readOnly`), and
- *   the metadata fields.
+ *   registered hooks), `asset` (on an asset type, the kind of the project
+ *   assets its values name), `fields` (each with `name`, `type`,
+ *   `readOnly`), and the metadata fields.
  * - A tile entry carries `name`, `kind`, `async`, its argument grammar as
  *   either `args` or `call`, `returns`, `outputs` (each with `name` and
  *   `type`), `consumesWhenResult` (the type name of the WHEN result the tile
@@ -24,20 +25,22 @@
  *   `type`, then `optional` (the item is the slot wrapped in an optional), or
  *   `repeated` and `min` (the slot wrapped in a repeat with no upper bound),
  *   then the slot's argument options, then its `label`, then, on a modifier
- *   slot, its `language`. An item has a flat form when it is a slot, or an
- *   unnamed optional or unnamed unbounded repeat directly around a slot.
+ *   slot, its `language`, then its `icon`. An item has a flat form when it
+ *   is a slot, or an unnamed optional or unnamed unbounded repeat directly
+ *   around a slot.
  * - `call` holds one grammar node per item. Every node carries `kind` (`arg`,
  *   `seq`, `choice`, `optional`, `repeat`, `bag` or `conditional`) and
  *   `name`. An `arg` node carries `tileId`, then `modifier` or `type`, then
  *   its argument options, then its `label`, then, on a modifier slot, its
- *   `language`; `seq` and `bag` carry `items`;
+ *   `language`, then its `icon`; `seq` and `bag` carry `items`;
  *   `choice` carries `options`; `optional` carries `item`; `repeat` carries
  *   `item`, `min` and `max`; and `conditional` carries `condition` (the name
  *   it tests), `then` and `else`.
  * - The argument options are `required`, `anonymous`, `default` (a tagged
  *   value), `derived`, `range` (`min`, `max` and `onExceed`) and `unit`. A
- *   slot's `label` is the display label of the tile that fills it, and a
- *   modifier slot's `language` the sentence words of that tile.
+ *   slot's `label` is the display label of the tile that fills it, a
+ *   modifier slot's `language` the sentence words of that tile, and a slot's
+ *   `icon` that tile's icon, in the encoder's text form.
  * - A `language` object holds the sentence words the Wendoo editor reads a
  *   tile with: `form` (the tile's word), `frame` (`verb`, `state` or
  *   `event`: the template a sensor heading a WHEN side reads through) and
@@ -51,7 +54,8 @@
  * - The metadata fields are `label`, `group`, `docs` (markdown text,
  *   verbatim) and `icon` (the encoder's text form).
  * - A diagnostic entry carries `code`, `name`, `pack`, `otherPack` and
- *   `spec` (the call spec within the registration the problem is about).
+ *   `spec` (the call spec within the registration the problem is about: for
+ *   a slot's icon, the slot's name, or its `tileId` when it is unnamed).
  *
  * Omission conventions, applied uniformly: a boolean field is present only
  * when true, a string field only when non-empty, an array field only when
@@ -67,8 +71,9 @@
  */
 namespace wendoo {
   /**
-   * Diagnostic code: a registration declares an icon its encoder cannot
-   * render, so its entry is written without one.
+   * Diagnostic code: a registration declares an icon, on itself or on a slot
+   * of its argument grammar, that its encoder cannot render, so the entry is
+   * written without it.
    */
   export const CATALOG_ICON_UNENCODABLE = "catalog-icon-unencodable";
 
@@ -233,13 +238,21 @@ namespace wendoo {
   }
 
   /**
-   * The slot's `"label"` field, then a modifier slot's `"language"` field,
-   * each prefixed by its separating comma and each left out when the slot
-   * declares none.
+   * The `"icon"` field of the slot it is given, prefixed by its separating
+   * comma, or `""` when the slot declares no icon or its icon is not
+   * rendered.
    */
-  function slotDisplayText(slot: ArgSlotSpec): string {
+  type SlotIconText = (slot: ArgSlotSpec) => string;
+
+  /**
+   * The slot's `"label"` field, then a modifier slot's `"language"` field,
+   * then the slot's `"icon"` field as `iconText` renders it, each prefixed by
+   * its separating comma and each left out when the slot declares none.
+   */
+  function slotDisplayText(slot: ArgSlotSpec, iconText: SlotIconText): string {
     const label = slot.label.length > 0 ? `,"label":${jsonQuote(slot.label)}` : "";
-    return slot.isModifier ? `${label}${languageText(slot.language)}` : label;
+    const words = slot.isModifier ? languageText(slot.language) : "";
+    return `${label}${words}${iconText(slot)}`;
   }
 
   /**
@@ -276,8 +289,11 @@ namespace wendoo {
     return undefined;
   }
 
-  /** JSON object text of the flat form of `item`, which {@link flatSlotOf} must find a slot for. */
-  function flatArgText(item: TileArgSpec): string {
+  /**
+   * JSON object text of the flat form of `item`, which {@link flatSlotOf}
+   * must find a slot for, its slot's icon rendered by `iconText`.
+   */
+  function flatArgText(item: TileArgSpec, iconText: SlotIconText): string {
     const slot = flatSlotOf(item);
     const named = slot.name.length > 0 ? `"name":${jsonQuote(slot.name)},` : "";
     let out = `{${named}${slotKindText(slot).substr(1)}`;
@@ -291,43 +307,43 @@ namespace wendoo {
         out += `,"min":${jsonNumber(min)}`;
       }
     }
-    return `${out}${argOptionsText(slot)}${slotDisplayText(slot)}}`;
+    return `${out}${argOptionsText(slot)}${slotDisplayText(slot, iconText)}}`;
   }
 
-  /** JSON array text of `nodes`, each rendered as a grammar node. */
-  function nodeListText(nodes: TileArgSpec[]): string {
+  /** JSON array text of `nodes`, each rendered as a grammar node, each slot's icon rendered by `iconText`. */
+  function nodeListText(nodes: TileArgSpec[], iconText: SlotIconText): string {
     const rendered: string[] = [];
     for (let i = 0; i < nodes.length; i++) {
-      rendered.push(nodeText(nodes[i]));
+      rendered.push(nodeText(nodes[i], iconText));
     }
     return jsonArray(rendered);
   }
 
-  /** JSON object text of the grammar node `node` and every node under it. */
-  function nodeText(node: TileArgSpec): string {
+  /** JSON object text of the grammar node `node` and every node under it, each slot's icon rendered by `iconText`. */
+  function nodeText(node: TileArgSpec, iconText: SlotIconText): string {
     let out = `{"kind":${jsonQuote(node.kind)}`;
     if (node.name.length > 0) {
       out += `,"name":${jsonQuote(node.name)}`;
     }
     if (node.kind === CALL_SPEC_ARG) {
       const slot = node as ArgSlotSpec;
-      return `${out}${slotKindText(slot)}${argOptionsText(slot)}${slotDisplayText(slot)}}`;
+      return `${out}${slotKindText(slot)}${argOptionsText(slot)}${slotDisplayText(slot, iconText)}}`;
     }
     if (node.kind === CALL_SPEC_SEQ || node.kind === CALL_SPEC_BAG) {
       const items = node.kind === CALL_SPEC_SEQ ? (node as SeqSpec).items : (node as BagSpec).items;
       if (items.length > 0) {
-        out += `,"items":${nodeListText(items)}`;
+        out += `,"items":${nodeListText(items, iconText)}`;
       }
     } else if (node.kind === CALL_SPEC_CHOICE) {
       const options = (node as ChoiceSpec).options;
       if (options.length > 0) {
-        out += `,"options":${nodeListText(options)}`;
+        out += `,"options":${nodeListText(options, iconText)}`;
       }
     } else if (node.kind === CALL_SPEC_OPTIONAL) {
-      out += `,"item":${nodeText((node as OptionalSpec).item)}`;
+      out += `,"item":${nodeText((node as OptionalSpec).item, iconText)}`;
     } else if (node.kind === CALL_SPEC_REPEAT) {
       const repeat = node as RepeatSpec;
-      out += `,"item":${nodeText(repeat.item)}`;
+      out += `,"item":${nodeText(repeat.item, iconText)}`;
       if (repeat.min > 0) {
         out += `,"min":${jsonNumber(repeat.min)}`;
       }
@@ -339,9 +355,9 @@ namespace wendoo {
       if (conditional.condition.length > 0) {
         out += `,"condition":${jsonQuote(conditional.condition)}`;
       }
-      out += `,"then":${nodeText(conditional.thenItem)}`;
+      out += `,"then":${nodeText(conditional.thenItem, iconText)}`;
       if (conditional.elseItem) {
-        out += `,"else":${nodeText(conditional.elseItem)}`;
+        out += `,"else":${nodeText(conditional.elseItem, iconText)}`;
       }
     }
     return `${out}}`;
@@ -350,10 +366,10 @@ namespace wendoo {
   /**
    * The argument grammar whose top-level items are `items`, rendered as the
    * tile entry's `"args"` field when every item has a flat form and as its
-   * `"call"` field otherwise, prefixed by the separating comma; `""` when
-   * there are no items.
+   * `"call"` field otherwise, prefixed by the separating comma, each slot's
+   * icon rendered by `iconText`; `""` when there are no items.
    */
-  function grammarText(items: TileArgSpec[]): string {
+  function grammarText(items: TileArgSpec[], iconText: SlotIconText): string {
     if (items.length === 0) {
       return "";
     }
@@ -362,11 +378,11 @@ namespace wendoo {
       flat = flatSlotOf(items[i]) !== undefined;
     }
     if (!flat) {
-      return `,"call":${nodeListText(items)}`;
+      return `,"call":${nodeListText(items, iconText)}`;
     }
     const rendered: string[] = [];
     for (let i = 0; i < items.length; i++) {
-      rendered.push(flatArgText(items[i]));
+      rendered.push(flatArgText(items[i], iconText));
     }
     return `,"args":${jsonArray(rendered)}`;
   }
@@ -419,6 +435,30 @@ namespace wendoo {
     }
 
     /**
+     * The `"icon"` field of `icon`, prefixed by its separating comma; `""`
+     * when `icon` is undeclared, or when the encoder cannot render it, which
+     * is recorded under {@link CATALOG_ICON_UNENCODABLE} against `name`,
+     * `pack` and `spec`.
+     *
+     * @param icon - Opaque icon value, or `undefined` when none is declared.
+     * @param name - Name of the registration declaring it.
+     * @param pack - Pack the registration is registered under.
+     * @param spec - Name of the call spec declaring it, or `""` when the registration itself does.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    private iconText(icon: any, name: string, pack: string, spec: string): string {
+      if (icon === undefined || icon === null) {
+        return "";
+      }
+      const text = this.icons.encode(icon);
+      if (text.length > 0) {
+        return `,"icon":${jsonQuote(text)}`;
+      }
+      this.problems.push(new RegistrationDiagnostic(CATALOG_ICON_UNENCODABLE, name, pack, "", spec));
+      return "";
+    }
+
+    /**
      * The metadata fields of `meta`, rendered under the payload's omission
      * conventions, each prefixed by its separating comma. An icon the
      * encoder cannot render is left out and recorded under
@@ -438,15 +478,7 @@ namespace wendoo {
       if (meta.docs.length > 0) {
         out += `,"docs":${jsonQuote(meta.docs)}`;
       }
-      if (meta.icon !== undefined && meta.icon !== null) {
-        const iconText = this.icons.encode(meta.icon);
-        if (iconText.length > 0) {
-          out += `,"icon":${jsonQuote(iconText)}`;
-        } else {
-          this.problems.push(new RegistrationDiagnostic(CATALOG_ICON_UNENCODABLE, name, pack, "", ""));
-        }
-      }
-      return out;
+      return out + this.iconText(meta.icon, name, pack, "");
     }
 
     /** JSON object text of one declared struct field. */
@@ -465,12 +497,23 @@ namespace wendoo {
      * @param name - Wendoo type name.
      * @param fields - Declared fields, in declaration order.
      * @param native - Whether the type is backed by host objects through registered hooks.
+     * @param assetKind - Kind of the project assets an asset type's values name; `""` for any other type.
      * @param meta - Catalog metadata, or `undefined` when the registration declared none.
      */
-    struct(pack: string, name: string, fields: StructFieldSpec[], native: boolean, meta: CatalogMeta): void {
+    struct(
+      pack: string,
+      name: string,
+      fields: StructFieldSpec[],
+      native: boolean,
+      assetKind: string,
+      meta: CatalogMeta
+    ): void {
       let entry = `{"name":${jsonQuote(name)}`;
       if (native) {
         entry += ',"native":true';
+      }
+      if (assetKind.length > 0) {
+        entry += `,"asset":${jsonQuote(assetKind)}`;
       }
       if (fields.length > 0) {
         const rendered: string[] = [];
@@ -500,7 +543,9 @@ namespace wendoo {
         entry += ',"async":true';
       }
       if (spec) {
-        entry += grammarText(spec.args);
+        entry += grammarText(spec.args, (slot: ArgSlotSpec) =>
+          this.iconText(slot.icon, name, pack, slot.name.length > 0 ? slot.name : slot.tileId)
+        );
         if (spec.returns.length > 0) {
           entry += `,"returns":${jsonQuote(spec.returns)}`;
         }
