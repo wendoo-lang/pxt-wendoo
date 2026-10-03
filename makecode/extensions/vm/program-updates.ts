@@ -57,7 +57,7 @@ namespace wendoo {
    * the program its registration holds.
    *
    * - A removal replaces the registration's program with the empty program
-   *   `wendooPrograms.none`, logged as `wendoo program-removed <id>`.
+   *   `wendooBrains.none`, logged as `wendoo program-removed <id>`.
    * - An update whose program the loader accepts and which references no id
    *   outside `registries` and the project's id manifest
    *   ({@link projectIds}) replaces the registration's program and name,
@@ -93,7 +93,7 @@ namespace wendoo {
       return;
     }
     const removal = update.bytecode.length === 0;
-    const bytecode = removal ? wendooPrograms.none.bytecode : update.bytecode;
+    const bytecode = removal ? wendooBrains.none.bytecode : update.bytecode;
     if (registration.bytecode.equals(bytecode)) {
       return;
     }

@@ -11,8 +11,9 @@
  * mapping's, never the order the fields are declared in.
  *
  * A registration also carries its declared shape and catalog metadata --
- * fields, argument grammar (each slot with its tile's display label),
- * returns, outputs, consumed WHEN result, label, group, docs, icon. The drain installs behavior only and ignores all of it;
+ * fields, argument grammar (each slot with its tile's display label, and
+ * each modifier slot with its tile's sentence words), returns, outputs,
+ * consumed WHEN result, label, group, docs, icon, sentence words. The drain installs behavior only and ignores all of it;
  * the catalog serializer reads it through {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
@@ -330,6 +331,61 @@ namespace wendoo {
     constructor() {}
   }
 
+  /** Sentence frame of a sensor that reads as an action, as in "When I hear a bang". */
+  export const SENTENCE_FRAME_VERB = "verb";
+
+  /** Sentence frame of a sensor that reads as a condition, worded with the locale's copula, as in "When I am hungry". */
+  export const SENTENCE_FRAME_STATE = "state";
+
+  /** Sentence frame of a sensor that reads as a happening, as in "When my timer ends". */
+  export const SENTENCE_FRAME_EVENT = "event";
+
+  /**
+   * The words the Wendoo editor reads a tile with in the sentence it shows
+   * for a rule. Every field is optional, `""` when undeclared, and the
+   * editor supplies a default for each, so a tile declaring none still
+   * reads. Catalog data only: the runtime reads none of it.
+   */
+  export class TileLanguage {
+    /** The tile's word in a sentence, such as `"press"`; `""` reads the tile by its label. */
+    form: string = "";
+    /**
+     * Which sentence template reads a sensor heading a rule's WHEN side: one
+     * of the `SENTENCE_FRAME_*` tokens. `""` reads it as
+     * {@link SENTENCE_FRAME_VERB}. No other tile is read through a frame.
+     */
+    frame: string = "";
+    /**
+     * Word completing the sentence when a sensor heads a WHEN side with no
+     * tile after it, such as `"anything"`. `""` takes the default: under the
+     * verb frame, `"anything"` for a sensor declaring an argument slot;
+     * otherwise nothing.
+     */
+    bare: string = "";
+
+    constructor() {}
+  }
+
+  /**
+   * Sentence words for a {@link TileSpec.language} or a modifier slot's
+   * {@link ArgSlotSpec.language}.
+   *
+   * @param form - The tile's word in a sentence; `""` to declare none. See {@link TileLanguage.form}.
+   * @param frame - A `SENTENCE_FRAME_*` token; omit to declare none. See {@link TileLanguage.frame}.
+   * @param bare - The word completing a WHEN side the sensor heads alone; omit to declare none. See {@link TileLanguage.bare}.
+   */
+  export function tileLanguage(form: string, frame?: string, bare?: string): TileLanguage {
+    const language = new TileLanguage();
+    language.form = form;
+    if (frame) {
+      language.frame = frame;
+    }
+    if (bare) {
+      language.bare = bare;
+    }
+    return language;
+  }
+
   /** One declared field of a struct type: its name, its value type, and its writability. */
   export class StructFieldSpec {
     /** Field name, as brains address it. */
@@ -526,6 +582,15 @@ namespace wendoo {
      * tile fills: the editor displays the label of the first one registered.
      */
     label: string = "";
+    /**
+     * Sentence words of the tile that fills a modifier slot, such as the
+     * form `"a carnivore"`; each field `""` when undeclared, and the editor
+     * reads the tile by its label. Read on modifier slots only: a parameter
+     * slot's is never carried. Declare the same words on every slot a shared
+     * tile fills: the editor reads the tile with the words of the first one
+     * registered.
+     */
+    language: TileLanguage = new TileLanguage();
     private requiredDeclared: boolean = false;
     private requiredValue: boolean = false;
 
@@ -681,9 +746,14 @@ namespace wendoo {
    *
    * @param tileId - Identity of the modifier tile that fills the slot; see {@link ArgSlotSpec.tileId}.
    * @param label - Display label of the modifier tile, such as `"away from"`; omit to declare none. See {@link ArgSlotSpec.label}.
+   * @param language - Sentence words of the modifier tile, built with {@link tileLanguage}; omit to declare none. See {@link ArgSlotSpec.language}.
    */
-  export function modifier(tileId: string, label?: string): ArgSlotSpec {
-    return labeled(new ArgSlotSpec(tileId, "", true), label);
+  export function modifier(tileId: string, label?: string, language?: TileLanguage): ArgSlotSpec {
+    const slot = labeled(new ArgSlotSpec(tileId, "", true), label);
+    if (language) {
+      slot.language = language;
+    }
+    return slot;
   }
 
   /**
@@ -959,6 +1029,8 @@ namespace wendoo {
      * `""` when the tile does not consume the WHEN result.
      */
     consumesWhenResult: string = "";
+    /** Sentence words of the tile; each field `""` when undeclared, and the editor reads the tile by its label. */
+    language: TileLanguage = new TileLanguage();
 
     constructor(kind: string, args: TileArgSpec[], returns: string) {
       super();

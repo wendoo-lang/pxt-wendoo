@@ -47,7 +47,11 @@
             }
           ],
           "returns": "Vector2",
-          "label": "dpad"
+          "label": "dpad",
+          "language": {
+            "form": "press",
+            "bare": "the dpad"
+          }
         },
         {
           "name": "actuator.arcade.move",
@@ -157,7 +161,56 @@
           "name": "sensor.arcade.bump",
           "kind": "sensor",
           "returns": "Sprite",
-          "label": "bump"
+          "label": "bump",
+          "language": {
+            "bare": "anything"
+          }
+        },
+        {
+          "name": "sensor.arcade.in-range",
+          "kind": "sensor",
+          "args": [
+            {
+              "tileId": "anon.number",
+              "type": "number",
+              "optional": true,
+              "anonymous": true,
+              "range": {
+                "min": 0,
+                "onExceed": "clamp"
+              },
+              "unit": "px"
+            }
+          ],
+          "returns": "Sprite",
+          "label": "in range",
+          "language": {
+            "frame": "state",
+            "bare": "of anything"
+          }
+        },
+        {
+          "name": "sensor.arcade.out-of-range",
+          "kind": "sensor",
+          "args": [
+            {
+              "tileId": "anon.number",
+              "type": "number",
+              "optional": true,
+              "anonymous": true,
+              "range": {
+                "min": 0,
+                "onExceed": "clamp"
+              },
+              "unit": "px"
+            }
+          ],
+          "returns": "Sprite",
+          "label": "out of range",
+          "language": {
+            "frame": "state",
+            "bare": "of anything"
+          }
         }
       ]
     }

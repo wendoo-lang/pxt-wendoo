@@ -291,6 +291,42 @@ namespace registrationSelftest {
     );
   }
 
+  /** Sentence form the language builder check declares. */
+  const BUILDER_FORM = "builder form";
+
+  /** Bare word the language builder check declares. */
+  const BUILDER_BARE = "builder bare";
+
+  /**
+   * The language builder puts each word it is given in its field and leaves
+   * the rest undeclared; the modifier builder puts the words it is given on
+   * the slot it builds; and a slot or tile built without words declares
+   * none.
+   */
+  function checkLanguageBuilders(): void {
+    const full = wendoo.tileLanguage(BUILDER_FORM, wendoo.SENTENCE_FRAME_STATE, BUILDER_BARE);
+    const formOnly = wendoo.tileLanguage(BUILDER_FORM);
+    const carried = wendoo.modifier("m", BUILDER_LABEL, full).language;
+    const unworded = wendoo.modifier("m").language;
+    const tile = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], "").language;
+    check(
+      "language-builders-carry-words",
+      full.form === BUILDER_FORM &&
+        full.frame === wendoo.SENTENCE_FRAME_STATE &&
+        full.bare === BUILDER_BARE &&
+        formOnly.form === BUILDER_FORM &&
+        formOnly.frame === "" &&
+        formOnly.bare === "" &&
+        carried === full &&
+        unworded.form === "" &&
+        unworded.frame === "" &&
+        unworded.bare === "" &&
+        tile.form === "" &&
+        tile.frame === "" &&
+        tile.bare === ""
+    );
+  }
+
   /** Tiles the grammar pack registers with well-formed argument grammars. */
   const WELL_FORMED_GRAMMAR_TILES = [
     "sensor.grammar.pad",
@@ -514,9 +550,9 @@ namespace registrationSelftest {
     );
     check(
       "compiled-brain-declarations-bound-by-id",
-      wendooPrograms.p_akBQz0nySKaYx37w === registeredBrain(TICKER_ID) &&
-        wendooPrograms.p_Hq7EB8SthdeOudyP === registeredBrain(TWIN_IDS[0]) &&
-        wendooPrograms.p_LBddvitRopf1wCnj === registeredBrain(TWIN_IDS[1])
+      wendooBrains.p_akBQz0nySKaYx37w === registeredBrain(TICKER_ID) &&
+        wendooBrains.p_Hq7EB8SthdeOudyP === registeredBrain(TWIN_IDS[0]) &&
+        wendooBrains.p_LBddvitRopf1wCnj === registeredBrain(TWIN_IDS[1])
     );
   }
 
@@ -531,7 +567,7 @@ namespace registrationSelftest {
       "loader-accepts-sts-f64-program",
       wendoo.loadCompiledProgram(registeredBrain(TICKER_ID), types).errorCode === ""
     );
-    check("loader-accepts-empty-program", wendoo.loadCompiledProgram(wendooPrograms.none, types).errorCode === "");
+    check("loader-accepts-empty-program", wendoo.loadCompiledProgram(wendooBrains.none, types).errorCode === "");
     check(
       "loader-refuses-foreign-profile",
       wendoo.loadCompiledProgram(registeredBrain(WRONG_PROFILE_ID), types).errorCode ===
@@ -619,11 +655,11 @@ namespace registrationSelftest {
     const foreign = new SelftestActor();
     let time = 0;
 
-    host.attach(ticker, wendooPrograms.p_akBQz0nySKaYx37w);
-    host.attach(twinA, wendooPrograms.p_Hq7EB8SthdeOudyP);
-    host.attach(twinB, wendooPrograms.p_LBddvitRopf1wCnj);
-    host.attach(idle, wendooPrograms.none);
-    host.attach(foreign, wendooPrograms.p_wrongProfile0001);
+    host.attach(ticker, wendooBrains.p_akBQz0nySKaYx37w);
+    host.attach(twinA, wendooBrains.p_Hq7EB8SthdeOudyP);
+    host.attach(twinB, wendooBrains.p_LBddvitRopf1wCnj);
+    host.attach(idle, wendooBrains.none);
+    host.attach(foreign, wendooBrains.p_wrongProfile0001);
     check("host-starts-nothing-before-drain", host.hostedPrograms().length === 0 && counter.switches === 0);
 
     time += DRAIN_INTERVAL_MS;
@@ -633,7 +669,7 @@ namespace registrationSelftest {
       programOf(host, ticker) === TICKER_ID &&
         programOf(host, twinA) === TWIN_IDS[0] &&
         programOf(host, twinB) === TWIN_IDS[1] &&
-        programOf(host, idle) === wendooPrograms.none.id &&
+        programOf(host, idle) === wendooBrains.none.id &&
         programOf(host, foreign) === NOT_RUNNING &&
         host.hostedPrograms().length === 4
     );
@@ -654,7 +690,7 @@ namespace registrationSelftest {
     host.drain(time);
     check("host-thinks-each-running-program-once-per-drain", afterFirst === 3 && counter.switches === 9);
 
-    host.attach(twinB, wendooPrograms.p_akBQz0nySKaYx37w);
+    host.attach(twinB, wendooBrains.p_akBQz0nySKaYx37w);
     time += DRAIN_INTERVAL_MS;
     host.drain(time);
     check(
@@ -697,7 +733,7 @@ namespace registrationSelftest {
     const writer = new wendoo.ObservableTraceWriter(new PrefixedTraceSink(), wendoo.STS_F64_PROFILE_ID);
     const host = new wendoo.ProgramHost(new wendoo.TraceTap(writer));
     const actor = new SelftestActor();
-    host.attach(actor, wendooPrograms.p_ringerRingerRing);
+    host.attach(actor, wendooBrains.p_ringerRingerRing);
     let time = 0;
     for (let i = 0; i < RINGER_SCHEDULE.length; i++) {
       const next = time + RINGER_SCHEDULE[i];
@@ -734,6 +770,7 @@ namespace registrationSelftest {
     checkCoreTypedActionOutput();
     checkCatalog();
     checkSlotBuilderLabels();
+    checkLanguageBuilders();
     checkCompiledBrains();
     checkLoader();
     checkProgramHost();

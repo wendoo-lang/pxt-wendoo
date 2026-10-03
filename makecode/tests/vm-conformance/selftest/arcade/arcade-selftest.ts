@@ -8,9 +8,10 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * bump and move tiles, driven by pressing the controller's buttons and
- * placing and moving sprites from game code, and programs updated while the
- * game runs, through the messages the Wendoo simulator extension posts.
+ * bump, in-range, out-of-range and move tiles, driven by pressing the
+ * controller's buttons and placing and moving sprites from game code, and
+ * programs updated while the game runs, through the messages the Wendoo
+ * simulator extension posts.
  *
  * Output grammar, one line each:
  *
@@ -252,16 +253,16 @@ namespace arcadeSelftest {
   function checkMovement(): void {
     check("arcade-pack-registers-without-diagnostics", wendoo.registrationDiagnostics().length === 0);
 
-    const drift = spriteRunning(wendooPrograms.p_driftBareMove001);
-    const counted = spriteRunning(wendooPrograms.p_countedWhenMove1);
-    const follow = spriteRunning(wendooPrograms.p_followDpadMove01);
-    const rails = spriteRunning(wendooPrograms.p_railsLeftRight01);
-    const corner = spriteRunning(wendooPrograms.p_cornerUpLeft0001);
-    const cornerFlipped = spriteRunning(wendooPrograms.p_cornerLeftUp0001);
-    const dash = spriteRunning(wendooPrograms.p_dashQuickly00001);
-    const creep = spriteRunning(wendooPrograms.p_creepSlowly00001);
-    const paced = spriteRunning(wendooPrograms.p_pacedSpeed000001);
-    const blend = spriteRunning(wendooPrograms.p_blendTwoRules001);
+    const drift = spriteRunning(wendooBrains.p_driftBareMove001);
+    const counted = spriteRunning(wendooBrains.p_countedWhenMove1);
+    const follow = spriteRunning(wendooBrains.p_followDpadMove01);
+    const rails = spriteRunning(wendooBrains.p_railsLeftRight01);
+    const corner = spriteRunning(wendooBrains.p_cornerUpLeft0001);
+    const cornerFlipped = spriteRunning(wendooBrains.p_cornerLeftUp0001);
+    const dash = spriteRunning(wendooBrains.p_dashQuickly00001);
+    const creep = spriteRunning(wendooBrains.p_creepSlowly00001);
+    const paced = spriteRunning(wendooBrains.p_pacedSpeed000001);
+    const blend = spriteRunning(wendooBrains.p_blendTwoRules001);
     follow.vx = 37;
     pause(FRAMES_MS);
     check("bare-move-moves-in-the-default-direction", movesAt(drift, 100, 0));
@@ -317,18 +318,18 @@ namespace arcadeSelftest {
    * direction. Destroys its sprites at the end.
    */
   function checkDirectionModifiers(): void {
-    const climb = spriteRunning(wendooPrograms.p_climbMoveUp00001);
-    const sink = spriteRunning(wendooPrograms.p_sinkMoveDown0001);
-    const retreat = spriteRunning(wendooPrograms.p_retreatMoveLeft1);
-    const advance = spriteRunning(wendooPrograms.p_advanceMoveRight);
-    const veer = spriteRunning(wendooPrograms.p_veerUpRight00001);
-    const veerFlipped = spriteRunning(wendooPrograms.p_veerRightUp00001);
-    const stall = spriteRunning(wendooPrograms.p_stallLeftRight01);
-    const steer = spriteRunning(wendooPrograms.p_steerDpadUpDown1);
-    const sprint = spriteRunning(wendooPrograms.p_sprintUpQuickly1);
-    const sprintFlipped = spriteRunning(wendooPrograms.p_sprintQuicklyUp1);
-    const swerve = spriteRunning(wendooPrograms.p_swerveLeftQkUp01);
-    const guard = spriteRunning(wendooPrograms.p_guardDpadUpLeft1);
+    const climb = spriteRunning(wendooBrains.p_climbMoveUp00001);
+    const sink = spriteRunning(wendooBrains.p_sinkMoveDown0001);
+    const retreat = spriteRunning(wendooBrains.p_retreatMoveLeft1);
+    const advance = spriteRunning(wendooBrains.p_advanceMoveRight);
+    const veer = spriteRunning(wendooBrains.p_veerUpRight00001);
+    const veerFlipped = spriteRunning(wendooBrains.p_veerRightUp00001);
+    const stall = spriteRunning(wendooBrains.p_stallLeftRight01);
+    const steer = spriteRunning(wendooBrains.p_steerDpadUpDown1);
+    const sprint = spriteRunning(wendooBrains.p_sprintUpQuickly1);
+    const sprintFlipped = spriteRunning(wendooBrains.p_sprintQuicklyUp1);
+    const swerve = spriteRunning(wendooBrains.p_swerveLeftQkUp01);
+    const guard = spriteRunning(wendooBrains.p_guardDpadUpLeft1);
     pause(FRAMES_MS);
     check(
       "each-direction-modifier-moves-its-way",
@@ -442,8 +443,8 @@ namespace arcadeSelftest {
     const pusher = solidSprite(48, 80, 60);
     const nudged = solidSprite(8, 20, 100);
     const fleeing = solidSprite(8, 140, 100);
-    wendoo.runProgram(nudged, wendooPrograms.p_nudgeBumpMove001);
-    wendoo.runProgram(fleeing, wendooPrograms.p_fleeBumpLeftUp01);
+    wendoo.runProgram(nudged, wendooBrains.p_nudgeBumpMove001);
+    wendoo.runProgram(fleeing, wendooBrains.p_fleeBumpLeftUp01);
     pause(FRAMES_MS);
     const waited = movesAt(nudged, 0, 0) && movesAt(fleeing, 0, 0) && nudged.x === 20 && fleeing.x === 140;
 
@@ -463,7 +464,7 @@ namespace arcadeSelftest {
 
     const fleeRuntime = runtimeIn(host, fleeing);
     fleeing.setPosition(pusher.x, pusher.y);
-    postUpdate(wendooPrograms.p_fleeBumpLeftUp01, wendooPrograms.p_nudgeBumpMove001.bytecode, "00000011");
+    postUpdate(wendooBrains.p_fleeBumpLeftUp01, wendooBrains.p_nudgeBumpMove001.bytecode, "00000011");
     pause(FRAMES_MS);
     check(
       "program-update-swaps-a-bump-rule-live",
@@ -490,8 +491,8 @@ namespace arcadeSelftest {
 
     const chasing = solidSprite(8, 104, 78);
     const fleeing = solidSprite(8, 68, 51);
-    wendoo.runProgram(chasing, wendooPrograms.p_chaseBumpToward1);
-    wendoo.runProgram(fleeing, wendooPrograms.p_shyBumpAway00001);
+    wendoo.runProgram(chasing, wendooBrains.p_chaseBumpToward1);
+    wendoo.runProgram(fleeing, wendooBrains.p_shyBumpAway00001);
     const chasingStart = distanceBetween(chasing, subject);
     const fleeingStart = distanceBetween(fleeing, subject);
     pause(FRAMES_MS);
@@ -526,17 +527,17 @@ namespace arcadeSelftest {
     const twin = solidSprite(8, 140, 110);
     const twinShadow = solidSprite(8, 140, 110);
     const homing = solidSprite(8, 10, 110);
-    wendoo.runProgram(wavering, wendooPrograms.p_waverTowardAway1);
-    wendoo.runProgram(waveringFlipped, wendooPrograms.p_waverAwayToward1);
-    wendoo.runProgram(stalking, wendooPrograms.p_stalkTowardUp001);
-    wendoo.runProgram(stalkingFlipped, wendooPrograms.p_stalkUpToward001);
-    wendoo.runProgram(dodging, wendooPrograms.p_dodgeAwayLeft001);
-    wendoo.runProgram(lunging, wendooPrograms.p_lungeTowardQuick);
-    wendoo.runProgram(skulking, wendooPrograms.p_skulkSlowlyAway1);
-    wendoo.runProgram(tethered, wendooPrograms.p_tetherAwaySpeed1);
-    wendoo.runProgram(twin, wendooPrograms.p_chaseBumpToward1);
-    wendoo.runProgram(twinShadow, wendooPrograms.p_chaseBumpToward1);
-    wendoo.runProgram(homing, wendooPrograms.p_homingAlwaysTwd1);
+    wendoo.runProgram(wavering, wendooBrains.p_waverTowardAway1);
+    wendoo.runProgram(waveringFlipped, wendooBrains.p_waverAwayToward1);
+    wendoo.runProgram(stalking, wendooBrains.p_stalkTowardUp001);
+    wendoo.runProgram(stalkingFlipped, wendooBrains.p_stalkUpToward001);
+    wendoo.runProgram(dodging, wendooBrains.p_dodgeAwayLeft001);
+    wendoo.runProgram(lunging, wendooBrains.p_lungeTowardQuick);
+    wendoo.runProgram(skulking, wendooBrains.p_skulkSlowlyAway1);
+    wendoo.runProgram(tethered, wendooBrains.p_tetherAwaySpeed1);
+    wendoo.runProgram(twin, wendooBrains.p_chaseBumpToward1);
+    wendoo.runProgram(twinShadow, wendooBrains.p_chaseBumpToward1);
+    wendoo.runProgram(homing, wendooBrains.p_homingAlwaysTwd1);
     pause(FRAMES_MS);
     check("toward-and-away-cancel-to-the-fallback", movesAt(wavering, 100, 0) && movesAt(waveringFlipped, 100, 0));
     const stalkingToward = unitToward(stalking, subject);
@@ -547,7 +548,10 @@ namespace arcadeSelftest {
         movesAlong(stalkingFlipped, stalkingFlippedToward.x, stalkingFlippedToward.y - 1, 100)
     );
     const dodgingToward = unitToward(dodging, subject);
-    check("away-with-a-direction-modifier-bends-flight", movesAlong(dodging, -dodgingToward.x - 1, -dodgingToward.y, 100));
+    check(
+      "away-with-a-direction-modifier-bends-flight",
+      movesAlong(dodging, -dodgingToward.x - 1, -dodgingToward.y, 100)
+    );
     check(
       "relational-modifiers-compose-with-speed",
       pursues(lunging, subject, 200) && flees(skulking, subject, 50) && flees(tethered, subject, 30)
@@ -575,7 +579,7 @@ namespace arcadeSelftest {
     }
 
     const skittish = solidSprite(8, 10, 10);
-    wendoo.runProgram(skittish, wendooPrograms.p_skittishDpadAwy1);
+    wendoo.runProgram(skittish, wendooBrains.p_skittishDpadAwy1);
     pause(FRAMES_MS);
     const skittishQuiet = movesAt(skittish, 0, 0);
     controller.up.setPressed(true);
@@ -585,15 +589,246 @@ namespace arcadeSelftest {
     skittish.destroy();
 
     const pursuer = solidSprite(8, 104, 78);
-    wendoo.runProgram(pursuer, wendooPrograms.p_chaseBumpToward1);
+    wendoo.runProgram(pursuer, wendooBrains.p_chaseBumpToward1);
     pause(FRAMES_MS);
     const pursuing = pursues(pursuer, subject, 100);
     const pursuitRuntime = runtimeIn(host, pursuer);
-    postUpdate(wendooPrograms.p_chaseBumpToward1, wendooPrograms.p_shyBumpAway00001.bytecode, "00000012");
+    postUpdate(wendooBrains.p_chaseBumpToward1, wendooBrains.p_shyBumpAway00001.bytecode, "00000012");
     pause(FRAMES_MS);
     check(
       "program-update-turns-pursuit-to-flight-live",
       pursuing && runtimeIn(host, pursuer) !== pursuitRuntime && flees(pursuer, subject, 100) && faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
+  /** The range the in-range and out-of-range sensors sense within while their range slot is empty, in pixels. */
+  const DEFAULT_RANGE = 60;
+
+  /**
+   * How far from its sensor's range a range rule's sprite may come to rest,
+   * or swing while it holds a standoff, in pixels.
+   */
+  const RANGE_TOLERANCE = 6;
+
+  /**
+   * Whether two sprites centered `distance` pixels apart on one row, both
+   * running `program`, both move at the velocity `vx`, `vy` once their
+   * programs have thought. Destroys both sprites.
+   */
+  function pairMovesAt(program: wendoo.CompiledBrainRegistration, distance: number, vx: number, vy: number): boolean {
+    const left = solidSprite(8, 40, 60);
+    const right = solidSprite(8, 40 + distance, 60);
+    wendoo.runProgram(left, program);
+    wendoo.runProgram(right, program);
+    pause(FRAMES_MS);
+    const moved = movesAt(left, vx, vy) && movesAt(right, vx, vy);
+    left.destroy();
+    right.destroy();
+    pause(FRAMES_MS);
+    return moved;
+  }
+
+  /** Whether every pair `distances` apart, both running `program`, moves at the velocity `vx`, `vy`; see {@link pairMovesAt}. */
+  function pairsMoveAt(
+    program: wendoo.CompiledBrainRegistration,
+    distances: number[],
+    vx: number,
+    vy: number
+  ): boolean {
+    let all = true;
+    for (let i = 0; i < distances.length; i++) {
+      if (!pairMovesAt(program, distances[i], vx, vy)) {
+        all = false;
+      }
+    }
+    return all;
+  }
+
+  /**
+   * Whether, over `samples` checks `FRAMES_MS` apart, the centers of
+   * `holder` and `target` stay within {@link RANGE_TOLERANCE} of
+   * {@link DEFAULT_RANGE} apart.
+   */
+  function holdsStandoff(holder: Sprite, target: Sprite, samples: number): boolean {
+    let held = true;
+    for (let i = 0; i < samples; i++) {
+      pause(FRAMES_MS);
+      if (!near(distanceBetween(holder, target), DEFAULT_RANGE, RANGE_TOLERANCE)) {
+        held = false;
+      }
+    }
+    return held;
+  }
+
+  /**
+   * In a scene of its own, check the in-range and out-of-range sensors: an
+   * empty scene fires neither; in range fires within its default range,
+   * boundary included, and out of range beyond it; a range of 40 narrows
+   * both and a negative range reads as 0; exactly one of the pair fires
+   * whenever another sprite exists; out of range and toward close on the
+   * nearest sprite from across the screen and rest once in range, ties
+   * going to the sprite created first whatever order the scene keeps; in
+   * range and away open distance from the nearest sprite and rest once out
+   * of range; the two rules together hold a standoff around a moving
+   * sprite; the speed words compose; and a program update swaps in range to
+   * out of range live.
+   */
+  function checkRangeSensors(): void {
+    game.pushScene();
+    const host = wendoo.sceneProgramHost(game.currentScene());
+
+    const lone = solidSprite(8, 80, 60);
+    wendoo.runProgram(lone, wendooBrains.p_eitherInUpOutDn1);
+    pause(FRAMES_MS);
+    lone.vx = 37;
+    pause(FRAMES_MS);
+    check("neither-range-sensor-fires-in-an-empty-scene", movesAt(lone, 37, 0));
+    lone.destroy();
+    pause(FRAMES_MS);
+
+    const within = [0, DEFAULT_RANGE - 1, DEFAULT_RANGE];
+    const beyond = [DEFAULT_RANGE + 1, 150];
+    check(
+      "in-range-fires-within-the-default-range-and-not-beyond",
+      pairsMoveAt(wendooBrains.p_nearInRangeMove1, within, 100, 0) &&
+        pairsMoveAt(wendooBrains.p_nearInRangeMove1, beyond, 0, 0)
+    );
+    check(
+      "out-of-range-fires-beyond-the-default-range-and-not-within",
+      pairsMoveAt(wendooBrains.p_farOutOfRangeMv1, beyond, 100, 0) &&
+        pairsMoveAt(wendooBrains.p_farOutOfRangeMv1, within, 0, 0)
+    );
+    check(
+      "a-given-range-narrows-both-sensors",
+      pairsMoveAt(wendooBrains.p_eitherRange40001, [40], 0, -100) &&
+        pairsMoveAt(wendooBrains.p_eitherRange40001, [41, DEFAULT_RANGE - 1], 0, 100)
+    );
+    check(
+      "a-negative-range-reads-as-zero",
+      pairsMoveAt(wendooBrains.p_eitherRangeNeg01, [0], 0, -100) &&
+        pairsMoveAt(wendooBrains.p_eitherRangeNeg01, [1], 0, 100)
+    );
+    check(
+      "exactly-one-range-sensor-fires-while-another-sprite-exists",
+      pairsMoveAt(wendooBrains.p_eitherInUpOutDn1, [0, 30, DEFAULT_RANGE - 1, DEFAULT_RANGE], 0, -100) &&
+        pairsMoveAt(wendooBrains.p_eitherInUpOutDn1, [DEFAULT_RANGE + 1, 100, 150], 0, 100)
+    );
+
+    const leashed = solidSprite(8, 150, 100);
+    const owner = solidSprite(8, 20, 40);
+    const decoy = solidSprite(8, 150, 270);
+    wendoo.runProgram(leashed, wendooBrains.p_leashOutToward01);
+    const leashStart = distanceBetween(leashed, owner);
+    pause(FRAMES_MS);
+    check(
+      "leash-closes-on-the-nearest-sprite-from-across-the-screen",
+      pursues(leashed, owner, 100) && distanceBetween(leashed, owner) < leashStart
+    );
+    pause(10 * FRAMES_MS);
+    const leashGap = distanceBetween(leashed, owner);
+    check(
+      "leash-rests-once-in-range",
+      movesAt(leashed, 0, 0) && leashGap <= DEFAULT_RANGE && leashGap > DEFAULT_RANGE - RANGE_TOLERANCE
+    );
+    leashed.destroy();
+    owner.destroy();
+    decoy.destroy();
+
+    const shy = solidSprite(8, 80, 60);
+    const nearest = solidSprite(8, 100, 60);
+    const farther = solidSprite(8, 80, 20);
+    wendoo.runProgram(shy, wendooBrains.p_keepAwayInAway01);
+    pause(FRAMES_MS);
+    check(
+      "keep-away-opens-distance-from-the-nearest-sprite",
+      flees(shy, nearest, 100) && distanceBetween(shy, nearest) > 20
+    );
+    farther.destroy();
+    pause(10 * FRAMES_MS);
+    const keptGap = distanceBetween(shy, nearest);
+    check(
+      "keep-away-rests-once-out-of-range",
+      movesAt(shy, 0, 0) && keptGap > DEFAULT_RANGE && keptGap < DEFAULT_RANGE + RANGE_TOLERANCE
+    );
+    shy.destroy();
+    nearest.destroy();
+
+    const chooser = solidSprite(8, 130, 110);
+    const first = solidSprite(8, 30, 110);
+    const second = solidSprite(8, 130, 10);
+    wendoo.runProgram(chooser, wendooBrains.p_leashOutToward01);
+    pause(FRAMES_MS);
+    const tieFirst = pursues(chooser, first, 100);
+    chooser.setPosition(130, 110);
+    second.z = -1;
+    pause(FRAMES_MS);
+    const tieKeptBehind = pursues(chooser, first, 100);
+    chooser.setPosition(130, 110);
+    second.z = 1;
+    pause(FRAMES_MS);
+    check(
+      "range-sensors-pick-the-nearest-sprite-first-created-on-ties",
+      tieFirst && tieKeptBehind && pursues(chooser, first, 100)
+    );
+    chooser.destroy();
+    first.destroy();
+    second.destroy();
+
+    const holder = solidSprite(8, 50, 60);
+    const target = solidSprite(8, 80, 60);
+    wendoo.runProgram(holder, wendooBrains.p_standoffInOut001);
+    pause(6 * FRAMES_MS);
+    const settled = near(distanceBetween(holder, target), DEFAULT_RANGE, RANGE_TOLERANCE);
+    target.vx = 40;
+    const heldAsItLeaves = holdsStandoff(holder, target, 6);
+    target.vx = -40;
+    const heldAsItComes = holdsStandoff(holder, target, 6);
+    target.vx = 0;
+    target.vy = 40;
+    const heldAsItCrosses = holdsStandoff(holder, target, 6);
+    check(
+      "standoff-holds-its-distance-from-a-moving-sprite",
+      settled && heldAsItLeaves && heldAsItComes && heldAsItCrosses
+    );
+    holder.destroy();
+    target.destroy();
+
+    const hurrying = solidSprite(8, 150, 60);
+    const hurryTarget = solidSprite(8, 10, 60);
+    wendoo.runProgram(hurrying, wendooBrains.p_leashQuickly0001);
+    pause(FRAMES_MS);
+    const hurried = pursues(hurrying, hurryTarget, 200);
+    hurrying.destroy();
+    hurryTarget.destroy();
+    const dawdling = solidSprite(8, 80, 60);
+    const dawdleTarget = solidSprite(8, 100, 60);
+    wendoo.runProgram(dawdling, wendooBrains.p_keepAwaySlowly01);
+    pause(FRAMES_MS);
+    check("speed-words-compose-with-range-rules", hurried && flees(dawdling, dawdleTarget, 50));
+    dawdling.destroy();
+    dawdleTarget.destroy();
+
+    const swappedLeft = solidSprite(8, 20, 30);
+    const swappedRight = solidSprite(8, 50, 30);
+    wendoo.runProgram(swappedLeft, wendooBrains.p_nearInRangeMove1);
+    wendoo.runProgram(swappedRight, wendooBrains.p_nearInRangeMove1);
+    pause(FRAMES_MS);
+    const movedInRange = movesAt(swappedLeft, 100, 0) && movesAt(swappedRight, 100, 0);
+    const inRangeRuntime = runtimeIn(host, swappedLeft);
+    postUpdate(wendooBrains.p_nearInRangeMove1, wendooBrains.p_farOutOfRangeMv1.bytecode, "00000013");
+    pause(FRAMES_MS);
+    const restsInRange =
+      runtimeIn(host, swappedLeft) !== inRangeRuntime && movesAt(swappedLeft, 0, 0) && movesAt(swappedRight, 0, 0);
+    swappedRight.setPosition(swappedLeft.x + 100, swappedLeft.y);
+    pause(FRAMES_MS);
+    check(
+      "program-update-swaps-in-range-to-out-of-range-live",
+      movedInRange &&
+        restsInRange &&
+        movesAt(swappedLeft, 100, 0) &&
+        movesAt(swappedRight, 100, 0) &&
+        faultsInScene() === 0
     );
     game.popScene();
   }
@@ -691,12 +926,12 @@ namespace arcadeSelftest {
    * @param twinSprite - The sprite running the first program named `Twin` in the current scene.
    */
   function checkProgramUpdates(twinSprite: Sprite): void {
-    const drift = wendooPrograms.p_driftBareMove001;
-    const dashBytes = wendooPrograms.p_dashQuickly00001.bytecode;
+    const drift = wendooBrains.p_driftBareMove001;
+    const dashBytes = wendooBrains.p_dashQuickly00001.bytecode;
     const host = wendoo.sceneProgramHost(game.currentScene());
     const swapped = spriteRunning(drift);
     const alsoSwapped = spriteRunning(drift);
-    const bystander = spriteRunning(wendooPrograms.p_countedWhenMove1);
+    const bystander = spriteRunning(wendooBrains.p_countedWhenMove1);
     controller.right.setPressed(true);
     pause(FRAMES_MS);
     const oldRuntime = runtimeIn(host, swapped);
@@ -750,9 +985,9 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check("identical-update-restarts-nothing", runtimeIn(host, swapped) === newRuntime);
 
-    postUpdate(drift, wendooPrograms.p_wrongProfile0001.bytecode, "0000000b");
-    postUpdate(drift, wendooPrograms.p_unmappedMove0001.bytecode, "0000000c");
-    postUpdate(drift, wendooPrograms.p_unmappedType0001.bytecode, "0000000d");
+    postUpdate(drift, wendooBrains.p_wrongProfile0001.bytecode, "0000000b");
+    postUpdate(drift, wendooBrains.p_unmappedMove0001.bytecode, "0000000c");
+    postUpdate(drift, wendooBrains.p_unmappedType0001.bytecode, "0000000d");
     pause(FRAMES_MS);
     check(
       "refused-updates-keep-the-old-program-running",
@@ -774,8 +1009,8 @@ namespace arcadeSelftest {
         wendoo.compiledBrainRegistrations().length === registered
     );
 
-    const twin = wendooPrograms.p_Hq7EB8SthdeOudyP;
-    const twinBytes = wendooPrograms.p_LBddvitRopf1wCnj.bytecode;
+    const twin = wendooBrains.p_Hq7EB8SthdeOudyP;
+    const twinBytes = wendooBrains.p_LBddvitRopf1wCnj.bytecode;
     const belowRuntime = runtimeIn(host, twinSprite);
     game.pushScene();
     const above = spriteRunning(twin);
@@ -799,7 +1034,7 @@ namespace arcadeSelftest {
     check(
       "removal-leaves-the-programs-sprites-running-nothing",
       runtimeIn(host, swapped) !== newRuntime &&
-        drift.bytecode.equals(wendooPrograms.none.bytecode) &&
+        drift.bytecode.equals(wendooBrains.none.bytecode) &&
         movesAt(swapped, 0, 0) &&
         movesAt(spawned, 0, 0) &&
         faultsInScene() === 0
@@ -814,8 +1049,8 @@ namespace arcadeSelftest {
    * nothing, a destroyed sprite's program ended, and a pushed scene pausing
    * its programs while the new scene runs its own; then check the arcade
    * base pack's direction arithmetic, how its tiles move sprites, how the
-   * running game takes program updates, the bump sensor, and the move's
-   * toward and away modifiers.
+   * running game takes program updates, the bump sensor, the move's toward
+   * and away modifiers, and the in-range and out-of-range sensors.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -824,10 +1059,10 @@ namespace arcadeSelftest {
     const twinA = newSprite(SpriteKind.Player);
     const twinB = newSprite(SpriteKind.Enemy);
     const idle = newSprite(SpriteKind.Enemy);
-    wendoo.runProgram(ticker, wendooPrograms.p_akBQz0nySKaYx37w);
-    wendoo.runProgram(twinA, wendooPrograms.p_Hq7EB8SthdeOudyP);
-    wendoo.runProgram(twinB, wendooPrograms.p_LBddvitRopf1wCnj);
-    wendoo.runProgram(idle, wendooPrograms.none);
+    wendoo.runProgram(ticker, wendooBrains.p_akBQz0nySKaYx37w);
+    wendoo.runProgram(twinA, wendooBrains.p_Hq7EB8SthdeOudyP);
+    wendoo.runProgram(twinB, wendooBrains.p_LBddvitRopf1wCnj);
+    wendoo.runProgram(idle, wendooBrains.none);
     check("program-waits-for-the-next-frame", programOf(ticker) === NOT_RUNNING);
 
     pause(FRAMES_MS);
@@ -836,7 +1071,7 @@ namespace arcadeSelftest {
       programOf(ticker) === TICKER_ID &&
         programOf(twinA) === TWIN_IDS[0] &&
         programOf(twinB) === TWIN_IDS[1] &&
-        programOf(idle) === wendooPrograms.none.id
+        programOf(idle) === wendooBrains.none.id
     );
     const firstTicks = ticksOf(twinA);
     pause(FRAMES_MS);
@@ -857,7 +1092,7 @@ namespace arcadeSelftest {
     const pausedTicks = ticksOf(twinA);
     game.pushScene();
     const pushed = newSprite(SpriteKind.Player);
-    wendoo.runProgram(pushed, wendooPrograms.p_akBQz0nySKaYx37w);
+    wendoo.runProgram(pushed, wendooBrains.p_akBQz0nySKaYx37w);
     pause(FRAMES_MS);
     check("pushed-scene-runs-its-own-programs", programOf(pushed) === TICKER_ID && ticksOf(pushed) > 0);
     game.popScene();
@@ -871,6 +1106,7 @@ namespace arcadeSelftest {
     checkProgramUpdates(twinA);
     checkBump();
     checkRelationalModifiers();
+    checkRangeSensors();
 
     console.log(`CHECKS failed ${failedChecks}`);
     console.log(`SIMCAP PASS ${SELFTEST_CASE_ID}`);

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "nearInRangeMove1",
+  "name": "Near",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0nearInRg0000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0nearInRg0000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0nearInRg0000"
+        }
+      ]
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { StructTypeDef } from "@wendoo/core/runtime";
 import { mkPrivateArgId, Op } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
+import { projectedSentence } from "../test-support/sentence-projection.js";
 import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND, PackBindingCode } from "./authoring-environment.js";
 import { CATALOG_UNREADABLE, CatalogProblemCode, parseCatalog } from "./catalog.js";
 import { allocateIds, emptyIdManifest } from "./id-allocation.js";
@@ -155,6 +156,43 @@ const LABELED_CATALOG = JSON.stringify({
   ],
 });
 
+/** Sentence words {@link WORDED_CATALOG} declares, keyed by what declares them. */
+const WORDS = {
+  spot: { form: "spot", frame: "state", bare: "a lion" },
+  lion: { form: "a lion" },
+  pounce: { form: "pounce on" },
+} as const;
+
+/**
+ * A catalog whose tiles and modifier slots carry sentence words: a sensor
+ * declaring every word and a shared modifier declaring a form, an actuator
+ * declaring a form, and a second tile declaring the shared modifier again
+ * with no words.
+ */
+const WORDED_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "zoo",
+      tiles: [
+        {
+          name: "sensor.zoo.spot",
+          kind: "sensor",
+          args: [{ tileId: "modifier.zoo.lion", modifier: true, optional: true, language: WORDS.lion }],
+          returns: "boolean",
+          label: "spot",
+          language: WORDS.spot,
+        },
+        { name: "actuator.zoo.pounce", kind: "actuator", label: "pounce", language: WORDS.pounce },
+        {
+          name: "actuator.zoo.watch",
+          kind: "actuator",
+          args: [{ tileId: "modifier.zoo.lion", modifier: true, optional: true }],
+        },
+      ],
+    },
+  ],
+});
+
 /** Whether any of `environment`'s tile catalogs holds the tile `tileId`. */
 function hasTile(environment: WendooEnvironment, tileId: string): boolean {
   return environment.tileCatalogs().some((catalog) => catalog.has(tileId));
@@ -278,6 +316,60 @@ describe("buildAuthoringEnvironment", () => {
 
     assert.ok(hasTile(environment, mkActuatorTileId("actuator.bell.toll")));
     assert.equal(tile(environment, mkModifierTileId("modifier.bell.hush")).metadata?.label, SLOT_LABELS.hush);
+  });
+
+  it("carries a tile's and a modifier slot's sentence words into the tile's metadata, verbatim", () => {
+    const built = buildAuthoringEnvironment(WORDED_CATALOG, emptyIdManifest());
+    const { environment } = built;
+    const languageOf = (tileId: string) => tile(environment, tileId).metadata?.language;
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.deepEqual(languageOf(mkSensorTileId("sensor.zoo.spot")), WORDS.spot);
+    assert.deepEqual(languageOf(mkActuatorTileId("actuator.zoo.pounce")), WORDS.pounce);
+    assert.deepEqual(languageOf(mkModifierTileId("modifier.zoo.lion")), WORDS.lion);
+  });
+
+  it("gives a tile and a slot tile declaring no sentence words none", () => {
+    const { environment } = buildAuthoringEnvironment(PACK_CATALOG, PACK_MANIFEST);
+    const languageOf = (tileId: string) => tile(environment, tileId).metadata?.language;
+
+    assert.equal(languageOf(mkSensorTileId("sensor.beacon.reading")), undefined);
+    assert.equal(languageOf(mkModifierTileId(mkPrivateArgId("beacon", "actuator.beacon.ring", "loudly"))), undefined);
+    assert.equal(languageOf(mkParameterTileId("parameter.beacon.pitch")), undefined);
+  });
+
+  it("keeps a shared modifier tile's first declaration's sentence words when a later tile declares it with none", () => {
+    const { environment } = buildAuthoringEnvironment(WORDED_CATALOG, emptyIdManifest());
+
+    assert.ok(hasTile(environment, mkActuatorTileId("actuator.zoo.watch")));
+    assert.deepEqual(tile(environment, mkModifierTileId("modifier.zoo.lion")).metadata?.language, WORDS.lion);
+  });
+
+  it("projects a worded sensor heading a WHEN side through its frame, with its form, then its bare word or its modifier's form", () => {
+    const { environment } = buildAuthoringEnvironment(WORDED_CATALOG, emptyIdManifest());
+    const spot = tile(environment, mkSensorTileId("sensor.zoo.spot"));
+    const lion = tile(environment, mkModifierTileId("modifier.zoo.lion"));
+    const ruleOf = (whenTiles: IBrainTileDef[]) => {
+      const brainDef = BrainDef.emptyBrainDef(environment.brainServices, "test");
+      const rule = (brainDef.pages().get(0)! as BrainPageDef).children().get(0)! as BrainRuleDef;
+      for (const placed of whenTiles) rule.when().appendTile(placed);
+      return rule;
+    };
+
+    assert.deepEqual(projectedSentence(ruleOf([spot])), {
+      frame: WORDS.spot.frame,
+      words: [
+        { text: WORDS.spot.form, sourceTileIndex: 0 },
+        { text: WORDS.spot.bare, sourceTileIndex: 0 },
+      ],
+    });
+    assert.deepEqual(projectedSentence(ruleOf([spot, lion])), {
+      frame: WORDS.spot.frame,
+      words: [
+        { text: WORDS.spot.form, sourceTileIndex: 0 },
+        { text: WORDS.lion.form, sourceTileIndex: 1 },
+      ],
+    });
   });
 
   it("registers a struct type under the allocation's atom, its layout taken from the allocation, never declaration order", () => {

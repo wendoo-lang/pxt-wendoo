@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "standoffInOut001",
+  "name": "Standoff",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0standoff0000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0standoff0000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.away"
+          ],
+          "children": [],
+          "ruleId": "fRu0standoff0000"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.out-of-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward"
+          ],
+          "children": [],
+          "ruleId": "fRu1standoff0000"
+        }
+      ]
+    }
+  ]
+}

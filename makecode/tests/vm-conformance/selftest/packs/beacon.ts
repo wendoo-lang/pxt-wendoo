@@ -100,13 +100,14 @@ namespace beacon {
     beaconMeta
   );
 
-  /** Declared shape of the reading tile, with a named output and sample metadata the catalog assertions pin. */
+  /** Declared shape of the reading tile, with a named output and sample metadata, sentence words included, the catalog assertions pin. */
   const readingSpec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_STRING);
   readingSpec.outputs = [wendoo.output("position", "Beacon")];
   readingSpec.label = "beacon reading";
   readingSpec.group = "Beacons";
   readingSpec.docs = '# Beacon reading\n\nReads the name of the pack whose "reading" tile stands.';
   readingSpec.icon = "beacon-reading";
+  readingSpec.language = wendoo.tileLanguage("near", wendoo.SENTENCE_FRAME_STATE, "a beacon");
   pack.bind("sensor.beacon.reading", new ReadingSensor(), readingSpec);
 
   pack.bindOperator(

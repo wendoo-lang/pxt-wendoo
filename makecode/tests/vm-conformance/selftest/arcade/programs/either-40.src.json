@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "eitherRange40001",
+  "name": "Either 40",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0either400000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 40,
+      "valueLabel": "40",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0either400000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range",
+            "tile.literal->number:<number>->40"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0either400000"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.out-of-range",
+            "tile.literal->number:<number>->40"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.down"
+          ],
+          "children": [],
+          "ruleId": "fRu1either400000"
+        }
+      ]
+    }
+  ]
+}

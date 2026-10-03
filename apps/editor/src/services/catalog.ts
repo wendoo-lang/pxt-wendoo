@@ -3,8 +3,8 @@ export const CATALOG_UNREADABLE = "CATALOG_UNREADABLE";
 
 /**
  * Stable codes of the problems {@link parseCatalog} finds in a catalog entry.
- * An entry carrying one stays listed, but no tile can be made of it; the rest
- * of its pack reads on.
+ * An entry carrying one stays listed, and unless its code says otherwise no
+ * tile can be made of it; the rest of its pack reads on.
  */
 export const CatalogProblemCode = {
   /** A tile names a kind other than `sensor` or `actuator`; the token is the kind. */
@@ -17,6 +17,13 @@ export const CatalogProblemCode = {
   ON_EXCEED_UNKNOWN: "CATALOG_ON_EXCEED_UNKNOWN",
   /** Part of an entry does not have the shape the catalog grammar gives it. */
   ENTRY_MALFORMED: "CATALOG_ENTRY_MALFORMED",
+  /**
+   * The sentence words of a tile or a modifier slot name a frame other than
+   * `verb`, `state` or `event`; the token is the frame. Only the frame is
+   * dropped: the entry's tile is still made, and reads through the default
+   * frame.
+   */
+  SENTENCE_FRAME_UNKNOWN: "CATALOG_SENTENCE_FRAME_UNKNOWN",
 } as const;
 
 /** Union of all {@link CatalogProblemCode} values. */
@@ -44,6 +51,19 @@ export interface CatalogMeta {
   readonly docs?: string;
   /** Icon, in the session target's own text form. */
   readonly icon?: string;
+}
+
+/** A sentence frame: the template a sensor heading a rule's WHEN side reads through. */
+export type CatalogSentenceFrame = "verb" | "state" | "event";
+
+/** The words a tile reads with in the sentence the editor shows for a rule. Each field is absent when undeclared. */
+export interface CatalogLanguage {
+  /** The tile's word. */
+  readonly form?: string;
+  /** The frame a sensor heading a WHEN side reads through. */
+  readonly frame?: CatalogSentenceFrame;
+  /** The word completing a WHEN side such a sensor heads alone. */
+  readonly bare?: string;
 }
 
 /** One declared field of a struct type. */
@@ -104,6 +124,8 @@ export interface CatalogArgSlot {
   readonly unit?: string;
   /** Display label of the tile that fills the slot, or absent when the slot declares none. */
   readonly label?: string;
+  /** Sentence words of the tile that fills a modifier slot, or absent when it declares none; a parameter slot carries none. */
+  readonly language?: CatalogLanguage;
 }
 
 /** A sequence or a bag of grammar nodes. */
@@ -184,6 +206,8 @@ export interface CatalogTile extends CatalogMeta {
   readonly outputs: readonly CatalogOutput[];
   /** Type name of the WHEN result the tile requires, or absent. */
   readonly consumesWhenResult?: string;
+  /** Sentence words of the tile, or absent when it declares none. */
+  readonly language?: CatalogLanguage;
 }
 
 /** One operator of a pack. */
@@ -229,6 +253,12 @@ const ON_EXCEED_TOKENS = new Set(["clamp", "wrap", "drop"]);
 /** The tile kinds a tile may name. */
 const TILE_KINDS = new Set(["sensor", "actuator"]);
 
+/** The sentence frames a language group may name. */
+const SENTENCE_FRAMES: ReadonlySet<string> = new Set(["verb", "state", "event"]);
+
+/** Receives each sentence frame token a reader finds that the grammar does not have. */
+type FrameReport = (token: string) => void;
+
 /** A JSON object, read field by field. */
 type JsonObject = { readonly [key: string]: unknown };
 
@@ -265,6 +295,25 @@ function metaOf(entry: JsonObject): CatalogMeta {
   return meta;
 }
 
+/**
+ * The sentence words `value` declares, or `undefined` when it declares none.
+ * A frame the grammar does not have is passed to `reportFrame` and left out.
+ */
+function languageOf(value: unknown, reportFrame: FrameReport): CatalogLanguage | undefined {
+  if (!isObject(value)) return undefined;
+  const language: { form?: string; frame?: CatalogSentenceFrame; bare?: string } = {};
+  const form = stringField(value, "form");
+  if (form !== undefined) language.form = form;
+  const frame = stringField(value, "frame");
+  if (frame !== undefined) {
+    if (SENTENCE_FRAMES.has(frame)) language.frame = frame as CatalogSentenceFrame;
+    else reportFrame(frame);
+  }
+  const bare = stringField(value, "bare");
+  if (bare !== undefined) language.bare = bare;
+  return Object.keys(language).length > 0 ? language : undefined;
+}
+
 /** Thrown while reading a grammar: the problem that makes it unreadable. */
 class GrammarProblem {
   constructor(
@@ -287,8 +336,12 @@ function rangeOf(value: unknown): CatalogRange {
   return range;
 }
 
-/** The slot `entry` declares, its slot fields read; throws a {@link GrammarProblem} when it is not one. */
-function slotOf(entry: JsonObject): CatalogArgSlot {
+/**
+ * The slot `entry` declares, its slot fields read, and on a modifier slot its
+ * sentence words, an unknown frame among them passed to `reportFrame`. Throws
+ * a {@link GrammarProblem} when it is not one.
+ */
+function slotOf(entry: JsonObject, reportFrame: FrameReport): CatalogArgSlot {
   const tileId = stringField(entry, "tileId");
   const modifier = entry.modifier === true;
   const type = stringField(entry, "type");
@@ -308,6 +361,7 @@ function slotOf(entry: JsonObject): CatalogArgSlot {
     range?: CatalogRange;
     unit?: string;
     label?: string;
+    language?: CatalogLanguage;
   } = { kind: "arg", tileId, modifier, anonymous: entry.anonymous === true, derived: entry.derived === true };
   const name = stringField(entry, "name");
   if (name !== undefined) slot.name = name;
@@ -319,11 +373,18 @@ function slotOf(entry: JsonObject): CatalogArgSlot {
   if (unit !== undefined) slot.unit = unit;
   const label = stringField(entry, "label");
   if (label !== undefined) slot.label = label;
+  const language = modifier ? languageOf(entry.language, reportFrame) : undefined;
+  if (language !== undefined) slot.language = language;
   return slot;
 }
 
-/** The grammar node `value` declares, and every node under it. Throws a {@link GrammarProblem} when it is not one. */
-function nodeOf(value: unknown): CatalogArgNode {
+/**
+ * The grammar node `value` declares, and every node under it, each unknown
+ * sentence frame passed to `reportFrame`. Throws a {@link GrammarProblem}
+ * when it is not one.
+ */
+function nodeOf(value: unknown, reportFrame: FrameReport): CatalogArgNode {
+  const child = (node: unknown) => nodeOf(node, reportFrame);
   if (!isObject(value)) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
   const kind = stringField(value, "kind");
   if (kind === undefined) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
@@ -332,21 +393,21 @@ function nodeOf(value: unknown): CatalogArgNode {
   const named = name === undefined ? {} : { name };
   switch (kind) {
     case "arg":
-      return slotOf(value);
+      return slotOf(value, reportFrame);
     case "seq":
     case "bag":
-      return { kind, ...named, items: arrayField(value, "items").map(nodeOf) };
+      return { kind, ...named, items: arrayField(value, "items").map(child) };
     case "choice":
-      return { kind, ...named, options: arrayField(value, "options").map(nodeOf) };
+      return { kind, ...named, options: arrayField(value, "options").map(child) };
     case "optional":
-      return { kind, ...named, item: nodeOf(value.item) };
+      return { kind, ...named, item: child(value.item) };
     case "repeat": {
       const min = numberField(value, "min");
       const max = numberField(value, "max");
       return {
         kind,
         ...named,
-        item: nodeOf(value.item),
+        item: child(value.item),
         ...(min === undefined ? {} : { min }),
         ...(max === undefined ? {} : { max }),
       };
@@ -354,9 +415,9 @@ function nodeOf(value: unknown): CatalogArgNode {
     default: {
       const condition = stringField(value, "condition");
       if (condition === undefined) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
-      const otherwise = value.else === undefined ? {} : { else: nodeOf(value.else) };
+      const otherwise = value.else === undefined ? {} : { else: child(value.else) };
       // biome-ignore lint/suspicious/noThenProperty: a conditional node's branch keys are the reference call spec's then/else.
-      return { kind: "conditional", ...named, condition, then: nodeOf(value.then), ...otherwise };
+      return { kind: "conditional", ...named, condition, then: child(value.then), ...otherwise };
     }
   }
 }
@@ -364,11 +425,12 @@ function nodeOf(value: unknown): CatalogArgNode {
 /**
  * The grammar node of one flat `args` entry: the slot, wrapped in an
  * optional when the entry is `optional`, or in a repeat when it is
- * `repeated`. Throws a {@link GrammarProblem} when it is not one.
+ * `repeated`, each unknown sentence frame passed to `reportFrame`. Throws a
+ * {@link GrammarProblem} when it is not one.
  */
-function flatNodeOf(value: unknown): CatalogArgNode {
+function flatNodeOf(value: unknown, reportFrame: FrameReport): CatalogArgNode {
   if (!isObject(value)) throw new GrammarProblem(CatalogProblemCode.ENTRY_MALFORMED);
-  const slot = slotOf(value);
+  const slot = slotOf(value, reportFrame);
   if (value.optional === true) return { kind: "optional", item: slot };
   if (value.repeated === true) {
     const min = numberField(value, "min");
@@ -380,9 +442,14 @@ function flatNodeOf(value: unknown): CatalogArgNode {
 /** The tile `entry` declares, recording each problem found in it in `problems`. */
 function tileOf(pack: string, entry: JsonObject & { name: string }, problems: CatalogProblem[]): CatalogTile {
   const kind = stringField(entry, "kind");
+  const reportFrame: FrameReport = (token) => {
+    problems.push({ code: CatalogProblemCode.SENTENCE_FRAME_UNKNOWN, pack, name: entry.name, token });
+  };
   let grammar: CatalogArgNode[] | undefined;
   try {
-    grammar = Array.isArray(entry.call) ? entry.call.map(nodeOf) : arrayField(entry, "args").map(flatNodeOf);
+    grammar = Array.isArray(entry.call)
+      ? entry.call.map((node) => nodeOf(node, reportFrame))
+      : arrayField(entry, "args").map((item) => flatNodeOf(item, reportFrame));
   } catch (error) {
     if (!(error instanceof GrammarProblem)) throw error;
     problems.push({
@@ -402,6 +469,7 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
   );
   const returns = stringField(entry, "returns");
   const consumesWhenResult = stringField(entry, "consumesWhenResult");
+  const language = languageOf(entry.language, reportFrame);
   return {
     name: entry.name,
     kind,
@@ -411,6 +479,7 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
     outputs,
     ...(consumesWhenResult === undefined ? {} : { consumesWhenResult }),
     ...metaOf(entry),
+    ...(language === undefined ? {} : { language }),
   };
 }
 
@@ -435,9 +504,10 @@ function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
  * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
  * extension's catalog serializer writes, into its packs, each with its types,
  * tiles and operators. A token the grammar does not have -- a tile kind, a
- * grammar construct, a range's overflow behavior -- is never dropped
- * silently: the entry carrying it is recorded in the result's problems by
- * stable code and keeps no grammar, and the rest of the catalog reads on.
+ * grammar construct, a range's overflow behavior, a sentence frame -- is
+ * never dropped silently: the entry carrying it is recorded in the result's
+ * problems by stable code and keeps no grammar, but for a sentence frame,
+ * which alone is left out, and the rest of the catalog reads on.
  * Entries without a name are dropped; text that is not a JSON document at all
  * yields no packs and {@link CATALOG_UNREADABLE}. Never throws.
  */

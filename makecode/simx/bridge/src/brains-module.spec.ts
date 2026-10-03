@@ -126,7 +126,7 @@ describe("brains module", () => {
   it("declares each brain as a fixed instance labelled by its name, bound by its document id", () => {
     const text = writeBrainsModule(EDGE_ENTRIES);
 
-    assert.ok(text.includes("namespace wendooPrograms {\n"));
+    assert.ok(text.includes("namespace wendooBrains {\n"));
     const declaration = text.split("\n").findIndex((line) => line.includes("p_abcdabcdabcdabcd"));
     assert.equal(
       text.split("\n")[declaration],
@@ -182,6 +182,15 @@ describe("brains module", () => {
       assert.equal(reading.entries.size, 0);
       assert.deepEqual(codes(reading), [BrainsModuleProblemCode.UNREADABLE]);
     }
+  });
+
+  it("reads nothing from a module declaring its entries in another namespace, reporting it UNREADABLE", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES).replace("namespace wendooBrains {", "namespace wendooPrograms {");
+
+    const reading = readBrainsModule(text);
+
+    assert.equal(reading.entries.size, 0);
+    assert.deepEqual(codes(reading), [BrainsModuleProblemCode.UNREADABLE]);
   });
 
   it("reads nothing from a module declaring a newer format, reporting FORMAT_NEWER", () => {

@@ -15,7 +15,7 @@
  * - A tile entry carries `name`, `kind`, `async`, its argument grammar as
  *   either `args` or `call`, `returns`, `outputs` (each with `name` and
  *   `type`), `consumesWhenResult` (the type name of the WHEN result the tile
- *   requires), and the metadata fields.
+ *   requires), the metadata fields, and `language`.
  * - A tile's argument grammar is a list of top-level items that match as the
  *   items of one bag. It is written as `args` when every item has a flat
  *   form, and as `call` otherwise.
@@ -23,19 +23,26 @@
  *   `tileId` (the identity of the tile that fills it), then `modifier` or
  *   `type`, then `optional` (the item is the slot wrapped in an optional), or
  *   `repeated` and `min` (the slot wrapped in a repeat with no upper bound),
- *   then the slot's argument options, then its `label`. An item has a flat
- *   form when it is a slot, or an unnamed optional or unnamed unbounded
- *   repeat directly around a slot.
+ *   then the slot's argument options, then its `label`, then, on a modifier
+ *   slot, its `language`. An item has a flat form when it is a slot, or an
+ *   unnamed optional or unnamed unbounded repeat directly around a slot.
  * - `call` holds one grammar node per item. Every node carries `kind` (`arg`,
  *   `seq`, `choice`, `optional`, `repeat`, `bag` or `conditional`) and
  *   `name`. An `arg` node carries `tileId`, then `modifier` or `type`, then
- *   its argument options, then its `label`; `seq` and `bag` carry `items`;
+ *   its argument options, then its `label`, then, on a modifier slot, its
+ *   `language`; `seq` and `bag` carry `items`;
  *   `choice` carries `options`; `optional` carries `item`; `repeat` carries
  *   `item`, `min` and `max`; and `conditional` carries `condition` (the name
  *   it tests), `then` and `else`.
  * - The argument options are `required`, `anonymous`, `default` (a tagged
  *   value), `derived`, `range` (`min`, `max` and `onExceed`) and `unit`. A
- *   slot's `label` is the display label of the tile that fills it.
+ *   slot's `label` is the display label of the tile that fills it, and a
+ *   modifier slot's `language` the sentence words of that tile.
+ * - A `language` object holds the sentence words the Wendoo editor reads a
+ *   tile with: `form` (the tile's word), `frame` (`verb`, `state` or
+ *   `event`: the template a sensor heading a WHEN side reads through) and
+ *   `bare` (the word completing a WHEN side such a sensor heads alone), in
+ *   that order. A `language` declaring none of them is left out.
  * - A tagged value is an object holding the value's native type id under
  *   `t`, with `v` for a boolean, number or string; `typeId` and `v` for an
  *   enum symbol; `typeId` and a `v` array of tagged values for a list or a
@@ -203,9 +210,36 @@ namespace wendoo {
     return out;
   }
 
-  /** The slot's `"label"` field, prefixed by its separating comma; `""` when the slot declares no label. */
-  function slotLabelText(slot: ArgSlotSpec): string {
-    return slot.label.length > 0 ? `,"label":${jsonQuote(slot.label)}` : "";
+  /**
+   * The `"language"` field of `language`, prefixed by its separating comma:
+   * an object holding the declared `form`, `frame` and `bare`, in that
+   * order; `""` when `language` declares none of them.
+   */
+  function languageText(language: TileLanguage): string {
+    if (!language) {
+      return "";
+    }
+    const words: string[] = [];
+    if (language.form.length > 0) {
+      words.push(`"form":${jsonQuote(language.form)}`);
+    }
+    if (language.frame.length > 0) {
+      words.push(`"frame":${jsonQuote(language.frame)}`);
+    }
+    if (language.bare.length > 0) {
+      words.push(`"bare":${jsonQuote(language.bare)}`);
+    }
+    return words.length > 0 ? `,"language":{${words.join(",")}}` : "";
+  }
+
+  /**
+   * The slot's `"label"` field, then a modifier slot's `"language"` field,
+   * each prefixed by its separating comma and each left out when the slot
+   * declares none.
+   */
+  function slotDisplayText(slot: ArgSlotSpec): string {
+    const label = slot.label.length > 0 ? `,"label":${jsonQuote(slot.label)}` : "";
+    return slot.isModifier ? `${label}${languageText(slot.language)}` : label;
   }
 
   /**
@@ -257,7 +291,7 @@ namespace wendoo {
         out += `,"min":${jsonNumber(min)}`;
       }
     }
-    return `${out}${argOptionsText(slot)}${slotLabelText(slot)}}`;
+    return `${out}${argOptionsText(slot)}${slotDisplayText(slot)}}`;
   }
 
   /** JSON array text of `nodes`, each rendered as a grammar node. */
@@ -277,7 +311,7 @@ namespace wendoo {
     }
     if (node.kind === CALL_SPEC_ARG) {
       const slot = node as ArgSlotSpec;
-      return `${out}${slotKindText(slot)}${argOptionsText(slot)}${slotLabelText(slot)}}`;
+      return `${out}${slotKindText(slot)}${argOptionsText(slot)}${slotDisplayText(slot)}}`;
     }
     if (node.kind === CALL_SPEC_SEQ || node.kind === CALL_SPEC_BAG) {
       const items = node.kind === CALL_SPEC_SEQ ? (node as SeqSpec).items : (node as BagSpec).items;
@@ -482,6 +516,7 @@ namespace wendoo {
           entry += `,"consumesWhenResult":${jsonQuote(spec.consumesWhenResult)}`;
         }
         entry += this.metaText(name, pack, spec);
+        entry += languageText(spec.language);
       }
       this.tileEntries[this.packIndex(pack)].push(`${entry}}`);
     }

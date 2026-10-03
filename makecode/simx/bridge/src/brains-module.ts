@@ -6,11 +6,11 @@
  *
  * The text is line-structured. After two lines of comment it declares its
  * format as `// wendoo-brains-format <n>`, then a blank line, then the
- * namespace `wendooPrograms` carrying one entry per brain, ordered by id and
+ * namespace `wendooBrains` carrying one entry per brain, ordered by id and
  * separated by blank lines:
  *
  * ```ts
- * namespace wendooPrograms {
+ * namespace wendooBrains {
  *     // source-hash 1a2b3c4d
  *     //% fixedInstance block="Chaser"
  *     export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
@@ -56,8 +56,10 @@ export interface CompiledBrainEntry {
 /** Stable codes of the problems {@link readBrainsModule} finds. */
 export const BrainsModuleProblemCode = {
   /**
-   * The text declares no format this build knows: it is not a brains module
-   * at all, or has been damaged. No entry is read from it.
+   * The text does not follow a format this build knows: it declares none, or
+   * declares {@link BRAINS_MODULE_FORMAT} without opening the namespace that
+   * format declares its entries in. It is not a brains module at all, or has
+   * been damaged. No entry is read from it.
    */
   UNREADABLE: "BRAINS_MODULE_UNREADABLE",
   /**
@@ -98,7 +100,7 @@ const FORMAT_LINE = /^\/\/ wendoo-brains-format (\d+)$/;
 const HASH_LINE = /^\/\/ source-hash ([0-9a-f]{8})$/;
 
 /** The line opening the namespace the entries are declared in. */
-const NAMESPACE_OPEN = "namespace wendooPrograms {";
+const NAMESPACE_OPEN = "namespace wendooBrains {";
 
 /** The line closing the namespace the entries are declared in. */
 const NAMESPACE_CLOSE = "}";
@@ -166,7 +168,7 @@ export function readBrainsModule(text: string): BrainsModuleReading {
   const lines = text.split(/\r?\n/);
   const declared = lines.map((line) => FORMAT_LINE.exec(line)).find((match) => match !== null);
   const format = declared ? Number(declared[1]) : undefined;
-  if (format !== BRAINS_MODULE_FORMAT) {
+  if (format !== BRAINS_MODULE_FORMAT || !lines.includes(NAMESPACE_OPEN)) {
     const code =
       format !== undefined && format > BRAINS_MODULE_FORMAT
         ? BrainsModuleProblemCode.FORMAT_NEWER

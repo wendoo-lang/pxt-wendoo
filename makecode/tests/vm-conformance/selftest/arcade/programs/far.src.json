@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "farOutOfRangeMv1",
+  "name": "Far",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0farOutRg0000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0farOutRg0000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.out-of-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0farOutRg0000"
+        }
+      ]
+    }
+  ]
+}

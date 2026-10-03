@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "leashQuickly0001",
+  "name": "Leash quickly",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0leashQk00000",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0leashQk00000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.out-of-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.modifier->modifier.quickly"
+          ],
+          "children": [],
+          "ruleId": "fRu0leashQk00000"
+        }
+      ]
+    }
+  ]
+}

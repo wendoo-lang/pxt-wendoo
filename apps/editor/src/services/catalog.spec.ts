@@ -87,7 +87,126 @@ const FULL_CATALOG = JSON.stringify({
   diagnostics: [{ code: "registration-unmapped-name", name: "x", pack: "grammar" }],
 });
 
+/** Sentence words {@link WORDED_CATALOG} declares, keyed by what declares them. */
+const WORDS = {
+  see: { form: "spot", frame: "state", bare: "something" },
+  lion: { form: "a lion" },
+  count: { form: "this many" },
+  loudly: { form: "loudly", frame: "verb", bare: "always" },
+} as const;
+
+/**
+ * A catalog whose tiles and modifier slots carry sentence words: a sensor
+ * declaring every word, a modifier slot in flat form declaring a form, a
+ * modifier slot in a call tree declaring every word, and a parameter slot
+ * declaring a form, which the grammar never carries on a parameter slot.
+ */
+const WORDED_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "zoo",
+      tiles: [
+        {
+          name: "sensor.zoo.see",
+          kind: "sensor",
+          args: [
+            { tileId: "modifier.zoo.lion", modifier: true, optional: true, label: "lion", language: WORDS.lion },
+            { tileId: "count", type: "number", optional: true, language: WORDS.count },
+          ],
+          returns: "boolean",
+          label: "see",
+          language: WORDS.see,
+        },
+        {
+          name: "actuator.zoo.roar",
+          kind: "actuator",
+          call: [{ kind: "optional", item: { kind: "arg", tileId: "loudly", modifier: true, language: WORDS.loudly } }],
+        },
+      ],
+    },
+  ],
+});
+
 describe("parseCatalog", () => {
+  it("reads the sentence words of a tile and of a modifier slot, flat or in a call tree, and none of a parameter slot", () => {
+    const { packs, problems } = parseCatalog(WORDED_CATALOG);
+    const [see, roar] = packs[0].tiles;
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(see.language, WORDS.see);
+    assert.deepEqual(see.grammar, [
+      {
+        kind: "optional",
+        item: {
+          kind: "arg",
+          tileId: "modifier.zoo.lion",
+          modifier: true,
+          anonymous: false,
+          derived: false,
+          label: "lion",
+          language: WORDS.lion,
+        },
+      },
+      {
+        kind: "optional",
+        item: { kind: "arg", tileId: "count", modifier: false, type: "number", anonymous: false, derived: false },
+      },
+    ]);
+    assert.deepEqual(roar.grammar, [
+      {
+        kind: "optional",
+        item: {
+          kind: "arg",
+          tileId: "loudly",
+          modifier: true,
+          anonymous: false,
+          derived: false,
+          language: WORDS.loudly,
+        },
+      },
+    ]);
+  });
+
+  it("diagnoses a sentence frame it does not know, dropping only the frame and keeping the tile's grammar", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "zoo",
+          tiles: [
+            {
+              name: "sensor.zoo.see",
+              kind: "sensor",
+              args: [{ tileId: "lion", modifier: true, optional: true, language: { form: "a lion", frame: "noun" } }],
+              language: { form: "spot", frame: "stat", bare: "something" },
+            },
+          ],
+        },
+      ],
+    });
+
+    const parsed = parseCatalog(text);
+    const see = parsed.packs[0].tiles[0];
+
+    assert.deepEqual(parsed.problems, [
+      { code: CatalogProblemCode.SENTENCE_FRAME_UNKNOWN, pack: "zoo", name: "sensor.zoo.see", token: "noun" },
+      { code: CatalogProblemCode.SENTENCE_FRAME_UNKNOWN, pack: "zoo", name: "sensor.zoo.see", token: "stat" },
+    ]);
+    assert.deepEqual(see.language, { form: "spot", bare: "something" });
+    assert.deepEqual(see.grammar, [
+      {
+        kind: "optional",
+        item: {
+          kind: "arg",
+          tileId: "lion",
+          modifier: true,
+          anonymous: false,
+          derived: false,
+          language: { form: "a lion" },
+        },
+      },
+    ]);
+  });
+
   it("reads every pack's types, tiles and operators with their metadata", () => {
     const { packs, problems, errorCode } = parseCatalog(FULL_CATALOG);
 

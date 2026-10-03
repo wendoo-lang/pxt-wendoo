@@ -316,7 +316,7 @@ the current slice alone.
       (the single-entry host loop a target's frame loop drains; every host
       of a program run shares the one drain of every pack's registrations
       through the project's id manifest, `hostRegistries`), and the
-      empty program `wendooPrograms.none` (`empty.g.ts`, generated from
+      empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
       NO block definitions -- the compiled-brain type's
       `//% fixedInstances` attribute is toolbox metadata on a type, which
@@ -341,11 +341,18 @@ the current slice alone.
       through), the `Vector2` direction type, the `Sprite` type (an opaque
       host value: no fields, each value backed by the sprite it stands
       for), the controller read (one module owning every raw read and its
-      dead-banded transform), the overlap read (one module owning every
-      sprite-touch read, made synchronously at sense time), the `dpad` and
-      `bump` sensors and the `move` actuator (the shared
-      `modifier.direction.*` fragments filter dpad's reading and specify
-      move's direction; move's `modifier.movement.toward` and
+      dead-banded transform), the proximity read (one module owning the
+      nearest-sprite scan and its center-distance metric, made
+      synchronously at sense time), the overlap read (one module owning
+      every sprite-touch read, picking among touched sprites through the
+      proximity read's scan), the `dpad`, `bump`, `in range` and
+      `out of range` sensors and the `move` actuator (each of the range
+      pair reads the nearest sprite against its range -- an optional
+      anonymous number of pixels, else the shared default -- so at equal
+      ranges exactly one of the pair fires whenever another sprite exists,
+      and neither fires in an empty scene;
+      the shared `modifier.direction.*` fragments filter dpad's reading and
+      specify move's direction; move's `modifier.movement.toward` and
       `modifier.movement.away` add the direction toward or away from the
       sprite its WHEN produced, summed with the cardinals), and move
       arbitration with its motion applicator (the direct applicator sets

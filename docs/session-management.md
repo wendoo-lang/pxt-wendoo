@@ -304,11 +304,11 @@ serves exactly what the last one wrote.
   module declaring every brain's compiled form, which the project
   compiles with the rest of its code. After two comment lines it
   declares `// wendoo-brains-format 1`, then a blank line, then the
-  namespace `wendooPrograms` carrying one entry per brain, ordered by
+  namespace `wendooBrains` carrying one entry per brain, ordered by
   id and separated by blank lines:
 
   ```ts
-  namespace wendooPrograms {
+  namespace wendooBrains {
       // source-hash 1a2b3c4d
       //% fixedInstance block="Chaser"
       export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
@@ -340,7 +340,9 @@ serves exactly what the last one wrote.
   the folder path a project holds it at, with programs the editor
   compiled from the brain sources checked in beside it.
 - READING A DAMAGED MODULE: the reader never throws. A module
-  declaring no format reads as registering nothing
+  declaring no format, or declaring format 1 without opening the
+  `wendooBrains` namespace (one declaring its entries in a superseded
+  namespace among them), reads as registering nothing
   (`BRAINS_MODULE_UNREADABLE`); one entry that does not follow the
   format is skipped (`BRAINS_MODULE_ENTRY_MALFORMED`) and the rest are
   read; a module declaring a newer format (`BRAINS_MODULE_FORMAT_NEWER`)
@@ -867,7 +869,10 @@ it keys on a session id.
   (`CATALOG_DEFAULT_UNREADABLE`), a shared slot tile declared with another
   type (`CATALOG_SHARED_TILE_CONFLICT`), an operator of an unsupported
   shape (`CATALOG_OPERATOR_SHAPE_UNSUPPORTED`), or an entry the language
-  model refuses (`CATALOG_TILE_REJECTED`) -- the rest of its pack bound.
+  model refuses (`CATALOG_TILE_REJECTED`) -- the rest of its pack bound;
+  and one line per sentence frame the catalog grammar does not have
+  (`CATALOG_SENTENCE_FRAME_UNKNOWN`), whose tile is still made, reading
+  through the default frame.
   These are show-all-tier diagnostics, rendered unconditionally while the
   product's only users are its developers. They inform and never block
   authoring.
@@ -882,7 +887,12 @@ it keys on a session id.
   (`anon.<TypeName>`); a slot's tile is labelled by the label the slot
   carries, or, when it carries none, by its fragment after the last dot
   (an anonymous slot's by its type name), and a shared tile keeps the
-  label of its first declaration; and each operator as its own operator
+  label of its first declaration; a tile's sentence words, and a modifier
+  slot's for its tile, land verbatim in the tile's metadata as the
+  upstream `language` group the rule-sentence projection reads (form,
+  frame, bare), a tile declaring none reading by the projection's
+  defaults, and a shared modifier keeping the words of its first
+  declaration; and each operator as its own operator
   under its allocated host-function id, infix over two operands, prefix
   over one.
   Pack actions run nothing in the editor.

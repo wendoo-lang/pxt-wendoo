@@ -46,7 +46,7 @@ export function brainSourceFile(id: string): string {
 /** What the log says about the brains module for each problem code. */
 const PROBLEM_EXPLANATIONS: Record<BrainsModuleProblemCode, string> = {
   [ProblemCode.UNREADABLE]:
-    "declares no format this simulator extension reads; no compiled brain is served from it, and the next save rewrites it.",
+    "does not follow a format this simulator extension reads; no compiled brain is served from it, and the next save rewrites it.",
   [ProblemCode.FORMAT_NEWER]:
     "was written by a newer simulator extension; no compiled brain is served from it, and saves are refused so it is kept as it is.",
   [ProblemCode.ENTRY_MALFORMED]:

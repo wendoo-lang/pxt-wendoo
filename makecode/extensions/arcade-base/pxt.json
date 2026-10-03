@@ -13,6 +13,7 @@
         "controller-read.ts",
         "direction.ts",
         "sprite-value.ts",
+        "proximity-read.ts",
         "overlap-read.ts",
         "motion.ts",
         "vocabulary.ts"

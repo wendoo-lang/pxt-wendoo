@@ -1163,6 +1163,31 @@ describe("brains sync with a scripted simx on the relay", () => {
       assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
     });
 
+    it("heals a brains.g.ts declaring its brains in a superseded namespace at a fresh editor session, sources intact", async () => {
+      const { session, brains, bridge, simxTokens } = await pairReal();
+      const ids = [authorBrain(brains, "Chaser"), authorBrain(brains, "Runner")];
+      await saved(brains, "both brains to be saved");
+      const healthy = host.file(BRAINS_MODULE_FILE) ?? "";
+      const sources = ids.map((id) => host.file(`brains/${id}.src.json`));
+      host.edit(BRAINS_MODULE_FILE, healthy.replace("namespace wendooBrains {", "namespace wendooPrograms {"));
+      session.stop();
+
+      restartSimx(bridge, simxTokens);
+      const fresh = editor();
+      assert.equal(fresh.session.resume(), true);
+
+      await eventually(
+        () => host.file(BRAINS_MODULE_FILE),
+        (text) => text === healthy,
+        "the brains module to be rewritten whole in the current namespace"
+      );
+      assert.deepEqual(
+        ids.map((id) => host.file(`brains/${id}.src.json`)),
+        sources
+      );
+      assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
+    });
+
     it("heals a deleted brains.g.ts at a fresh editor session, registering every brain's recompiled form", async () => {
       const { session, brains, bridge, simxTokens } = await pairReal();
       const ids = [authorBrain(brains, "Chaser"), authorBrain(brains, "Runner")];

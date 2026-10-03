@@ -22,7 +22,7 @@ automatically. If you are building on the VM itself:
 
    https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/vm
 
-To give sprites programs in MakeCode Arcade, add the Wendoo arcade
+To give sprites brains in MakeCode Arcade, add the Wendoo arcade
 extension instead -- it pulls this one in:
 
    https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/arcade

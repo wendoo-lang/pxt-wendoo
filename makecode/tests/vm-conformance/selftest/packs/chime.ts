@@ -59,12 +59,20 @@ namespace chime {
 
   const pack = wendoo.pack(PACK_NAME);
 
-  /** Declared shape of the ring tile: an optional count, an optional modifier, both labeled, and sample metadata the catalog assertions pin. */
+  /** The ring tile's count slot: a labeled parameter slot declaring sentence words the catalog leaves out. */
+  const timesSlot = wendoo.arg("times", wendoo.TYPE_NUMBER, "times to ring");
+  timesSlot.language = wendoo.tileLanguage("this many times");
+
+  /**
+   * Declared shape of the ring tile: an optional count, an optional modifier
+   * declaring a sentence form, both labeled, and sample metadata, a sentence
+   * form included, the catalog assertions pin.
+   */
   const ringSpec = new wendoo.TileSpec(
     wendoo.TILE_KIND_ACTUATOR,
     [
-      wendoo.optionalArg("times", wendoo.TYPE_NUMBER, "times to ring"),
-      wendoo.optional(wendoo.modifier("loudly", "nice and loud")),
+      wendoo.optional(timesSlot),
+      wendoo.optional(wendoo.modifier("loudly", "nice and loud", wendoo.tileLanguage("loudly"))),
     ],
     ""
   );
@@ -72,6 +80,7 @@ namespace chime {
   ringSpec.group = "Chimes";
   ringSpec.docs = "# Ring the chime\n\nRings the chime once, or `times` times, louder with `loudly`.";
   ringSpec.icon = "chime";
+  ringSpec.language = wendoo.tileLanguage("ring");
   pack.bind("actuator.chime.ring", new RingActuator(), ringSpec);
 
   pack.bind("sensor.beacon.reading", new ReadingSensor());

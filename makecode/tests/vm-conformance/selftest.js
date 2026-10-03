@@ -62,6 +62,7 @@ const EXPECTED_CHECKS = [
   "action-output-core-typed-readable-by-name",
   "catalog-serialize-repeatable",
   "slot-builders-carry-labels",
+  "language-builders-carry-words",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
   "compiled-brain-declarations-bound-by-id",
@@ -196,6 +197,20 @@ const EXPECTED_ARCADE_CHECKS = [
   "toward-without-a-sprite-moves-in-the-default-direction",
   "away-under-a-dpad-follows-the-dpad",
   "program-update-turns-pursuit-to-flight-live",
+  "neither-range-sensor-fires-in-an-empty-scene",
+  "in-range-fires-within-the-default-range-and-not-beyond",
+  "out-of-range-fires-beyond-the-default-range-and-not-within",
+  "a-given-range-narrows-both-sensors",
+  "a-negative-range-reads-as-zero",
+  "exactly-one-range-sensor-fires-while-another-sprite-exists",
+  "leash-closes-on-the-nearest-sprite-from-across-the-screen",
+  "leash-rests-once-in-range",
+  "keep-away-opens-distance-from-the-nearest-sprite",
+  "keep-away-rests-once-out-of-range",
+  "range-sensors-pick-the-nearest-sprite-first-created-on-ties",
+  "standoff-holds-its-distance-from-a-moving-sprite",
+  "speed-words-compose-with-range-rules",
+  "program-update-swaps-in-range-to-out-of-range-live",
 ];
 
 /**
@@ -215,10 +230,12 @@ const ARCADE_HOST_REJECTIONS = [
  * order: each scene's program host logs the refused programs at its first
  * frame -- the game's first scene, the scene the selftest pushes to check
  * paused programs, the scene it pushes to check paused program updates, the
- * scene it pushes to check the bump sensor, and the scene it pushes to check
- * the move's toward and away modifiers.
+ * scene it pushes to check the bump sensor, the scene it pushes to check the
+ * move's toward and away modifiers, and the scene it pushes to check the
+ * in-range and out-of-range sensors.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -232,7 +249,8 @@ const EXPECTED_ARCADE_REJECTIONS = [
  * updates refused -- a foreign device profile, then an action id and a type
  * atom the project's ids module does not hold -- the three messages refused,
  * the paused scene's program update taken, the removal taken, the bump
- * rule's update taken, and the pursuit rule's update to flight taken.
+ * rule's update taken, the pursuit rule's update to flight taken, and the
+ * in-range rule's update to out of range taken.
  */
 const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated driftBareMove001 0000000a",
@@ -246,6 +264,7 @@ const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-removed driftBareMove001",
   "program-updated fleeBumpLeftUp01 00000011",
   "program-updated chaseBumpToward1 00000012",
+  "program-updated nearInRangeMove1 00000013",
 ];
 
 /** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */

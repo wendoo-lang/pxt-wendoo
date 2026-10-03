@@ -1,7 +1,8 @@
 /**
  * The arcade base pack's vocabulary: the `Vector2` direction type, the
- * `Sprite` type, the `dpad` and `bump` sensors, and the `move` actuator,
- * registered from this file's top-level code at program start.
+ * `Sprite` type, the `dpad`, `bump`, `in range` and `out of range` sensors,
+ * and the `move` actuator, registered from this file's top-level code at
+ * program start.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
@@ -10,6 +11,14 @@
  * - `WHEN [bump]` reads the sprite the program's sprite touches as a
  *   `Sprite`, or nil while it touches none; when it touches several, the
  *   one {@link bumpedSprite} picks.
+ * - `WHEN [in range]` and `WHEN [out of range]` read the sprite nearest the
+ *   program's sprite, as {@link nearestSprite} picks it, as a `Sprite`: in
+ *   range while its center lies within the range of the program's sprite's
+ *   center, out of range while it lies beyond, and nil otherwise. The range
+ *   is the number the tile is given, in pixels, held at 0 or above, or
+ *   {@link DEFAULT_SENSE_RANGE}. Given the same range, exactly one of the
+ *   pair reads it whenever another sprite exists; while none does, both
+ *   read nil.
  * - `DO [move]` moves the program's sprite. Its direction modifiers specify
  *   the direction: the chosen cardinals, `toward` the sprite its rule's WHEN
  *   produced, and `away` from that sprite, sum, scaled to length 1; the
@@ -40,6 +49,18 @@ namespace wendoo {
   /** Tile name of the bump sensor. */
   //% hidden
   export const BUMP_TILE = "sensor.arcade.bump";
+
+  /** Tile name of the in-range sensor. */
+  //% hidden
+  export const IN_RANGE_TILE = "sensor.arcade.in-range";
+
+  /** Tile name of the out-of-range sensor. */
+  //% hidden
+  export const OUT_OF_RANGE_TILE = "sensor.arcade.out-of-range";
+
+  /** Range the in-range and out-of-range sensors sense within when they are given none, in pixels between sprite centers. */
+  //% hidden
+  export const DEFAULT_SENSE_RANGE = 60;
 
   /** Speed a move goes at when nothing sets it, in pixels per second. */
   //% hidden
@@ -78,6 +99,9 @@ namespace wendoo {
   const MOVE_SLOT_RIGHT = 7;
   const MOVE_SLOT_TOWARD = 8;
   const MOVE_SLOT_AWAY = 9;
+
+  /** Argument-buffer position of the in-range and out-of-range sensors' range. */
+  const RANGE_SLOT = 0;
 
   /** Whether the modifier slot at `slot` of `args` is filled. */
   function hasModifier(args: Value[], slot: number): boolean {
@@ -165,6 +189,53 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The range an in-range or out-of-range sensor senses within, in pixels
+   * between sprite centers: the range argument held at 0 or above when it
+   * carries a number; else {@link DEFAULT_SENSE_RANGE}.
+   *
+   * @param range - The range argument: a number, or nil.
+   */
+  function senseRange(range: Value): number {
+    if (range !== undefined && range.t === ValueTag.Number) {
+      return range.num > 0 ? range.num : 0;
+    }
+    return DEFAULT_SENSE_RANGE;
+  }
+
+  /**
+   * `sensor.arcade.in-range` and `sensor.arcade.out-of-range`: the sprite
+   * nearest the program's sprite, as {@link nearestSprite} picks it, while
+   * its center lies within the sensor's range of the program's sprite's
+   * center, the boundary included (in range), or beyond it (out of range);
+   * nil otherwise, and nil while the scene holds no other sprite. Given the
+   * same range, exactly one of the pair produces the nearest sprite whenever
+   * another sprite exists.
+   */
+  class RangeSensor extends HostActionBinding {
+    /** Whether this sensor produces the nearest sprite while it is within range, and not while it is beyond. */
+    private inRange: boolean;
+
+    /**
+     * @param inRange - `true` for the in-range sensor, `false` for the out-of-range sensor.
+     */
+    constructor(inRange: boolean) {
+      super(false);
+      this.inRange = inRange;
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const sprite = (ctx.data as SpriteWorld).sprite;
+      const nearest = nearestSprite(sprite);
+      if (!nearest) {
+        return NIL_VALUE;
+      }
+      const range = senseRange(args[RANGE_SLOT]);
+      const within = centerDistanceSquared(sprite, nearest) <= range * range;
+      return within === this.inRange ? spriteValue(nearest) : NIL_VALUE;
+    }
+  }
+
   /** `actuator.arcade.move`: records the program's sprite's move for this frame's arbitration. */
   class MoveActuator extends HostActionBinding {
     constructor() {
@@ -190,6 +261,15 @@ namespace wendoo {
     }
   }
 
+  /** The range slot each range sensor declares: an optional anonymous number of pixels, held at 0 or above. */
+  function rangeSlot(): TileArgSpec {
+    const slot = arg(`anon.${TYPE_NUMBER}`, TYPE_NUMBER);
+    slot.anonymous = true;
+    slot.unit = "px";
+    slot.range = argRangeAtLeast(0, ARG_ON_EXCEED_CLAMP);
+    return optional(slot);
+  }
+
   const arcadePack = pack(ARCADE_PACK_NAME);
 
   arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding);
@@ -206,6 +286,8 @@ namespace wendoo {
     TYPE_VECTOR2
   );
   dpadSpec.label = "dpad";
+  dpadSpec.language.form = "press";
+  dpadSpec.language.bare = "the dpad";
   arcadePack.bind(DPAD_TILE, new DpadSensor(), dpadSpec);
 
   const moveDirectionSlot = arg(`anon.${TYPE_VECTOR2}`, TYPE_VECTOR2);
@@ -239,5 +321,18 @@ namespace wendoo {
 
   const bumpSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_SPRITE);
   bumpSpec.label = "bump";
+  bumpSpec.language.bare = "anything";
   arcadePack.bind(BUMP_TILE, new BumpSensor(), bumpSpec);
+
+  const inRangeSpec = new TileSpec(TILE_KIND_SENSOR, [rangeSlot()], TYPE_SPRITE);
+  inRangeSpec.label = "in range";
+  inRangeSpec.language.frame = SENTENCE_FRAME_STATE;
+  inRangeSpec.language.bare = "of anything";
+  arcadePack.bind(IN_RANGE_TILE, new RangeSensor(true), inRangeSpec);
+
+  const outOfRangeSpec = new TileSpec(TILE_KIND_SENSOR, [rangeSlot()], TYPE_SPRITE);
+  outOfRangeSpec.label = "out of range";
+  outOfRangeSpec.language.frame = SENTENCE_FRAME_STATE;
+  outOfRangeSpec.language.bare = "of anything";
+  arcadePack.bind(OUT_OF_RANGE_TILE, new RangeSensor(false), outOfRangeSpec);
 }

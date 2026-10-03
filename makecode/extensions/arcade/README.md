@@ -1,12 +1,12 @@
 # Wendoo for MakeCode Arcade
 
-Give your sprites programs made in [Wendoo](https://wendoo.com).
+Give your sprites brains made in [Wendoo](https://wendoo.com).
 
-A Wendoo program is a set of rules -- **WHEN** something happens, **DO**
-something about it. This extension runs the programs in your project on
-your sprites: place **run program ... on mySprite**, pick a program by
-name, and the sprite runs it from the next frame until it is destroyed.
-Change a program in the Wendoo editor while your game runs, and every
+A Wendoo brain is a set of rules -- **WHEN** something happens, **DO**
+something about it. This extension runs the brains in your project on
+your sprites: place **run brain ... on mySprite**, pick a brain by name,
+and the sprite runs it from the next frame until it is destroyed.
+Change a brain in the Wendoo editor while your game runs, and every
 sprite running it starts the new version right away -- no restart.
 
 > **Heads up:** this extension is under development and not ready to use in

@@ -38,7 +38,15 @@ import {
   NativeType,
 } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
-import type { CatalogArgNode, CatalogArgSlot, CatalogOperator, CatalogPack, CatalogTile, CatalogType } from "./catalog";
+import type {
+  CatalogArgNode,
+  CatalogArgSlot,
+  CatalogLanguage,
+  CatalogOperator,
+  CatalogPack,
+  CatalogTile,
+  CatalogType,
+} from "./catalog";
 
 /**
  * Stable codes of the problems found binding a catalog pack's entries into
@@ -123,6 +131,7 @@ interface ParameterTile {
 interface ModifierTile {
   readonly id: string;
   readonly label: string;
+  readonly language?: CatalogLanguage;
   readonly userArg?: UserArgIdentity;
 }
 
@@ -237,6 +246,7 @@ class PackBinder {
       tiles.modifiers.push({
         id,
         label: slotLabel(slot),
+        ...(slot.language === undefined ? {} : { language: slot.language }),
         ...(shared ? {} : { userArg: { namespace: pack, actionId: tile, argName: slot.tileId } }),
       });
       return { ...mod(id), ...this.slotOptions(slot) };
@@ -335,6 +345,7 @@ class PackBinder {
     const metadata: ITileMetadata = {
       label: tile.label ?? tile.name,
       ...(tile.docs === undefined ? {} : { docsMarkdown: tile.docs }),
+      ...(tile.language === undefined ? {} : { language: tile.language }),
     };
     const common = {
       key: tile.name,
@@ -378,7 +389,10 @@ class PackBinder {
     }
     for (const modifier of tiles.modifiers) {
       const tile = new BrainTileModifierDef(modifier.id, {
-        metadata: { label: modifier.label },
+        metadata: {
+          label: modifier.label,
+          ...(modifier.language === undefined ? {} : { language: modifier.language }),
+        },
         ...(modifier.userArg === undefined ? {} : { userArg: modifier.userArg }),
       });
       if (!catalog.has(tile.tileId)) this.api.registerTile(tile);

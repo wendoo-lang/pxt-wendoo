@@ -1,8 +1,8 @@
 # Wendoo Arcade Base
 
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
-shares: the tiles a program uses to read the controller, notice what its
-sprite touches, and move its sprite.
+shares: the tiles a brain uses to read the controller, notice what its
+sprite touches and what is near it, and move its sprite.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -10,6 +10,14 @@ sprite touches, and move its sprite.
 - **bump** -- a WHEN tile that is on while the sprite touches another
   sprite, carrying the sprite it touches. When it touches several at once,
   it carries the nearest.
+- **in range** and **out of range** -- a pair of WHEN tiles that watch the
+  sprite nearest yours, carrying it: **in range** is on while that sprite is
+  within 60 pixels, center to center, and **out of range** while it is
+  farther. Give either a number to pick the range -- **in range 40** means
+  within 40 pixels. When both have the same range and there is another
+  sprite, exactly one of the pair is on; with no other sprite, neither is. **WHEN out of range DO move
+  toward** keeps a companion close, and adding **WHEN in range DO move away
+  from** makes it hold its distance.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or
@@ -25,7 +33,7 @@ sprite touches, and move its sprite.
 > your projects yet.
 
 Most people will never add this extension directly -- the Wendoo arcade
-extension depends on it and pulls it in. To give sprites programs, add that
+extension depends on it and pulls it in. To give sprites brains, add that
 extension instead:
 
    https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/arcade

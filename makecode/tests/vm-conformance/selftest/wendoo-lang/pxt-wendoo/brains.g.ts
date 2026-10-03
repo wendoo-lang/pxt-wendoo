@@ -2,7 +2,7 @@
 // Saving a brain in the Wendoo editor rewrites this file.
 // wendoo-brains-format 1
 
-namespace wendooPrograms {
+namespace wendooBrains {
     // source-hash a87bedcc
     //% fixedInstance block="Twin"
     export const p_Hq7EB8SthdeOudyP = wendoo.registerCompiledBrain("Hq7EB8SthdeOudyP", "Twin", hex`
