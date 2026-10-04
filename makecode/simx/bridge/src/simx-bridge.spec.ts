@@ -23,6 +23,7 @@ import {
   brainSourceHash,
   MAKECODE_SESSION_PROTOCOL_VERSION,
   MAKECODE_SESSION_ROLE_PATHS,
+  type MakeCodeAsset,
   MakeCodeBrainsErrorCode,
   type MakeCodeSessionMessage,
   type MakeCodeWireBrain,
@@ -33,9 +34,13 @@ import {
   openBindingTokenStore,
   type TokenStorage,
 } from "./binding-token-store.js";
+import { decodeImageHex } from "./image-buffer.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "./simx-bridge.js";
 import { SimxStatusModel, type SimxStatusState, type SimxStatusView } from "./status-model.js";
+import { imageSvg } from "./svg-image.js";
+import { FakeAssetProvider, listedImage } from "./test-support/asset-provider.js";
+import { pixelImage } from "./test-support/image-buffer-encoder.js";
 import { postedProgramUpdates } from "./test-support/program-update-frame.js";
 import { FakeProjfsHost, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
 import type { ProjfsClient } from "./vendor/projfs.js";
@@ -292,6 +297,7 @@ describe("simx bridge on the relay", () => {
   let bridge: SimxBridge | undefined;
   let host: FakeProjfsHost;
   let files: ProjfsClient;
+  let assets: FakeAssetProvider;
 
   /** The sockets the simx role path has been connected on, in creation order. */
   function simxSockets(): RecordingWebSocket[] {
@@ -308,7 +314,7 @@ describe("simx bridge on the relay", () => {
     catalog?: string,
     target?: string
   ): Promise<{ socket: RecordingWebSocket; joinCode: string }> {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, target, files });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, target, files, assets });
     if (catalog !== undefined) frame.programPosts(catalog);
     const socket = simxSockets().at(-1);
     assert.ok(socket);
@@ -328,6 +334,7 @@ describe("simx bridge on the relay", () => {
     log = new RecordingLog();
     host = new FakeProjfsHost();
     files = host.client();
+    assets = new FakeAssetProvider();
   });
 
   afterEach(async () => {
@@ -443,7 +450,7 @@ describe("simx bridge on the relay", () => {
     assertCounterpartAway(await editor.nextMessage());
     const vacancyCode = assertJoinCode(await editor.nextMessage());
     frame = new FakeFrame();
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files, assets });
     frame.programPosts("{}");
     const rewelcome = assertWelcome(await editor.nextMessage());
     await handshake(editor);
@@ -597,7 +604,7 @@ describe("simx bridge on the relay", () => {
   it("shows each rotated join code on its handle and in its log", async () => {
     const rotating = await startTestRelay({ bindingSecret: "spec-secret", rotationMs: ROTATION_MS });
     try {
-      bridge = startSimxBridge({ frame, bridgeUrl: rotating.address, tokens, log, files });
+      bridge = startSimxBridge({ frame, bridgeUrl: rotating.address, tokens, log, files, assets });
       const socket = simxSockets().at(-1);
       assert.ok(socket);
       const joinCode = assertJoinCode(await socket.firstReceived("session:joinCode"));
@@ -627,7 +634,7 @@ describe("simx bridge on the relay", () => {
   });
 
   it("reports its connection, its counterpart's presence, and whether it holds a binding, announcing each change", async () => {
-    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
+    bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files, assets });
     const current = bridge;
     let changes = 0;
     current.onChange(() => {
@@ -729,6 +736,194 @@ describe("simx bridge on the relay", () => {
     assert.equal(current.errorCode, undefined);
   });
 
+  describe("project assets and tile icons", () => {
+    /** A 4-bit tile icon, 1 wide and 2 tall: palette index 1 above index 2. */
+    const ICON = "870401000200000021000000";
+
+    /** A catalog of one tile whose icon is `icon`, as the program posts it. */
+    function iconCatalog(icon: string): string {
+      return JSON.stringify({
+        packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor", icon }] }],
+      });
+    }
+
+    /** The catalog the editor receives for {@link iconCatalog} of `icon`, its icon rendered under `palette`. */
+    function renderedIconCatalog(icon: string, palette: readonly string[]): string {
+      const reading = decodeImageHex(icon);
+      assert.ok(reading.image);
+      const iconUrl = imageSvg(reading.image, palette).url;
+      return JSON.stringify({
+        packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor", iconUrl }] }],
+      });
+    }
+
+    /** The `makecode:assets` message publishing `snapshot`. */
+    function assetsMessage(snapshot: MakeCodeAsset[]): MakeCodeSessionMessage {
+      return { type: "makecode:assets", payload: { assets: snapshot } };
+    }
+
+    /** The snapshot entry of a 4-bit image `id` of pixels `rows`, named `name` when given, under `palette`. */
+    function snapshotEntry(id: string, rows: number[][], palette: readonly string[], name?: string): MakeCodeAsset {
+      const entry: MakeCodeAsset = { kind: "image", id, width: rows[0].length, height: rows.length, previewUrl: "" };
+      if (name !== undefined) entry.name = name;
+      entry.previewUrl = imageSvg(pixelImage(4, rows), palette).url;
+      return entry;
+    }
+
+    it("publishes the project's asset snapshot into the session once established, after the catalog, each image with its size", async () => {
+      assets.images = [
+        listedImage("image2", [[1, 2]], "hero"),
+        listedImage("transparency16", [[0]]),
+        listedImage("image1", [[3]]),
+      ];
+      assets.answer();
+      const { joinCode } = await startSimx("{}");
+      const { editor } = await joinEditor(joinCode, "{}");
+
+      assert.deepEqual(
+        await editor.nextMessage(),
+        assetsMessage([
+          snapshotEntry("image1", [[3]], assets.palette),
+          snapshotEntry("image2", [[1, 2]], assets.palette, "hero"),
+        ])
+      );
+      assert.deepEqual(log.errors, []);
+    });
+
+    it("re-sends its current snapshot into the new session of an editor returning by its token", async () => {
+      assets.images = [listedImage("image1", [[3]])];
+      assets.answer();
+      const { socket, joinCode } = await startSimx("{}");
+      const { editor, welcome } = await joinEditor(joinCode, "{}");
+      const published = assetsMessage([snapshotEntry("image1", [[3]], assets.palette)]);
+      assert.deepEqual(await editor.nextMessage(), published);
+
+      await editor.close();
+      assertCounterpartAway(await socket.firstReceived("session:counterpartAway"));
+      const returned = await relay.connect(EDITOR);
+      assertWelcome(await returned.hello({ bindingToken: welcome.bindingToken }));
+      await handshake(returned);
+
+      assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
+      assert.deepEqual(await returned.nextMessage(), published);
+    });
+
+    it("publishes a new snapshot when the project's assets change, and nothing for a change that leaves the snapshot as it was", async () => {
+      assets.images = [listedImage("image1", [[3]])];
+      assets.answer();
+      const { joinCode } = await startSimx("{}");
+      const { editor } = await joinEditor(joinCode, "{}");
+      await editor.nextMessage();
+
+      assets.change();
+      await delay(300);
+      await editor.ping();
+      editor.assertNothingReceived();
+      assets.images = [listedImage("image1", [[3]]), listedImage("image3", [[4, 4]], "wall")];
+      assets.change();
+
+      assert.deepEqual(
+        await editor.nextMessage(),
+        assetsMessage([
+          snapshotEntry("image1", [[3]], assets.palette),
+          snapshotEntry("image3", [[4, 4]], assets.palette, "wall"),
+        ])
+      );
+    });
+
+    it("publishes the catalog with each tile icon rendered as an iconUrl, and no icon text", async () => {
+      assets.answer();
+      const { joinCode } = await startSimx();
+      const editor = await relay.connect(EDITOR);
+      assertWelcome(await editor.hello({ joinCode }));
+      await handshake(editor);
+      assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
+
+      frame.programPosts(iconCatalog(ICON));
+
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON, assets.palette)));
+    });
+
+    it("publishes a tile whose icon it cannot read without an iconUrl, logging the icon's code, and the catalog all the same", async () => {
+      assets.answer();
+      const { joinCode } = await startSimx();
+      const editor = await relay.connect(EDITOR);
+      assertWelcome(await editor.hello({ joinCode }));
+      await handshake(editor);
+      assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
+
+      frame.programPosts(iconCatalog("8804"));
+
+      assert.deepEqual(
+        await editor.nextMessage(),
+        catalogMessage(
+          JSON.stringify({ packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor" }] }] })
+        )
+      );
+      assert.equal(log.errors.length, 1);
+      assert.ok(log.errors[0].startsWith("IMAGE_BUFFER_MAGIC_UNKNOWN: "));
+    });
+
+    it("re-publishes both the snapshot and the re-rendered catalog when the project's palette changes", async () => {
+      assets.images = [listedImage("image1", [[1]])];
+      assets.answer();
+      const { joinCode } = await startSimx(iconCatalog(ICON));
+      const editor = await relay.connect(EDITOR);
+      assertWelcome(await editor.hello({ joinCode }));
+      await handshake(editor);
+      const first = await editor.nextMessage();
+      const second = await editor.nextMessage();
+      assert.deepEqual(
+        [first, second].find((message) => message.type === "makecode:catalog"),
+        catalogMessage(renderedIconCatalog(ICON, assets.palette))
+      );
+
+      const recolored = ["#000000", "#00aa00", "#0000aa"];
+      assets.palette = recolored;
+      assets.change();
+      const updates = [await editor.nextMessage(), await editor.nextMessage()];
+
+      assert.deepEqual(
+        updates.find((message) => message.type === "makecode:catalog"),
+        catalogMessage(renderedIconCatalog(ICON, recolored))
+      );
+      assert.deepEqual(
+        updates.find((message) => message.type === "makecode:assets"),
+        assetsMessage([snapshotEntry("image1", [[1]], recolored)])
+      );
+    });
+
+    it("keeps relaying the catalog and serving brains requests when MakeCode refuses it the project's assets, logging the code", async () => {
+      assets.failLists("PERMISSION_DENIED");
+      assets.failSubscribes("PERMISSION_DENIED");
+      assets.answer();
+      const { joinCode } = await startSimx(iconCatalog(ICON));
+      const editor = await relay.connect(EDITOR);
+      assertWelcome(await editor.hello({ joinCode }));
+      await handshake(editor);
+
+      assert.deepEqual(
+        await editor.nextMessage(),
+        catalogMessage(
+          JSON.stringify({ packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor" }] }] })
+        )
+      );
+      editor.send({ type: "makecode:brainsList", id: "list-1" });
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:brainsListReply",
+        id: "list-1",
+        payload: { brains: [] },
+      });
+      await editor.ping();
+      editor.assertNothingReceived();
+      assert.equal(log.errors.length, 2);
+      assert.equal(
+        log.errors.every((line) => line.startsWith("PERMISSION_DENIED: ")),
+        true
+      );
+    });
+  });
+
   describe("manifest requests", () => {
     it("answers the editor's manifest write and read from the project's ids module", async () => {
       const { joinCode } = await startSimx(CATALOG_TEXT);
@@ -816,7 +1011,7 @@ describe("simx bridge on the relay", () => {
       assertJoinCode(await editor.nextMessage());
       frame = new FakeFrame();
       files = host.client();
-      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
+      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files, assets });
       frame.programPosts("{}");
       assertWelcome(await editor.nextMessage());
       await handshake(editor);
@@ -941,6 +1136,7 @@ describe("simx bridge on the relay", () => {
         tokens,
         log,
         files,
+        assets,
         channel: "fork-owner/fork-repo",
       });
       const socket = simxSockets().at(-1);
@@ -972,6 +1168,7 @@ describe("simx bridge on the relay", () => {
         tokens: openBindingTokenStore(() => storage, "project-b"),
         log,
         files,
+        assets,
       });
       const other = simxSockets().at(-1);
       assert.ok(other);
@@ -988,6 +1185,7 @@ describe("simx bridge on the relay", () => {
         tokens: openBindingTokenStore(() => storage, "project-a"),
         log,
         files,
+        assets,
       });
       frame.programPosts("{}");
       const rewelcome = assertWelcome(await editor.nextMessage());
@@ -1011,6 +1209,7 @@ describe("simx bridge on the relay", () => {
         tokens: openBindingTokenStore(() => storage, project),
         log,
         files,
+        assets,
       });
       return { tab, tabFrame };
     }
@@ -1171,7 +1370,7 @@ describe("simx bridge on the relay", () => {
       bridge?.dispose();
 
       frame = new FakeFrame();
-      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files });
+      bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log, files, assets });
       const model = new SimxStatusModel(bridge, { awayGraceMs: 50 });
       const states: SimxStatusState[] = [model.getSnapshot().state];
       model.subscribe(() => states.push(model.getSnapshot().state));

@@ -5,6 +5,7 @@ import {
   createInMemoryProjectFileSystem,
   PeerSessionError,
 } from "@wendoo/bridge-app";
+import type { MakeCodeAsset } from "./makecode-assets.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "./makecode-session.js";
 
@@ -153,6 +154,11 @@ export interface MakeCodeEditorSession {
    */
   onCatalog(listener: (content: string) => void): () => void;
   /**
+   * Subscribe to the asset snapshots the counterpart publishes, each
+   * delivered whole. Returns an unsubscribe function.
+   */
+  onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void;
+  /**
    * Subscribe to the brains channel of each makecode handshake with the
    * counterpart, delivered once the handshake completes. A channel is good
    * only while its handshake lasts; every later handshake delivers a new
@@ -211,7 +217,8 @@ export function createEditorSessionOver(
 /**
  * The makecode handshake with the counterpart of one welcome, carried over
  * the bridge's payload messages. Reports the established session once the
- * handshake completes, then the catalogs the counterpart publishes.
+ * handshake completes, then the catalogs and asset snapshots the
+ * counterpart publishes.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -222,12 +229,14 @@ class CounterpartSession {
    * @param bridge - The bridge connection, just welcomed.
    * @param onEstablished - Receives the established session once the handshake completes.
    * @param onCatalog - Receives each catalog the counterpart publishes.
+   * @param onAssets - Receives each asset snapshot the counterpart publishes.
    * @param onRejected - Receives the code of a failed handshake.
    */
   constructor(
     bridge: AppBridge,
     onEstablished: (session: MakeCodeSession) => void,
     onCatalog: (content: string) => void,
+    onAssets: (assets: MakeCodeAsset[]) => void,
     onRejected: (code: PeerSessionErrorCode) => void
   ) {
     const port: MakeCodeSessionPort = {
@@ -256,6 +265,7 @@ class CounterpartSession {
         this._session = session;
         onEstablished(session);
         session.onCatalog(onCatalog);
+        session.onAssets(onAssets);
       },
       (error: unknown) => {
         if (!this._closed && error instanceof PeerSessionError) {
@@ -283,6 +293,7 @@ class EditorSession implements MakeCodeEditorSession {
   private readonly _clearBindingToken: (() => void) | undefined;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
   /** The join code the state shows. */
   private _joinCode: string | undefined;
@@ -329,6 +340,13 @@ class EditorSession implements MakeCodeEditorSession {
     this._catalogListeners.add(listener);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void {
+    this._assetsListeners.add(listener);
+    return () => {
+      this._assetsListeners.delete(listener);
     };
   }
 
@@ -435,6 +453,9 @@ class EditorSession implements MakeCodeEditorSession {
       },
       (content) => {
         for (const listener of this._catalogListeners) listener(content);
+      },
+      (assets) => {
+        for (const listener of this._assetsListeners) listener(assets);
       },
       (code) => {
         this.fail(code);

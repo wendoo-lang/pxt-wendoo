@@ -1,3 +1,4 @@
+export type { MakeCodeAsset, MakeCodeAssetsMessage, MakeCodeAssetsPayload } from "./makecode-assets.js";
 export type {
   MakeCodeBrain,
   MakeCodeBrainPush,

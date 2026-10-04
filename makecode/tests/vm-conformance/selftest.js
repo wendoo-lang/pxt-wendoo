@@ -235,7 +235,8 @@ const EXPECTED_ARCADE_CHECKS = [
   "bump-given-an-image-gone-from-the-project-reads-nothing",
   "bump-given-an-image-no-touched-sprite-looks-like-reads-nothing",
   "toward-reads-only-a-sprite-value",
-  "icon-encoder-writes-the-size-then-one-digit-per-pixel",
+  "icon-encoder-writes-makecodes-image-buffer",
+  "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
 ];
 
@@ -440,44 +441,30 @@ function reportedAssetLines(log) {
 }
 
 /**
- * The width, height and pixel count an icon's catalog text declares, and the
- * number of pixel digits it carries: lowercase hex of a ULEB128 width and
- * height, then one digit per pixel, row by row, padded to a whole byte.
- * `null` when the text is not hex or its header is cut short.
+ * The bits per pixel, width and height an icon's catalog text declares, and
+ * whether its byte count is the one they imply: the text is lowercase hex of
+ * a MakeCode image buffer -- 0x87, the bits per pixel (1 or 4), the width and
+ * the height each a little-endian 16-bit integer, two zero bytes, then each
+ * column, 1 bit per pixel padded to whole bytes or 4 bits per pixel padded to
+ * a multiple of 4 bytes. `null` when the text is not hex or not such a buffer.
  */
 function iconShape(text) {
   if (typeof text !== "string" || !/^([0-9a-f]{2})+$/.test(text)) return null;
   const bytes = [];
   for (let i = 0; i < text.length; i += 2) bytes.push(Number.parseInt(text.slice(i, i + 2), 16));
-  let offset = 0;
-  const readVarUint = () => {
-    let value = 0;
-    let scale = 1;
-    while (offset < bytes.length) {
-      const byte = bytes[offset++];
-      value += (byte & 0x7f) * scale;
-      if ((byte & 0x80) === 0) return value;
-      scale *= 0x80;
-    }
-    return null;
-  };
-  const width = readVarUint();
-  const height = readVarUint();
-  if (width === null || height === null) return null;
-  return { width, height, digits: text.length - offset * 2 };
+  if (bytes.length < 8 || bytes[0] !== 0x87 || (bytes[1] !== 1 && bytes[1] !== 4)) return null;
+  const bpp = bytes[1];
+  const width = bytes[2] | (bytes[3] << 8);
+  const height = bytes[4] | (bytes[5] << 8);
+  const column = bpp === 1 ? (height + 7) >> 3 : ((height * 4 + 31) >> 5) << 2;
+  return { bpp, width, height, sized: bytes.length === 8 + width * column };
 }
 
 /** The ways the icon text `text` misses a 16 by 16 icon's shape, each naming `what`. */
 function iconProblems(what, text) {
   if (text === undefined) return [`${what} carries no icon`];
   const shape = iconShape(text);
-  const pixels = ARCADE_ICON_SIZE * ARCADE_ICON_SIZE;
-  if (
-    shape === null ||
-    shape.width !== ARCADE_ICON_SIZE ||
-    shape.height !== ARCADE_ICON_SIZE ||
-    shape.digits !== pixels + (pixels % 2)
-  ) {
+  if (shape === null || shape.width !== ARCADE_ICON_SIZE || shape.height !== ARCADE_ICON_SIZE || !shape.sized) {
     return [`${what} carries an icon of shape ${JSON.stringify(shape)}`];
   }
   return [];

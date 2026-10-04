@@ -349,7 +349,8 @@ the current slice alone.
       factories when a tile uses it, never baked into a program; an id no
       factory holds resolves to nothing, logged once per id, and the game
       runs on), the arcade icon encoder (each tile icon, an img literal,
-      carried in the catalog as its size and palette-index pixels) with
+      carried in the catalog as hex of MakeCode's own image buffer, the
+      bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile icons, the controller read (one module owning every
       raw read and its dead-banded transform), the proximity read (one
       module owning the

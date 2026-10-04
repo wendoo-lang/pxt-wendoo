@@ -1035,29 +1035,49 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
+  const MONO_ICON_HEX = "870102000900000081010201";
+
   /**
-   * Check the arcade icon encoder: it writes an image's width and height,
-   * each a ULEB128, then one digit per pixel -- its palette index, 0 when
-   * transparent -- row by row, padded to whole bytes; and it renders nothing
-   * for an icon that is no image.
+   * Check the arcade icon encoder: it writes MakeCode's own image buffer --
+   * 0x87, the image's bits per pixel, its width and height as little-endian
+   * 16-bit integers, two zero bytes, then each column, 4-bit pixels two to a
+   * byte with the upper row in the high nibble and each column padded to a
+   * multiple of 4 bytes, 1-bit pixels eight to a byte padded to whole bytes
+   * -- which MakeCode's image reader turns back into the same image; and it
+   * renders nothing for an icon that is no image.
    */
   function checkIconEncoder(): void {
     const encoder = new wendoo.ImageIconEncoder();
-    let wide = "820101";
-    for (let i = 0; i < 130; i++) {
-      wide += "0";
+    let wide = "87042c0101000000";
+    for (let i = 0; i < 300; i++) {
+      wide += "00000000";
     }
     check(
-      "icon-encoder-writes-the-size-then-one-digit-per-pixel",
+      "icon-encoder-writes-makecodes-image-buffer",
       encoder.encode(img`
         . 1 f
         a . 2
-      `) === "030201fa02" &&
+      `) === "8704030002000000a0000000010000002f000000" &&
         encoder.encode(img`
-          1 2 3
-        `) === "03011230" &&
-        encoder.encode(image.create(130, 1)) === wide
+          1
+          2
+          3
+        `) === "870401000300000021030000" &&
+        encoder.encode(image.create(300, 1)) === wide &&
+        encoder.encode(image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX))) === MONO_ICON_HEX
     );
+    const icons = [
+      wendoo.DPAD_ICON,
+      wendoo.LOOK_LIKE_ICON,
+      heroPicture(),
+      image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX)),
+    ];
+    let readBack = true;
+    for (let i = 0; i < icons.length; i++) {
+      readBack = readBack && image.ofBuffer(Buffer.fromHex(encoder.encode(icons[i]))).equals(icons[i]);
+    }
+    check("icon-encoder-buffer-reads-back-as-the-same-image", readBack);
     check("icon-encoder-renders-nothing-for-what-is-no-image", encoder.encode("dpad") === "");
   }
 

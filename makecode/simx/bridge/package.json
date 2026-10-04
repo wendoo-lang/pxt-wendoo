@@ -20,7 +20,7 @@
     "build": "vite build --config vite/config.prod.mjs",
     "build:prod": "wireit",
     "build:deps": "node ../../../external/wendoo-lang/scripts/build-packages.js .",
-    "vendor:projfs": "node scripts/vendor-projfs.mjs",
+    "vendor:pxtservices": "node scripts/vendor-pxtservices.mjs",
     "check:only": "biome check ./src",
     "check": "biome check ./src --write",
     "pretypecheck": "npm run build:deps",

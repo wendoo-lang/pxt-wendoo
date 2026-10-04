@@ -10,6 +10,7 @@ import {
 } from "../../../../makecode/simx/bridge/src/binding-token-store.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../makecode/simx/bridge/src/sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../makecode/simx/bridge/src/simx-bridge.js";
+import { FakeAssetProvider, listedImage } from "../../../../makecode/simx/bridge/src/test-support/asset-provider.js";
 import { FakeProjfsHost } from "../../../../makecode/simx/bridge/src/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../../../makecode/simx/bridge/src/vendor/projfs.js";
 import type { BindingTokenPersistence, EditorSessionViewState } from "./editor-session-store.js";
@@ -156,6 +157,7 @@ describe("editor session store with the simx module on the relay", () => {
   let bridges: SimxBridge[];
   let stores: EditorSessionStore[];
   let files: ProjfsClient;
+  let assets: FakeAssetProvider;
 
   before(async () => {
     (globalThis as Record<string, unknown>).WebSocket = RecordingWebSocket;
@@ -180,6 +182,10 @@ describe("editor session store with the simx module on the relay", () => {
     bridges = [];
     stores = [];
     files = new FakeProjfsHost().client();
+    // the project holds one image, so every session also receives an asset snapshot
+    assets = new FakeAssetProvider();
+    assets.images = [listedImage("image1", [[1, 2]], "hero")];
+    assets.answer();
   });
 
   afterEach(async () => {
@@ -206,6 +212,7 @@ describe("editor session store with the simx module on the relay", () => {
       log: silentLog,
       target,
       files,
+      assets,
     });
     bridges.push(bridge);
     const deadline = Date.now() + 2000;
@@ -325,7 +332,14 @@ describe("editor session store with the simx module on the relay", () => {
     bridges[0].dispose();
     await until(store, (state) => state.status === "disconnected", "the drop to be reported");
     frame = new FakeFrame();
-    const rejoined = startSimxBridge({ frame, bridgeUrl: relay.address, tokens: simxTokens, log: silentLog, files });
+    const rejoined = startSimxBridge({
+      frame,
+      bridgeUrl: relay.address,
+      tokens: simxTokens,
+      log: silentLog,
+      files,
+      assets,
+    });
     bridges.push(rejoined);
     frame.programPosts(NEWER_CATALOG);
     await until(
@@ -490,6 +504,7 @@ describe("editor session store with the simx module on the relay", () => {
       tokens: openBindingTokenStore(() => new MemoryStorage()),
       log: silentLog,
       files,
+      assets,
     });
     bridges.push(other);
     const deadline = Date.now() + 2000;

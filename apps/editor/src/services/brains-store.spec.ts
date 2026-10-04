@@ -7,6 +7,7 @@ import { ParseDiagCode } from "@wendoo/core/brain/compiler";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type {
+  MakeCodeAsset,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionOptions,
@@ -424,6 +425,10 @@ describe("brains store", () => {
         return () => {
           this._catalogListeners.delete(listener);
         };
+      }
+
+      onAssets(_listener: (assets: MakeCodeAsset[]) => void): () => void {
+        return () => {};
       }
 
       onBrainsChannel(_listener: (channel: MakeCodeBrainsChannel) => void): () => void {

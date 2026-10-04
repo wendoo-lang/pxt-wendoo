@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import type {
+  MakeCodeAsset,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionOptions,
@@ -44,6 +45,10 @@ class FakeSession implements MakeCodeEditorSession {
     return () => {
       this._catalogListeners.delete(listener);
     };
+  }
+
+  onAssets(_listener: (assets: MakeCodeAsset[]) => void): () => void {
+    return () => {};
   }
 
   onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {

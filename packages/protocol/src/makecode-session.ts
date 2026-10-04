@@ -6,6 +6,7 @@ import type {
 } from "@wendoo/bridge-app/peer-session";
 import { connectPeerSession } from "@wendoo/bridge-app/peer-session";
 import { base64ToBytes, bytesToBase64 } from "@wendoo/service-api";
+import type { MakeCodeAsset, MakeCodeAssetsMessage } from "./makecode-assets.js";
 import type {
   MakeCodeBrain,
   MakeCodeBrainPush,
@@ -98,6 +99,7 @@ export interface MakeCodeCatalogMessage {
 export type MakeCodeSessionMessage =
   | MakeCodeHelloMessage
   | MakeCodeCatalogMessage
+  | MakeCodeAssetsMessage
   | MakeCodeBrainsRequestMessage
   | MakeCodeBrainsReplyMessage
   | MakeCodeManifestRequestMessage
@@ -147,6 +149,14 @@ export interface MakeCodeSession {
    * function.
    */
   onCatalog(listener: (content: string) => void): () => void;
+  /** Publish the project's asset snapshot to the peer, whole. */
+  publishAssets(assets: readonly MakeCodeAsset[]): void;
+  /**
+   * Subscribe to asset snapshots published by the peer, each delivered whole.
+   * Snapshots received while no listener is attached are replayed to the
+   * next listener that attaches. Returns an unsubscribe function.
+   */
+  onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void;
   /**
    * Ask the peer serving the project for the brains the project holds.
    * Resolves with the peer's list; rejects with a `MakeCodeBrainsError`
@@ -256,6 +266,9 @@ class EstablishedSession implements MakeCodeSession {
   private readonly _catalogListeners = new Set<(content: string) => void>();
   /** Catalogs received while no catalog listener was attached, in arrival order. */
   private readonly _bufferedCatalogs: string[] = [];
+  private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
+  /** Asset snapshots received while no assets listener was attached, in arrival order. */
+  private readonly _bufferedAssets: MakeCodeAsset[][] = [];
   private readonly _pending = new Map<string, PendingRequest>();
   private readonly _requestListeners = new Set<(request: MakeCodeBrainsRequest) => void>();
   /** Requests from the peer received while no request listener was attached, in arrival order. */
@@ -290,6 +303,18 @@ class EstablishedSession implements MakeCodeSession {
     for (const content of this._bufferedCatalogs.splice(0)) listener(content);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  publishAssets(assets: readonly MakeCodeAsset[]): void {
+    this._session.postMessage({ type: "makecode:assets", payload: { assets: [...assets] } });
+  }
+
+  onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void {
+    this._assetsListeners.add(listener);
+    for (const assets of this._bufferedAssets.splice(0)) listener(assets);
+    return () => {
+      this._assetsListeners.delete(listener);
     };
   }
 
@@ -376,9 +401,9 @@ class EstablishedSession implements MakeCodeSession {
   }
 
   /**
-   * Routes one message from the peer: catalogs to their listeners, brains and
-   * manifest requests to their family's request listeners, replies to their
-   * requests; drops the rest.
+   * Routes one message from the peer: catalogs and asset snapshots to their
+   * listeners, brains and manifest requests to their family's request
+   * listeners, replies to their requests; drops the rest.
    */
   private receive(message: SessionTraffic): void {
     if (message.type === "makecode:catalog") {
@@ -388,6 +413,15 @@ class EstablishedSession implements MakeCodeSession {
         return;
       }
       for (const listener of this._catalogListeners) listener(content);
+      return;
+    }
+    if (message.type === "makecode:assets") {
+      const { assets } = message.payload;
+      if (this._assetsListeners.size === 0) {
+        this._bufferedAssets.push(assets);
+        return;
+      }
+      for (const listener of this._assetsListeners) listener(assets);
       return;
     }
     if (

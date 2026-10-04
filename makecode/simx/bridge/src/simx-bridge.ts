@@ -7,6 +7,7 @@ import {
   type WsMessage,
 } from "@wendoo/bridge-protocol";
 import type {
+  MakeCodeAsset,
   MakeCodeBrainsRequest,
   MakeCodeManifestRequest,
   MakeCodeSession,
@@ -16,8 +17,10 @@ import type {
 import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "@wendoo/makecode-session";
 import type { BindingTokenStore } from "./binding-token-store.js";
 import { BrainsProject, type ProjectFiles } from "./brains-project.js";
+import { enrichCatalogIcons } from "./catalog-icons.js";
 import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
+import { ProjectAssets, type ProjectAssetsProvider } from "./project-assets.js";
 import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
 
 /** Messages the bridge service sends that the simulator extension reads. */
@@ -52,6 +55,11 @@ export interface SimxBridgeOptions {
    */
   files: ProjectFiles;
   /**
+   * The editor's asset provider, which the MakeCode project's images and
+   * palette are listed from for the asset snapshot and the catalog's icons.
+   */
+  assets: ProjectAssetsProvider;
+  /**
    * The simulator message channel the program's messages arrive on, as
    * MakeCode names it in the frame URL's `channel` parameter. Defaults to
    * `SIMX_CHANNEL`.
@@ -60,8 +68,10 @@ export interface SimxBridgeOptions {
   /**
    * Receives each join code the bridge service sends for a vacant role, every
    * message from the program that was rejected, by its code, the code of a
-   * failure that stops the bridge connection, and the code of a counterpart's
-   * rejected makecode hello.
+   * failure that stops the bridge connection, the code of a counterpart's
+   * rejected makecode hello, the code of every request the asset provider
+   * fails, and the code of every image or icon that cannot be rendered in
+   * full.
    */
   log: SimxLog;
   /**
@@ -141,7 +151,8 @@ const REJECTION_EXPLANATIONS: Record<SimChannelErrorCode, string> = {
 /**
  * The makecode session with the counterpart the bridge service has just
  * welcomed this connection to. It sends this side's hello at once and
- * publishes the latest catalog once the counterpart's hello establishes it.
+ * publishes the latest catalog, then the latest asset snapshot, once the
+ * counterpart's hello establishes it.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -150,7 +161,8 @@ class CounterpartSession {
   /**
    * @param relay - The bridge connection, just welcomed.
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
-   * @param latestCatalog - The latest catalog the program posted, if any.
+   * @param latestCatalog - The latest catalog the program posted, as published, if any.
+   * @param latestAssets - The latest asset snapshot, if any.
    * @param serve - Answers each brains request the counterpart sends once the session is established.
    * @param serveManifest - Answers each manifest request the counterpart sends once the session is established.
    * @param settled - Called once the counterpart's hello is read: with
@@ -162,6 +174,7 @@ class CounterpartSession {
     relay: ProjectSession<WsMessage, RelayMessage>,
     target: string | undefined,
     latestCatalog: () => string | undefined,
+    latestAssets: () => readonly MakeCodeAsset[] | undefined,
     serve: (request: MakeCodeBrainsRequest) => void,
     serveManifest: (request: MakeCodeManifestRequest) => void,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
@@ -188,6 +201,10 @@ class CounterpartSession {
         if (catalog !== undefined) {
           session.publishCatalog(catalog);
         }
+        const snapshot = latestAssets();
+        if (snapshot !== undefined) {
+          session.publishAssets(snapshot);
+        }
         session.onBrainsRequest(serve);
         session.onManifestRequest(serveManifest);
         settled(undefined);
@@ -202,6 +219,11 @@ class CounterpartSession {
   /** Publish `catalog` to the peer, once the session is established. */
   publish(catalog: string): void {
     this._session?.publishCatalog(catalog);
+  }
+
+  /** Publish the asset snapshot `snapshot` to the peer, once the session is established. */
+  publishAssets(snapshot: readonly MakeCodeAsset[]): void {
+    this._session?.publishAssets(snapshot);
   }
 
   /** Detach from the connection, whether or not the session was established. */
@@ -228,12 +250,17 @@ class CounterpartSession {
  * written to them. Each push that changes what a program runs is also posted
  * to the running program as a program update the moment it arrives, without
  * waiting on the project write, and the last update of every program is
- * posted again each time the program starts. The
- * program's messages are read on `channel`. The latest catalog the program posted is published
- * into each session once it is established, and every later catalog into the
- * current one. A rejected message from the program is logged by its code and
- * discards the latest catalog, so no session receives a catalog older than
- * the program's newest. When the bridge service reports a failure that
+ * posted again each time the program starts. The program's messages are
+ * read on `channel`. The latest catalog the program posted is published into
+ * each session once it is established, and every later catalog into the
+ * current one, each with its icons rendered as `iconUrl` data URIs under the
+ * project's palette; the catalog as posted is kept, and published again
+ * re-rendered whenever the palette changes the result. A rejected message
+ * from the program is logged by its code and discards the latest catalog, so
+ * no session receives a catalog older than the program's newest. The
+ * project's asset snapshot, listed from `assets`, is published into each
+ * session once it is established, after the catalog, and into the current
+ * one whenever it changes. When the bridge service reports a failure that
  * stops the connection -- another connection replacing this one, or the
  * session ending -- the code is logged and the bridge stays disconnected
  * until {@link SimxBridge.startNewSession}; an ended session's binding token
@@ -251,6 +278,7 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     brains.serve(request);
   };
   const manifest = new ManifestProject(options.files, log);
+  const projectAssets = new ProjectAssets(options.assets, log);
   const serveManifest = (request: MakeCodeManifestRequest): void => {
     manifest.serve(request);
   };
@@ -258,6 +286,8 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   let relay: ProjectSession<WsMessage, RelayMessage>;
   let relayUnsubscribes: (() => void)[] = [];
   let catalog: string | undefined;
+  // the latest catalog with its icons rendered under the project's palette, as sessions receive it
+  let publishedCatalog: string | undefined;
   let counterpart: CounterpartSession | undefined;
   let joinCode: string | undefined;
   let counterpartAway = false;
@@ -306,7 +336,8 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
         counterpart = new CounterpartSession(
           session,
           options.target,
-          () => catalog,
+          () => publishedCatalog,
+          () => projectAssets.snapshot,
           serveBrains,
           serveManifest,
           handshakeSettled
@@ -344,14 +375,27 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     channel.onCatalog((posted, version) => {
       catalog = posted;
       channelVersion = version;
-      counterpart?.publish(posted);
+      const rendered = enrichCatalogIcons(posted, projectAssets.palette, log);
+      publishedCatalog = rendered;
+      counterpart?.publish(rendered);
     }),
     channel.onProgramStart(() => {
       live.repost();
     }),
     channel.onRejected((code) => {
       catalog = undefined;
+      publishedCatalog = undefined;
       log.error(`${code}: ${REJECTION_EXPLANATIONS[code]}`);
+    }),
+    projectAssets.onPalette((palette) => {
+      if (catalog === undefined) return;
+      const rendered = enrichCatalogIcons(catalog, palette, log);
+      if (rendered === publishedCatalog) return;
+      publishedCatalog = rendered;
+      counterpart?.publish(rendered);
+    }),
+    projectAssets.onSnapshot((snapshot) => {
+      counterpart?.publishAssets(snapshot);
     }),
   ];
 
@@ -413,6 +457,7 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
         unsubscribe();
       }
       listeners.clear();
+      projectAssets.dispose();
       relay.stop();
       channel.dispose();
     },

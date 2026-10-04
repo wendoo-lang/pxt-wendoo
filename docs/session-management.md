@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-01
+updated: 2026-10-03
 ---
 
 # Session Management in pxt-wendoo
@@ -25,8 +25,9 @@ session wire surface:
 - the kind name `makecode` and its message namespace (`makecode:*`);
 - the wire messages: `makecode:hello`, `makecode:catalog`, the
   `makecode:brains*` payload family (see "The brains payload family",
-  below), and the `makecode:manifest*` payload family (see "The manifest
-  payload family", below);
+  below), the `makecode:manifest*` payload family (see "The manifest
+  payload family", below), and `makecode:assets` (see "The assets
+  publication", below);
 - the hello's declaration, `MakeCodeSessionDeclaration` (see "The
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
@@ -37,7 +38,9 @@ session wire surface:
   mechanism to the kind over any payload-capable port, whose session
   both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and the
   id manifest (`readManifest`, `writeManifest`) and serves them
-  (`onBrainsRequest`, `onManifestRequest`);
+  (`onBrainsRequest`, `onManifestRequest`), and both publishes and
+  receives the catalog (`publishCatalog`, `onCatalog`) and the asset
+  snapshot (`publishAssets`, `onAssets`);
 - `createMakeCodeEditorSession`, the editor role's session object
   (described below);
 - the id manifest's shape, `MakeCodeIdManifest` (see "The manifest
@@ -161,8 +164,8 @@ project as a request-reply family under the kind's namespace. Payload
 kinds carry no versions of their own: the family is additive under
 `MAKECODE_SESSION_PROTOCOL_VERSION`, and every party ignores a
 `makecode:*` type it does not know (the kind's session object routes
-catalogs to catalog listeners and replies to their requests, and drops
-everything else).
+catalogs and asset snapshots to their listeners and replies to their
+requests, and drops everything else).
 
 - REQUEST-REPLY: every request carries an envelope `id`, and its reply
   carries the same `id`. This is the envelope correlation the relay
@@ -270,6 +273,40 @@ carries the manifest requests beside the brains requests.
   `onManifestRequest` (buffered until the first listener attaches), with
   `reply` or `fail` for a read and `ack` or `fail` for a write, each
   request answered once.
+
+## The assets publication
+
+The MakeCode project's assets reach the editor as a publication under the
+kind's namespace, on the catalog's discipline: the party serving the
+project publishes whole snapshots, a later snapshot replaces an earlier
+one, and nothing is requested or answered.
+
+- `makecode:assets` (project -> editor) carries `{ assets: [{ kind, id,
+  name?, width?, height?, previewUrl }] }`: every asset the snapshot holds,
+  in no particular order. An empty list is a snapshot holding none.
+- `kind` is the asset's kind as MakeCode names it, for example `image`.
+  The set is open: a party skips an entry whose kind it does not handle,
+  so kinds join additively.
+- `id` is the asset's short id as MakeCode stamps it in the project's
+  asset files: the id a compiled program names the asset by, unchanged
+  when the asset is renamed. It is unique within its kind, so an entry is
+  identified by `kind` and `id` together.
+- `name` is the asset's display name, absent when it has none; `width`
+  and `height` are its size in pixels, present for a kind with a pixel
+  form and absent for one without; `previewUrl` is a data URI in any image
+  format, rendering the asset, usable as an image source as it is.
+- Which assets a snapshot holds and when one is published -- exclusions,
+  debouncing, skipping an unchanged snapshot -- is the publisher's policy.
+  A handshake receives only the snapshots published into it, so the
+  publisher sends its current snapshot into each new handshake.
+- The kind's session publishes with `publishAssets` and delivers with
+  `onAssets`, replaying snapshots received before the first listener
+  attaches to it; the editor session object delivers the snapshots of the
+  current handshake only (`onAssets`).
+- VERSIONING: the publication is additive under
+  `MAKECODE_SESSION_PROTOCOL_VERSION` 1. A party that does not know
+  `makecode:assets` ignores it, and one that publishes none leaves the
+  editor with no snapshot.
 
 ## The simx write path
 
@@ -684,7 +721,8 @@ it keys on a session id.
 - The session presents the join code it was created with on each
   connection until its first welcome, and its binding token alone
   from then on. A code the relay sends is never presented.
-- Catalogs arrive as events from the current handshake only.
+- Catalogs and asset snapshots arrive as events from the current
+  handshake only.
 - The binding token is loaded and saved through caller-supplied
   hooks; the session holds no storage of its own.
 - RECOVERY follows the upstream in-place rule.

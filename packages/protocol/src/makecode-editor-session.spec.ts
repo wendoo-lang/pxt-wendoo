@@ -9,6 +9,7 @@ import {
   BridgeSessionErrorCode,
   PeerSessionErrorCode,
 } from "@wendoo/bridge-app";
+import type { MakeCodeAsset } from "./makecode-assets.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import {
   createEditorSessionOver,
@@ -359,6 +360,36 @@ describe("makecode editor session", () => {
     bridge.deliver({ type: "makecode:catalog", payload: { content: "second" } });
 
     assert.deepEqual(catalogs, ["first", "second"]);
+  });
+
+  it("delivers the asset snapshots of the current handshake only", async () => {
+    const { session } = openSession();
+    const snapshots: MakeCodeAsset[][] = [];
+    session.onAssets((assets) => {
+      snapshots.push(assets);
+    });
+    const image: MakeCodeAsset = {
+      kind: "image",
+      id: "image1",
+      width: 16,
+      height: 16,
+      previewUrl: "data:image/svg+xml;base64,PHN2Zy8+",
+    };
+    session.start();
+    const bridge = lastBridge();
+    bridge.welcome("token-1");
+    bridge.deliver(MAKECODE_HELLO);
+    await microtasks();
+    bridge.deliver({ type: "makecode:assets", payload: { assets: [image] } });
+
+    bridge.change({ counterpartAway: true });
+    bridge.deliver({ type: "makecode:assets", payload: { assets: [{ ...image, id: "after-the-counterpart-left" }] } });
+    bridge.welcome("token-1");
+    bridge.deliver(MAKECODE_HELLO);
+    await microtasks();
+    bridge.deliver({ type: "makecode:assets", payload: { assets: [] } });
+
+    assert.deepEqual(snapshots, [[image], []]);
   });
 
   it("is disconnected while its own connection is down or the counterpart is away", () => {

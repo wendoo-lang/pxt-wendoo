@@ -34,6 +34,7 @@ import { BRAINS_MODULE_FILE, readBrainsModule } from "../../../../makecode/simx/
 import { IDS_MODULE_FILE, readIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, type SimxFrame } from "../../../../makecode/simx/bridge/src/sim-channel.js";
 import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../makecode/simx/bridge/src/simx-bridge.js";
+import { FakeAssetProvider, listedImage } from "../../../../makecode/simx/bridge/src/test-support/asset-provider.js";
 import {
   FakeProjfsHost,
   PROJFS_RATE_LIMIT,
@@ -813,7 +814,11 @@ describe("brains sync with a scripted simx on the relay", () => {
       const frame = new FakeFrame();
       const files = project.client();
       clients.push(files);
-      const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log: silentLog, files });
+      // the project holds one image, so every session also receives an asset snapshot
+      const assets = new FakeAssetProvider();
+      assets.images = [listedImage("image1", [[1, 2]], "hero")];
+      assets.answer();
+      const bridge = startSimxBridge({ frame, bridgeUrl: relay.address, tokens, log: silentLog, files, assets });
       bridges.push(bridge);
       frame.programPosts(catalog);
       return bridge;
