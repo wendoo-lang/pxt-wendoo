@@ -125,6 +125,7 @@ interface ParameterTile {
   readonly hidden: boolean;
   readonly userArg?: UserArgIdentity;
   readonly anonType?: { readonly localName: string };
+  readonly iconUrl?: string;
 }
 
 /** A modifier tile one slot needs. */
@@ -133,6 +134,7 @@ interface ModifierTile {
   readonly label: string;
   readonly language?: CatalogLanguage;
   readonly userArg?: UserArgIdentity;
+  readonly iconUrl?: string;
 }
 
 /** The slot tiles one tile's grammar needs, collected while its call spec is built. */
@@ -144,6 +146,11 @@ interface SlotTiles {
 /** The label of the tile filling `slot`: the label the slot carries, or its declared fragment after the last dot when it carries none. */
 function slotLabel(slot: CatalogArgSlot): string {
   return slot.label ?? slot.tileId.slice(slot.tileId.lastIndexOf(".") + 1);
+}
+
+/** The `iconUrl` field `slot` carries, spread into a slot tile's description: empty when it carries none. */
+function slotIcon(slot: CatalogArgSlot): { iconUrl?: string } {
+  return slot.iconUrl === undefined ? {} : { iconUrl: slot.iconUrl };
 }
 
 /** The default `json` declares, read as a value. Throws an {@link EntryProblem} when it is not a tagged value. */
@@ -158,7 +165,8 @@ function defaultValueOf(json: unknown): Value {
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type, each tile -- with the
  * parameter and modifier tiles its grammar's slots need -- and each operator,
- * under the ids `ids` allocates. An entry the model cannot take is left out
+ * under the ids `ids` allocates. Each tile's and slot tile's display metadata
+ * carries the label, sentence words and icon its catalog entry carries. An entry the model cannot take is left out
  * and reported, and the rest is bound.
  */
 class PackBinder {
@@ -248,6 +256,7 @@ class PackBinder {
         label: slotLabel(slot),
         ...(slot.language === undefined ? {} : { language: slot.language }),
         ...(shared ? {} : { userArg: { namespace: pack, actionId: tile, argName: slot.tileId } }),
+        ...slotIcon(slot),
       });
       return { ...mod(id), ...this.slotOptions(slot) };
     }
@@ -261,9 +270,10 @@ class PackBinder {
         label: slot.label ?? typeName,
         hidden: true,
         anonType: { localName: typeName },
+        ...slotIcon(slot),
       };
     } else if (slot.tileId.startsWith(SHARED_PARAMETER_PREFIX)) {
-      parameter = { id: slot.tileId, dataType, label: slotLabel(slot), hidden: false };
+      parameter = { id: slot.tileId, dataType, label: slotLabel(slot), hidden: false, ...slotIcon(slot) };
       const declared = this.sharedParameters.get(slot.tileId);
       if (declared !== undefined && declared !== dataType) {
         throw new EntryProblem(PackBindingCode.SHARED_TILE_CONFLICT, slot.tileId);
@@ -275,6 +285,7 @@ class PackBinder {
         label: slotLabel(slot),
         hidden: false,
         userArg: { namespace: pack, actionId: tile, argName: slot.tileId },
+        ...slotIcon(slot),
       };
     }
     tiles.parameters.push(parameter);
@@ -346,6 +357,7 @@ class PackBinder {
       label: tile.label ?? tile.name,
       ...(tile.docs === undefined ? {} : { docsMarkdown: tile.docs }),
       ...(tile.language === undefined ? {} : { language: tile.language }),
+      ...(tile.iconUrl === undefined ? {} : { iconUrl: tile.iconUrl }),
     };
     const common = {
       key: tile.name,
@@ -381,7 +393,10 @@ class PackBinder {
       }
       const tile = new BrainTileParameterDef(parameter.id, parameter.dataType, {
         hidden: parameter.hidden,
-        metadata: { label: parameter.label },
+        metadata: {
+          label: parameter.label,
+          ...(parameter.iconUrl === undefined ? {} : { iconUrl: parameter.iconUrl }),
+        },
         ...(parameter.userArg === undefined ? {} : { userArg: parameter.userArg }),
         ...(parameter.anonType === undefined ? {} : { anonType: parameter.anonType }),
       });
@@ -392,6 +407,7 @@ class PackBinder {
         metadata: {
           label: modifier.label,
           ...(modifier.language === undefined ? {} : { language: modifier.language }),
+          ...(modifier.iconUrl === undefined ? {} : { iconUrl: modifier.iconUrl }),
         },
         ...(modifier.userArg === undefined ? {} : { userArg: modifier.userArg }),
       });

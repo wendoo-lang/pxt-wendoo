@@ -10,7 +10,7 @@ import { BRAIN_FLUSH_FAILED, FLUSH_DEBOUNCE_MS, openBrainEditing } from "./editi
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
   subscribe: () => () => {},
-  getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText: undefined }),
+  getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText: undefined, assets: undefined }),
 };
 
 /** The tile `tileId` from `environment`'s catalogs. Throws when none holds it. */

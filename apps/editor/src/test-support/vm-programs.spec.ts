@@ -10,12 +10,16 @@ import {
   arcadeCompileDiagnosticCodes,
   arcadeHoldsModifier,
   arcadeImageRuleDiagnosticCodes,
+  arcadeImageRulePrograms,
   arcadeLoneSensorSentence,
   arcadeModifierLabel,
+  arcadeRenderedIcons,
   arcadeSensorLabel,
   arcadeSensorNames,
+  arcadeStructTextConstants,
   checkedInText,
   IMAGE_LITERAL,
+  IMAGE_LITERAL_ASSET_ID,
   renderVmPrograms,
 } from "./vm-programs.js";
 
@@ -74,6 +78,35 @@ describe("the MakeCode VM extension's compiled programs", () => {
     const move = "actuator.arcade.move";
     assert.deepEqual(arcadeImageRuleDiagnosticCodes(["sensor.arcade.bump", IMAGE_LITERAL], [move]), []);
     assert.deepEqual(arcadeImageRuleDiagnosticCodes(["sensor.arcade.bump"], [move]), []);
+  });
+
+  it("compiles a minted image literal into the program as the image struct naming the asset's id", () => {
+    const { holding } = arcadeImageRulePrograms(["sensor.arcade.bump", IMAGE_LITERAL], ["actuator.arcade.move"]);
+
+    assert.deepEqual(arcadeStructTextConstants(holding), [IMAGE_LITERAL_ASSET_ID]);
+  });
+
+  for (const [consumer, when, act] of [
+    ["bump's image filter", ["sensor.arcade.bump", IMAGE_LITERAL], ["actuator.arcade.move"]],
+    ["look like's image", [], ["actuator.arcade.look-like", IMAGE_LITERAL]],
+  ] as const) {
+    it(`compiles ${consumer} to the same bytes whether the snapshot holds the image or lacks it`, () => {
+      const { holding, lacking } = arcadeImageRulePrograms([...when], [...act]);
+
+      assert.deepEqual(lacking, holding);
+    });
+  }
+
+  it("binds every icon the pinned arcade catalog carries once the simx renders it, through to the visual provider", () => {
+    const { icons, errors } = arcadeRenderedIcons();
+
+    assert.deepEqual(errors, []);
+    assert.ok(icons.length > 0, "the arcade base pack declares icons");
+    for (const icon of icons) {
+      assert.match(icon.carried, /^data:image\/svg\+xml/, icon.tileId);
+      assert.equal(icon.bound, icon.carried, icon.tileId);
+      assert.equal(icon.resolved, icon.carried, icon.tileId);
+    }
   });
 
   it("refuses a dpad given one direction modifier twice", (t) => {

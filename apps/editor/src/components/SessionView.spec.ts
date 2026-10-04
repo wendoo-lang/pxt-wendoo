@@ -24,6 +24,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     disconnectedBeyondGrace: false,
     connectedSinceOpen: true,
     catalogText: CATALOG_TEXT,
+    assets: undefined,
     target: undefined,
     ...fields,
   };

@@ -1,5 +1,6 @@
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import type {
+  MakeCodeAsset,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionEntry,
@@ -75,6 +76,12 @@ export interface EditorSessionViewState {
    */
   readonly catalogText: string | undefined;
   /**
+   * The latest asset snapshot the MakeCode side published, whole, or
+   * `undefined` before the first. Kept while disconnected; `undefined`
+   * whenever no session exists.
+   */
+  readonly assets: readonly MakeCodeAsset[] | undefined;
+  /**
    * Id of the MakeCode target the MakeCode side declared, for example
    * `microbit` or `arcade`, exactly as the session reports it: kept while
    * disconnected, `undefined` when unknown. Informational, for display and
@@ -124,6 +131,7 @@ export class EditorSessionStore {
   private _beyondGrace = false;
   private _connectedSinceOpen = false;
   private _catalogText: string | undefined;
+  private _assets: readonly MakeCodeAsset[] | undefined;
   /** The binding token the current session holds, as its token hooks report it. */
   private _bindingToken: string | undefined;
   /** Whether an entered code was refused and the store fell back to the held token, with no welcome since. */
@@ -193,12 +201,13 @@ export class EditorSessionStore {
   /**
    * Forgets the session: ends it over a live connection, so the MakeCode
    * side is told it ended, then drops its binding token, held and persisted,
-   * and the catalog, returning the editor to the connect page. With no live
+   * the catalog and the asset snapshot, returning the editor to the connect page. With no live
    * connection this is a local clear. The way back into a session is
    * entering a join code.
    */
   forget(): void {
     this._catalogText = undefined;
+    this._assets = undefined;
     this._entryRefused = false;
     if (this._session === undefined) {
       this.publish();
@@ -241,6 +250,10 @@ export class EditorSessionStore {
         this._catalogText = content;
         this.publish();
       }),
+      session.onAssets((assets) => {
+        this._assets = assets;
+        this.publish();
+      }),
       session.onBrainsChannel((channel) => {
         const bound: EditorBrainsChannel = {
           binding: this._bindingToken,
@@ -259,13 +272,16 @@ export class EditorSessionStore {
 
   /**
    * Tracks the session's connectivity into the grace bookkeeping and whether
-   * it has connected, drops the catalog when no session exists, then
-   * publishes.
+   * it has connected, drops the catalog and the asset snapshot when no
+   * session exists, then publishes.
    */
   private sessionChanged(): void {
     const session = this._session;
     const status = session?.state.status ?? "none";
-    if (status === "none") this._catalogText = undefined;
+    if (status === "none") {
+      this._catalogText = undefined;
+      this._assets = undefined;
+    }
     if (status === "connected") {
       this._connectedSinceOpen = true;
       this._entryRefused = false;
@@ -311,6 +327,7 @@ export class EditorSessionStore {
       disconnectedBeyondGrace: this._beyondGrace,
       connectedSinceOpen: this._connectedSinceOpen,
       catalogText: this._catalogText,
+      assets: this._assets,
       target: sessionState?.target,
     };
   }
@@ -328,6 +345,7 @@ export class EditorSessionStore {
       next.disconnectedBeyondGrace === last.disconnectedBeyondGrace &&
       next.connectedSinceOpen === last.connectedSinceOpen &&
       next.catalogText === last.catalogText &&
+      next.assets === last.assets &&
       next.target === last.target
     ) {
       return;

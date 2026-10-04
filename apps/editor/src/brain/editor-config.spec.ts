@@ -1,18 +1,35 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CoreTypeIds } from "@wendoo/core/app";
+import { CoreTypeIds, mkLiteralTileId } from "@wendoo/core/app";
+import { projectRuleSentence } from "@wendoo/core/brain/language-service";
+import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import type { Localizer } from "@wendoo/core/localization";
+import { createDefaultLocalizer } from "@wendoo/core/localization";
+import type { BrainEditorConfig } from "@wendoo/ui";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import { BRAIN_SOURCE_NAMESPACE } from "../services/brain-source.js";
+import { BRAIN_SOURCE_NAMESPACE, readBrainSource } from "../services/brain-source.js";
+import {
+  ASSET_CATALOG,
+  assetCatalogIds,
+  catalogTile,
+  PICTURE_TYPE,
+  picture,
+  pictureBrainSource,
+} from "../test-support/asset-catalog.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
 
 describe("buildBrainEditorConfig", () => {
   it("reads the environment's brain services, localizer and tile catalogs", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment);
+    const config = buildBrainEditorConfig(environment, new Map());
 
     assert.equal(config.brainServices, environment.brainServices);
-    assert.equal(config.localizer, environment.appServices.localizer);
+    assert.equal(config.localizer?.locale(), environment.appServices.localizer.locale());
+    assert.equal(
+      config.localizer?.tr("{n} tiles", { n: 2 }),
+      environment.appServices.localizer.tr("{n} tiles", { n: 2 })
+    );
     assert.deepEqual(config.tileCatalogs, environment.tileCatalogs());
   });
 
@@ -20,7 +37,7 @@ describe("buildBrainEditorConfig", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
     const types = environment.brainServices.runtime.types;
 
-    const config = buildBrainEditorConfig(environment);
+    const config = buildBrainEditorConfig(environment, new Map());
 
     assert.equal(config.dataTypeNames.get(CoreTypeIds.Number), types.get(CoreTypeIds.Number)?.name);
     assert.equal(config.dataTypeNames.get(CoreTypeIds.String), types.get(CoreTypeIds.String)?.name);
@@ -33,7 +50,7 @@ describe("buildBrainEditorConfig", () => {
   it("saves and loads brain files relative to the namespace brain sources are stored in", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment);
+    const config = buildBrainEditorConfig(environment, new Map());
 
     assert.equal(config.projectNamespace, BRAIN_SOURCE_NAMESPACE);
   });
@@ -42,10 +59,59 @@ describe("buildBrainEditorConfig", () => {
     const first = buildAuthoringEnvironment(undefined).environment;
     const rebuilt = buildAuthoringEnvironment('{"packs":[]}').environment;
 
-    const config = buildBrainEditorConfig(rebuilt);
+    const config = buildBrainEditorConfig(rebuilt, new Map());
 
     assert.notEqual(first, rebuilt);
     assert.equal(config.brainServices, rebuilt.brainServices);
     assert.notEqual(config.brainServices, first.brainServices);
   });
+
+  it("resolves tile visuals through the visual provider: an asset literal shows its asset's preview", () => {
+    const built = buildAuthoringEnvironment(ASSET_CATALOG, assetCatalogIds());
+    built.assetLiterals.applySnapshot([picture("img1", "hero", "data:,hero")]);
+
+    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view);
+
+    const literal = catalogTile(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
+    assert.equal(config.resolveTileVisual?.(literal)?.iconUrl, "data:,hero");
+  });
+
+  it("re-reads a rule's sentence after an asset rename, the brain left uncompiled", () => {
+    const built = buildAuthoringEnvironment(ASSET_CATALOG, assetCatalogIds());
+    built.assetLiterals.applySnapshot([picture("img1", "hero")]);
+    const source = pictureBrainSource(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
+    const rule = (readBrainSource(built.environment, source).pages().get(0) as BrainPageDef)
+      .children()
+      .get(0) as BrainRuleDef;
+    const sentence = memoizedSentence(rule);
+    const before = buildBrainEditorConfig(built.environment, built.assetLiterals.view);
+    assert.ok(sentence(before).includes("hero"));
+
+    built.assetLiterals.applySnapshot([picture("img1", "villain")]);
+    const after = buildBrainEditorConfig(built.environment, built.assetLiterals.view);
+
+    const words = sentence(after);
+    assert.ok(words.includes("villain"), words.join(" "));
+    assert.equal(words.includes("hero"), false);
+  });
 });
+
+/**
+ * The words of `rule`'s sentence as the brain editor's sentence line reads
+ * them under a config: projected afresh only when one of the inputs the line
+ * re-reads its sentence on changes -- the rule, the config's localizer, and
+ * the rule's revision, which an asset snapshot never changes.
+ */
+function memoizedSentence(rule: BrainRuleDef): (config: BrainEditorConfig) => string[] {
+  let held: { localizer: Localizer | undefined; words: string[] } | undefined;
+  return (config) => {
+    if (held === undefined || held.localizer !== config.localizer) {
+      const localizer = config.localizer ?? createDefaultLocalizer();
+      const words = projectRuleSentence(rule, localizer)
+        .toArray()
+        .flatMap((segment) => (segment.kind === "word" ? [segment.text] : []));
+      held = { localizer: config.localizer, words };
+    }
+    return held.words;
+  };
+}

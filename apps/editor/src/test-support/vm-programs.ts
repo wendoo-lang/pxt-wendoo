@@ -13,24 +13,25 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { stream } from "@wendoo/core";
-import { BrainDef, List, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
+import { BrainDef, mkLiteralTileId, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
+import type { StructValue } from "@wendoo/core/runtime";
 import {
   BrainRuntime,
   linkedBrainProgramFromBytes,
   mkActuatorTileId,
-  mkClosedStructValue,
-  mkStringValue,
+  mkPrivateArgId,
   mkTypeId,
   NativeType,
 } from "@wendoo/core/runtime";
-import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
+import type { MakeCodeAsset, MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
 import { writeBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
+import { enrichCatalogIcons } from "../../../../makecode/simx/bridge/src/catalog-icons.js";
 import { writeIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
+import { createTileVisualProvider } from "../brain/visual-provider.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
-import { compileBrainSource } from "../services/brain-source.js";
+import { compileBrainSource, serializeBrainSource } from "../services/brain-source.js";
 import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
 import { allocateIds } from "../services/id-allocation.js";
@@ -595,51 +596,179 @@ export function arcadeCompileDiagnosticCodes(file: string): number[] {
 }
 
 /** Asset id the image literal tile of {@link arcadeImageRuleDiagnosticCodes} carries. */
-const IMAGE_LITERAL_ASSET_ID = "image1";
+export const IMAGE_LITERAL_ASSET_ID = "image1";
 
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding an `Image` value. */
 export const IMAGE_LITERAL = "<image literal>";
 
+/** The snapshot entry of the image {@link IMAGE_LITERAL} stands for. */
+const IMAGE_ASSET: MakeCodeAsset = {
+  kind: "image",
+  id: IMAGE_LITERAL_ASSET_ID,
+  name: "hero",
+  width: 16,
+  height: 16,
+  previewUrl: "data:image/svg+xml;base64,aGVybw==",
+};
+
 /**
- * The stable codes of the diagnostics linking a one-rule program in the
+ * The one-rule program in the environment binding the arcade selftest's
+ * catalog, its asset literals minted from a snapshot holding the image
+ * {@link IMAGE_LITERAL} stands for: its WHEN side the tiles `when` names, its
+ * DO side the tiles `act` names, each entry the name of a sensor (on the WHEN
+ * side) or an actuator (on the DO side), or {@link IMAGE_LITERAL} for that
+ * image's literal tile. Returns the program's source and the environment it
+ * was authored in.
+ */
+function arcadeImageRule(when: string[], act: string[]) {
+  const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
+  built.assetLiterals.applySnapshot([IMAGE_ASSET]);
+  const { environment } = built;
+  const literalId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Image"), IMAGE_LITERAL_ASSET_ID);
+  const tileOf = (entry: string, tileId: (name: string) => string) => {
+    const id = entry === IMAGE_LITERAL ? literalId : tileId(entry);
+    const found = environment
+      .tileCatalogs()
+      .map((catalog) => catalog.get(id))
+      .find((tile) => tile !== undefined);
+    if (found === undefined) throw new Error(`no tile ${entry}`);
+    return found;
+  };
+  const brainDef = BrainDef.emptyBrainDef(environment.brainServices, "image-rule");
+  const rule = (brainDef.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+  for (const entry of when) rule.when().appendTile(tileOf(entry, mkSensorTileId));
+  for (const entry of act) rule.do().appendTile(tileOf(entry, mkActuatorTileId));
+  return { environment, source: serializeBrainSource(brainDef) };
+}
+
+/**
+ * The stable codes of the diagnostics compiling a one-rule program in the
  * environment binding the arcade selftest's catalog, in the order reported:
  * its WHEN side the tiles `when` names, its DO side the tiles `act` names,
  * each entry the name of a sensor (on the WHEN side) or an actuator (on the
- * DO side), or {@link IMAGE_LITERAL} for a literal tile holding an `Image`
- * value. The literal tile is minted into the environment for the program
- * only, holding the asset id {@link IMAGE_LITERAL_ASSET_ID}.
+ * DO side), or {@link IMAGE_LITERAL} for the literal tile the editor mints
+ * for the image whose id is {@link IMAGE_LITERAL_ASSET_ID}.
  *
  * @param when - The WHEN side's entries, such as `["sensor.arcade.bump", IMAGE_LITERAL]`.
  * @param act - The DO side's entries, such as `["actuator.arcade.look-like", IMAGE_LITERAL]`.
  */
 export function arcadeImageRuleDiagnosticCodes(when: string[], act: string[]): number[] {
-  const environment = arcadeEnvironment();
-  const services = environment.brainServices;
-  const imageType = mkTypeId(NativeType.Struct, "Image");
-  const literal = new BrainTileLiteralDef(
-    imageType,
-    mkClosedStructValue(imageType, List.from([mkStringValue(IMAGE_LITERAL_ASSET_ID)])),
-    { persist: false, valueLabel: IMAGE_LITERAL_ASSET_ID },
-    services
-  );
-  services.edit.tiles.add(literal);
-  const tileOf = (entry: string, tileId: (name: string) => string) => {
-    if (entry === IMAGE_LITERAL) return literal;
-    const found = environment
+  const { environment, source } = arcadeImageRule(when, act);
+  return compileBrainSource(environment, source).diagnostics.map((diagnostic) => diagnostic.code);
+}
+
+/**
+ * The programs the one-rule brain of {@link arcadeImageRuleDiagnosticCodes}
+ * compiles to: `holding`, in the environment it was authored in, beside a
+ * snapshot holding the image; and `lacking`, in a fresh environment beside a
+ * snapshot lacking it, the literal bound from the brain's reference alone.
+ * Throws when either does not compile clean.
+ *
+ * @param when - The WHEN side's entries.
+ * @param act - The DO side's entries.
+ */
+export function arcadeImageRulePrograms(when: string[], act: string[]): { holding: Uint8Array; lacking: Uint8Array } {
+  const { environment, source } = arcadeImageRule(when, act);
+  const lacking = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
+  lacking.assetLiterals.applySnapshot([]);
+  lacking.assetLiterals.bindSource(source);
+  return { holding: compileCleanIn(environment, source), lacking: compileCleanIn(lacking.environment, source) };
+}
+
+/** The text values every struct constant of the arcade program `bytecode` holds, in pool order. */
+export function arcadeStructTextConstants(bytecode: Uint8Array): string[] {
+  const decoded = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(bytecode), {
+    precision: MAKECODE_VM_PRECISION,
+    typeRegistry: arcadeEnvironment().brainServices.runtime.types,
+  });
+  const texts: string[] = [];
+  decoded.program.program.constantPools.values.forEach((value) => {
+    if (value.t !== NativeType.Struct) return;
+    (value as StructValue).v?.forEach((field) => {
+      if (field.t === NativeType.String) texts.push(field.v);
+    });
+  });
+  return texts;
+}
+
+/** The MakeCode Arcade default palette, as the simx renders icons under it. */
+const ARCADE_PALETTE = [
+  "#000000",
+  "#ffffff",
+  "#ff2121",
+  "#ff93c4",
+  "#ff8135",
+  "#fff609",
+  "#249ca3",
+  "#78dc52",
+  "#003fad",
+  "#87f2ff",
+  "#8e2ec4",
+  "#a4839f",
+  "#5c406c",
+  "#e5cdc4",
+  "#91463d",
+  "#000000",
+];
+
+/** One icon the rendered arcade catalog carries, and what the editor makes of it. */
+export interface RenderedIcon {
+  /** Id of the tile the icon belongs to: a sensor, an actuator, or a modifier slot's tile. */
+  readonly tileId: string;
+  /** The icon's data URI, as the rendered catalog carries it. */
+  readonly carried: string;
+  /** The icon the bound tile's display metadata holds, or `undefined` when it holds none. */
+  readonly bound: string | undefined;
+  /** The icon the visual provider resolves the bound tile to, or `undefined` when it resolves none. */
+  readonly resolved: string | undefined;
+}
+
+/**
+ * Every icon the arcade selftest's pinned catalog carries on a tile or a
+ * modifier slot once the simx has rendered it under the Arcade default
+ * palette, first declaration of a shared slot tile winning, each beside what
+ * the environment binding the rendered catalog under the arcade selftest's
+ * allocation holds and resolves for its tile; and the lines the simx's
+ * rendering logged as errors.
+ */
+export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[] } {
+  const errors: string[] = [];
+  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, {
+    info: () => {},
+    error: (message) => {
+      errors.push(message);
+    },
+  });
+  const carried = new Map<string, string>();
+  for (const pack of parseCatalog(rendered).packs) {
+    for (const tile of pack.tiles) {
+      const tileId = tile.kind === "sensor" ? mkSensorTileId(tile.name) : mkActuatorTileId(tile.name);
+      if (tile.iconUrl !== undefined && !carried.has(tileId)) carried.set(tileId, tile.iconUrl);
+      for (const slot of slotsOf(tile.grammar ?? [])) {
+        if (!slot.modifier || slot.iconUrl === undefined) continue;
+        const fragment = slot.tileId.startsWith("modifier.")
+          ? slot.tileId
+          : mkPrivateArgId(pack.name, tile.name, slot.tileId);
+        const slotTileId = mkModifierTileId(fragment);
+        if (!carried.has(slotTileId)) carried.set(slotTileId, slot.iconUrl);
+      }
+    }
+  }
+  const built = buildAuthoringEnvironment(rendered, arcadeIds());
+  const resolve = createTileVisualProvider(built.assetLiterals.view);
+  const icons = [...carried].map(([tileId, url]) => {
+    const tile = built.environment
       .tileCatalogs()
-      .map((catalog) => catalog.get(tileId(entry)))
-      .find((tile) => tile !== undefined);
-    if (found === undefined) throw new Error(`no tile ${entry}`);
-    return found;
-  };
-  const brainDef = BrainDef.emptyBrainDef(services, "image-rule");
-  const rule = (brainDef.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
-  for (const entry of when) rule.when().appendTile(tileOf(entry, mkSensorTileId));
-  for (const entry of act) rule.do().appendTile(tileOf(entry, mkActuatorTileId));
-  return environment
-    .linkBrain(brainDef)
-    .diagnostics.toArray()
-    .map((diagnostic) => diagnostic.code);
+      .map((catalog) => catalog.get(tileId))
+      .find((found) => found !== undefined);
+    return {
+      tileId,
+      carried: url,
+      bound: tile?.metadata?.iconUrl,
+      resolved: tile === undefined ? undefined : resolve(tile)?.iconUrl,
+    };
+  });
+  return { icons, errors };
 }
 
 /** The bytes the lowercase hex `hex` spells. */

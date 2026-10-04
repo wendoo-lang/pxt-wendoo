@@ -1,6 +1,9 @@
 import type { WendooEnvironment } from "@wendoo/core/app";
+import type { Localizer } from "@wendoo/core/localization";
 import type { BrainEditorConfig } from "@wendoo/ui";
+import type { AssetLiteral } from "@/services/asset-literals";
 import { BRAIN_SOURCE_NAMESPACE } from "@/services/brain-source";
+import { createAssetLiteralTypes, createTileVisualProvider } from "./visual-provider";
 
 /**
  * The display name of each type `environment` registers, keyed by type id:
@@ -15,24 +18,44 @@ function registeredTypeNames(environment: WendooEnvironment): ReadonlyMap<string
   return names;
 }
 
+/** A localizer rendering exactly as `base` does, its identity distinct from `base` and from every other view of it. */
+function localizerView(base: Localizer): Localizer {
+  return {
+    locale: () => base.locale(),
+    tr: (source, params, context) => base.tr(source, params, context),
+    list: (items, kind) => base.list(items, kind),
+    compare: (a, b) => base.compare(a, b),
+    foldForSearch: (text) => base.foldForSearch(text),
+    sentenceCase: (text) => base.sentenceCase(text),
+  };
+}
+
 /**
  * Builds the brain editor dialog's config from `environment`, the
- * environment the brains store edits and compiles in: its tile catalogs,
- * brain services and localizer, each registered type named by its registry
- * name, and brain files saved and loaded relative to
- * {@link BRAIN_SOURCE_NAMESPACE}. The config supplies no data-type icons and
- * no custom literal types. Build a new config whenever the environment is
- * rebuilt.
+ * environment the brains store edits and compiles in: its tile catalogs and
+ * brain services, its localizer under a fresh identity per config -- so a new
+ * config re-reads every rule sentence, words of literals relabelled in place
+ * included -- each registered type named by its registry name, tiles shown
+ * through the visual provider over `assetLiterals`, a display-only literal
+ * type per asset type those literals hold, and brain files saved and loaded
+ * relative to {@link BRAIN_SOURCE_NAMESPACE}. The config supplies no
+ * data-type icons. Build a new config whenever the environment is rebuilt or
+ * the asset literals change.
  *
  * @param environment - The brains store's current environment.
+ * @param assetLiterals - The environment's asset literals, as the brains store reports them.
  */
-export function buildBrainEditorConfig(environment: WendooEnvironment): BrainEditorConfig {
+export function buildBrainEditorConfig(
+  environment: WendooEnvironment,
+  assetLiterals: ReadonlyMap<string, AssetLiteral>
+): BrainEditorConfig {
   return {
     dataTypeIcons: new Map(),
     dataTypeNames: registeredTypeNames(environment),
-    customLiteralTypes: [],
+    customLiteralTypes: createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
+    resolveTileVisual: createTileVisualProvider(assetLiterals),
     brainServices: environment.brainServices,
-    localizer: environment.appServices.localizer,
+    localizer: localizerView(environment.appServices.localizer),
     projectNamespace: BRAIN_SOURCE_NAMESPACE,
     tileCatalogs: environment.tileCatalogs(),
   };

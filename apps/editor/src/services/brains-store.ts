@@ -2,6 +2,7 @@ import type { IBrainDef, WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
 import type {
+  MakeCodeAsset,
   MakeCodeBrain,
   MakeCodeBrainPush,
   MakeCodeBrainSummary,
@@ -9,6 +10,7 @@ import type {
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
+import type { AssetLiteral } from "./asset-literals";
 import type { AuthoringEnvironment, CatalogDiagnostic } from "./authoring-environment";
 import { buildAuthoringEnvironment } from "./authoring-environment";
 import type { BrainSourceCompile } from "./brain-source";
@@ -44,7 +46,7 @@ function retryDelay(attempt: number): number {
 }
 
 /** The session readings a {@link BrainsStore} follows. */
-export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText">;
+export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText" | "assets">;
 
 /** The session a {@link BrainsStore} syncs its brains with the MakeCode project over. */
 export type BrainsSyncSource = Pick<EditorSessionStore, "onBrainsChannel">;
@@ -132,6 +134,19 @@ export interface BrainsViewState {
    */
   readonly damaged: ReadonlyMap<string, BrainDamage>;
   /**
+   * The environment's asset literal tiles, keyed by tile id: one per asset of
+   * a catalog asset type the session's latest asset snapshot lists, and one
+   * per such literal a held brain references, unresolved while the snapshot
+   * does not list its asset.
+   */
+  readonly assetLiterals: ReadonlyMap<string, AssetLiteral>;
+  /**
+   * The unresolved asset literals each brain references, keyed by document
+   * id, for each brain referencing any, while a snapshot is held. Such a
+   * brain compiles as it did while its assets were listed.
+   */
+  readonly unresolvedAssets: ReadonlyMap<string, readonly AssetLiteral[]>;
+  /**
    * `true` while the session is connected and the latest handshake's
    * reconciliation has finished, so edits and re-pushes reach the MakeCode
    * project at once; `false` from the next disconnection, and while a new
@@ -167,6 +182,14 @@ export interface BrainsViewState {
  * environment is rebuilt, every brain is recompiled in it; one whose
  * compiled form changes is recorded as edited, and pushed.
  *
+ * The environment's asset literals follow the session's asset snapshot: a
+ * literal per listed asset of a catalog asset type, and a literal per such
+ * literal any brain source references, bound before the source is read or
+ * compiled, so a brain compiles to the same program whether or not the
+ * snapshot lists its assets. A snapshot arriving, renaming, redrawing,
+ * adding, deleting or restoring an asset updates the literals in place: it
+ * never rebuilds the environment, recompiles a brain, or pushes one.
+ *
  * Given a sync source, the store keeps its brains in step with the MakeCode
  * project over each makecode handshake. When a handshake completes, the
  * store reconciles: a handshake of a different binding than the previous
@@ -198,6 +221,17 @@ export class BrainsStore {
   private readonly _sync: BrainsSyncSource | undefined;
   private readonly _listeners = new Set<() => void>();
   private _catalogText: string | undefined;
+  /** The asset snapshot the environment's asset literals follow, as the session reported it. */
+  private _assets: readonly MakeCodeAsset[] | undefined;
+  /** The unresolved asset literals each brain referenced when last found, with the brains, literals and snapshot they were found for. */
+  private _unresolved:
+    | {
+        readonly brains: ReadonlyMap<string, BrainEntry>;
+        readonly literals: ReadonlyMap<string, AssetLiteral>;
+        readonly assets: readonly MakeCodeAsset[] | undefined;
+        readonly found: ReadonlyMap<string, readonly AssetLiteral[]>;
+      }
+    | undefined;
   /** The id allocation held for the current binding, or `undefined` until a handshake has read the project's manifest. */
   private _ids: MakeCodeIdManifest | undefined;
   /**
@@ -234,7 +268,8 @@ export class BrainsStore {
     this._session = session;
     this._sync = sync;
     this._catalogText = session.getSnapshot().catalogText;
-    this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
+    this._assets = session.getSnapshot().assets;
+    this._environment = this.buildEnvironment();
     this._state = this.readState();
     session.subscribe(() => {
       this.sessionChanged();
@@ -347,6 +382,7 @@ export class BrainsStore {
     const source = serializeBrainSource(definition);
     const held = this._brains.get(id);
     if (held?.source === source) return;
+    this._environment.assetLiterals.bindSource(source);
     const sourceHash = brainSourceHash(source);
     const compile = compileBrainSource(this._environment.environment, source);
     const entry: BrainEntry = {
@@ -503,7 +539,7 @@ export class BrainsStore {
       this._ids = undefined;
       this._projectIds = undefined;
       this._manifestNewer = false;
-      this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
+      this._environment = this.buildEnvironment();
       this.publish();
     } else if (wasReconciled) {
       this.publish();
@@ -598,6 +634,7 @@ export class BrainsStore {
    */
   private readPulled(brain: MakeCodeBrain): BrainDamageCode | { entry: BrainEntry; recompiled: boolean } {
     const environment = this._environment.environment;
+    this._environment.assetLiterals.bindSource(brain.source);
     let definition: BrainDef;
     try {
       definition = readBrainSource(environment, brain.source);
@@ -713,7 +750,7 @@ export class BrainsStore {
    * entry.
    */
   private rebuild(): void {
-    this._environment = buildAuthoringEnvironment(this._catalogText, this._ids);
+    this._environment = this.buildEnvironment();
     const brains = new Map(this._brains);
     const edited: string[] = [];
     for (const [id, held] of this._brains) {
@@ -734,24 +771,62 @@ export class BrainsStore {
   }
 
   /**
-   * Ends the reconciled state when the session is no longer connected, and
-   * rebuilds the environment when the session carries a different catalog;
-   * publishes when either changed.
+   * The environment for the session's catalog and the allocation held, its
+   * asset literals following the held asset snapshot and bound for every
+   * held brain's source.
+   */
+  private buildEnvironment(): AuthoringEnvironment {
+    const built = buildAuthoringEnvironment(this._catalogText, this._ids);
+    built.assetLiterals.applySnapshot(this._assets);
+    for (const entry of this._brains.values()) built.assetLiterals.bindSource(entry.source);
+    return built;
+  }
+
+  /**
+   * Ends the reconciled state when the session is no longer connected,
+   * rebuilds the environment when the session carries a different catalog,
+   * and otherwise applies a different asset snapshot to the environment's
+   * asset literals in place; publishes when any of them changed.
    */
   private sessionChanged(): void {
-    const { status, catalogText } = this._session.getSnapshot();
+    const { status, catalogText, assets } = this._session.getSnapshot();
     const unreconciled = this._reconciled && status !== "connected";
     if (unreconciled) this._reconciled = false;
+    const assetsChanged = assets !== this._assets;
+    this._assets = assets;
     if (catalogText !== this._catalogText) {
       this._catalogText = catalogText;
       const ids = this._ids === undefined ? undefined : this.allocated(this._ids);
       this._ids = ids;
       this.rebuild();
       if (this._channel !== undefined) this.writeManifest(this._channel);
+    } else if (assetsChanged) {
+      this._environment.assetLiterals.applySnapshot(assets);
     } else if (!unreconciled) {
       return;
     }
     this.publish();
+  }
+
+  /** The unresolved asset literals each held brain references, found again only when the brains, the literals or the snapshot changed. */
+  private unresolvedAssets(): ReadonlyMap<string, readonly AssetLiteral[]> {
+    const literals = this._environment.assetLiterals;
+    const held = this._unresolved;
+    if (
+      held !== undefined &&
+      held.brains === this._brains &&
+      held.literals === literals.view &&
+      held.assets === this._assets
+    ) {
+      return held.found;
+    }
+    const found = new Map<string, readonly AssetLiteral[]>();
+    for (const [id, entry] of this._brains) {
+      const unresolved = literals.unresolvedIn(entry.source);
+      if (unresolved.length > 0) found.set(id, unresolved);
+    }
+    this._unresolved = { brains: this._brains, literals: literals.view, assets: this._assets, found };
+    return found;
   }
 
   private readState(): BrainsViewState {
@@ -761,6 +836,8 @@ export class BrainsStore {
         ? [...this._environment.diagnostics, { code: MakeCodeManifestProblemCode.FORMAT_NEWER }]
         : this._environment.diagnostics,
       brains: this._brains,
+      assetLiterals: this._environment.assetLiterals.view,
+      unresolvedAssets: this.unresolvedAssets(),
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,
       damaged: this._damaged,

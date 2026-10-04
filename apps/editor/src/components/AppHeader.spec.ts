@@ -21,6 +21,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     disconnectedBeyondGrace: false,
     connectedSinceOpen: true,
     catalogText: undefined,
+    assets: undefined,
     target: undefined,
     ...fields,
   };
@@ -37,7 +38,7 @@ function render(state: EditorSessionViewState, brains: Partial<BrainsViewState> 
   } as unknown as EditorSessionStore;
   const held = new BrainsStore({
     subscribe: () => () => {},
-    getSnapshot: (): BrainsSessionState => ({ status: state.status, catalogText: undefined }),
+    getSnapshot: (): BrainsSessionState => ({ status: state.status, catalogText: undefined, assets: undefined }),
   });
   const brainsView = { ...held.getSnapshot(), ...brains };
   const brainsStore = { subscribe: held.subscribe, getSnapshot: () => brainsView } as unknown as BrainsStore;

@@ -49,8 +49,8 @@ export interface CatalogMeta {
   readonly group?: string;
   /** Markdown document of the entry. */
   readonly docs?: string;
-  /** Icon, in the session target's own text form. */
-  readonly icon?: string;
+  /** Icon, as a data URI usable as an image source as it is; render it only as an image source, never as markup. */
+  readonly iconUrl?: string;
 }
 
 /** A sentence frame: the template a sensor heading a rule's WHEN side reads through. */
@@ -84,6 +84,12 @@ export interface CatalogType extends CatalogMeta {
   readonly native: boolean;
   /** Declared fields, in declaration order. */
   readonly fields: readonly CatalogField[];
+  /**
+   * The project asset kind the type's values name, for example `image`, or
+   * absent for a type that is no asset type. A value of an asset type names
+   * one project asset of that kind by its short id, in its `asset` field.
+   */
+  readonly asset?: string;
 }
 
 /** What an action does with a numeric argument outside a slot's range. */
@@ -126,6 +132,8 @@ export interface CatalogArgSlot {
   readonly label?: string;
   /** Sentence words of the tile that fills a modifier slot, or absent when it declares none; a parameter slot carries none. */
   readonly language?: CatalogLanguage;
+  /** Icon of the tile that fills the slot, as {@link CatalogMeta.iconUrl} carries one, or absent when the slot carries none. */
+  readonly iconUrl?: string;
 }
 
 /** A sequence or a bag of grammar nodes. */
@@ -287,8 +295,8 @@ function arrayField(entry: JsonObject, key: string): readonly unknown[] {
 
 /** The metadata fields `entry` declares. */
 function metaOf(entry: JsonObject): CatalogMeta {
-  const meta: { label?: string; group?: string; docs?: string; icon?: string } = {};
-  for (const key of ["label", "group", "docs", "icon"] as const) {
+  const meta: { label?: string; group?: string; docs?: string; iconUrl?: string } = {};
+  for (const key of ["label", "group", "docs", "iconUrl"] as const) {
     const value = stringField(entry, key);
     if (value !== undefined) meta[key] = value;
   }
@@ -362,6 +370,7 @@ function slotOf(entry: JsonObject, reportFrame: FrameReport): CatalogArgSlot {
     unit?: string;
     label?: string;
     language?: CatalogLanguage;
+    iconUrl?: string;
   } = { kind: "arg", tileId, modifier, anonymous: entry.anonymous === true, derived: entry.derived === true };
   const name = stringField(entry, "name");
   if (name !== undefined) slot.name = name;
@@ -375,6 +384,8 @@ function slotOf(entry: JsonObject, reportFrame: FrameReport): CatalogArgSlot {
   if (label !== undefined) slot.label = label;
   const language = modifier ? languageOf(entry.language, reportFrame) : undefined;
   if (language !== undefined) slot.language = language;
+  const iconUrl = stringField(entry, "iconUrl");
+  if (iconUrl !== undefined) slot.iconUrl = iconUrl;
   return slot;
 }
 
@@ -490,7 +501,14 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
       ? [{ name: field.name, type: field.type, readOnly: field.readOnly === true }]
       : []
   );
-  return { name: entry.name, native: entry.native === true, fields, ...metaOf(entry) };
+  const asset = stringField(entry, "asset");
+  return {
+    name: entry.name,
+    native: entry.native === true,
+    fields,
+    ...metaOf(entry),
+    ...(asset === undefined ? {} : { asset }),
+  };
 }
 
 /** The operator `entry` declares. */
@@ -502,8 +520,9 @@ function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
 
 /**
  * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
- * extension's catalog serializer writes, into its packs, each with its types,
- * tiles and operators. A token the grammar does not have -- a tile kind, a
+ * extension's catalog serializer writes as the simx renders it for the
+ * editor -- each icon carried as an `iconUrl` data URI -- into its packs,
+ * each with its types, tiles and operators. A token the grammar does not have -- a tile kind, a
  * grammar construct, a range's overflow behavior, a sentence frame -- is
  * never dropped silently: the entry carrying it is recorded in the result's
  * problems by stable code and keeps no grammar, but for a sentence frame,

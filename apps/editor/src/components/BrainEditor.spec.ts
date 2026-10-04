@@ -20,7 +20,7 @@ import { BrainEditor, BrainEditorSession } from "./BrainEditor.js";
 function session(catalogText: string | undefined) {
   return {
     subscribe: () => () => {},
-    getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText }),
+    getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText, assets: undefined }),
   };
 }
 
@@ -63,7 +63,7 @@ describe("BrainEditorSession", () => {
       },
     };
     const tree = BrainEditorSession({
-      config: buildBrainEditorConfig(store.getSnapshot().environment),
+      config: buildBrainEditorConfig(store.getSnapshot().environment, store.getSnapshot().assetLiterals),
       editing,
       isOpen: true,
       onOpenChange: (open) => {

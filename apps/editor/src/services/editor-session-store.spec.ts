@@ -20,6 +20,7 @@ class FakeSession implements MakeCodeEditorSession {
   state: MakeCodeEditorSessionState;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
   constructor(options: MakeCodeEditorSessionOptions) {
@@ -47,8 +48,11 @@ class FakeSession implements MakeCodeEditorSession {
     };
   }
 
-  onAssets(_listener: (assets: MakeCodeAsset[]) => void): () => void {
-    return () => {};
+  onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void {
+    this._assetsListeners.add(listener);
+    return () => {
+      this._assetsListeners.delete(listener);
+    };
   }
 
   onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
@@ -83,11 +87,26 @@ class FakeSession implements MakeCodeEditorSession {
     for (const listener of this._catalogListeners) listener(content);
   }
 
+  /** An asset snapshot arriving from the counterpart. */
+  deliverAssets(assets: MakeCodeAsset[]): void {
+    for (const listener of this._assetsListeners) listener(assets);
+  }
+
   /** A makecode handshake completing, handing out `channel`. */
   handshake(channel: MakeCodeBrainsChannel): void {
     for (const listener of this._brainsChannelListeners) listener(channel);
   }
 }
+
+/** One image asset, as a snapshot lists it. */
+const IMAGE_ASSET: MakeCodeAsset = {
+  kind: "image",
+  id: "img1",
+  name: "hero",
+  width: 16,
+  height: 16,
+  previewUrl: "data:,",
+};
 
 /** A brains channel whose requests never settle, recording the removals pushed on it. */
 function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
@@ -301,6 +320,53 @@ describe("editor session store", () => {
     const state = store.getSnapshot();
     assert.equal(state.catalogText, '{"packs":[]}');
     assert.equal(state.errorCode, BridgeSessionErrorCode.SESSION_REPLACED);
+  });
+
+  it("holds the latest asset snapshot, none before the first arrives", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const session = lastSession();
+    session.set({ status: "connected" });
+    assert.equal(store.getSnapshot().assets, undefined);
+
+    const first = [IMAGE_ASSET];
+    const second = [IMAGE_ASSET, { ...IMAGE_ASSET, id: "img2" }];
+    session.deliverAssets(first);
+    assert.equal(store.getSnapshot().assets, first);
+    session.deliverAssets(second);
+
+    assert.equal(store.getSnapshot().assets, second);
+  });
+
+  it("keeps the latest asset snapshot across a disconnection, and drops it when the session ends", () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.resume();
+    const session = lastSession();
+    session.set({ status: "connected" });
+    const assets = [IMAGE_ASSET];
+    session.deliverAssets(assets);
+
+    session.set({ status: "disconnected" });
+    assert.equal(store.getSnapshot().assets, assets);
+
+    session.set({ status: "none", errorCode: BridgeSessionErrorCode.SESSION_ENDED });
+    assert.equal(store.getSnapshot().assets, undefined);
+  });
+
+  it("drops the asset snapshot when the session is forgotten, and hears none from a replaced session", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const first = lastSession();
+    first.set({ status: "connected" });
+    first.deliverAssets([IMAGE_ASSET]);
+
+    store.forget();
+    assert.equal(store.getSnapshot().assets, undefined);
+
+    store.connect("delta-echo-fox");
+    first.deliverAssets([IMAGE_ASSET]);
+    assert.equal(store.getSnapshot().assets, undefined);
   });
 
   it("exposes the MakeCode target the session reports, unknown while it reports none", () => {

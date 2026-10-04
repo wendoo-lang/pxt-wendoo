@@ -162,6 +162,18 @@ the declaration shapes and mechanics. The binding rules:
   the job, or when the failure is known-permanent -- and a known-permanent
   failure must surface visibly, never idle silently.
 
+## No Invented UI
+
+Agents do not invent UI. Every visible shape on a product surface --
+a new surface, a notice or banner, a panel, layout behavior, visual
+weight, iconography, an affordance's presentation -- goes through a
+design process: grounded options with a recommendation and a
+judgeable visual description, then the user's ruling, then
+implementation as a separate step. A defect fix that restores
+already-reviewed behavior proceeds without a new review; a fix that
+involves any new visible choice flags the choice instead of making
+it. Pure mechanism with no visible change is exempt.
+
 ## User-Facing Copy
 
 In user-facing text -- READMEs, docs pages, UI strings -- describe Wendoo on

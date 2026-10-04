@@ -9,6 +9,8 @@ import {
 import { CircleAlert, MoreHorizontal, Plus } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import type { AssetLiteral } from "@/services/asset-literals";
+import { BRAIN_ASSET_UNRESOLVED } from "@/services/asset-literals";
 import type { BrainDamageCode, BrainsStore } from "@/services/brains-store";
 import {
   BrainDiagnosticsList,
@@ -75,6 +77,28 @@ export function BrainDamageNotice({ brainId, code, restorable, reconciled, brain
   );
 }
 
+/**
+ * The notice below a brain row whose rules use project assets the MakeCode
+ * project no longer holds, worded for the person authoring and naming each
+ * asset by its label, carrying {@link BRAIN_ASSET_UNRESOLVED} as
+ * `data-code`. Informational: the brain still runs as it did.
+ */
+export function BrainAssetNotice({ literals }: { literals: readonly AssetLiteral[] }) {
+  return (
+    <div
+      data-testid="brain-asset-notice"
+      data-code={BRAIN_ASSET_UNRESOLVED}
+      className="flex items-center gap-2 border-border border-t bg-muted/40 px-3 py-2 text-xs"
+    >
+      <CircleAlert aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <p className="min-w-0 flex-1">
+        This brain uses {literals.map((literal) => literal.label).join(", ")}, which the MakeCode project doesn't have
+        anymore. Add it back in MakeCode, or pick something else in the brain.
+      </p>
+    </div>
+  );
+}
+
 type BrainDialog =
   | { kind: "add" }
   | { kind: "rename"; id: string; name: string }
@@ -90,15 +114,16 @@ type BrainDialog =
  * carries its brain's document id as `data-brain-id` and its name as
  * `data-brain-name`.
  *
- * A brain whose source in the MakeCode project is damaged shows a
- * {@link BrainDamageNotice} below its row, offering Restore while the store
+ * A brain whose rules use project assets the project no longer holds shows a
+ * {@link BrainAssetNotice} below its row. A brain whose source in the MakeCode
+ * project is damaged shows a {@link BrainDamageNotice} below its row, offering Restore while the store
  * is reconciled with the project. A damaged brain
  * the store holds no copy of is listed after the held brains under the name
  * the project gave it, with the notice alone and no other controls.
  */
 export function BrainList() {
   const store = useBrains();
-  const { brains, damaged, reconciled } = useBrainsState();
+  const { brains, damaged, reconciled, unresolvedAssets } = useBrainsState();
   const uncopied = [...damaged].filter(([id]) => !brains.has(id));
   const [dialog, setDialog] = useState<BrainDialog>(null);
   const [editingBrainId, setEditingBrainId] = useState<string | null>(null);
@@ -160,6 +185,7 @@ export function BrainList() {
               const diagnostics = listedDiagnostics(brain);
               const diagnosticsExpanded = expandedDiagnostics.has(id) && diagnostics.length > 0;
               const damage = damaged.get(id);
+              const unresolved = unresolvedAssets.get(id);
               return (
                 <li
                   key={id}
@@ -246,6 +272,7 @@ export function BrainList() {
                       brains={store}
                     />
                   )}
+                  {unresolved !== undefined && <BrainAssetNotice literals={unresolved} />}
                   {diagnosticsExpanded && <BrainDiagnosticsList diagnostics={diagnostics} />}
                 </li>
               );

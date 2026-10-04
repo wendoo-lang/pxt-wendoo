@@ -1,9 +1,10 @@
 import type { WendooEnvironment, WendooModule } from "@wendoo/core/app";
 import { coreModule, createEntropySeededRng, createWendooEnvironment } from "@wendoo/core/app";
-import type { NumberPrecision } from "@wendoo/core/runtime";
-import { createProfileNumerics } from "@wendoo/core/runtime";
+import type { NumberPrecision, StructTypeDef } from "@wendoo/core/runtime";
+import { createProfileNumerics, mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
-import { type CATALOG_UNREADABLE, type CatalogProblem, parseCatalog } from "./catalog";
+import { ASSET_FIELD, AssetLiterals, type AssetType } from "./asset-literals";
+import { type CATALOG_UNREADABLE, type CatalogPack, type CatalogProblem, parseCatalog } from "./catalog";
 import { allocateIds } from "./id-allocation";
 import { type PackBindingProblem, packModule } from "./pack-binding";
 
@@ -47,6 +48,29 @@ export interface AuthoringEnvironment {
   readonly environment: WendooEnvironment;
   /** Problems found in the catalog, in catalog order. Empty when there were none. */
   readonly diagnostics: readonly CatalogDiagnostic[];
+  /**
+   * The environment's asset literal tiles, one set per catalog asset type the
+   * environment binds; none are minted until a snapshot is applied or a brain
+   * source is bound.
+   */
+  readonly assetLiterals: AssetLiterals;
+}
+
+/**
+ * The asset types among `packs`' types that `environment` binds: each type
+ * declaring an asset kind whose struct definition the environment registers
+ * with an `asset` field.
+ */
+function boundAssetTypes(environment: WendooEnvironment, packs: readonly CatalogPack[]): AssetType[] {
+  const types: AssetType[] = [];
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    if (type.asset === undefined) continue;
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    const typeDef = environment.brainServices.runtime.types.get(typeId) as StructTypeDef | undefined;
+    if (typeDef?.fieldIndexByName?.get(ASSET_FIELD) === undefined) continue;
+    types.push({ typeId, kind: type.asset, typeDef });
+  }
+  return types;
 }
 
 /**
@@ -63,6 +87,10 @@ export interface AuthoringEnvironment {
  * way; text that is not a catalog document is reported under
  * `CATALOG_UNREADABLE` and yields the core environment. Never throws on
  * catalog content.
+ *
+ * The result's asset literals cover every bound type the catalog declares an
+ * asset kind for; apply the session's asset snapshot to them, and bind each
+ * brain source before reading or compiling it.
  *
  * @param catalogText - The session catalog's serialized text, or `undefined` while none has arrived.
  * @param ids - The project's id allocation the editor holds; omit it while the editor holds none.
@@ -95,5 +123,6 @@ export function buildAuthoringEnvironment(
     rng: createEntropySeededRng(),
     numerics: createProfileNumerics(MAKECODE_VM_PRECISION),
   });
-  return { environment, diagnostics };
+  const assetTypes = ids === undefined || catalog === undefined ? [] : boundAssetTypes(environment, catalog.packs);
+  return { environment, diagnostics, assetLiterals: new AssetLiterals(environment.brainServices, assetTypes) };
 }

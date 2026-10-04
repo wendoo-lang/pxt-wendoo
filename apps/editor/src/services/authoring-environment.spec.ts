@@ -16,6 +16,16 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { StructTypeDef } from "@wendoo/core/runtime";
 import { mkPrivateArgId, Op } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
+import {
+  ASSET_CATALOG,
+  assetCatalogIds,
+  BLANK_ICON,
+  NEAR,
+  SHOW,
+  SHOW_ICON,
+  SPOT,
+  SPOT_ICON,
+} from "../test-support/asset-catalog.js";
 import { projectedSentence } from "../test-support/sentence-projection.js";
 import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND, PackBindingCode } from "./authoring-environment.js";
 import { CATALOG_UNREADABLE, CatalogProblemCode, parseCatalog } from "./catalog.js";
@@ -327,6 +337,18 @@ describe("buildAuthoringEnvironment", () => {
     assert.deepEqual(languageOf(mkSensorTileId("sensor.zoo.spot")), WORDS.spot);
     assert.deepEqual(languageOf(mkActuatorTileId("actuator.zoo.pounce")), WORDS.pounce);
     assert.deepEqual(languageOf(mkModifierTileId("modifier.zoo.lion")), WORDS.lion);
+  });
+
+  it("carries a tile's and a slot's icon into the tile's metadata, verbatim, and none where none is carried", () => {
+    const built = buildAuthoringEnvironment(ASSET_CATALOG, assetCatalogIds());
+    const { environment } = built;
+    const iconOf = (tileId: string) => tile(environment, tileId).metadata?.iconUrl;
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.equal(iconOf(mkSensorTileId(SPOT)), SPOT_ICON);
+    assert.equal(iconOf(mkActuatorTileId(SHOW)), SHOW_ICON);
+    assert.equal(iconOf(mkModifierTileId("modifier.gallery.blank")), BLANK_ICON);
+    assert.equal(iconOf(mkSensorTileId(NEAR)), undefined);
   });
 
   it("gives a tile and a slot tile declaring no sentence words none", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { stream } from "@wendoo/core";
 import type { BrainDef, IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
-import { CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
+import { CoreHostActions, LogLevel, logger, mkActuatorTileId, mkLiteralTileId, mkSensorTileId } from "@wendoo/core/app";
 import { ParseDiagCode } from "@wendoo/core/brain/compiler";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
@@ -15,6 +15,7 @@ import type {
   MakeCodeEditorSessionStatus,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
+import { ASSET_CATALOG, PICTURE_TYPE, picture } from "../test-support/asset-catalog.js";
 import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
 import { serializeBrainSource } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
@@ -27,7 +28,7 @@ const SOUND_CATALOG = '{"packs":[{"name":"sound","tiles":[{"name":"beep","kind":
 
 /** The session readings a brains store follows, driven by the spec. */
 class FakeSessionSource {
-  state: BrainsSessionState = { status: "connected", catalogText: undefined };
+  state: BrainsSessionState = { status: "connected", catalogText: undefined, assets: undefined };
   private readonly _listeners = new Set<() => void>();
 
   subscribe = (listener: () => void): (() => void) => {
@@ -412,6 +413,8 @@ describe("brains store", () => {
       };
       private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
       private readonly _catalogListeners = new Set<(content: string) => void>();
+      private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
+      private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
       onStateChange(listener: (state: MakeCodeEditorSessionState) => void): () => void {
         this._stateListeners.add(listener);
@@ -427,12 +430,18 @@ describe("brains store", () => {
         };
       }
 
-      onAssets(_listener: (assets: MakeCodeAsset[]) => void): () => void {
-        return () => {};
+      onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void {
+        this._assetsListeners.add(listener);
+        return () => {
+          this._assetsListeners.delete(listener);
+        };
       }
 
-      onBrainsChannel(_listener: (channel: MakeCodeBrainsChannel) => void): () => void {
-        return () => {};
+      onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
+        this._brainsChannelListeners.add(listener);
+        return () => {
+          this._brainsChannelListeners.delete(listener);
+        };
       }
 
       start(): void {}
@@ -450,6 +459,23 @@ describe("brains store", () => {
       /** A catalog arriving from the MakeCode side. */
       deliver(content: string): void {
         for (const listener of this._catalogListeners) listener(content);
+      }
+
+      /** An asset snapshot arriving from the MakeCode side. */
+      deliverAssets(assets: MakeCodeAsset[]): void {
+        for (const listener of this._assetsListeners) listener(assets);
+      }
+
+      /** A makecode handshake completing over a project holding no brains and no manifest. */
+      handshake(): void {
+        const channel: MakeCodeBrainsChannel = {
+          listBrains: () => Promise.resolve([]),
+          pullBrains: () => Promise.resolve([]),
+          pushBrain: () => Promise.resolve(),
+          readManifest: () => Promise.resolve({ manifest: null }),
+          writeManifest: () => Promise.resolve(),
+        };
+        for (const listener of this._brainsChannelListeners) listener(channel);
       }
     }
 
@@ -470,6 +496,27 @@ describe("brains store", () => {
 
       assert.deepEqual(store.getSnapshot().catalogDiagnostics, [{ code: CATALOG_PACK_UNBOUND, pack: "motion" }]);
       assert.deepEqual([...store.getSnapshot().pending], [id]);
+    });
+
+    it("follows the live session's asset snapshots into its asset literals", async () => {
+      const live = new LiveSession();
+      const sessionStore = new EditorSessionStore({
+        persistence: { load: () => undefined, save: () => {}, clear: () => {}, has: () => false },
+        createSession: (_options: MakeCodeEditorSessionOptions) => live,
+      });
+      sessionStore.connect("ABCD");
+      live.setStatus("connected");
+      const store = new BrainsStore(sessionStore, sessionStore);
+      live.deliver(ASSET_CATALOG);
+      live.handshake();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      live.deliverAssets([picture("img1", "hero")]);
+      const literal = store.getSnapshot().assetLiterals.get(mkLiteralTileId(PICTURE_TYPE, "img1"));
+      live.deliverAssets([picture("img1", "villain")]);
+
+      assert.equal(literal?.label, "hero");
+      assert.equal(store.getSnapshot().assetLiterals.get(mkLiteralTileId(PICTURE_TYPE, "img1"))?.label, "villain");
     });
   });
 });

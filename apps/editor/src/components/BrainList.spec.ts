@@ -6,6 +6,7 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
+import { BRAIN_ASSET_UNRESOLVED } from "../services/asset-literals.js";
 import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../services/brain-source.js";
 import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
@@ -16,7 +17,7 @@ import { BrainDamageNotice, BrainList } from "./BrainList.js";
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
   subscribe: () => () => {},
-  getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText: undefined }),
+  getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText: undefined, assets: undefined }),
 };
 
 /** The tile `tileId` from `environment`'s catalogs. Throws when none holds it. */
@@ -247,6 +248,40 @@ describe("BrainList", () => {
 
       assert.deepEqual(rows(markup), [[id, "Chaser"]]);
       assert.doesNotMatch(markup, /data-testid="brain-damaged-notice"/);
+    });
+  });
+
+  describe("brains using deleted assets", () => {
+    /** Renders the brain list over `store`, reporting `unresolvedAssets` as the brains' unresolved asset literals. */
+    function renderUnresolved(unresolvedAssets: BrainsViewState["unresolvedAssets"]): string {
+      const reporting = {
+        subscribe: store.subscribe,
+        getSnapshot: () => ({ ...store.getSnapshot(), unresolvedAssets }),
+      } as unknown as BrainsStore;
+      return render(reporting);
+    }
+
+    it("marks a brain using an asset the project no longer holds with the coded notice, and no other brain", () => {
+      const using = store.addBrain("Chaser");
+      const other = store.addBrain("Runner");
+      const literal = {
+        tileId: "tile.literal->struct:<Picture>->img1",
+        typeId: "struct:<Picture>",
+        kind: "image",
+        id: "img1",
+        label: "hero",
+        previewUrl: undefined,
+        resolved: false,
+      };
+
+      const markup = renderUnresolved(new Map([[using, [literal]]]));
+
+      assert.match(
+        rowMarkup(markup, using),
+        new RegExp(`data-testid="brain-asset-notice" data-code="${BRAIN_ASSET_UNRESOLVED}"`)
+      );
+      assert.doesNotMatch(rowMarkup(markup, other), /data-testid="brain-asset-notice"/);
+      assert.doesNotMatch(renderUnresolved(new Map()), /data-testid="brain-asset-notice"/);
     });
   });
 

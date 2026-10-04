@@ -16,7 +16,12 @@ const FULL_CATALOG = JSON.stringify({
             { name: "y", type: "number", readOnly: true },
           ],
           label: "Beacon",
-          icon: "img<beacon>",
+          iconUrl: "data:image/svg+xml;base64,YmVhY29u",
+        },
+        {
+          name: "Snapshot",
+          asset: "image",
+          fields: [{ name: "asset", type: "string", readOnly: true }],
         },
       ],
       tiles: [
@@ -29,6 +34,7 @@ const FULL_CATALOG = JSON.stringify({
           label: "beacon reading",
           group: "Beacons",
           docs: "# Beacon reading",
+          iconUrl: "data:image/svg+xml;base64,cmVhZGluZw==",
         },
       ],
       operators: [{ name: "beacon.combine", operands: ["number", "number"], returns: "number" }],
@@ -41,7 +47,14 @@ const FULL_CATALOG = JSON.stringify({
           kind: "actuator",
           args: [
             { tileId: "times", type: "number", optional: true },
-            { tileId: "modifier.loudly", modifier: true, repeated: true, min: 1, label: "nice and loud" },
+            {
+              tileId: "modifier.loudly",
+              modifier: true,
+              repeated: true,
+              min: 1,
+              label: "nice and loud",
+              iconUrl: "data:image/svg+xml;base64,bG91ZA==",
+            },
             { name: "pitch", tileId: "pitch", type: "number", required: false, default: { t: 3, v: 2 } },
           ],
         },
@@ -223,7 +236,13 @@ describe("parseCatalog", () => {
             { name: "y", type: "number", readOnly: true },
           ],
           label: "Beacon",
-          icon: "img<beacon>",
+          iconUrl: "data:image/svg+xml;base64,YmVhY29u",
+        },
+        {
+          name: "Snapshot",
+          native: false,
+          asset: "image",
+          fields: [{ name: "asset", type: "string", readOnly: true }],
         },
       ],
       tiles: [
@@ -237,6 +256,7 @@ describe("parseCatalog", () => {
           label: "beacon reading",
           group: "Beacons",
           docs: "# Beacon reading",
+          iconUrl: "data:image/svg+xml;base64,cmVhZGluZw==",
         },
       ],
       operators: [{ name: "beacon.combine", async: false, operands: ["number", "number"], returns: "number" }],
@@ -261,6 +281,7 @@ describe("parseCatalog", () => {
           anonymous: false,
           derived: false,
           label: "nice and loud",
+          iconUrl: "data:image/svg+xml;base64,bG91ZA==",
         },
       },
       {

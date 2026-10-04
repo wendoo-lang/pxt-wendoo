@@ -108,7 +108,11 @@ The four-hop path assigns the session parts as follows.
   section). It receives catalogs on the sim-message channel,
   connects at the simx role path, opens or refreshes its
   connection-scoped handshake on every welcome, publishes the
-  current catalog into the session, and answers the editor's brains
+  current catalog into the session RENDERED -- each icon the
+  extension carries as hex of an image buffer replaced by an
+  `iconUrl` data URI drawn under the project's palette, so no icon
+  hex reaches the editor -- then the project's asset snapshot (see
+  "The assets publication", below), and answers the editor's brains
   and manifest requests from the project's files (see "The simx write
   path" and "The id manifest", below).
 - `apps/bridge` is the relay service: an adapter plus a deployment
@@ -790,7 +794,9 @@ it keys on a session id.
   spent or name the simx's vacancy, which no person can enter yet.
   The catalog stays rendered while disconnected -- status gates
   delivery, never what is already shown -- and is dropped whenever no
-  session exists.
+  session exists. The store holds the latest ASSET SNAPSHOT the same
+  way: each one the session delivers replaces the last, it is kept
+  while disconnected, and it is dropped whenever no session exists.
 - The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
   routinely, so a brief disconnect is the common case. The header
   turns `reconnecting` only once a disconnection outlasts
@@ -836,15 +842,51 @@ it keys on a session id.
   and compiled in -- the catalog's packs bound under the project's id
   allocation (see "The id manifest", above), rebuilt whenever a different
   catalog arrives or the allocation changes, every brain recompiled in
-  each rebuild -- and the status, and it syncs its brains with the
-  MakeCode project over each handshake's brains channel (see "Brain
+  each rebuild -- the asset snapshot, which its environment's asset
+  literals follow (below), and the status, and it syncs its brains with
+  the MakeCode project over each handshake's brains channel (see "Brain
   sync", below). The brains are kept through every status.
+- ASSET LITERALS: for each catalog type declaring an asset kind (the
+  catalog's `asset` key, for example `image`), the store's environment
+  holds one literal tile per snapshot asset of that kind, minted through
+  the upstream literal builder: its value the type's struct naming the
+  asset's short id in its `asset` field, its tile id following from type
+  and short id alone, its label the asset's name (its short id when it
+  has none). Definitions are never persisted: a brain's source holds only
+  the literal's reference. The environment also binds every asset literal
+  a brain source references, before that source is read or compiled,
+  whether or not the snapshot lists the asset; such a literal is
+  UNRESOLVED while the snapshot does not list its asset. A brain therefore
+  compiles to the same program with its assets listed, unlisted, or
+  before any snapshot arrives -- at runtime an unlisted asset is the VM
+  extension's to resolve to nothing. Only resolved literals are offered:
+  wherever a slot of an asset type stands open, they join the candidate
+  strip like any other literal, and an unresolved literal never does.
+  Snapshot changes update the literals in place and never rebuild the
+  environment, recompile a brain, or push one: an added asset mints its
+  literal, a renamed one relabels it (sentence word included), a
+  redrawn one changes its face alone, a deleted one turns unresolved, and
+  one restored under the same id resolves again.
+- The TILE VISUAL PROVIDER is the editor's one function resolving any
+  tile to how it shows, wired into the brain editor's `resolveTileVisual`:
+  a resolved asset literal shows its asset's name and its `previewUrl`
+  as its face, an unresolved one its label alone; every other tile shows
+  the display metadata pack binding gave it, the catalog's `iconUrl`
+  included. A placed asset literal's value box draws its asset's preview
+  through a display-only literal type per asset type (`customLiteralTypes`,
+  no dialog members), and its label as text while unresolved. Each new
+  editor config also carries a fresh localizer identity, so rule sentences
+  re-read the words of literals relabelled in place. Icons and previews are
+  data URIs from session data, rendered only as an image source, never
+  injected as markup. The icons ride the
+  catalog the store keeps, so they show while disconnected.
 - The BRAIN LIST renders the brains store in every status, so
   authoring continues while the project is away. Each row is keyed by
   the brain's document id; the name is display data, and two brains
   may show the same one. A row opens the brain in the upstream brain
   editor dialog in its continuous mode, whose config is built from the
-  store's current environment and rebuilt whenever the environment is.
+  store's current environment and asset literals and rebuilt whenever
+  either changes.
   The row's badge counts the compile's errors and warnings (carrying
   the compile state -- `current`, `stale`, or `none` -- as
   `data-compile`). Rows also rename and remove brains; adding a brain
@@ -889,6 +931,13 @@ it keys on a session id.
   with the notice alone (fix or delete the file in MakeCode) and no
   other controls. The store clears the damage on the project's ack
   or a later reconciliation, and the notice goes with it.
+- A brain using UNRESOLVED ASSET LITERALS -- assets the held snapshot
+  no longer lists -- carries a notice below its row at the default
+  tier, worded for the kid and naming each asset by its label (add it
+  back in MakeCode, or pick something else), with
+  `BRAIN_ASSET_UNRESOLVED` as `data-code`. It informs and never blocks:
+  the brain still compiles and runs as before. No notice shows before
+  the first snapshot arrives.
 - The CATALOG DIAGNOSTICS the store reports while building its
   environment render as one coded line each above the catalog panel,
   each carrying its code as `data-code` and, where it names them, the pack
@@ -930,7 +979,9 @@ it keys on a session id.
   upstream `language` group the rule-sentence projection reads (form,
   frame, bare), a tile declaring none reading by the projection's
   defaults, and a shared modifier keeping the words of its first
-  declaration; and each operator as its own operator
+  declaration; the icon a tile or slot carries (`iconUrl`) lands in its
+  tile's metadata the same way, a shared tile keeping its first
+  declaration's; and each operator as its own operator
   under its allocated host-function id, infix over two operands, prefix
   over one.
   Pack actions run nothing in the editor.

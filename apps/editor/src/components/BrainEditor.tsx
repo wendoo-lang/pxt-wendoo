@@ -50,13 +50,13 @@ interface BrainEditorProps {
  * Edits one stored brain in the brain editor dialog: opens on the brain's
  * document as the store holds it when the editor mounts, and applies each
  * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
- * dialog's config follows the store's environment, rebuilt each time the
- * environment is. Mount it keyed by `brainId` to edit another brain.
+ * dialog's config follows the store's environment and asset literals, rebuilt
+ * each time either changes. Mount it keyed by `brainId` to edit another brain.
  */
 export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
   const store = useBrains();
-  const { environment } = useBrainsState();
-  const config = useMemo(() => buildBrainEditorConfig(environment), [environment]);
+  const { environment, assetLiterals } = useBrainsState();
+  const config = useMemo(() => buildBrainEditorConfig(environment, assetLiterals), [environment, assetLiterals]);
   const [editing] = useState(() => openBrainEditing(store, brainId));
   const [isOpen, setIsOpen] = useState(true);
 
