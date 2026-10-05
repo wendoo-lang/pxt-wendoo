@@ -1,5 +1,6 @@
 import type { WendooEnvironment } from "@wendoo/core/app";
 import type { Localizer } from "@wendoo/core/localization";
+import type { TypeId } from "@wendoo/core/runtime";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import type { AssetLiteral } from "@/services/asset-literals";
 import type { BrainLiteral } from "@/services/brain-literals";
@@ -39,22 +40,24 @@ function localizerView(base: Localizer): Localizer {
  * included -- each registered type named by its registry name, tiles shown
  * through the visual provider over `assetLiterals`, a display-only literal
  * type per asset type those literals hold and per brain type `brainLiterals`
- * hold, and brain files saved and loaded relative to
- * {@link BRAIN_SOURCE_NAMESPACE}. The config supplies no data-type icons.
- * Build a new config whenever the environment is rebuilt or the asset or
- * brain literals change.
+ * hold, each type's data-type icon as `typeIcons` holds it, and brain files
+ * saved and loaded relative to {@link BRAIN_SOURCE_NAMESPACE}. Build a new
+ * config whenever the environment is rebuilt or the asset or brain literals
+ * change.
  *
  * @param environment - The brains store's current environment.
  * @param assetLiterals - The environment's asset literals, as the brains store reports them.
  * @param brainLiterals - The environment's brain literals, as the brains store reports them.
+ * @param typeIcons - The environment's type icons, keyed by type id, as the brains store reports them.
  */
 export function buildBrainEditorConfig(
   environment: WendooEnvironment,
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
-  brainLiterals: ReadonlyMap<string, BrainLiteral>
+  brainLiterals: ReadonlyMap<string, BrainLiteral>,
+  typeIcons: ReadonlyMap<TypeId, string>
 ): BrainEditorConfig {
   return {
-    dataTypeIcons: new Map(),
+    dataTypeIcons: typeIcons,
     dataTypeNames: registeredTypeNames(environment),
     customLiteralTypes: [
       ...createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),

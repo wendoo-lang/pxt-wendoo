@@ -5,10 +5,11 @@
  * `bump`, `in range`, `out of range` and `myself` sensors, and the `move`
  * actuator, each tile and accessor with its icon, registered from this
  * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
- * each with its icon; and the icons it gives the core tiles -- the page
+ * each with its icon; the icons it gives the core tiles -- the page
  * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
  * operators, gets, the parentheses, random number, true, false, nil, and the
- * variable and tile factories.
+ * variable and tile factories; and the icons it gives the core number, text
+ * and switch types.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
@@ -751,4 +752,8 @@ namespace wendoo {
   arcadePack.defineCoreTileIcon("tile.var.factory->string", CORE_TEXT_VARIABLE_ICON);
   arcadePack.defineCoreTileIcon("tile.lit.factory->number", CORE_NUMBER_TILE_ICON);
   arcadePack.defineCoreTileIcon("tile.lit.factory->string", CORE_TEXT_TILE_ICON);
+
+  arcadePack.defineCoreTypeIcon(TYPE_NUMBER, NUMBER_TYPE_ICON);
+  arcadePack.defineCoreTypeIcon(TYPE_STRING, TEXT_TYPE_ICON);
+  arcadePack.defineCoreTypeIcon(TYPE_BOOLEAN, SWITCH_TYPE_ICON);
 }

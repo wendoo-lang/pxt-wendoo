@@ -34,8 +34,8 @@
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its types,
- * accessors, tiles, modifier slots and core tile icon entries carrying 16 by
- * 16 icons.
+ * accessors, tiles, modifier slots, core tile icon entries and core type
+ * icon entries carrying 16 by 16 icons.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -67,6 +67,7 @@ const EXPECTED_CHECKS = [
   "late-registration-diagnosed",
   "late-registration-not-bound",
   "late-core-tile-icon-diagnosed",
+  "late-core-type-icon-diagnosed",
   "action-output-readable-by-name",
   "action-output-core-typed-readable-by-name",
   "rule-context-get-variable-reads-up-the-rule-chain",
@@ -147,6 +148,7 @@ const EXPECTED_DIAGNOSTICS = [
   "registration-field-writes-unbound Beacon",
   "registration-after-snapshot actuator.chime.late",
   "registration-after-snapshot tile.op->not",
+  "registration-after-snapshot string",
 ];
 
 /** Every check the arcade selftest is expected to report, and to report as holding. */
@@ -448,6 +450,9 @@ const ARCADE_ICONED_CORE_TILES = [
   "tile.literal->nil:<nil>->nil",
 ];
 
+/** The core types the arcade base pack's catalog must give a 16 by 16 icon, each by its type name. */
+const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
+
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
 const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain"];
 
@@ -702,9 +707,10 @@ function grammarSlots(nodes) {
  * The ways the arcade catalog payload `payload` misses its icons: each type
  * in `ARCADE_ICONED_TYPES`, each accessor in `ARCADE_ICONED_ACCESSORS`, each
  * tile in `ARCADE_ICONED_TILES`, each slot of
- * any tile a modifier in `ARCADE_ICONED_MODIFIERS` fills, and exactly one core
- * tile icon entry for each core tile in `ARCADE_ICONED_CORE_TILES`, carries an
- * icon of 16 by 16 pixels.
+ * any tile a modifier in `ARCADE_ICONED_MODIFIERS` fills, exactly one core
+ * tile icon entry for each core tile in `ARCADE_ICONED_CORE_TILES`, and exactly
+ * one core type icon entry for each core type in `ARCADE_ICONED_CORE_TYPES`,
+ * carries an icon of 16 by 16 pixels.
  */
 function arcadeIconFailures(payload) {
   const pack = JSON.parse(payload).packs.find((entry) => entry.name === "arcade");
@@ -740,6 +746,12 @@ function arcadeIconFailures(payload) {
     const entries = coreIcons.filter((entry) => entry.tileId === tileId);
     if (entries.length !== 1) failures.push(`${entries.length} core tile icons for ${tileId}`);
     for (const entry of entries) failures.push(...iconProblems(`core tile ${tileId}`, entry.icon));
+  }
+  const coreTypeIcons = pack ? pack.coreTypeIcons || [] : [];
+  for (const typeName of ARCADE_ICONED_CORE_TYPES) {
+    const entries = coreTypeIcons.filter((entry) => entry.type === typeName);
+    if (entries.length !== 1) failures.push(`${entries.length} core type icons for ${typeName}`);
+    for (const entry of entries) failures.push(...iconProblems(`core type ${typeName}`, entry.icon));
   }
   return failures;
 }

@@ -51,12 +51,14 @@ export function enrichCatalogIcons(text: string, palette: readonly string[] | un
     return text;
   }
   let carriesIcons = false;
-  // `where` names the entry holding `value`: its pack and entry names, by `/`
+  // `where` names the entry holding `value`: its pack and entry names, by `/`;
+  // an entry is named by its `name`, else its `tileId`, else its `type`
   const render = (value: unknown, where: string): unknown => {
     if (Array.isArray(value)) return value.map((item) => render(item, where));
     if (typeof value !== "object" || value === null) return value;
     const entry = value as Record<string, unknown>;
-    const name = typeof entry.name === "string" ? entry.name : entry.tileId;
+    const name =
+      typeof entry.name === "string" ? entry.name : typeof entry.tileId === "string" ? entry.tileId : entry.type;
     const here = typeof name !== "string" ? where : where === "" ? name : `${where}/${name}`;
     const fields: [string, unknown][] = [];
     for (const [key, field] of Object.entries(entry)) {

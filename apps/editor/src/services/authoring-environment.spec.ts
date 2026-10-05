@@ -280,6 +280,41 @@ const TYPE_ICON_CATALOG = JSON.stringify({
   ],
 });
 
+/** Icons the core type icon catalog's packs give core types, each a distinct data URI. */
+const CORE_TYPE_ICONS = {
+  number: "data:image/svg+xml;base64,bnVtYmVy",
+  numberAgain: "data:image/svg+xml;base64,bnVtYmVyLWFnYWlu",
+  boolean: "data:image/svg+xml;base64,Ym9vbGVhbg==",
+  notCore: "data:image/svg+xml;base64,bm90LWNvcmU=",
+  bell: "data:image/svg+xml;base64,YmVsbA==",
+};
+
+/**
+ * A catalog in the rendered form the simx publishes whose packs give core
+ * types icons: the number type in the first pack and again in the second,
+ * the boolean type, and a name that is no core type -- the first pack's own
+ * `Bell` type, which carries an icon of its own.
+ */
+const CORE_TYPE_ICON_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "bells",
+      types: [{ name: "Bell", fields: [{ name: "pitch", type: "number" }], iconUrl: CORE_TYPE_ICONS.bell }],
+      coreTypeIcons: [
+        { type: "number", iconUrl: CORE_TYPE_ICONS.number },
+        { type: "Bell", iconUrl: CORE_TYPE_ICONS.notCore },
+      ],
+    },
+    {
+      name: "chimes",
+      coreTypeIcons: [
+        { type: "number", iconUrl: CORE_TYPE_ICONS.numberAgain },
+        { type: "boolean", iconUrl: CORE_TYPE_ICONS.boolean },
+      ],
+    },
+  ],
+});
+
 /** Whether any of `environment`'s tile catalogs holds the tile `tileId`. */
 function hasTile(environment: WendooEnvironment, tileId: string): boolean {
   return environment.tileCatalogs().some((catalog) => catalog.has(tileId));
@@ -484,6 +519,31 @@ describe("buildAuthoringEnvironment", () => {
 
   it("binds no type icon while no allocation is held", () => {
     assert.equal(buildAuthoringEnvironment(TYPE_ICON_CATALOG, undefined).typeIcons.size, 0);
+  });
+
+  it("binds each core type icon to the core type, the first icon given a type standing across packs", () => {
+    const { typeIcons } = buildAuthoringEnvironment(CORE_TYPE_ICON_CATALOG, emptyIdManifest());
+
+    assert.equal(typeIcons.get(CoreTypeIds.Number), CORE_TYPE_ICONS.number);
+    assert.equal(typeIcons.get(CoreTypeIds.Boolean), CORE_TYPE_ICONS.boolean);
+    assert.equal(typeIcons.has(CoreTypeIds.String), false);
+  });
+
+  it("reports a core type icon given a name that is no core type by stable code, leaving the declared type's own icon bound", () => {
+    const built = buildAuthoringEnvironment(CORE_TYPE_ICON_CATALOG, emptyIdManifest());
+
+    assert.deepEqual(built.diagnostics, [{ code: PackBindingCode.CORE_TYPE_UNKNOWN, pack: "bells", name: "Bell" }]);
+    assert.equal(built.typeIcons.get(mkTypeId(NativeType.Struct, "Bell")), CORE_TYPE_ICONS.bell);
+  });
+
+  it("binds no core type icon and reports none while no allocation is held", () => {
+    const built = buildAuthoringEnvironment(CORE_TYPE_ICON_CATALOG, undefined);
+
+    assert.equal(built.typeIcons.size, 0);
+    assert.equal(
+      built.diagnostics.some((diagnostic) => diagnostic.code === PackBindingCode.CORE_TYPE_UNKNOWN),
+      false
+    );
   });
 
   it("gives a tile and a slot tile declaring no sentence words none", () => {

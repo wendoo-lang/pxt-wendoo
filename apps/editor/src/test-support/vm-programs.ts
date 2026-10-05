@@ -51,6 +51,7 @@ import { compileBrainSource, readBrainSource, serializeBrainSource } from "../se
 import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
 import { allocateIds } from "../services/id-allocation.js";
+import { CORE_TYPE_IDS } from "../services/pack-binding.js";
 import { type ProjectedSentence, projectedSentence } from "./sentence-projection.js";
 
 /** The repository root, as an absolute path ending in a separator. */
@@ -1100,16 +1101,17 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
 }
 
 /**
- * Every icon a type entry of the arcade selftest's pinned catalog carries once
- * the simx has rendered it under the Arcade default palette, keyed by type
- * name, each beside the icon the environment binding the rendered catalog
- * under the arcade selftest's allocation binds to the type.
+ * Every icon a type entry or a core type icon entry of the arcade selftest's
+ * pinned catalog carries once the simx has rendered it under the Arcade
+ * default palette, keyed by type name, each beside the icon the environment
+ * binding the rendered catalog under the arcade selftest's allocation binds
+ * to the type.
  */
 export function arcadeRenderedTypeIcons(): { name: string; carried: string; bound: string | undefined }[] {
   const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, { info: () => {}, error: () => {} });
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
-  return parseCatalog(rendered).packs.flatMap((pack) =>
-    pack.types.flatMap((type) =>
+  return parseCatalog(rendered).packs.flatMap((pack) => [
+    ...pack.types.flatMap((type) =>
       type.iconUrl === undefined
         ? []
         : [
@@ -1119,8 +1121,16 @@ export function arcadeRenderedTypeIcons(): { name: string; carried: string; boun
               bound: built.typeIcons.get(mkTypeId(NativeType.Struct, type.name)),
             },
           ]
-    )
-  );
+    ),
+    ...pack.coreTypeIcons.map((icon) => {
+      const typeId = CORE_TYPE_IDS.get(icon.typeName);
+      return {
+        name: icon.typeName,
+        carried: icon.iconUrl,
+        bound: typeId === undefined ? undefined : built.typeIcons.get(typeId),
+      };
+    }),
+  ]);
 }
 
 /** The bytes the lowercase hex `hex` spells. */

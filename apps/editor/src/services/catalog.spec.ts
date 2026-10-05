@@ -290,6 +290,7 @@ describe("parseCatalog", () => {
       ],
       operators: [{ name: "beacon.combine", async: false, operands: ["number", "number"], returns: "number" }],
       coreTileIcons: [],
+      coreTypeIcons: [],
     });
   });
 
@@ -385,6 +386,34 @@ describe("parseCatalog", () => {
       { tileId: "tile.op->and", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
     ]);
     assert.deepEqual(packs[1].coreTileIcons, []);
+  });
+
+  it("reads each pack's core type icons in declaration order, dropping an entry missing its type or its icon, or no object", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "beacon",
+          coreTypeIcons: [
+            { type: "number", iconUrl: "data:image/svg+xml;base64,bnVtYmVy" },
+            null,
+            "boolean",
+            { type: "string" },
+            { iconUrl: "data:image/svg+xml;base64,bm9uZQ==" },
+            { type: "number", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
+          ],
+        },
+        { name: "chime" },
+      ],
+    });
+
+    const { packs, problems } = parseCatalog(text);
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(packs[0].coreTypeIcons, [
+      { typeName: "number", iconUrl: "data:image/svg+xml;base64,bnVtYmVy" },
+      { typeName: "number", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
+    ]);
+    assert.deepEqual(packs[1].coreTypeIcons, []);
   });
 
   it("reads flat args as slots, wrapping an optional entry in an optional and a repeated one in a repeat", () => {

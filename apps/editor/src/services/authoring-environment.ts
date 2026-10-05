@@ -7,7 +7,7 @@ import { ASSET_FIELD, AssetLiterals, type AssetType } from "./asset-literals";
 import { BRAIN_FIELD, BrainLiterals, type BrainType } from "./brain-literals";
 import { type CATALOG_UNREADABLE, type CatalogPack, type CatalogProblem, parseCatalog } from "./catalog";
 import { allocateIds } from "./id-allocation";
-import { type PackBindingProblem, packModule } from "./pack-binding";
+import { CORE_TYPE_IDS, PackBindingCode, type PackBindingProblem, packModule } from "./pack-binding";
 
 export { PackBindingCode } from "./pack-binding";
 
@@ -63,7 +63,8 @@ export interface AuthoringEnvironment {
   readonly brainLiterals: BrainLiterals;
   /**
    * The icon of each catalog type the environment binds that carries one,
-   * keyed by type id, the first declaration of a type name standing. Empty
+   * the first declaration of a type name standing, and of each core type a
+   * pack gives one, the first icon given standing, keyed by type id. Empty
    * while no id allocation is held.
    */
   readonly typeIcons: ReadonlyMap<TypeId, string>;
@@ -80,6 +81,30 @@ function boundTypeIcons(environment: WendooEnvironment, packs: readonly CatalogP
     if (type.iconUrl === undefined || icons.has(typeId)) continue;
     if (environment.brainServices.runtime.types.get(typeId) === undefined) continue;
     icons.set(typeId, type.iconUrl);
+  }
+  return icons;
+}
+
+/**
+ * The icons `packs` give core types, keyed by type id, the first icon given a
+ * core type, in catalog order, standing. An icon given a name that is no core
+ * type is left out and passed to `report` under
+ * {@link PackBindingCode.CORE_TYPE_UNKNOWN}.
+ */
+function boundCoreTypeIcons(
+  packs: readonly CatalogPack[],
+  report: (problem: PackBindingProblem) => void
+): Map<TypeId, string> {
+  const icons = new Map<TypeId, string>();
+  for (const pack of packs) {
+    for (const { typeName, iconUrl } of pack.coreTypeIcons) {
+      const typeId = CORE_TYPE_IDS.get(typeName);
+      if (typeId === undefined) {
+        report({ code: PackBindingCode.CORE_TYPE_UNKNOWN, pack: pack.name, name: typeName });
+        continue;
+      }
+      if (!icons.has(typeId)) icons.set(typeId, iconUrl);
+    }
   }
   return icons;
 }
@@ -141,7 +166,9 @@ function boundBrainTypes(
  * The result's asset literals cover every bound type the catalog declares an
  * asset kind for, and its brain literals every bound type the catalog marks
  * as a brain type, each brain literal wearing its type's icon; its type
- * icons hold every bound type's icon. Apply the session's asset snapshot and
+ * icons hold every bound type's icon and every core type's icon a pack gives,
+ * an icon given a name that is no core type reported under
+ * {@link PackBindingCode.CORE_TYPE_UNKNOWN}. Apply the session's asset snapshot and
  * the held brains to them, and bind each brain source to both before reading
  * or compiling it.
  *
@@ -178,7 +205,14 @@ export function buildAuthoringEnvironment(
   });
   const bound = ids !== undefined && catalog !== undefined;
   const assetTypes = bound ? boundAssetTypes(environment, catalog.packs) : [];
-  const typeIcons = bound ? boundTypeIcons(environment, catalog.packs) : new Map<TypeId, string>();
+  const typeIcons = bound
+    ? new Map([
+        ...boundTypeIcons(environment, catalog.packs),
+        ...boundCoreTypeIcons(catalog.packs, (problem) => {
+          diagnostics.push(problem);
+        }),
+      ])
+    : new Map<TypeId, string>();
   const brainTypes = bound ? boundBrainTypes(environment, catalog.packs, typeIcons) : [];
   return {
     environment,

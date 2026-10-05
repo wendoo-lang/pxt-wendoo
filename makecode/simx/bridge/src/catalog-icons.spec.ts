@@ -115,6 +115,23 @@ describe("catalog icon enrichment", () => {
     assert.ok(log.errors[0].includes("sensor.arcade.dpad"));
   });
 
+  it("names a core tile icon entry it cannot read by its tile id, and a core type icon entry by its type", () => {
+    const log = new RecordingLog();
+    const raw = JSON.stringify({
+      packs: [
+        {
+          name: "arcade",
+          coreTileIcons: [{ tileId: "tile.op->and", icon: "8805" }],
+          coreTypeIcons: [{ type: "number", icon: "8805" }],
+        },
+      ],
+    });
+    enrichCatalogIcons(raw, PALETTE, log);
+    assert.equal(log.errors.length, 2);
+    assert.ok(log.errors[0].includes("arcade/tile.op->and"));
+    assert.ok(log.errors[1].includes("arcade/number"));
+  });
+
   it("writes every icon without an iconUrl, logging nothing, while no palette is known", () => {
     const log = new RecordingLog();
     const raw = catalogWithIcons({ type: ICON_A, tile: ICON_A, slot: ICON_B, node: "zz" });

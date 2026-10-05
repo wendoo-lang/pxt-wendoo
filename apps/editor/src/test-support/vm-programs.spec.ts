@@ -289,10 +289,17 @@ describe("the MakeCode VM extension's compiled programs", () => {
     }
   });
 
-  it("binds each type icon the pinned arcade catalog carries once the simx renders it to its type", () => {
+  it("binds each type icon and core type icon the pinned arcade catalog carries once the simx renders it to its type", () => {
     const icons = arcadeRenderedTypeIcons();
 
-    assert.deepEqual(icons.map((icon) => icon.name).sort(), ["Brain", "Sprite", "Vector2"]);
+    assert.deepEqual(icons.map((icon) => icon.name).sort(), [
+      "Brain",
+      "Sprite",
+      "Vector2",
+      "boolean",
+      "number",
+      "string",
+    ]);
     for (const icon of icons) {
       assert.match(icon.carried, /^data:image\/svg\+xml/, icon.name);
       assert.equal(icon.bound, icon.carried, icon.name);

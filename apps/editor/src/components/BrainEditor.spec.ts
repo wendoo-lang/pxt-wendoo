@@ -66,7 +66,8 @@ describe("BrainEditorSession", () => {
       config: buildBrainEditorConfig(
         store.getSnapshot().environment,
         store.getSnapshot().assetLiterals,
-        store.getSnapshot().brainLiterals
+        store.getSnapshot().brainLiterals,
+        store.getSnapshot().typeIcons
       ),
       editing,
       isOpen: true,

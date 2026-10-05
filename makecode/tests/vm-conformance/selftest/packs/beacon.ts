@@ -11,7 +11,8 @@
  * Every registration is made from this file's top-level code, which pxt runs
  * at program start, before the selftest constructs anything. The pack claims
  * the tile name `sensor.beacon.reading`, which the other pack claims too, and
- * gives the core AND tile an icon, which the other pack does too.
+ * gives the core AND tile and the core number type icons, which the other
+ * pack does too.
  */
 namespace beacon {
   /** Position of the `Beacon` type's `x` field in its declaration, which indexes the binding's field ids. */
@@ -128,4 +129,7 @@ namespace beacon {
 
   /** A sample icon for the core AND tile, which the catalog assertions pin. */
   pack.defineCoreTileIcon("tile.op->and", "beacon-and");
+
+  /** A sample icon for the core number type, which the catalog assertions pin. */
+  pack.defineCoreTypeIcon("number", "beacon-number");
 }

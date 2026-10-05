@@ -54,7 +54,10 @@
       "operators": [
         {
           "name": "beacon.combine",
-          "operands": ["number", "number"],
+          "operands": [
+            "number",
+            "number"
+          ],
           "returns": "number"
         }
       ],
@@ -62,6 +65,12 @@
         {
           "tileId": "tile.op->and",
           "icon": "img<beacon-and>"
+        }
+      ],
+      "coreTypeIcons": [
+        {
+          "type": "number",
+          "icon": "img<beacon-number>"
         }
       ]
     },
@@ -124,6 +133,15 @@
         },
         {
           "tileId": "tile.op->or"
+        }
+      ],
+      "coreTypeIcons": [
+        {
+          "type": "number",
+          "icon": "img<chime-number>"
+        },
+        {
+          "type": "boolean"
         }
       ]
     },
@@ -514,6 +532,11 @@
       "pack": "selftest"
     },
     {
+      "code": "registration-after-snapshot",
+      "name": "string",
+      "pack": "selftest"
+    },
+    {
       "code": "catalog-icon-unencodable",
       "name": "Beacon",
       "pack": "beacon",
@@ -533,6 +556,11 @@
     {
       "code": "catalog-icon-unencodable",
       "name": "tile.op->or",
+      "pack": "chime"
+    },
+    {
+      "code": "catalog-icon-unencodable",
+      "name": "boolean",
       "pack": "chime"
     }
   ]

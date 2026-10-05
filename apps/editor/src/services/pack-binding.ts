@@ -71,6 +71,8 @@ export const PackBindingCode = {
   OPERATOR_SHAPE_UNSUPPORTED: "CATALOG_OPERATOR_SHAPE_UNSUPPORTED",
   /** The entry could not be bound: the language model refused it, or the allocation holds no id for it. */
   TILE_REJECTED: "CATALOG_TILE_REJECTED",
+  /** A core type icon names a type that is no core type; the entry's name is the type name. */
+  CORE_TYPE_UNKNOWN: "CATALOG_CORE_TYPE_UNKNOWN",
 } as const;
 
 /** Union of all {@link PackBindingCode} values. */
@@ -101,7 +103,7 @@ const INFIX_OPERATOR_PARSE: OpParse = { fixity: "infix", precedence: 120, assoc:
 const PREFIX_OPERATOR_PARSE: OpParse = { fixity: "prefix", precedence: 150 };
 
 /** Every core type a catalog may refer to, by its catalog name. */
-const CORE_TYPE_IDS: ReadonlyMap<string, TypeId> = new Map([
+export const CORE_TYPE_IDS: ReadonlyMap<string, TypeId> = new Map([
   [CoreTypeNames.Unknown, CoreTypeIds.Unknown],
   [CoreTypeNames.Void, CoreTypeIds.Void],
   [CoreTypeNames.Nil, CoreTypeIds.Nil],

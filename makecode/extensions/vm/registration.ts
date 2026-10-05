@@ -1324,11 +1324,32 @@ namespace wendoo {
     }
   }
 
+  /** One icon a pack gives a core type: a type of the Wendoo language's own, such as `number`, which no pack registers. */
+  class CoreTypeIcon {
+    /** Name of the core type, as the catalog names it. */
+    typeName: string;
+    /** Pack that gave the icon. */
+    pack: string;
+    /** Icon in the host target's own icon form. */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    icon: any;
+
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    constructor(typeName: string, pack: string, icon: any) {
+      this.typeName = typeName;
+      this.pack = pack;
+      this.icon = icon;
+    }
+  }
+
   /** Registrations made since program start, in the order they were made. */
   const pendingRegistrations: PendingRegistration[] = [];
 
   /** Core tile icons given since program start, in the order they were given. */
   const coreTileIcons: CoreTileIcon[] = [];
+
+  /** Core type icons given since program start, in the order they were given. */
+  const coreTypeIcons: CoreTypeIcon[] = [];
 
   /** Registration problems recorded since program start, in the order they were found. */
   const recordedDiagnostics: RegistrationDiagnostic[] = [];
@@ -1466,6 +1487,27 @@ namespace wendoo {
       }
       coreTileIcons.push(new CoreTileIcon(tileId, this.name, icon));
     }
+
+    /**
+     * Give the core type `typeName` the icon `icon`: a type of the Wendoo
+     * language's own, such as `number`, which no pack registers. Catalog data
+     * only: the catalog carries the icon under this pack, and the drain
+     * ignores it. Every icon given is carried, and the editor shows the first
+     * one given a type; it ignores an icon given a name that is no core type.
+     * An icon given after the drain is ignored and recorded under
+     * {@link REGISTRATION_AFTER_SNAPSHOT}, naming `typeName`.
+     *
+     * @param typeName - Name of the core type, as the catalog names it, such as `number`.
+     * @param icon - Icon in the host target's own icon form.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    defineCoreTypeIcon(typeName: string, icon: any): void {
+      if (registrationClosed) {
+        diagnose(REGISTRATION_AFTER_SNAPSHOT, typeName, this.name, "");
+        return;
+      }
+      coreTypeIcons.push(new CoreTypeIcon(typeName, this.name, icon));
+    }
   }
 
   /**
@@ -1540,10 +1582,10 @@ namespace wendoo {
 
   /**
    * Write one catalog entry per registration through `catalog`, in
-   * registration order, then one per core tile icon given, in the order
-   * they were given. Two registrations claiming one name resolve
-   * first-wins here as in the drain: only the earlier one's entry is
-   * written.
+   * registration order, then one per core tile icon given, then one per
+   * core type icon given, each in the order they were given. Two
+   * registrations claiming one name resolve first-wins here as in the
+   * drain: only the earlier one's entry is written.
    *
    * @param catalog - Writer collecting the entries by pack.
    */
@@ -1560,6 +1602,10 @@ namespace wendoo {
     for (let i = 0; i < coreTileIcons.length; i++) {
       const given = coreTileIcons[i];
       catalog.coreTileIcon(given.pack, given.tileId, given.icon);
+    }
+    for (let i = 0; i < coreTypeIcons.length; i++) {
+      const given = coreTypeIcons[i];
+      catalog.coreTypeIcon(given.pack, given.typeName, given.icon);
     }
   }
 }

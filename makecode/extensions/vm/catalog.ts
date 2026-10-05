@@ -8,8 +8,8 @@
  *   any registration problem is on record.
  * - `packs` holds one object per pack, in registration order: the pack's
  *   `name` plus its `types`, `tiles` and `operators` entry arrays, each in
- *   registration order, then its `coreTileIcons` entry array, in the order
- *   the icons were given.
+ *   registration order, then its `coreTileIcons` and `coreTypeIcons` entry
+ *   arrays, each in the order the icons were given.
  * - A type entry carries `name`, `native` (backed by host objects through
  *   registered hooks), `asset` (on an asset type, the kind of the project
  *   assets its values name), `brain` (on a brain type, whose values each name
@@ -60,6 +60,8 @@
  * - An operator entry carries `name`, `async`, `operands` and `returns`.
  * - A core tile icon entry carries `tileId` (the id of the core tile the
  *   pack gives the icon, as the Wendoo editor holds it) and `icon`.
+ * - A core type icon entry carries `type` (the name of the core type the
+ *   pack gives the icon, such as `number`) and `icon`.
  * - The metadata fields are `label`, `group`, `docs` (markdown text,
  *   verbatim) and `icon` (the encoder's text form).
  * - A diagnostic entry carries `code`, `name`, `pack`, `otherPack` and
@@ -67,7 +69,8 @@
  *   icon, the slot's name, or its `tileId` when it is unnamed; for an
  *   output's icon, the output's name; for an accessor's icon, its field's
  *   name). A core tile icon's diagnostic names
- *   the core tile's id as its `name`.
+ *   the core tile's id as its `name`, and a core type icon's the core
+ *   type's name.
  *
  * Omission conventions, applied uniformly: a boolean field is present only
  * when true, a string field only when non-empty, an array field only when
@@ -414,8 +417,9 @@ namespace wendoo {
   /**
    * Collects catalog entries by pack and renders the payload. Registration
    * entries write themselves through {@link CatalogWriter.struct},
-   * {@link CatalogWriter.tile} and {@link CatalogWriter.operator}, and core
-   * tile icons through {@link CatalogWriter.coreTileIcon};
+   * {@link CatalogWriter.tile} and {@link CatalogWriter.operator}, core
+   * tile icons through {@link CatalogWriter.coreTileIcon}, and core type
+   * icons through {@link CatalogWriter.coreTypeIcon};
    * {@link CatalogWriter.render} then assembles the document.
    */
   export class CatalogWriter {
@@ -425,6 +429,7 @@ namespace wendoo {
     private tileEntries: string[][] = [];
     private operatorEntries: string[][] = [];
     private coreTileIconEntries: string[][] = [];
+    private coreTypeIconEntries: string[][] = [];
     private problems: RegistrationDiagnostic[] = [];
 
     /**
@@ -446,6 +451,7 @@ namespace wendoo {
       this.tileEntries.push([]);
       this.operatorEntries.push([]);
       this.coreTileIconEntries.push([]);
+      this.coreTypeIconEntries.push([]);
       return this.packNames.length - 1;
     }
 
@@ -649,6 +655,22 @@ namespace wendoo {
     }
 
     /**
+     * Write the catalog entry of the icon `pack` gives the core type
+     * `typeName`. An icon the encoder cannot render is left out of the entry
+     * and recorded under {@link CATALOG_ICON_UNENCODABLE} against `typeName`
+     * and `pack`.
+     *
+     * @param pack - Pack that gave the icon.
+     * @param typeName - Name of the core type, as the catalog names it.
+     * @param icon - Opaque icon value, as the pack gave it.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    coreTypeIcon(pack: string, typeName: string, icon: any): void {
+      const entry = `{"type":${jsonQuote(typeName)}${this.iconText(icon, typeName, pack, "")}}`;
+      this.coreTypeIconEntries[this.packIndex(pack)].push(entry);
+    }
+
+    /**
      * The rendered payload: every pack written so far, and the diagnostics
      * on record -- the registration log first, then the problems this
      * writer found.
@@ -668,6 +690,9 @@ namespace wendoo {
         }
         if (this.coreTileIconEntries[i].length > 0) {
           entry += `,"coreTileIcons":${jsonArray(this.coreTileIconEntries[i])}`;
+        }
+        if (this.coreTypeIconEntries[i].length > 0) {
+          entry += `,"coreTypeIcons":${jsonArray(this.coreTypeIconEntries[i])}`;
         }
         packs.push(`${entry}}`);
       }

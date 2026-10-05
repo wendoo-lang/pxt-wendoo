@@ -94,6 +94,9 @@ namespace registrationSelftest {
   /** Core tile given an icon after the drain has closed registration. */
   const LATE_CORE_TILE_ID = "tile.op->not";
 
+  /** Core type given an icon after the drain has closed registration. */
+  const LATE_CORE_TYPE_NAME = "string";
+
   /** Field id the manifest allocates no field of the beacon type. */
   const UNBOUND_FIELD_ID = 99;
 
@@ -258,6 +261,15 @@ namespace registrationSelftest {
     check(
       "late-core-tile-icon-diagnosed",
       diagnosticsFor(wendoo.REGISTRATION_AFTER_SNAPSHOT, LATE_CORE_TILE_ID).length === 1
+    );
+  }
+
+  /** A core type icon given after the drain has closed registration was diagnosed. */
+  function checkLateCoreTypeIconIgnored(): void {
+    wendoo.pack(LATE_PACK_NAME).defineCoreTypeIcon(LATE_CORE_TYPE_NAME, "late");
+    check(
+      "late-core-type-icon-diagnosed",
+      diagnosticsFor(wendoo.REGISTRATION_AFTER_SNAPSHOT, LATE_CORE_TYPE_NAME).length === 1
     );
   }
 
@@ -958,6 +970,7 @@ namespace registrationSelftest {
     checkOperatorRegistration(ids, functions);
     checkLateRegistrationIgnored(ids, actions);
     checkLateCoreTileIconIgnored();
+    checkLateCoreTypeIconIgnored();
     checkWellFormedGrammars(ids, actions);
     checkIllFormedGrammars(ids);
     checkActionOutput();

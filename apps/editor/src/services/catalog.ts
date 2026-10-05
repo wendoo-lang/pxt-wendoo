@@ -262,6 +262,14 @@ export interface CatalogCoreTileIcon {
   readonly iconUrl: string;
 }
 
+/** One icon a pack gives a core type: a type of the Wendoo language's own, which no pack declares. */
+export interface CatalogCoreTypeIcon {
+  /** Name of the core type, as the catalog names it, for example `number`. */
+  readonly typeName: string;
+  /** The icon, as {@link CatalogMeta.iconUrl} carries one. */
+  readonly iconUrl: string;
+}
+
 /** One vocabulary pack of the catalog. */
 export interface CatalogPack {
   /** The pack's name. */
@@ -274,6 +282,8 @@ export interface CatalogPack {
   readonly operators: readonly CatalogOperator[];
   /** The icons the pack gives core tiles, in declaration order. */
   readonly coreTileIcons: readonly CatalogCoreTileIcon[];
+  /** The icons the pack gives core types, in declaration order. */
+  readonly coreTypeIcons: readonly CatalogCoreTypeIcon[];
 }
 
 /** A catalog document read in full. */
@@ -569,6 +579,14 @@ function coreTileIconOf(value: unknown): CatalogCoreTileIcon[] {
   return tileId === undefined || iconUrl === undefined ? [] : [{ tileId, iconUrl }];
 }
 
+/** The core type icon `value` declares, or none when it lacks its type name or its icon. */
+function coreTypeIconOf(value: unknown): CatalogCoreTypeIcon[] {
+  if (!isObject(value)) return [];
+  const typeName = stringField(value, "type");
+  const iconUrl = stringField(value, "iconUrl");
+  return typeName === undefined || iconUrl === undefined ? [] : [{ typeName, iconUrl }];
+}
+
 /** The operator `entry` declares. */
 function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
   const operands = arrayField(entry, "operands").flatMap((operand) => (typeof operand === "string" ? [operand] : []));
@@ -580,8 +598,9 @@ function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
  * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
  * extension's catalog serializer writes as the simx renders it for the
  * editor -- each icon carried as an `iconUrl` data URI -- into its packs,
- * each with its types, tiles, operators and core tile icons. A core tile icon
- * entry carrying no tile id or no icon is dropped. A token the grammar does not have -- a tile kind, a
+ * each with its types, tiles, operators, core tile icons and core type icons.
+ * A core tile icon entry carrying no tile id or no icon, and a core type icon
+ * entry carrying no type name or no icon, is dropped. A token the grammar does not have -- a tile kind, a
  * grammar construct, a range's overflow behavior, a sentence frame -- is
  * never dropped silently: the entry carrying it is recorded in the result's
  * problems by stable code and keeps no grammar, but for a sentence frame,
@@ -610,6 +629,7 @@ export function parseCatalog(text: string): ParsedCatalog {
           .map((tile) => tileOf(pack.name, tile, problems)),
         operators: arrayField(pack, "operators").filter(isNamed).map(operatorOf),
         coreTileIcons: arrayField(pack, "coreTileIcons").flatMap(coreTileIconOf),
+        coreTypeIcons: arrayField(pack, "coreTypeIcons").flatMap(coreTypeIconOf),
       });
     }
   }

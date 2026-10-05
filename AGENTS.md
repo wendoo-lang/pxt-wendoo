@@ -345,6 +345,10 @@ the current slice alone.
       editor's own core vocabulary, addressed by its stable tile id -- an
       icon the catalog carries under the giving pack, every icon given
       carried in order, again the mechanism only, the ids and icons
+      supplied by a target's pack; and core type icons:
+      `defineCoreTypeIcon` gives a core type -- one of the language's own
+      types, addressed by its catalog name, such as `number` -- an icon the
+      catalog carries the same way, the mechanism only, the names and icons
       supplied by a target's pack), the
       language-level tiles, the compiled-brain
       registry, the project id manifest's reader (the calls the generated
@@ -400,10 +404,11 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite` and `Brain` types, and the icons it gives the core tiles (the page tiles,
+      `Sprite` and `Brain` types, the icons it gives the core tiles (the page tiles,
       the timer, AND, OR, NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and
-      the variable and tile factories), the controller read (one module owning every
+      the variable and tile factories), and the icons it gives the core
+      number, text and switch types (`number`, `string` and `boolean`), the controller read (one module owning every
       raw read and its dead-banded transform), the proximity read (one
       module owning the
       nearest-sprite scan and its center-distance metric, made
@@ -519,7 +524,10 @@ the current slice alone.
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold
     ignored, and binds each catalog type's icon to the bound type, which
-    each literal of a brain type wears; the one
+    each literal of a brain type wears, and each icon packs give a core
+    type to that core type, the first icon given standing and an icon
+    given a name that is no core type reported; every type icon bound is
+    the brain editor's data-type icon for that type; the one
     target-aware residue is the per-target theme
     record (the target's display name and theme token overrides), keyed
     by the target id carried in the session hello. Tripwire: this holds because

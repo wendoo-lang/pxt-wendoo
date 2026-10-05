@@ -1,6 +1,7 @@
 import type { IBrainDef, WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
+import type { TypeId } from "@wendoo/core/runtime";
 import type {
   MakeCodeAsset,
   MakeCodeBrain,
@@ -153,6 +154,8 @@ export interface BrainsViewState {
    * references, unresolved while the store does not hold its brain.
    */
   readonly brainLiterals: ReadonlyMap<string, BrainLiteral>;
+  /** The environment's type icons, keyed by type id, as {@link AuthoringEnvironment.typeIcons} holds them. */
+  readonly typeIcons: ReadonlyMap<TypeId, string>;
   /**
    * The unresolved brain literals each brain references, keyed by document
    * id, for each brain referencing any, each carrying its stable code. Such
@@ -887,6 +890,7 @@ export class BrainsStore {
       assetLiterals: this._environment.assetLiterals.view,
       unresolvedAssets: this.unresolvedAssets(),
       brainLiterals: this._environment.brainLiterals.view,
+      typeIcons: this._environment.typeIcons,
       unresolvedBrains: this.unresolvedBrains(),
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,

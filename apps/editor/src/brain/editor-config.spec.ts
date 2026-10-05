@@ -24,7 +24,7 @@ describe("buildBrainEditorConfig", () => {
   it("reads the environment's brain services, localizer and tile catalogs", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
 
     assert.equal(config.brainServices, environment.brainServices);
     assert.equal(config.localizer?.locale(), environment.appServices.localizer.locale());
@@ -39,7 +39,7 @@ describe("buildBrainEditorConfig", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
     const types = environment.brainServices.runtime.types;
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
 
     assert.equal(config.dataTypeNames.get(CoreTypeIds.Number), types.get(CoreTypeIds.Number)?.name);
     assert.equal(config.dataTypeNames.get(CoreTypeIds.String), types.get(CoreTypeIds.String)?.name);
@@ -52,7 +52,7 @@ describe("buildBrainEditorConfig", () => {
   it("saves and loads brain files relative to the namespace brain sources are stored in", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
 
     assert.equal(config.projectNamespace, BRAIN_SOURCE_NAMESPACE);
   });
@@ -61,7 +61,7 @@ describe("buildBrainEditorConfig", () => {
     const first = buildAuthoringEnvironment(undefined).environment;
     const rebuilt = buildAuthoringEnvironment('{"packs":[]}').environment;
 
-    const config = buildBrainEditorConfig(rebuilt, new Map(), new Map());
+    const config = buildBrainEditorConfig(rebuilt, new Map(), new Map(), new Map());
 
     assert.notEqual(first, rebuilt);
     assert.equal(config.brainServices, rebuilt.brainServices);
@@ -72,7 +72,12 @@ describe("buildBrainEditorConfig", () => {
     const built = buildAuthoringEnvironment(ASSET_CATALOG, assetCatalogIds());
     built.assetLiterals.applySnapshot([picture("img1", "hero", "data:,hero")]);
 
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     const literal = catalogTile(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
     assert.equal(config.resolveTileVisual?.(literal)?.iconUrl, "data:,hero");
@@ -86,15 +91,34 @@ describe("buildBrainEditorConfig", () => {
       .children()
       .get(0) as BrainRuleDef;
     const sentence = memoizedSentence(rule);
-    const before = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const before = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
     assert.ok(sentence(before).includes("hero"));
 
     built.assetLiterals.applySnapshot([picture("img1", "villain")]);
-    const after = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const after = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     const words = sentence(after);
     assert.ok(words.includes("villain"), words.join(" "));
     assert.equal(words.includes("hero"), false);
+  });
+
+  it("maps each type to its data-type icon as the environment's type icons hold it", () => {
+    const { environment } = buildAuthoringEnvironment(undefined);
+    const typeIcons = new Map([[CoreTypeIds.Number, "data:image/svg+xml;base64,bnVtYmVy"]]);
+
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), typeIcons);
+
+    assert.deepEqual([...config.dataTypeIcons], [...typeIcons]);
   });
 
   it("shows a placed brain literal's value as its brain's name, with no face", () => {
@@ -102,7 +126,12 @@ describe("buildBrainEditorConfig", () => {
     built.brainLiterals.applyBrains(new Map([["chaserBrain00001", { name: "Chaser" }]]));
     const literal = catalogTile(built.environment, kinTileId("chaserBrain00001")) as BrainTileLiteralDef;
 
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     const literalType = config.customLiteralTypes?.find((type) => type.typeId === KIN_TYPE);
     assert.ok(literalType);

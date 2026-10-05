@@ -14,7 +14,9 @@
  * claims, and one claims a name the project's mapping records no id for. The
  * pack also declares an asset type, the tunes a chime can play, and gives
  * core tiles icons: the AND tile, which the other pack gives one too, and the
- * OR tile, an icon the selftest's encoder refuses to render.
+ * OR tile, an icon the selftest's encoder refuses to render. It gives core
+ * types icons the same way: the number type, which the other pack gives one
+ * too, and the boolean type, an icon the encoder refuses to render.
  */
 namespace chime {
   /** `actuator.chime.ring`: rings the chime, counting the rings. */
@@ -113,4 +115,7 @@ namespace chime {
 
   pack.defineCoreTileIcon("tile.op->and", "chime-and");
   pack.defineCoreTileIcon("tile.op->or", "unencodable");
+
+  pack.defineCoreTypeIcon("number", "chime-number");
+  pack.defineCoreTypeIcon("boolean", "unencodable");
 }

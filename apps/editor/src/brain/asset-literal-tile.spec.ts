@@ -61,7 +61,12 @@ function bothDefs() {
 describe("a placed asset literal tile", () => {
   it("draws its asset's preview in its value box, as minted and as the brain reader places it", () => {
     const { built, defs } = bothDefs();
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     for (const def of defs) {
       const frame = valueFrame(config, def);
@@ -75,7 +80,12 @@ describe("a placed asset literal tile", () => {
   it("draws its label as text, with no preview, while its asset is unresolved", () => {
     const { built, defs } = bothDefs();
     built.assetLiterals.applySnapshot([]);
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     for (const def of defs) {
       const frame = valueFrame(config, def);
@@ -93,7 +103,12 @@ describe("a placed brain literal tile", () => {
     const minted = catalogTile(built.environment, literalId);
     const read = readBrainSource(built.environment, kinBrainSource(built.environment, literalId, "seekerBrain00001"));
     const placed = ((read.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef).when().tiles().get(1);
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     for (const def of [minted, placed]) {
       const frame = valueFrame(config, def);
@@ -110,7 +125,12 @@ describe("a placed brain literal tile", () => {
     const minted = catalogTile(built.environment, literalId);
     const read = readBrainSource(built.environment, kinBrainSource(built.environment, literalId, "seekerBrain00001"));
     const placed = ((read.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef).when().tiles().get(1);
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons
+    );
 
     for (const def of [minted, placed]) {
       assert.equal(def.metadata?.iconUrl, KIN_ICON);
