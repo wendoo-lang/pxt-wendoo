@@ -333,7 +333,12 @@ the current slice alone.
       pack; and brain types: `defineBrainType` declares a struct type whose
       values name one of the project's compiled brains by its document id,
       in one read-only `id` field, the catalog marking the type `brain` --
-      again the mechanism only, declared by a target's base pack), the
+      again the mechanism only, declared by a target's base pack; and core
+      tile icons: `defineCoreTileIcon` gives a core tile -- one of the
+      editor's own core vocabulary, addressed by its stable tile id -- an
+      icon the catalog carries under the giving pack, every icon given
+      carried in order, again the mechanism only, the ids and icons
+      supplied by a target's pack), the
       language-level tiles, the compiled-brain
       registry, the project id manifest's reader (the calls the generated
       `ids.g.ts` makes), the program loader, the target-blind program host
@@ -375,7 +380,11 @@ the current slice alone.
       project's brains by document id), the arcade icon encoder (each tile icon, an img literal,
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
-      the pack's tile icons, the controller read (one module owning every
+      the pack's tile icons, the icons of its `Vector2`, `Sprite` and
+      `Brain` types, and the icons it gives the core tiles (the page tiles,
+      the timer, AND, OR, NOT, the six comparisons, the arithmetic
+      operators, gets, the parentheses, random number, true, false, nil, and
+      the variable and tile factories), the controller read (one module owning every
       raw read and its dead-banded transform), the proximity read (one
       module owning the
       nearest-sprite scan and its center-distance metric, made
@@ -485,7 +494,11 @@ the current slice alone.
     over the bridge, so the catalog is session data, never build
     configuration -- the editor binds the catalog's packs into its
     authoring environment through the language model's own builders, under
-    the ids it allocates and keeps in the project's id manifest; the one
+    the ids it allocates and keeps in the project's id manifest, and puts
+    the icons packs give core tiles on its own core tiles, the first icon
+    given a tile standing and an icon given a tile it does not hold
+    ignored, and binds each catalog type's icon to the bound type, which
+    each literal of a brain type wears; the one
     target-aware residue is the per-target theme
     record (the target's display name and theme token overrides), keyed
     by the target id carried in the session hello. Tripwire: this holds because

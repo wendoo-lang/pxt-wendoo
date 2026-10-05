@@ -289,7 +289,36 @@ describe("parseCatalog", () => {
         },
       ],
       operators: [{ name: "beacon.combine", async: false, operands: ["number", "number"], returns: "number" }],
+      coreTileIcons: [],
     });
+  });
+
+  it("reads each pack's core tile icons in declaration order, dropping an entry missing its tile id or its icon, or no object", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "beacon",
+          coreTileIcons: [
+            { tileId: "tile.op->and", iconUrl: "data:image/svg+xml;base64,YW5k" },
+            null,
+            "tile.op->not",
+            { tileId: "tile.op->or" },
+            { iconUrl: "data:image/svg+xml;base64,bm9uZQ==" },
+            { tileId: "tile.op->and", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
+          ],
+        },
+        { name: "chime" },
+      ],
+    });
+
+    const { packs, problems } = parseCatalog(text);
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(packs[0].coreTileIcons, [
+      { tileId: "tile.op->and", iconUrl: "data:image/svg+xml;base64,YW5k" },
+      { tileId: "tile.op->and", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
+    ]);
+    assert.deepEqual(packs[1].coreTileIcons, []);
   });
 
   it("reads flat args as slots, wrapping an optional entry in an optional and a repeated one in a repeat", () => {

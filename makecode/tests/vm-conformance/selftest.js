@@ -32,8 +32,8 @@
  * no other, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
- * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its tiles and
- * modifier slots carrying 16 by 16 icons.
+ * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its types,
+ * tiles, modifier slots and core tile icon entries carrying 16 by 16 icons.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -64,6 +64,7 @@ const EXPECTED_CHECKS = [
   "operator-computes",
   "late-registration-diagnosed",
   "late-registration-not-bound",
+  "late-core-tile-icon-diagnosed",
   "action-output-readable-by-name",
   "action-output-core-typed-readable-by-name",
   "rule-context-get-variable-reads-up-the-rule-chain",
@@ -142,6 +143,7 @@ const EXPECTED_DIAGNOSTICS = [
   "registration-unmapped-name sensor.chime.unmapped",
   "registration-field-writes-unbound Beacon",
   "registration-after-snapshot actuator.chime.late",
+  "registration-after-snapshot tile.op->not",
 ];
 
 /** Every check the arcade selftest is expected to report, and to report as holding. */
@@ -375,6 +377,45 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.position.left",
   "modifier.position.right",
 ];
+
+/** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id. */
+const ARCADE_ICONED_CORE_TILES = [
+  "tile.sensor->on-page-entered",
+  "tile.actuator->switch-page",
+  "tile.actuator->restart-page",
+  "tile.sensor->current-page",
+  "tile.sensor->previous-page",
+  "tile.sensor->sensor.timeout",
+  "tile.op->and",
+  "tile.op->or",
+  "tile.op->not",
+  "tile.op->eq",
+  "tile.op->ne",
+  "tile.op->lt",
+  "tile.op->le",
+  "tile.op->gt",
+  "tile.op->ge",
+  "tile.op->add",
+  "tile.op->sub",
+  "tile.op->mul",
+  "tile.op->div",
+  "tile.op->neg",
+  "tile.op->assign",
+  "tile.cf->open-paren",
+  "tile.cf->close-paren",
+  "tile.var.factory->boolean",
+  "tile.var.factory->number",
+  "tile.var.factory->string",
+  "tile.lit.factory->number",
+  "tile.lit.factory->string",
+  "tile.sensor->random",
+  "tile.literal->boolean:<boolean>->true",
+  "tile.literal->boolean:<boolean>->false",
+  "tile.literal->nil:<nil>->nil",
+];
+
+/** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
+const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain"];
 
 /** Width and height, in pixels, of every arcade base pack icon. */
 const ARCADE_ICON_SIZE = 16;
@@ -612,14 +653,21 @@ function grammarSlots(nodes) {
 }
 
 /**
- * The ways the arcade catalog payload `payload` misses its icons: each tile
- * in `ARCADE_ICONED_TILES`, and each slot of any tile a modifier in
- * `ARCADE_ICONED_MODIFIERS` fills, carries an icon of 16 by 16 pixels.
+ * The ways the arcade catalog payload `payload` misses its icons: each type
+ * in `ARCADE_ICONED_TYPES`, each tile in `ARCADE_ICONED_TILES`, each slot of
+ * any tile a modifier in `ARCADE_ICONED_MODIFIERS` fills, and exactly one core
+ * tile icon entry for each core tile in `ARCADE_ICONED_CORE_TILES`, carries an
+ * icon of 16 by 16 pixels.
  */
 function arcadeIconFailures(payload) {
   const pack = JSON.parse(payload).packs.find((entry) => entry.name === "arcade");
   const tiles = pack ? pack.tiles : [];
+  const types = pack ? pack.types : [];
   const failures = [];
+  for (const name of ARCADE_ICONED_TYPES) {
+    const type = types.find((entry) => entry.name === name);
+    failures.push(...(type ? iconProblems(`type ${name}`, type.icon) : [`no type ${name}`]));
+  }
   for (const name of ARCADE_ICONED_TILES) {
     const tile = tiles.find((entry) => entry.name === name);
     failures.push(...(tile ? iconProblems(`tile ${name}`, tile.icon) : [`no tile ${name}`]));
@@ -631,6 +679,12 @@ function arcadeIconFailures(payload) {
     const filling = slots.filter((entry) => entry.slot.tileId === tileId);
     if (filling.length === 0) failures.push(`no slot ${tileId}`);
     for (const entry of filling) failures.push(...iconProblems(`slot ${tileId} of ${entry.tile}`, entry.slot.icon));
+  }
+  const coreIcons = pack ? pack.coreTileIcons || [] : [];
+  for (const tileId of ARCADE_ICONED_CORE_TILES) {
+    const entries = coreIcons.filter((entry) => entry.tileId === tileId);
+    if (entries.length !== 1) failures.push(`${entries.length} core tile icons for ${tileId}`);
+    for (const entry of entries) failures.push(...iconProblems(`core tile ${tileId}`, entry.icon));
   }
   return failures;
 }

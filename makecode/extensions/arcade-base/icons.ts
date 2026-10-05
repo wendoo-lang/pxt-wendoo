@@ -1,7 +1,8 @@
 /**
- * The arcade base pack's tile icons: one 16 by 16 image per tile and per
- * modifier tile its tiles' argument grammars declare, each an img literal
- * the catalog carries through the arcade icon encoder.
+ * The arcade base pack's icons: one 16 by 16 image per tile and per
+ * modifier tile its tiles' argument grammars declare, per core tile it gives
+ * an icon, and per type it gives one, each an img literal the catalog
+ * carries through the arcade icon encoder.
  */
 namespace wendoo {
   /** Icon of the dpad sensor: a dpad cross. */
@@ -401,5 +402,740 @@ namespace wendoo {
     . . . . . . b . . . . . . . . .
     . . . . . . . . . . . . . . . .
     . . . . . . b . . . . . . . . .
+  `;
+
+  /** Icon of the core this-page-starts sensor: a play mark on a page. */
+  //% hidden
+  export const CORE_ON_PAGE_ENTERED_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 7 1 1 1 1 1 c . . .
+    . . . c 1 1 7 7 1 1 1 1 c . . .
+    . . . c 1 1 7 7 7 1 1 1 c . . .
+    . . . c 1 1 7 7 7 7 1 1 c . . .
+    . . . c 1 1 7 7 7 1 1 1 c . . .
+    . . . c 1 1 7 7 1 1 1 1 c . . .
+    . . . c 1 1 7 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core go-to-page actuator: an arrow going into a page. */
+  //% hidden
+  export const CORE_SWITCH_PAGE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 1 8 1 1 1 1 c . . .
+    . . . c 1 1 1 8 8 1 1 1 c . . .
+    . . . c 1 1 1 8 8 8 1 1 c . . .
+    8 8 8 8 8 8 8 8 8 8 8 1 c . . .
+    8 8 8 8 8 8 8 8 8 8 8 1 c . . .
+    . . . c 1 1 1 8 8 8 1 1 c . . .
+    . . . c 1 1 1 8 8 1 1 1 c . . .
+    . . . c 1 1 1 8 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core restart-page actuator: a circling arrow on a page. */
+  //% hidden
+  export const CORE_RESTART_PAGE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 4 4 4 4 1 1 c . . .
+    . . . c 1 4 4 1 1 4 4 1 c . . .
+    . . . c 4 4 1 1 4 4 4 4 c . . .
+    . . . c 4 4 1 1 1 4 4 1 c . . .
+    . . . c 4 4 1 1 1 1 1 1 c . . .
+    . . . c 4 4 1 1 1 1 4 4 c . . .
+    . . . c 1 4 4 1 1 4 4 1 c . . .
+    . . . c 1 1 4 4 4 4 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core current-page sensor: a dot marking a page. */
+  //% hidden
+  export const CORE_CURRENT_PAGE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 2 2 1 1 1 c . . .
+    . . . c 1 1 2 2 2 2 1 1 c . . .
+    . . . c 1 1 2 2 2 2 1 1 c . . .
+    . . . c 1 1 2 2 2 2 1 1 c . . .
+    . . . c 1 1 1 2 2 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core previous-page sensor: a back arrow on a page. */
+  //% hidden
+  export const CORE_PREVIOUS_PAGE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 6 1 1 1 1 c . . .
+    . . . c 1 1 6 6 1 1 1 1 c . . .
+    . . . c 1 6 6 6 6 6 6 1 c . . .
+    . . . c 1 6 6 6 6 6 6 1 c . . .
+    . . . c 1 1 6 6 1 1 1 1 c . . .
+    . . . c 1 1 1 6 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core timer sensor: an hourglass. */
+  //% hidden
+  export const CORE_TIMER_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . e e e e e e e e e e e e . .
+    . . . c . . . . . . . . c . . .
+    . . . c 5 5 5 5 5 5 5 5 c . . .
+    . . . . c 5 5 5 5 5 5 c . . . .
+    . . . . . c 5 5 5 5 c . . . . .
+    . . . . . . c 5 5 c . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . c . 5 c . . . . . .
+    . . . . . c . . 5 . c . . . . .
+    . . . . c . . . 5 . . c . . . .
+    . . . c . . 5 5 5 5 . . c . . .
+    . . . c 5 5 5 5 5 5 5 5 c . . .
+    . . e e e e e e e e e e e e . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core AND operator: two circles, their overlap filled. */
+  //% hidden
+  export const CORE_AND_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . c c c c c c c c . . . .
+    . . c c . . . c c . . . c c . .
+    . c c . . . c 9 9 c . . . c c .
+    . c . . . c 9 9 9 9 c . . . c .
+    c . . . . c 9 9 9 9 c . . . . c
+    c . . . c 9 9 9 9 9 9 c . . . c
+    c . . . c 9 9 9 9 9 9 c . . . c
+    c . . . . c 9 9 9 9 c . . . . c
+    . c . . . c 9 9 9 9 c . . . c .
+    . c c . . . c 9 9 c . . . c c .
+    . . c c . . . c c . . . c c . .
+    . . . . c c c c c c c c . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core OR operator: two overlapping circles, both filled. */
+  //% hidden
+  export const CORE_OR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . c c c c c c c c . . . .
+    . . c c 9 9 9 c c 9 9 9 c c . .
+    . c c 9 9 9 c 9 9 c 9 9 9 c c .
+    . c 9 9 9 c 9 9 9 9 c 9 9 9 c .
+    c 9 9 9 9 c 9 9 9 9 c 9 9 9 9 c
+    c 9 9 9 c 9 9 9 9 9 9 c 9 9 9 c
+    c 9 9 9 c 9 9 9 9 9 9 c 9 9 9 c
+    c 9 9 9 9 c 9 9 9 9 c 9 9 9 9 c
+    . c 9 9 9 c 9 9 9 9 c 9 9 9 c .
+    . c c 9 9 9 c 9 9 c 9 9 9 c c .
+    . . c c 9 9 9 c c 9 9 9 c c . .
+    . . . . c c c c c c c c . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core NOT operator: a no sign. */
+  //% hidden
+  export const CORE_NOT_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . 2 2 2 2 2 2 . . . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . 2 2 2 . . . . . . 2 2 2 . .
+    . . 2 2 2 2 . . . . . . 2 2 . .
+    . 2 2 . 2 2 2 . . . . . . 2 2 .
+    . 2 2 . . 2 2 2 . . . . . 2 2 .
+    . 2 2 . . . 2 2 2 . . . . 2 2 .
+    . 2 2 . . . . 2 2 2 . . . 2 2 .
+    . 2 2 . . . . . 2 2 2 . . 2 2 .
+    . 2 2 . . . . . . 2 2 2 . 2 2 .
+    . . 2 2 . . . . . . 2 2 2 2 . .
+    . . 2 2 2 . . . . . . 2 2 2 . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . . . 2 2 2 2 2 2 . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core equal-to operator: an equals sign. */
+  //% hidden
+  export const CORE_EQUAL_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core not-equal-to operator: a struck-through equals sign. */
+  //% hidden
+  export const CORE_NOT_EQUAL_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . a a . . . .
+    . . . . . . . . . . a a . . . .
+    . . . . . . . . . a a . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . . . . a a . . . . . .
+    . . . . . . . a a . . . . . . .
+    . . . . . . . a a . . . . . . .
+    . . . . . . a a . . . . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . a a . . . . . . . . .
+    . . . . a a . . . . . . . . . .
+    . . . . a a . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core less-than operator: a less-than sign. */
+  //% hidden
+  export const CORE_LESS_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . a a a .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . a a a . . . . . . . . . . . .
+    . a a a . . . . . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . . . . . a a a .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core less-than-or-equal-to operator: a less-than sign over a bar. */
+  //% hidden
+  export const CORE_LESS_OR_EQUAL_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . a a . .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . . . . . a a . .
+    . . . . . . . . . . . . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core greater-than operator: a greater-than sign. */
+  //% hidden
+  export const CORE_GREATER_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . a a a . . . . . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . . . . . a a a .
+    . . . . . . . . . . . . a a a .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . a a a . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core greater-than-or-equal-to operator: a greater-than sign over a bar. */
+  //% hidden
+  export const CORE_GREATER_OR_EQUAL_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . a a . . . . . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . . . . . a a a a . .
+    . . . . . . . . a a a a . . . .
+    . . . . . . a a a a . . . . . .
+    . . . . a a a a . . . . . . . .
+    . . a a a a . . . . . . . . . .
+    . . a a . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . a a a a a a a a a a a a . .
+    . . a a a a a a a a a a a a . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core random-number sensor: a die. */
+  //% hidden
+  export const CORE_RANDOM_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . f f f f f f f f f f f f . .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . f 1 f f 1 1 1 1 1 1 f f 1 f .
+    . f 1 f f 1 1 1 1 1 1 f f 1 f .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . f 1 1 1 1 1 f f 1 1 1 1 1 f .
+    . f 1 1 1 1 1 f f 1 1 1 1 1 f .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . f 1 f f 1 1 1 1 1 1 f f 1 f .
+    . f 1 f f 1 1 1 1 1 1 f f 1 f .
+    . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+    . . f f f f f f f f f f f f . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core true literal: a check mark. */
+  //% hidden
+  export const CORE_TRUE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . 7 7 . .
+    . . . . . . . . . . . 7 7 7 . .
+    . . . . . . . . . . 7 7 7 . . .
+    . . . . . . . . . 7 7 7 . . . .
+    . . . . . . . . 7 7 7 . . . . .
+    . 7 7 . . . . 7 7 7 . . . . . .
+    . 7 7 7 . . 7 7 7 . . . . . . .
+    . . 7 7 7 7 7 7 . . . . . . . .
+    . . . 7 7 7 7 . . . . . . . . .
+    . . . . 7 7 . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core false literal: a cross. */
+  //% hidden
+  export const CORE_FALSE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . 2 2 . . . . . . . . 2 2 . .
+    . . 2 2 2 . . . . . . 2 2 2 . .
+    . . . 2 2 2 . . . . 2 2 2 . . .
+    . . . . 2 2 2 . . 2 2 2 . . . .
+    . . . . . 2 2 2 2 2 2 . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . 2 2 2 2 2 2 . . . . .
+    . . . . 2 2 2 . . 2 2 2 . . . .
+    . . . 2 2 2 . . . . 2 2 2 . . .
+    . . 2 2 2 . . . . . . 2 2 2 . .
+    . . 2 2 . . . . . . . . 2 2 . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core nil literal: an empty dashed box. */
+  //% hidden
+  export const CORE_NIL_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . b b b . . b b . . b b b . .
+    . . b b b . . b b . . b b b . .
+    . . b b . . . . . . . . b b . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . b b . . . . . . . . b b . .
+    . . b b . . . . . . . . b b . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . b b . . . . . . . . b b . .
+    . . b b b . . b b . . b b b . .
+    . . b b b . . b b . . b b b . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core plus operator: a plus sign. */
+  //% hidden
+  export const CORE_PLUS_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core minus operator: a minus sign. */
+  //% hidden
+  export const CORE_MINUS_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core multiplied-by operator: a times sign. */
+  //% hidden
+  export const CORE_MULTIPLY_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . 4 4 . . . . . . . . 4 4 . .
+    . . . 4 4 . . . . . . 4 4 . . .
+    . . . . 4 4 . . . . 4 4 . . . .
+    . . . . . 4 4 . . 4 4 . . . . .
+    . . . . . . 4 4 4 4 . . . . . .
+    . . . . . . 4 4 4 4 . . . . . .
+    . . . . . 4 4 . . 4 4 . . . . .
+    . . . . 4 4 . . . . 4 4 . . . .
+    . . . 4 4 . . . . . . 4 4 . . .
+    . . 4 4 . . . . . . . . 4 4 . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core divided-by operator: a division sign. */
+  //% hidden
+  export const CORE_DIVIDE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . 4 4 4 4 4 4 4 4 4 4 4 4 . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . 4 4 . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core negative operator: a minus sign before a one. */
+  //% hidden
+  export const CORE_NEGATIVE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . . . . . . . . 4 4 4 . . . .
+    . . . . . . . . 4 4 4 4 . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . 4 4 4 4 . . . . 4 4 . . . .
+    . . 4 4 4 4 . . . . 4 4 . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . . . . . . . . . 4 4 . . . .
+    . . . . . . . . 4 4 4 4 4 4 . .
+    . . . . . . . . 4 4 4 4 4 4 . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core gets operator: an arrow going into a box. */
+  //% hidden
+  export const CORE_ASSIGN_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . c c c c c c . . . . . . . . .
+    . c 1 1 1 1 c . . . . . . . . .
+    . c 1 1 1 1 c . . . 8 . . . . .
+    . c 1 1 1 1 c . . 8 8 . . . . .
+    . c 1 1 1 1 c . 8 8 8 8 8 8 8 8
+    . c 1 1 1 1 c . 8 8 8 8 8 8 8 8
+    . c 1 1 1 1 c . . 8 8 . . . . .
+    . c 1 1 1 1 c . . . 8 . . . . .
+    . c 1 1 1 1 c . . . . . . . . .
+    . c c c c c c . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core open-parenthesis tile: an opening parenthesis. */
+  //% hidden
+  export const CORE_OPEN_PAREN_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . c c . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . c c . . . . . . . .
+    . . . . . c c c . . . . . . . .
+    . . . . . c c . . . . . . . . .
+    . . . . c c c . . . . . . . . .
+    . . . . c c c . . . . . . . . .
+    . . . . c c c . . . . . . . . .
+    . . . . c c c . . . . . . . . .
+    . . . . . c c . . . . . . . . .
+    . . . . . c c c . . . . . . . .
+    . . . . . . c c . . . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . . . c c . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core close-parenthesis tile: a closing parenthesis. */
+  //% hidden
+  export const CORE_CLOSE_PAREN_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . c c . . . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . . . c c . . . . . .
+    . . . . . . . . c c c . . . . .
+    . . . . . . . . . c c . . . . .
+    . . . . . . . . . c c c . . . .
+    . . . . . . . . . c c c . . . .
+    . . . . . . . . . c c c . . . .
+    . . . . . . . . . c c c . . . .
+    . . . . . . . . . c c . . . . .
+    . . . . . . . . c c c . . . . .
+    . . . . . . . . c c . . . . . .
+    . . . . . . . c c . . . . . . .
+    . . . . . . c c . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core boolean variable factory: a jar holding a switch. */
+  //% hidden
+  export const CORE_BOOLEAN_VARIABLE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . c c c c c c . . . . .
+    . . . . . c 1 1 1 1 c . . . . .
+    . . c c c c c c c c c c c c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 f f f f f f 1 1 c . .
+    . . c 1 f 1 1 1 1 f f f 1 c . .
+    . . c 1 f 1 1 1 1 f f f 1 c . .
+    . . c 1 1 f f f f f f 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c c c c c c c c c c c c . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core number variable factory: a jar holding a number sign. */
+  //% hidden
+  export const CORE_NUMBER_VARIABLE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . c c c c c c . . . . .
+    . . . . . c 1 1 1 1 c . . . . .
+    . . c c c c c c c c c c c c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 f 1 1 f 1 1 1 c . .
+    . . c 1 1 f f f f f f 1 1 c . .
+    . . c 1 1 1 f 1 1 f 1 1 1 c . .
+    . . c 1 1 1 f 1 1 f 1 1 1 c . .
+    . . c 1 1 f f f f f f 1 1 c . .
+    . . c 1 1 1 f 1 1 f 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c c c c c c c c c c c c . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core text variable factory: a jar holding quotation marks. */
+  //% hidden
+  export const CORE_TEXT_VARIABLE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . c c c c c c . . . . .
+    . . . . . c 1 1 1 1 c . . . . .
+    . . c c c c c c c c c c c c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 f f 1 1 f f 1 1 c . .
+    . . c 1 1 f f 1 1 f f 1 1 c . .
+    . . c 1 1 1 f 1 1 1 f 1 1 c . .
+    . . c 1 1 f 1 1 1 f 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c 1 1 1 1 1 1 1 1 1 1 c . .
+    . . c c c c c c c c c c c c . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core number tile factory: a value box holding a number sign. */
+  //% hidden
+  export const CORE_NUMBER_TILE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 d d d f d d f d d d 1 1 .
+    . 1 1 d d f f f f f f d d 1 1 .
+    . 1 1 d d d f d d f d d d 1 1 .
+    . 1 1 d d d f d d f d d d 1 1 .
+    . 1 1 d d f f f f f f d d 1 1 .
+    . 1 1 d d d f d d f d d d 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core text tile factory: a value box holding quotation marks. */
+  //% hidden
+  export const CORE_TEXT_TILE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 d d f f d d f f d d 1 1 .
+    . 1 1 d d f f d d f f d d 1 1 .
+    . 1 1 d d d f d d d f d d 1 1 .
+    . 1 1 d d f d d d f d d d 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 d d d d d d d d d d 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . 1 1 1 1 1 1 1 1 1 1 1 1 1 1 .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `Vector2` type: an arrow from a point. */
+  //% hidden
+  export const VECTOR2_TYPE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . 8 8 8 8 8 8 . .
+    . . . . . . . . 8 8 8 8 8 8 . .
+    . . . . . . . . . . 8 8 8 8 . .
+    . . . . . . . . . 8 8 . 8 8 . .
+    . . . . . . . . 8 8 . . 8 8 . .
+    . . . . . . . 8 8 . . . 8 8 . .
+    . . . . . . 8 8 . . . . . . . .
+    . . . . . 8 8 . . . . . . . . .
+    . . . . 8 8 . . . . . . . . . .
+    . . . 8 8 . . . . . . . . . . .
+    . . f f . . . . . . . . . . . .
+    . . f f . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `Sprite` type: a game character. */
+  //% hidden
+  export const SPRITE_TYPE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . 2 2 2 2 2 2 2 2 . . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . 2 2 1 1 2 2 1 1 2 2 . . .
+    . . . 2 2 1 1 2 2 1 1 2 2 . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . 2 2 2 2 2 2 2 2 2 2 . . .
+    . . . 2 2 . 2 2 2 2 . 2 2 . . .
+    . . . 2 2 . 2 2 2 2 . 2 2 . . .
+    . . . 2 2 . . . . . . 2 2 . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `Brain` type: a brain. */
+  //% hidden
+  export const BRAIN_TYPE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . a a . . a a . . . . .
+    . . . a a a a a . a a a a a . .
+    . . a a . a a a . a a a . a a .
+    . . a a a a . a . a . a a a a .
+    . a a . a a a a . a a a a . a a
+    . a a a a . a a . a a . a a a a
+    . a a a a a a a . a a a a a a a
+    . a a . a a a a . a a a a . a a
+    . . a a a a . a . a . a a a a .
+    . . a a . a a a . a a a . a a .
+    . . . a a a a a . a a a a a . .
+    . . . . . a a . . a a . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
   `;
 }

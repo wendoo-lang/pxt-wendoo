@@ -19,10 +19,11 @@
  * The packs register things that cannot be honoured -- a tile name two packs
  * claim, a name the manifest allocates no id for, a type whose writable fields
  * have no field setter, and one tile per rule a call spec is held to whose
- * argument grammar breaks that rule -- and the selftest registers one more
- * after the drain has closed registration. Every one is expected to be
- * diagnosed and survived: the run reaches its verdict line either way, and
- * that it does is what proves registration is never fatal.
+ * argument grammar breaks that rule -- and the selftest registers one more,
+ * and gives a core tile an icon, after the drain has closed registration.
+ * Every one is expected to be diagnosed and survived: the run reaches its
+ * verdict line either way, and that it does is what proves registration is
+ * never fatal.
  *
  * The selftest also serializes the packs' catalog, twice, checking the two
  * payloads are byte-identical, and prints it for the node-side runner to
@@ -89,6 +90,9 @@ namespace registrationSelftest {
 
   /** Pack name the late registration is made under. */
   const LATE_PACK_NAME = "selftest";
+
+  /** Core tile given an icon after the drain has closed registration. */
+  const LATE_CORE_TILE_ID = "tile.op->not";
 
   /** Field id the manifest allocates no field of the beacon type. */
   const UNBOUND_FIELD_ID = 99;
@@ -246,6 +250,15 @@ namespace registrationSelftest {
       diagnosticsFor(wendoo.REGISTRATION_AFTER_SNAPSHOT, LATE_TILE_NAME).length === 1
     );
     check("late-registration-not-bound", actions.getById(ids.actionId(LATE_TILE_NAME)) === undefined);
+  }
+
+  /** A core tile icon given after the drain has closed registration was diagnosed. */
+  function checkLateCoreTileIconIgnored(): void {
+    wendoo.pack(LATE_PACK_NAME).defineCoreTileIcon(LATE_CORE_TILE_ID, "late");
+    check(
+      "late-core-tile-icon-diagnosed",
+      diagnosticsFor(wendoo.REGISTRATION_AFTER_SNAPSHOT, LATE_CORE_TILE_ID).length === 1
+    );
   }
 
   /**
@@ -918,6 +931,7 @@ namespace registrationSelftest {
     checkTypeRegistration(ids, types);
     checkOperatorRegistration(ids, functions);
     checkLateRegistrationIgnored(ids, actions);
+    checkLateCoreTileIconIgnored();
     checkWellFormedGrammars(ids, actions);
     checkIllFormedGrammars(ids);
     checkActionOutput();

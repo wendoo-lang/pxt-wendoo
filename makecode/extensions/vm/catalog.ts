@@ -8,7 +8,8 @@
  *   any registration problem is on record.
  * - `packs` holds one object per pack, in registration order: the pack's
  *   `name` plus its `types`, `tiles` and `operators` entry arrays, each in
- *   registration order.
+ *   registration order, then its `coreTileIcons` entry array, in the order
+ *   the icons were given.
  * - A type entry carries `name`, `native` (backed by host objects through
  *   registered hooks), `asset` (on an asset type, the kind of the project
  *   assets its values name), `brain` (on a brain type, whose values each name
@@ -53,12 +54,15 @@
  *   enum symbol; `typeId` and a `v` array of tagged values for a list or a
  *   struct; and `{"t":"handle","id":n}` for a handle.
  * - An operator entry carries `name`, `async`, `operands` and `returns`.
+ * - A core tile icon entry carries `tileId` (the id of the core tile the
+ *   pack gives the icon, as the Wendoo editor holds it) and `icon`.
  * - The metadata fields are `label`, `group`, `docs` (markdown text,
  *   verbatim) and `icon` (the encoder's text form).
  * - A diagnostic entry carries `code`, `name`, `pack`, `otherPack` and
  *   `spec` (the part of the registration the problem is about: for a slot's
  *   icon, the slot's name, or its `tileId` when it is unnamed; for an
- *   output's icon, the output's name).
+ *   output's icon, the output's name). A core tile icon's diagnostic names
+ *   the core tile's id as its `name`.
  *
  * Omission conventions, applied uniformly: a boolean field is present only
  * when true, a string field only when non-empty, an array field only when
@@ -405,7 +409,8 @@ namespace wendoo {
   /**
    * Collects catalog entries by pack and renders the payload. Registration
    * entries write themselves through {@link CatalogWriter.struct},
-   * {@link CatalogWriter.tile} and {@link CatalogWriter.operator};
+   * {@link CatalogWriter.tile} and {@link CatalogWriter.operator}, and core
+   * tile icons through {@link CatalogWriter.coreTileIcon};
    * {@link CatalogWriter.render} then assembles the document.
    */
   export class CatalogWriter {
@@ -414,6 +419,7 @@ namespace wendoo {
     private typeEntries: string[][] = [];
     private tileEntries: string[][] = [];
     private operatorEntries: string[][] = [];
+    private coreTileIconEntries: string[][] = [];
     private problems: RegistrationDiagnostic[] = [];
 
     /**
@@ -434,6 +440,7 @@ namespace wendoo {
       this.typeEntries.push([]);
       this.tileEntries.push([]);
       this.operatorEntries.push([]);
+      this.coreTileIconEntries.push([]);
       return this.packNames.length - 1;
     }
 
@@ -606,6 +613,22 @@ namespace wendoo {
     }
 
     /**
+     * Write the catalog entry of the icon `pack` gives the core tile
+     * `tileId`. An icon the encoder cannot render is left out of the entry
+     * and recorded under {@link CATALOG_ICON_UNENCODABLE} against `tileId`
+     * and `pack`.
+     *
+     * @param pack - Pack that gave the icon.
+     * @param tileId - Id of the core tile, as the Wendoo editor holds it.
+     * @param icon - Opaque icon value, as the pack gave it.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    coreTileIcon(pack: string, tileId: string, icon: any): void {
+      const entry = `{"tileId":${jsonQuote(tileId)}${this.iconText(icon, tileId, pack, "")}}`;
+      this.coreTileIconEntries[this.packIndex(pack)].push(entry);
+    }
+
+    /**
      * The rendered payload: every pack written so far, and the diagnostics
      * on record -- the registration log first, then the problems this
      * writer found.
@@ -622,6 +645,9 @@ namespace wendoo {
         }
         if (this.operatorEntries[i].length > 0) {
           entry += `,"operators":${jsonArray(this.operatorEntries[i])}`;
+        }
+        if (this.coreTileIconEntries[i].length > 0) {
+          entry += `,"coreTileIcons":${jsonArray(this.coreTileIconEntries[i])}`;
         }
         packs.push(`${entry}}`);
       }

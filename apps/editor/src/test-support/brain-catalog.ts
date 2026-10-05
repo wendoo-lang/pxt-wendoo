@@ -15,6 +15,9 @@ import { catalogTile } from "./asset-catalog.js";
 /** Type id of {@link BRAIN_CATALOG}'s brain type. */
 export const KIN_TYPE = mkTypeId(NativeType.Struct, "Kin");
 
+/** Icon {@link BRAIN_CATALOG}'s brain type carries. */
+export const KIN_ICON = "data:image/svg+xml;base64,a2lu";
+
 /** Name of the sensor taking an optional brain to look for. */
 export const SEEK = "sensor.roster.seek";
 
@@ -23,7 +26,7 @@ export const COUNT = "sensor.roster.count";
 
 /**
  * A catalog in the rendered form the simx publishes: one pack declaring the
- * brain type `Kin` (one read-only `id` field), a struct type `Badge` of the
+ * brain type `Kin` (one read-only `id` field, and an icon), a struct type `Badge` of the
  * same shape that is no brain type, a sensor whose optional
  * anonymous slot takes a brain, and a sensor whose optional anonymous slot
  * takes a number; and a second pack declaring an asset type, which is no
@@ -34,7 +37,7 @@ export const BRAIN_CATALOG = JSON.stringify({
     {
       name: "roster",
       types: [
-        { name: "Kin", brain: true, fields: [{ name: "id", type: "string", readOnly: true }] },
+        { name: "Kin", brain: true, fields: [{ name: "id", type: "string", readOnly: true }], iconUrl: KIN_ICON },
         { name: "Badge", fields: [{ name: "id", type: "string", readOnly: true }] },
       ],
       tiles: [

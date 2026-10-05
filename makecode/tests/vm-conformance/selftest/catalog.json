@@ -49,6 +49,12 @@
           "operands": ["number", "number"],
           "returns": "number"
         }
+      ],
+      "coreTileIcons": [
+        {
+          "tileId": "tile.op->and",
+          "icon": "img<beacon-and>"
+        }
       ]
     },
     {
@@ -101,6 +107,15 @@
           "kind": "sensor",
           "returns": "number",
           "label": "chime loudness"
+        }
+      ],
+      "coreTileIcons": [
+        {
+          "tileId": "tile.op->and",
+          "icon": "img<chime-and>"
+        },
+        {
+          "tileId": "tile.op->or"
         }
       ]
     },
@@ -486,6 +501,11 @@
       "pack": "selftest"
     },
     {
+      "code": "registration-after-snapshot",
+      "name": "tile.op->not",
+      "pack": "selftest"
+    },
+    {
       "code": "catalog-icon-unencodable",
       "name": "actuator.chime.ring",
       "pack": "chime",
@@ -494,6 +514,11 @@
     {
       "code": "catalog-icon-unencodable",
       "name": "sensor.chime.unmapped",
+      "pack": "chime"
+    },
+    {
+      "code": "catalog-icon-unencodable",
+      "name": "tile.op->or",
       "pack": "chime"
     }
   ]

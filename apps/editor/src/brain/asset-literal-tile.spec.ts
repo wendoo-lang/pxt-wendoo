@@ -18,7 +18,7 @@ import {
   picture,
   pictureBrainSource,
 } from "../test-support/asset-catalog.js";
-import { BRAIN_CATALOG, brainCatalogIds, kinBrainSource, kinTileId } from "../test-support/brain-catalog.js";
+import { BRAIN_CATALOG, brainCatalogIds, KIN_ICON, kinBrainSource, kinTileId } from "../test-support/brain-catalog.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
 
 /** The attribute marking a placed tile's value frame, the box its value is drawn in. */
@@ -38,6 +38,13 @@ function valueFrame(config: BrainEditorConfig, tileDef: IBrainTileDef): string {
   const start = markup.indexOf(`${VALUE_FRAME_ATTRIBUTE}=`);
   assert.ok(start >= 0, "expected a value frame");
   return markup.slice(start, markup.indexOf("</div>", start));
+}
+
+/** The markup of `tileDef` rendered as a placed tile under `config`. */
+function placedMarkup(config: BrainEditorConfig, tileDef: IBrainTileDef): string {
+  return renderToStaticMarkup(
+    createElement(BrainEditorProvider, { config }, createElement(BrainTile, { tileDef, side: RuleSide.When }))
+  );
 }
 
 /** The asset literal as minted into the environment and as the brain reader places it, with the environment. */
@@ -94,5 +101,34 @@ describe("a placed brain literal tile", () => {
       assert.doesNotMatch(frame, /chaserBrain00001/);
       assert.match(frame, />Chaser</);
     }
+  });
+
+  it("wears its brain type's icon beside its name, minted from the held brains and as placed", () => {
+    const built = buildAuthoringEnvironment(BRAIN_CATALOG, brainCatalogIds());
+    built.brainLiterals.applyBrains(new Map([["chaserBrain00001", { name: "Chaser" }]]));
+    const literalId = kinTileId("chaserBrain00001");
+    const minted = catalogTile(built.environment, literalId);
+    const read = readBrainSource(built.environment, kinBrainSource(built.environment, literalId, "seekerBrain00001"));
+    const placed = ((read.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef).when().tiles().get(1);
+    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+
+    for (const def of [minted, placed]) {
+      assert.equal(def.metadata?.iconUrl, KIN_ICON);
+      const markup = placedMarkup(config, def);
+      assert.ok(markup.includes(`url(${KIN_ICON})`), markup);
+      assert.match(valueFrame(config, def), />Chaser</);
+    }
+  });
+
+  it("wears its brain type's icon when the brain reader mints it from a brain's reference", () => {
+    const writer = buildAuthoringEnvironment(BRAIN_CATALOG, brainCatalogIds());
+    writer.brainLiterals.applyBrains(new Map([["chaserBrain00001", { name: "Chaser" }]]));
+    const source = kinBrainSource(writer.environment, kinTileId("chaserBrain00001"), "seekerBrain00001");
+    const built = buildAuthoringEnvironment(BRAIN_CATALOG, brainCatalogIds());
+    built.brainLiterals.bindSource(source);
+    const read = readBrainSource(built.environment, source);
+    const placed = ((read.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef).when().tiles().get(1);
+
+    assert.equal(placed.metadata?.iconUrl, KIN_ICON);
   });
 });

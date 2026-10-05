@@ -1,6 +1,6 @@
 import type { WendooEnvironment, WendooModule } from "@wendoo/core/app";
 import { coreModule, createEntropySeededRng, createWendooEnvironment } from "@wendoo/core/app";
-import type { NumberPrecision, StructTypeDef } from "@wendoo/core/runtime";
+import type { NumberPrecision, StructTypeDef, TypeId } from "@wendoo/core/runtime";
 import { createProfileNumerics, mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import { ASSET_FIELD, AssetLiterals, type AssetType } from "./asset-literals";
@@ -61,6 +61,27 @@ export interface AuthoringEnvironment {
    * a brain source is bound.
    */
   readonly brainLiterals: BrainLiterals;
+  /**
+   * The icon of each catalog type the environment binds that carries one,
+   * keyed by type id, the first declaration of a type name standing. Empty
+   * while no id allocation is held.
+   */
+  readonly typeIcons: ReadonlyMap<TypeId, string>;
+}
+
+/**
+ * The icons of `packs`' types that `environment` registers, keyed by type id,
+ * the first declaration of a type name carrying an icon standing.
+ */
+function boundTypeIcons(environment: WendooEnvironment, packs: readonly CatalogPack[]): Map<TypeId, string> {
+  const icons = new Map<TypeId, string>();
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    if (type.iconUrl === undefined || icons.has(typeId)) continue;
+    if (environment.brainServices.runtime.types.get(typeId) === undefined) continue;
+    icons.set(typeId, type.iconUrl);
+  }
+  return icons;
 }
 
 /**
@@ -83,16 +104,21 @@ function boundAssetTypes(environment: WendooEnvironment, packs: readonly Catalog
 /**
  * The brain types among `packs`' types that `environment` binds: each type
  * the catalog marks as a brain type whose struct definition the environment
- * registers with an `id` field.
+ * registers with an `id` field, with the icon `typeIcons` binds to it.
  */
-function boundBrainTypes(environment: WendooEnvironment, packs: readonly CatalogPack[]): BrainType[] {
+function boundBrainTypes(
+  environment: WendooEnvironment,
+  packs: readonly CatalogPack[],
+  typeIcons: ReadonlyMap<TypeId, string>
+): BrainType[] {
   const types: BrainType[] = [];
   for (const type of packs.flatMap((pack) => pack.types)) {
     if (type.brain !== true) continue;
     const typeId = mkTypeId(NativeType.Struct, type.name);
     const typeDef = environment.brainServices.runtime.types.get(typeId) as StructTypeDef | undefined;
     if (typeDef?.fieldIndexByName?.get(BRAIN_FIELD) === undefined) continue;
-    types.push({ typeId, typeDef });
+    const iconUrl = typeIcons.get(typeId);
+    types.push({ typeId, typeDef, ...(iconUrl === undefined ? {} : { iconUrl }) });
   }
   return types;
 }
@@ -114,8 +140,10 @@ function boundBrainTypes(environment: WendooEnvironment, packs: readonly Catalog
  *
  * The result's asset literals cover every bound type the catalog declares an
  * asset kind for, and its brain literals every bound type the catalog marks
- * as a brain type; apply the session's asset snapshot and the held brains to
- * them, and bind each brain source to both before reading or compiling it.
+ * as a brain type, each brain literal wearing its type's icon; its type
+ * icons hold every bound type's icon. Apply the session's asset snapshot and
+ * the held brains to them, and bind each brain source to both before reading
+ * or compiling it.
  *
  * @param catalogText - The session catalog's serialized text, or `undefined` while none has arrived.
  * @param ids - The project's id allocation the editor holds; omit it while the editor holds none.
@@ -150,11 +178,13 @@ export function buildAuthoringEnvironment(
   });
   const bound = ids !== undefined && catalog !== undefined;
   const assetTypes = bound ? boundAssetTypes(environment, catalog.packs) : [];
-  const brainTypes = bound ? boundBrainTypes(environment, catalog.packs) : [];
+  const typeIcons = bound ? boundTypeIcons(environment, catalog.packs) : new Map<TypeId, string>();
+  const brainTypes = bound ? boundBrainTypes(environment, catalog.packs, typeIcons) : [];
   return {
     environment,
     diagnostics,
     assetLiterals: new AssetLiterals(environment.brainServices, assetTypes),
     brainLiterals: new BrainLiterals(environment.brainServices, brainTypes),
+    typeIcons,
   };
 }

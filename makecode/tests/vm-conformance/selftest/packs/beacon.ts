@@ -10,7 +10,8 @@
  *
  * Every registration is made from this file's top-level code, which pxt runs
  * at program start, before the selftest constructs anything. The pack claims
- * the tile name `sensor.beacon.reading`, which the other pack claims too.
+ * the tile name `sensor.beacon.reading`, which the other pack claims too, and
+ * gives the core AND tile an icon, which the other pack does too.
  */
 namespace beacon {
   /** Position of the `Beacon` type's `x` field in its declaration, which indexes the binding's field ids. */
@@ -115,4 +116,7 @@ namespace beacon {
     new CombineOperator(),
     new wendoo.OperatorSpec([wendoo.TYPE_NUMBER, wendoo.TYPE_NUMBER], wendoo.TYPE_NUMBER)
   );
+
+  /** A sample icon for the core AND tile, which the catalog assertions pin. */
+  pack.defineCoreTileIcon("tile.op->and", "beacon-and");
 }

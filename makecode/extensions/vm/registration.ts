@@ -14,9 +14,9 @@
  * fields, an asset type's asset kind, argument grammar (each slot with its
  * tile's display label and icon, and each modifier slot with its tile's
  * sentence words), returns, outputs, consumed WHEN result, label, group,
- * docs, icon, sentence words. The drain installs behavior only and ignores
- * all of it; the catalog serializer reads it through
- * {@link writeCatalogEntries}.
+ * docs, icon, sentence words. A pack may also give core tiles icons. The
+ * drain installs behavior only and ignores all of it; the catalog serializer
+ * reads it through {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
  * ignored and recorded in {@link registrationDiagnostics}, and the program
@@ -1265,8 +1265,29 @@ namespace wendoo {
     }
   }
 
+  /** One icon a pack gives a core tile: a tile the Wendoo editor's own core vocabulary holds. */
+  class CoreTileIcon {
+    /** Id of the core tile, as the Wendoo editor holds it. */
+    tileId: string;
+    /** Pack that gave the icon. */
+    pack: string;
+    /** Icon in the host target's own icon form. */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    icon: any;
+
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    constructor(tileId: string, pack: string, icon: any) {
+      this.tileId = tileId;
+      this.pack = pack;
+      this.icon = icon;
+    }
+  }
+
   /** Registrations made since program start, in the order they were made. */
   const pendingRegistrations: PendingRegistration[] = [];
+
+  /** Core tile icons given since program start, in the order they were given. */
+  const coreTileIcons: CoreTileIcon[] = [];
 
   /** Registration problems recorded since program start, in the order they were found. */
   const recordedDiagnostics: RegistrationDiagnostic[] = [];
@@ -1382,6 +1403,28 @@ namespace wendoo {
     bindOperator(name: string, fn: HostFunction, spec?: OperatorSpec): void {
       appendPending(new PendingHostFunction(name, this.name, fn, spec));
     }
+
+    /**
+     * Give the core tile `tileId` the icon `icon`: a tile of the Wendoo
+     * editor's own core vocabulary, such as an operator or a page tile,
+     * which no pack registers. Catalog data only: the catalog carries the
+     * icon under this pack, and the drain ignores it. Every icon given is
+     * carried, and the editor shows the first one given a tile; it ignores
+     * an icon given a tile id it does not hold. An icon given after the
+     * drain is ignored and recorded under
+     * {@link REGISTRATION_AFTER_SNAPSHOT}, naming `tileId`.
+     *
+     * @param tileId - Id of the core tile, as the editor holds it, such as `tile.op->and`.
+     * @param icon - Icon in the host target's own icon form.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    defineCoreTileIcon(tileId: string, icon: any): void {
+      if (registrationClosed) {
+        diagnose(REGISTRATION_AFTER_SNAPSHOT, tileId, this.name, "");
+        return;
+      }
+      coreTileIcons.push(new CoreTileIcon(tileId, this.name, icon));
+    }
   }
 
   /**
@@ -1456,7 +1499,8 @@ namespace wendoo {
 
   /**
    * Write one catalog entry per registration through `catalog`, in
-   * registration order. Two registrations claiming one name resolve
+   * registration order, then one per core tile icon given, in the order
+   * they were given. Two registrations claiming one name resolve
    * first-wins here as in the drain: only the earlier one's entry is
    * written.
    *
@@ -1471,6 +1515,10 @@ namespace wendoo {
       }
       written.push(entry.name);
       entry.writeCatalog(catalog);
+    }
+    for (let i = 0; i < coreTileIcons.length; i++) {
+      const given = coreTileIcons[i];
+      catalog.coreTileIcon(given.pack, given.tileId, given.icon);
     }
   }
 }

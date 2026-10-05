@@ -16,6 +16,7 @@ import {
   arcadeModifierLabel,
   arcadeOffersLiteral,
   arcadeRenderedIcons,
+  arcadeRenderedTypeIcons,
   arcadeSensorLabel,
   arcadeSensorNames,
   arcadeSpriteOutputLabels,
@@ -245,6 +246,27 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.match(icon.carried, /^data:image\/svg\+xml/, icon.tileId);
       assert.equal(icon.bound, icon.carried, icon.tileId);
       assert.equal(icon.resolved, icon.carried, icon.tileId);
+    }
+  });
+
+  it("binds each core tile icon the pinned arcade catalog carries onto a core tile the environment holds, through to the visual provider", () => {
+    const core = arcadeRenderedIcons().icons.filter((icon) => icon.core);
+
+    assert.ok(core.length > 0, "the arcade base pack gives core tiles icons");
+    for (const icon of core) {
+      assert.match(icon.carried, /^data:image\/svg\+xml/, icon.tileId);
+      assert.equal(icon.bound, icon.carried, icon.tileId);
+      assert.equal(icon.resolved, icon.carried, icon.tileId);
+    }
+  });
+
+  it("binds each type icon the pinned arcade catalog carries once the simx renders it to its type", () => {
+    const icons = arcadeRenderedTypeIcons();
+
+    assert.deepEqual(icons.map((icon) => icon.name).sort(), ["Brain", "Sprite", "Vector2"]);
+    for (const icon of icons) {
+      assert.match(icon.carried, /^data:image\/svg\+xml/, icon.name);
+      assert.equal(icon.bound, icon.carried, icon.name);
     }
   });
 

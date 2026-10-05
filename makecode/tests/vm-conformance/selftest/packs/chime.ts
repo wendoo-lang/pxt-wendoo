@@ -12,7 +12,9 @@
  * at program start, before the selftest constructs anything. Two of the four
  * registrations cannot be honoured: one claims the tile name the other pack
  * claims, and one claims a name the project's mapping records no id for. The
- * pack also declares an asset type, the tunes a chime can play.
+ * pack also declares an asset type, the tunes a chime can play, and gives
+ * core tiles icons: the AND tile, which the other pack gives one too, and the
+ * OR tile, an icon the selftest's encoder refuses to render.
  */
 namespace chime {
   /** `actuator.chime.ring`: rings the chime, counting the rings. */
@@ -108,4 +110,7 @@ namespace chime {
   loudnessSpec.label = "chime loudness";
   loudnessSpec.icon = "unencodable";
   pack.bind("sensor.chime.unmapped", new LoudnessSensor(), loudnessSpec);
+
+  pack.defineCoreTileIcon("tile.op->and", "chime-and");
+  pack.defineCoreTileIcon("tile.op->or", "unencodable");
 }

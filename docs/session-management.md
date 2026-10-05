@@ -872,9 +872,11 @@ it keys on a session id.
   a resolved asset literal shows its asset's name and its `previewUrl`
   as its face, an unresolved one its label alone; every other tile shows
   the display metadata pack binding gave it, the catalog's `iconUrl`
-  included. A placed asset literal's value box draws its asset's preview
-  through a display-only literal type per asset type (`customLiteralTypes`,
-  no dialog members), and its label as text while unresolved. Each new
+  included -- a core tile the icon a pack gives it, the first one given
+  standing, and a brain literal its brain type's icon beside its name. A
+  placed asset literal's value box draws its asset's preview through a
+  display-only literal type per asset type (`customLiteralTypes`, no
+  dialog members), and its label as text while unresolved. Each new
   editor config also carries a fresh localizer identity, so rule sentences
   re-read the words of literals relabelled in place. Icons and previews are
   data URIs from session data, rendered only as an image source, never

@@ -884,8 +884,10 @@ const ARCADE_PALETTE = [
 
 /** One icon the rendered arcade catalog carries, and what the editor makes of it. */
 export interface RenderedIcon {
-  /** Id of the tile the icon belongs to: a sensor, an actuator, or a modifier slot's tile. */
+  /** Id of the tile the icon belongs to: a sensor, an actuator, a modifier slot's tile, or a core tile. */
   readonly tileId: string;
+  /** Whether the icon is one a pack gives a core tile. */
+  readonly core: boolean;
   /** The icon's data URI, as the rendered catalog carries it. */
   readonly carried: string;
   /** The icon the bound tile's display metadata holds, or `undefined` when it holds none. */
@@ -895,9 +897,10 @@ export interface RenderedIcon {
 }
 
 /**
- * Every icon the arcade selftest's pinned catalog carries on a tile or a
- * modifier slot once the simx has rendered it under the Arcade default
- * palette, first declaration of a shared slot tile winning, each beside what
+ * Every icon the arcade selftest's pinned catalog carries on a tile, a
+ * modifier slot or a core tile icon entry once the simx has rendered it under
+ * the Arcade default palette, first declaration of a shared slot tile or of a
+ * core tile winning, each beside what
  * the environment binding the rendered catalog under the arcade selftest's
  * allocation holds and resolves for its tile; and the lines the simx's
  * rendering logged as errors.
@@ -911,6 +914,7 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
     },
   });
   const carried = new Map<string, string>();
+  const coreTileIds = new Set<string>();
   for (const pack of parseCatalog(rendered).packs) {
     for (const tile of pack.tiles) {
       const tileId = tile.kind === "sensor" ? mkSensorTileId(tile.name) : mkActuatorTileId(tile.name);
@@ -924,6 +928,12 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
         if (!carried.has(slotTileId)) carried.set(slotTileId, slot.iconUrl);
       }
     }
+    for (const entry of pack.coreTileIcons) {
+      if (!carried.has(entry.tileId)) {
+        carried.set(entry.tileId, entry.iconUrl);
+        coreTileIds.add(entry.tileId);
+      }
+    }
   }
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
   const resolve = createTileVisualProvider(built.assetLiterals.view);
@@ -934,12 +944,37 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
       .find((found) => found !== undefined);
     return {
       tileId,
+      core: coreTileIds.has(tileId),
       carried: url,
       bound: tile?.metadata?.iconUrl,
       resolved: tile === undefined ? undefined : resolve(tile)?.iconUrl,
     };
   });
   return { icons, errors };
+}
+
+/**
+ * Every icon a type entry of the arcade selftest's pinned catalog carries once
+ * the simx has rendered it under the Arcade default palette, keyed by type
+ * name, each beside the icon the environment binding the rendered catalog
+ * under the arcade selftest's allocation binds to the type.
+ */
+export function arcadeRenderedTypeIcons(): { name: string; carried: string; bound: string | undefined }[] {
+  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, { info: () => {}, error: () => {} });
+  const built = buildAuthoringEnvironment(rendered, arcadeIds());
+  return parseCatalog(rendered).packs.flatMap((pack) =>
+    pack.types.flatMap((type) =>
+      type.iconUrl === undefined
+        ? []
+        : [
+            {
+              name: type.name,
+              carried: type.iconUrl,
+              bound: built.typeIcons.get(mkTypeId(NativeType.Struct, type.name)),
+            },
+          ]
+    )
+  );
 }
 
 /** The bytes the lowercase hex `hex` spells. */

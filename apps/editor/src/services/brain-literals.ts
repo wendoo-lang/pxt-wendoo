@@ -22,6 +22,8 @@ export interface BrainType {
   readonly typeId: TypeId;
   /** The type's registered definition. */
   readonly typeDef: StructTypeDef;
+  /** The type's icon, which each of its literals wears, or absent when the type carries none. */
+  readonly iconUrl?: string;
 }
 
 /** One brain literal tile the environment holds, as the UI reads it. */
@@ -55,10 +57,11 @@ interface Minted {
  * The brain literal tiles of one environment: one per brain the brains store
  * holds, for each catalog brain type, and one per such literal a brain source
  * references, minted through the language model's literal builder. Each
- * literal's value is its type's struct naming the brain's document id, and
- * its tile id follows from type and id alone, so a literal minted from a
- * reference compiles exactly as one minted from the held brains. Definitions
- * are never persisted: a brain holds only the literal's reference.
+ * literal wears its type's icon, its value is its type's struct naming the
+ * brain's document id, and its tile id follows from type and id alone, so a
+ * literal minted from a reference compiles exactly as one minted from the
+ * held brains. Definitions are never persisted: a brain holds only the
+ * literal's reference.
  *
  * A literal whose brain is held is resolved and offered as a candidate; one
  * whose brain is not stays bound for reading and compiling brains, and is
@@ -174,7 +177,13 @@ export class BrainLiterals {
     const def = new BrainTileLiteralDef(
       type.typeId,
       mkClosedStructValueByName(type.typeDef, fields),
-      { persist: false, valueLabel: id, displayName: this.labelOf(id), hidden: this._brains?.get(id) === undefined },
+      {
+        persist: false,
+        valueLabel: id,
+        displayName: this.labelOf(id),
+        hidden: this._brains?.get(id) === undefined,
+        ...(type.iconUrl === undefined ? {} : { metadata: { label: id, iconUrl: type.iconUrl } }),
+      },
       this.services
     );
     this.services.edit.tiles.registerTileDef(def);

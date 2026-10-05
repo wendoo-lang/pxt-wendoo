@@ -6,6 +6,7 @@ import {
   conditional,
   createHostActuator,
   createHostSensor,
+  getCatalogFallbackLabel,
   List,
   mkCallDef,
   mod,
@@ -169,7 +170,8 @@ function defaultValueOf(json: unknown): Value {
  * under the ids `ids` allocates. Each tile's and slot tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
  * each output a tile declares is bound as its output tile, carrying the
- * output's label, docs and icon. An entry the model cannot take is left out
+ * output's label, docs and icon. Each icon a pack gives a core tile is put in
+ * that tile's display metadata. An entry the model cannot take is left out
  * and reported, and the rest is bound.
  */
 class PackBinder {
@@ -182,8 +184,13 @@ class PackBinder {
     private readonly report: (problem: PackBindingProblem) => void
   ) {}
 
-  /** Binds every entry of `packs`: every pack's types first, so any pack's entry may refer to them, then each pack's tiles and operators. */
+  /**
+   * Binds every entry of `packs`: every pack's core tile icons first, while
+   * the environment holds only core tiles, then every pack's types, so any
+   * pack's entry may refer to them, then each pack's tiles and operators.
+   */
   bind(packs: readonly CatalogPack[]): void {
+    this.bindCoreTileIcons(packs);
     const declared = packs.flatMap((pack) => pack.types.map((type) => ({ pack, type })));
     for (const { type } of declared) {
       this.typeIds.set(type.name, mkTypeId(NativeType.Struct, type.name));
@@ -207,6 +214,24 @@ class PackBinder {
           this.bindOperator(operator);
         });
       }
+    }
+  }
+
+  /**
+   * Puts each icon `packs` give a tile the environment holds in that tile's
+   * display metadata, over its label and sentence words; a tile declaring no
+   * metadata takes the icon beside its fallback label. The first icon given a
+   * tile, in catalog order, stands. An icon given a tile id the environment
+   * does not hold is ignored.
+   */
+  private bindCoreTileIcons(packs: readonly CatalogPack[]): void {
+    const tiles = this.api.brainServices.edit.tiles;
+    const given = new Set<string>();
+    for (const { tileId, iconUrl } of packs.flatMap((pack) => pack.coreTileIcons)) {
+      const core = tiles.get(tileId);
+      if (core === undefined || given.has(tileId)) continue;
+      given.add(tileId);
+      core.metadata = { ...(core.metadata ?? { label: getCatalogFallbackLabel(core) }), iconUrl };
     }
   }
 
@@ -472,7 +497,8 @@ function inertAsync(result: Value): HostAsyncFn {
 
 /**
  * The module binding `packs` -- every struct type, tile and operator a
- * session catalog's packs declare -- into an environment, under the ids
+ * session catalog's packs declare, and every icon they give a core tile --
+ * into an environment, under the ids
  * `ids` allocates; `ids` must allocate every name the packs declare. Pack
  * actions run nothing in the editor: a sensor reads nil and an actuator does
  * nothing. Each entry the language model cannot take is passed to `report`

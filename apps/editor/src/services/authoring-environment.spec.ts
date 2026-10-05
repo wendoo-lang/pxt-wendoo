@@ -5,8 +5,11 @@ import {
   BrainDef,
   BrainTileLiteralDef,
   CoreHostActions,
+  CoreOpId,
   CoreTypeIds,
+  getCatalogFallbackLabel,
   mkActuatorTileId,
+  mkLiteralTileId,
   mkModifierTileId,
   mkOperatorTileId,
   mkParameterTileId,
@@ -14,7 +17,7 @@ import {
 } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { StructTypeDef } from "@wendoo/core/runtime";
-import { mkPrivateArgId, Op } from "@wendoo/core/runtime";
+import { mkPrivateArgId, mkTypeId, NativeType, Op } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import {
   ASSET_CATALOG,
@@ -203,6 +206,80 @@ const WORDED_CATALOG = JSON.stringify({
   ],
 });
 
+/** Icons the core tile icon catalog's entries carry, each a distinct data URI. */
+const CORE_ICONS = {
+  beaconAnd: "data:image/svg+xml;base64,YmVhY29uLWFuZA==",
+  beaconTrue: "data:image/svg+xml;base64,YmVhY29uLXRydWU=",
+  beaconAndAgain: "data:image/svg+xml;base64,YWdhaW4=",
+  beaconUnbound: "data:image/svg+xml;base64,dW5ib3VuZA==",
+  beaconReading: "data:image/svg+xml;base64,cmVhZGluZw==",
+  beaconOverReading: "data:image/svg+xml;base64,b3Zlcg==",
+  chimeAnd: "data:image/svg+xml;base64,Y2hpbWUtYW5k",
+  chimeOr: "data:image/svg+xml;base64,Y2hpbWUtb3I=",
+};
+
+/** A tile id no environment holds. */
+const UNBOUND_CORE_TILE_ID = mkOperatorTileId("no-such-operator");
+
+/**
+ * A catalog in the rendered form the simx publishes whose packs give core
+ * tiles icons: the AND tile twice in the first pack and once in the second,
+ * the true literal, a tile id no environment holds, and the first pack's own
+ * sensor, which carries an icon of its own; the second pack also gives the OR
+ * tile one.
+ */
+const CORE_ICON_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "beacon",
+      tiles: [{ name: "sensor.beacon.reading", kind: "sensor", returns: "string", iconUrl: CORE_ICONS.beaconReading }],
+      coreTileIcons: [
+        { tileId: mkOperatorTileId(CoreOpId.And), iconUrl: CORE_ICONS.beaconAnd },
+        { tileId: mkLiteralTileId(CoreTypeIds.Boolean, "true"), iconUrl: CORE_ICONS.beaconTrue },
+        { tileId: mkOperatorTileId(CoreOpId.And), iconUrl: CORE_ICONS.beaconAndAgain },
+        { tileId: UNBOUND_CORE_TILE_ID, iconUrl: CORE_ICONS.beaconUnbound },
+        { tileId: mkSensorTileId("sensor.beacon.reading"), iconUrl: CORE_ICONS.beaconOverReading },
+      ],
+    },
+    {
+      name: "chime",
+      coreTileIcons: [
+        { tileId: mkOperatorTileId(CoreOpId.And), iconUrl: CORE_ICONS.chimeAnd },
+        { tileId: mkOperatorTileId(CoreOpId.Or), iconUrl: CORE_ICONS.chimeOr },
+      ],
+    },
+  ],
+});
+
+/** Icons the type icon catalog's types carry, each a distinct data URI. */
+const TYPE_ICONS = {
+  bell: "data:image/svg+xml;base64,YmVsbA==",
+  bellAgain: "data:image/svg+xml;base64,YmVsbC1hZ2Fpbg==",
+  broken: "data:image/svg+xml;base64,YnJva2Vu",
+};
+
+/**
+ * A catalog in the rendered form the simx publishes whose types carry icons:
+ * `Bell` in the first pack and again in the second, `Broken`, whose field
+ * names a type no pack declares, and `Plain`, carrying no icon.
+ */
+const TYPE_ICON_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "bells",
+      types: [
+        { name: "Bell", fields: [{ name: "pitch", type: "number" }], iconUrl: TYPE_ICONS.bell },
+        { name: "Broken", fields: [{ name: "part", type: "Nowhere" }], iconUrl: TYPE_ICONS.broken },
+        { name: "Plain", fields: [{ name: "n", type: "number" }] },
+      ],
+    },
+    {
+      name: "chimes",
+      types: [{ name: "Bell", fields: [{ name: "pitch", type: "number" }], iconUrl: TYPE_ICONS.bellAgain }],
+    },
+  ],
+});
+
 /** Whether any of `environment`'s tile catalogs holds the tile `tileId`. */
 function hasTile(environment: WendooEnvironment, tileId: string): boolean {
   return environment.tileCatalogs().some((catalog) => catalog.has(tileId));
@@ -349,6 +426,64 @@ describe("buildAuthoringEnvironment", () => {
     assert.equal(iconOf(mkActuatorTileId(SHOW)), SHOW_ICON);
     assert.equal(iconOf(mkModifierTileId("modifier.gallery.blank")), BLANK_ICON);
     assert.equal(iconOf(mkSensorTileId(NEAR)), undefined);
+  });
+
+  it("gives each core tile a pack gives an icon that icon, keeping the core tile's label and sentence words", () => {
+    const built = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+    const and = tile(built.environment, mkOperatorTileId(CoreOpId.And));
+    const or = tile(built.environment, mkOperatorTileId(CoreOpId.Or));
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.deepEqual(and.metadata, { label: "AND", language: { form: "and" }, iconUrl: CORE_ICONS.beaconAnd });
+    assert.deepEqual(or.metadata, { label: "OR", language: { form: "or" }, iconUrl: CORE_ICONS.chimeOr });
+  });
+
+  it("gives a core tile declaring no display metadata the icon alone, its label left to the tile's own reading", () => {
+    const { environment } = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+    const literal = tile(environment, mkLiteralTileId(CoreTypeIds.Boolean, "true"));
+
+    assert.equal(literal.metadata?.iconUrl, CORE_ICONS.beaconTrue);
+    assert.equal(literal.metadata?.label, getCatalogFallbackLabel(literal));
+  });
+
+  it("keeps the first icon given a core tile, across one pack's entries and across packs", () => {
+    const { environment } = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+
+    assert.equal(tile(environment, mkOperatorTileId(CoreOpId.And)).metadata?.iconUrl, CORE_ICONS.beaconAnd);
+  });
+
+  it("leaves an icon given a tile id the environment does not hold inert, minting no tile and diagnosing nothing", () => {
+    const built = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+
+    assert.equal(hasTile(built.environment, UNBOUND_CORE_TILE_ID), false);
+    assert.deepEqual(built.diagnostics, []);
+  });
+
+  it("gives core tiles alone an icon, a pack's own tile keeping the icon its entry carries", () => {
+    const { environment } = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+
+    assert.equal(
+      tile(environment, mkSensorTileId("sensor.beacon.reading")).metadata?.iconUrl,
+      CORE_ICONS.beaconReading
+    );
+  });
+
+  it("gives the core tiles of one environment icons without touching another environment's core tiles", () => {
+    const iconed = buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest());
+    const plain = buildAuthoringEnvironment(PACK_CATALOG, PACK_MANIFEST);
+
+    assert.equal(tile(iconed.environment, mkOperatorTileId(CoreOpId.And)).metadata?.iconUrl, CORE_ICONS.beaconAnd);
+    assert.equal(tile(plain.environment, mkOperatorTileId(CoreOpId.And)).metadata?.iconUrl, undefined);
+  });
+
+  it("binds each bound type's icon to the type, the first declaration of a name standing, an unbound type's icon to nothing", () => {
+    const { typeIcons } = buildAuthoringEnvironment(TYPE_ICON_CATALOG, emptyIdManifest());
+
+    assert.deepEqual([...typeIcons], [[mkTypeId(NativeType.Struct, "Bell"), TYPE_ICONS.bell]]);
+  });
+
+  it("binds no type icon while no allocation is held", () => {
+    assert.equal(buildAuthoringEnvironment(TYPE_ICON_CATALOG, undefined).typeIcons.size, 0);
   });
 
   it("gives a tile and a slot tile declaring no sentence words none", () => {

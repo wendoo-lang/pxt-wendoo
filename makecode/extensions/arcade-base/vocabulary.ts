@@ -3,7 +3,11 @@
  * `Sprite` type, the `Image` asset type, the `Brain` type, the `dpad`,
  * `bump`, `in range` and `out of range` sensors, and the `move` and
  * `look like` actuators, each tile with its icon, registered from this
- * file's top-level code at program start.
+ * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
+ * each with its icon; and the icons it gives the core tiles -- the page
+ * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
+ * operators, gets, the parentheses, random number, true, false, nil, and the
+ * variable and tile factories.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
@@ -639,12 +643,19 @@ namespace wendoo {
     ];
   }
 
+  /** Catalog metadata declaring `icon` and nothing else. */
+  function iconMeta(icon: Image): CatalogMeta {
+    const meta = new CatalogMeta();
+    meta.icon = icon;
+    return meta;
+  }
+
   const arcadePack = pack(ARCADE_PACK_NAME);
 
-  arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding);
-  arcadePack.defineStruct(TYPE_SPRITE, [], spriteBinding);
+  arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding, iconMeta(VECTOR2_TYPE_ICON));
+  arcadePack.defineStruct(TYPE_SPRITE, [], spriteBinding, iconMeta(SPRITE_TYPE_ICON));
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
-  arcadePack.defineBrainType(TYPE_BRAIN, brainBinding);
+  arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, iconMeta(BRAIN_TYPE_ICON));
 
   const dpadSpec = new TileSpec(TILE_KIND_SENSOR, directionModifiers(), TYPE_VECTOR2);
   dpadSpec.label = "dpad";
@@ -720,4 +731,37 @@ namespace wendoo {
   lookLikeSpec.label = "look like";
   lookLikeSpec.icon = LOOK_LIKE_ICON;
   arcadePack.bind(LOOK_LIKE_TILE, new LookLikeActuator(), lookLikeSpec);
+
+  arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", CORE_ON_PAGE_ENTERED_ICON);
+  arcadePack.defineCoreTileIcon("tile.actuator->switch-page", CORE_SWITCH_PAGE_ICON);
+  arcadePack.defineCoreTileIcon("tile.actuator->restart-page", CORE_RESTART_PAGE_ICON);
+  arcadePack.defineCoreTileIcon("tile.sensor->current-page", CORE_CURRENT_PAGE_ICON);
+  arcadePack.defineCoreTileIcon("tile.sensor->previous-page", CORE_PREVIOUS_PAGE_ICON);
+  arcadePack.defineCoreTileIcon("tile.sensor->sensor.timeout", CORE_TIMER_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->and", CORE_AND_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->or", CORE_OR_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->not", CORE_NOT_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->eq", CORE_EQUAL_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->ne", CORE_NOT_EQUAL_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->lt", CORE_LESS_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->le", CORE_LESS_OR_EQUAL_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->gt", CORE_GREATER_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->ge", CORE_GREATER_OR_EQUAL_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->add", CORE_PLUS_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->sub", CORE_MINUS_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->mul", CORE_MULTIPLY_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->div", CORE_DIVIDE_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->neg", CORE_NEGATIVE_ICON);
+  arcadePack.defineCoreTileIcon("tile.op->assign", CORE_ASSIGN_ICON);
+  arcadePack.defineCoreTileIcon("tile.cf->open-paren", CORE_OPEN_PAREN_ICON);
+  arcadePack.defineCoreTileIcon("tile.cf->close-paren", CORE_CLOSE_PAREN_ICON);
+  arcadePack.defineCoreTileIcon("tile.sensor->random", CORE_RANDOM_ICON);
+  arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->true", CORE_TRUE_ICON);
+  arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->false", CORE_FALSE_ICON);
+  arcadePack.defineCoreTileIcon("tile.literal->nil:<nil>->nil", CORE_NIL_ICON);
+  arcadePack.defineCoreTileIcon("tile.var.factory->boolean", CORE_BOOLEAN_VARIABLE_ICON);
+  arcadePack.defineCoreTileIcon("tile.var.factory->number", CORE_NUMBER_VARIABLE_ICON);
+  arcadePack.defineCoreTileIcon("tile.var.factory->string", CORE_TEXT_VARIABLE_ICON);
+  arcadePack.defineCoreTileIcon("tile.lit.factory->number", CORE_NUMBER_TILE_ICON);
+  arcadePack.defineCoreTileIcon("tile.lit.factory->string", CORE_TEXT_TILE_ICON);
 }
