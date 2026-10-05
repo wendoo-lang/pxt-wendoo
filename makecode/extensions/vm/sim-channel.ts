@@ -96,9 +96,9 @@ namespace wendoo {
     return version;
   }
 
-  /** Log the refusal of a message from the simulator extension as `wendoo sim-channel-rejected <code>`. */
+  /** Log the refusal of a message from the simulator extension as `wendoo sim-channel-rejected <code>` through {@link debugLog}. */
   function refuse(code: string): void {
-    console.log(`wendoo sim-channel-rejected ${code}`);
+    debugLog(`wendoo sim-channel-rejected ${code}`);
   }
 
   /**

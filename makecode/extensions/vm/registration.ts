@@ -988,15 +988,22 @@ namespace wendoo {
   }
 
   /**
-   * One named output a tile declares. A tile writes the output through
-   * {@link setActionOutput}; the output's own tile reads it back by this name
-   * and type.
+   * One named output a tile declares, with what the editor shows for its
+   * output tile. A tile writes the output through {@link setActionOutput};
+   * the output's own tile reads it back by this name and type.
    */
   export class TileOutputSpec {
-    /** Output name, as the tile declares it. */
+    /** Output name, as the tile declares it; with {@link TileOutputSpec.type}, the output's identity. */
     name: string;
     /** Type name of the output's value. */
     type: string;
+    /** Display label of the output's tile; `""` when undeclared, and the editor shows the output's name. */
+    label: string = "";
+    /** Markdown document of the output's tile, verbatim; `""` when undeclared. */
+    docs: string = "";
+    /** Icon of the output's tile, in the form the host target's catalog icon encoder renders; `undefined` when undeclared. */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    icon: any = undefined;
 
     constructor(name: string, type: string) {
       this.name = name;
@@ -1154,6 +1161,8 @@ namespace wendoo {
     private meta: CatalogMeta;
     /** Kind of the project assets an asset type's values name; `""` for any other struct type. */
     private assetKind: string;
+    /** Whether the type is a brain type, its values each naming one of the project's brains. */
+    private brain: boolean;
 
     constructor(
       name: string,
@@ -1161,13 +1170,15 @@ namespace wendoo {
       fields: StructFieldSpec[],
       binding: StructTypeBinding,
       meta: CatalogMeta,
-      assetKind: string
+      assetKind: string,
+      brain: boolean
     ) {
       super(name, pack);
       this.fields = fields;
       this.binding = binding;
       this.meta = meta;
       this.assetKind = assetKind;
+      this.brain = brain;
     }
 
     idIn(ids: RegistrationIdMap): number {
@@ -1194,7 +1205,7 @@ namespace wendoo {
 
     writeCatalog(catalog: CatalogWriter): void {
       const native = this.binding.hasFieldGetter || this.binding.hasFieldSetter || this.binding.hasSnapshotNative;
-      catalog.struct(this.pack, this.name, this.fields, native, this.assetKind, this.meta);
+      catalog.struct(this.pack, this.name, this.fields, native, this.assetKind, this.brain, this.meta);
     }
   }
 
@@ -1308,7 +1319,7 @@ namespace wendoo {
      * @param meta - Catalog metadata of the type; the drain ignores it.
      */
     defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: CatalogMeta): void {
-      appendPending(new PendingStructType(name, this.name, fields, binding, meta, ""));
+      appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", false));
     }
 
     /**
@@ -1324,7 +1335,23 @@ namespace wendoo {
      */
     defineAssetType(name: string, binding: AssetTypeBinding, meta?: CatalogMeta): void {
       const fields = [readOnlyField(ASSET_FIELD, TYPE_STRING)];
-      appendPending(new PendingStructType(name, this.name, fields, binding, meta, binding.assetKind));
+      appendPending(new PendingStructType(name, this.name, fields, binding, meta, binding.assetKind, false));
+    }
+
+    /**
+     * Register the brain type `name`: a struct type whose values each name
+     * one of the project's compiled brains by its document id, in one
+     * read-only string field, {@link BRAIN_FIELD}. The drain resolves the
+     * type's atom id and the field's id from the project's mapping; the
+     * catalog entry marks the type as a brain type.
+     *
+     * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
+     * @param binding - The type's binding; read document ids through it once the drain has run.
+     * @param meta - Catalog metadata of the type; the drain ignores it.
+     */
+    defineBrainType(name: string, binding: BrainTypeBinding, meta?: CatalogMeta): void {
+      const fields = [readOnlyField(BRAIN_FIELD, TYPE_STRING)];
+      appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", true));
     }
 
     /**

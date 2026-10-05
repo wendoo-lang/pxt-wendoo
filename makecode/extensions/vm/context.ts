@@ -277,10 +277,15 @@ namespace wendoo {
   /**
    * Brain-global variable storage, indexed by the compiler-assigned slot id
    * that `LOAD_VAR_SLOT` and `STORE_VAR_SLOT` carry. Each slot is seeded at
-   * program load with the starting value the program declares for it.
+   * program load with the starting value the program declares for it. A
+   * variable is also reachable by name: the program's own variables by the
+   * names it declares for their slots, and a name it declares none for by a
+   * slot of its own, allocated on first write, that no bytecode addresses.
    */
   export class VariableStore {
     private values: Value[] = [];
+    /** Variable name of each slot, by slot id; the program's names, then each name a by-name write added. */
+    private names: string[] = [];
 
     constructor() {}
 
@@ -292,6 +297,7 @@ namespace wendoo {
      */
     install(program: Program): void {
       this.values = [];
+      this.names = program.variableNames.slice(0);
       for (let i = 0; i < program.variableNames.length; i++) {
         const initIdx = i < program.variableInitValues.length ? program.variableInitValues[i] : NO_VARIABLE_INIT;
         const seed =
@@ -328,6 +334,36 @@ namespace wendoo {
         this.values.push(NIL_VALUE);
       }
       this.values[slotId] = value;
+    }
+
+    /**
+     * The value of the variable named `name`, or nil when no slot carries
+     * that name.
+     *
+     * @param name - Variable name.
+     */
+    getByName(name: string): Value {
+      const slotId = this.names.indexOf(name);
+      return slotId < 0 ? NIL_VALUE : this.getBySlot(slotId);
+    }
+
+    /**
+     * Write the variable named `name`, allocating a slot for it after every
+     * other slot when no slot carries that name.
+     *
+     * @param name - Variable name.
+     * @param value - Value to store.
+     */
+    setByName(name: string, value: Value): void {
+      let slotId = this.names.indexOf(name);
+      if (slotId < 0) {
+        slotId = Math.max(this.names.length, this.values.length);
+        while (this.names.length < slotId) {
+          this.names.push("");
+        }
+        this.names.push(name);
+      }
+      this.setBySlot(slotId, value);
     }
   }
 

@@ -23,6 +23,11 @@ const FULL_CATALOG = JSON.stringify({
           asset: "image",
           fields: [{ name: "asset", type: "string", readOnly: true }],
         },
+        {
+          name: "Roster",
+          brain: true,
+          fields: [{ name: "id", type: "string", readOnly: true }],
+        },
       ],
       tiles: [
         {
@@ -30,7 +35,16 @@ const FULL_CATALOG = JSON.stringify({
           kind: "sensor",
           async: true,
           returns: "string",
-          outputs: [{ name: "position", type: "Beacon" }],
+          outputs: [
+            { name: "position", type: "Beacon" },
+            {
+              name: "strength",
+              type: "number",
+              label: "signal strength",
+              docs: "# Strength",
+              iconUrl: "data:image/svg+xml;base64,c3RyZW5ndGg=",
+            },
+          ],
           label: "beacon reading",
           group: "Beacons",
           docs: "# Beacon reading",
@@ -244,6 +258,12 @@ describe("parseCatalog", () => {
           asset: "image",
           fields: [{ name: "asset", type: "string", readOnly: true }],
         },
+        {
+          name: "Roster",
+          native: false,
+          brain: true,
+          fields: [{ name: "id", type: "string", readOnly: true }],
+        },
       ],
       tiles: [
         {
@@ -252,7 +272,16 @@ describe("parseCatalog", () => {
           async: true,
           grammar: [],
           returns: "string",
-          outputs: [{ name: "position", type: "Beacon" }],
+          outputs: [
+            { name: "position", type: "Beacon" },
+            {
+              name: "strength",
+              type: "number",
+              label: "signal strength",
+              docs: "# Strength",
+              iconUrl: "data:image/svg+xml;base64,c3RyZW5ndGg=",
+            },
+          ],
           label: "beacon reading",
           group: "Beacons",
           docs: "# Beacon reading",

@@ -11,9 +11,12 @@
  * bump, in-range, out-of-range and move tiles, driven by pressing the
  * controller's buttons and placing and moving sprites from game code, and
  * programs updated while the game runs, through the messages the Wendoo
- * simulator extension posts. It also calls the bump and look-like tiles'
- * bodies directly with image asset values, resolved through an image factory
- * registered the way a project's images module registers one.
+ * simulator extension posts. It also calls the bump, in-range, out-of-range
+ * and look-like tiles' bodies directly with image asset, sprite and brain
+ * values, images resolved through an image factory registered the way a
+ * project's images module registers one, and the move tile's body with
+ * sprite and point targets and with wander destinations picked from random
+ * sources it scripts.
  *
  * Output grammar, one line each:
  *
@@ -29,6 +32,8 @@
  *   logs them.
  * - `wendoo WENDOO_ASSET_UNRESOLVED image <id>` -- one per image asset id no
  *   factory held when a tile first used it, as the VM extension logs it.
+ * - `DEBUG ON` -- the run turned the Wendoo extensions' debug logging on;
+ *   none of the `wendoo` lines above precede it.
  * - `SIMCAP PASS <case>` -- the run reached its end.
  */
 namespace arcadeSelftest {
@@ -157,16 +162,17 @@ namespace arcadeSelftest {
     return sprite;
   }
 
-  /** The direction the chosen cardinals specify, as the move's direction modifiers sum them with neither `toward` nor `away`. */
+  /** The direction the chosen cardinals specify, as the move's direction modifiers sum them with neither `toward`, `away` nor `wander`. */
   function cardinals(up: boolean, down: boolean, left: boolean, right: boolean): wendoo.DirectionVector {
-    return wendoo.specifiedDirection(up, down, left, right, false, false, undefined);
+    return wendoo.specifiedDirection(up, down, left, right, false, false, undefined, undefined);
   }
 
   /**
    * Check the arcade base pack's direction arithmetic directly: the analog
    * dead band and its live band, the dpad's modifier mask, the move's
-   * cardinal sum and direction fallback, and its speed. Call it once the
-   * program hosts have drained registrations.
+   * cardinal sum and direction fallback, its speed, and the speed a move
+   * heading for a goal is held to: pixels per second, over a frame timed in
+   * milliseconds. Call it once the program hosts have drained registrations.
    */
   function checkDirectionArithmetic(): void {
     check(
@@ -241,6 +247,17 @@ namespace arcadeSelftest {
         wendoo.moveSpeed(wendoo.NIL_VALUE, wendoo.mkNumber(5), wendoo.NIL_VALUE) === 800 &&
         wendoo.moveSpeed(wendoo.NIL_VALUE, wendoo.NIL_VALUE, wendoo.mkNumber(30)) === 30 &&
         wendoo.moveSpeed(wendoo.NIL_VALUE, wendoo.NIL_VALUE, wendoo.mkNumber(-5)) === 0
+    );
+    check(
+      "move-reach-holds-speed-in-pixels-per-second-over-milliseconds",
+      wendoo.speedWithinReach(5000, 100, 20) === 5000 &&
+        wendoo.speedWithinReach(800, 100, 20) === 800 &&
+        wendoo.speedWithinReach(100, 100, 20) === 100 &&
+        wendoo.speedWithinReach(800, 5, 20) === 250 &&
+        wendoo.speedWithinReach(800, 5, 33) === 5000 / 33 &&
+        wendoo.speedWithinReach(100, 5, 20) === 100 &&
+        wendoo.speedWithinReach(800, 0, 20) === 0 &&
+        wendoo.speedWithinReach(800, 5, 0) === 800
     );
   }
 
@@ -484,7 +501,7 @@ namespace arcadeSelftest {
    * moves; toward and away together cancel, in either order, to the move's
    * fallback; each composes with a direction modifier, in either order, and
    * with the speed words and the speed argument; two sprites sharing one
-   * center add nothing to each other's pursuit; a rule whose WHEN produces no
+   * center each hold still, their pursuit arrived; a rule whose WHEN produces no
    * sprite moves in the default direction, or in the direction its WHEN
    * produced; and a program update turns a running pursuit to flight live.
    */
@@ -561,8 +578,8 @@ namespace arcadeSelftest {
       pursues(lunging, subject, 200) && flees(skulking, subject, 50) && flees(tethered, subject, 30)
     );
     check(
-      "a-shared-center-adds-nothing-to-pursuit",
-      movesAt(twin, 100, 0) && movesAt(twinShadow, 100, 0) && twin.x === twinShadow.x && twin.y === twinShadow.y
+      "a-shared-center-holds-pursuit-still",
+      movesAt(twin, 0, 0) && movesAt(twinShadow, 0, 0) && twin.x === twinShadow.x && twin.y === twinShadow.y
     );
     check("toward-without-a-sprite-moves-in-the-default-direction", movesAt(homing, 100, 0));
     const placed = [
@@ -908,14 +925,19 @@ namespace arcadeSelftest {
     return wendoo.mkStruct(wendoo.structTypeId(IMAGE_TYPE), slots);
   }
 
-  /** A context whose world is `sprite`'s, for calling a tile's body directly. */
-  function contextOn(sprite: Sprite): wendoo.ExecutionContext {
+  /** A context whose world is `world`, for calling a tile's body directly. */
+  function contextIn(world: wendoo.SpriteWorld): wendoo.ExecutionContext {
     const services = new wendoo.BrainServices(
       new wendoo.Program(),
       new wendoo.RuleSubtreeLiveness(),
       new wendoo.BrainPageServices()
     );
-    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), new wendoo.SpriteWorld(sprite));
+    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), world);
+  }
+
+  /** A context whose world is a fresh world of `sprite`, for calling a tile's body directly. */
+  function contextOn(sprite: Sprite): wendoo.ExecutionContext {
+    return contextIn(new wendoo.SpriteWorld(sprite));
   }
 
   /** The bound body of the tile `tileName`, or `undefined` when no registration holds it. */
@@ -936,19 +958,15 @@ namespace arcadeSelftest {
   }
 
   /**
-   * In a scene of its own, check image assets and the two tiles reading them,
-   * each tile's body called directly with the values a compiled program
+   * In a scene of its own, check image assets and the look-like tile reading
+   * them, its body called directly with the values a compiled program
    * passes it: the `Image` type takes its atom and its one field from the
    * project's ids module; look like wears the image an asset id or display
    * name resolves to at the moment it acts, or the image another sprite wears
    * at that moment -- the same image, not a copy -- and leaves the sprite as
    * it was given an image no factory holds or a value standing for no sprite;
-   * bump given an image reads the nearest touched sprite whose image has the
-   * same pixels, whatever image object it wears, reads nothing while no
-   * touched sprite looks like it or when no factory holds it, and given no
-   * image -- a nil image slot, or an argument buffer with no image slot at
-   * all -- reads the nearest touched sprite; and the direction toward a
-   * value is read only from a `Sprite` value.
+   * and the goal toward heads for is read from a WHEN's result only when it
+   * is a `Sprite` value.
    */
   function checkImageAssets(): void {
     game.pushScene();
@@ -998,40 +1016,1549 @@ namespace arcadeSelftest {
     act(lookLike, steady, [wendoo.NIL_VALUE, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)]);
     check("look-like-keeps-its-image-given-no-sprite", steady.image === steadyImage);
 
-    const bump = tileBody(wendoo.BUMP_TILE);
-    const reader = solidSprite(8, 30, 60);
-    const plainNear = solidSprite(8, 32, 60);
-    const twinPicture = image.create(8, 8);
-    twinPicture.drawImage(heroPicture(), 0, 0);
-    const twin = sprites.create(twinPicture, SpriteKind.Player);
-    twin.setPosition(36, 60);
-    const filter = imageLiteral(HERO_ASSET_ID);
-    check(
-      "bump-given-an-image-reads-the-nearest-touched-sprite-that-looks-like-it",
-      twin.image !== heroPicture() &&
-        standsFor(act(bump, reader, [filter]), twin) &&
-        standsFor(act(bump, reader, [imageLiteral(HERO_DISPLAY_NAME)]), twin)
-    );
-    check(
-      "bump-given-no-image-reads-the-nearest-touched-sprite",
-      standsFor(act(bump, reader, [wendoo.NIL_VALUE]), plainNear) && standsFor(act(bump, reader, []), plainNear)
-    );
-    check(
-      "bump-given-an-image-gone-from-the-project-reads-nothing",
-      act(bump, reader, [imageLiteral(DELETED_ASSET_ID)]).t === wendoo.ValueTag.Nil
-    );
-    twin.destroy();
-    check(
-      "bump-given-an-image-no-touched-sprite-looks-like-reads-nothing",
-      act(bump, reader, [filter]).t === wendoo.ValueTag.Nil
-    );
-
+    const goal = wendoo.moveGoal(wendoo.NIL_VALUE, wendoo.spriteValue(model));
     check(
       "toward-reads-only-a-sprite-value",
-      wendoo.directionToward(reader, wendoo.spriteValue(model)) !== undefined &&
-        wendoo.directionToward(reader, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)) === undefined &&
-        wendoo.directionToward(reader, filter) === undefined
+      goal !== undefined &&
+        goal.x === model.x &&
+        goal.y === model.y &&
+        wendoo.moveGoal(wendoo.NIL_VALUE, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)) === undefined &&
+        wendoo.moveGoal(wendoo.NIL_VALUE, imageLiteral(HERO_ASSET_ID)) === undefined
     );
+    game.popScene();
+  }
+
+  /** A sprite in the current scene wearing a fresh copy of the hero image's pixels, centered at `x`, `y`. */
+  function heroSprite(x: number, y: number): Sprite {
+    const picture = image.create(8, 8);
+    picture.drawImage(heroPicture(), 0, 0);
+    const sprite = sprites.create(picture, SpriteKind.Player);
+    sprite.setPosition(x, y);
+    return sprite;
+  }
+
+  /**
+   * The argument buffer a proximity sensor's body receives given the filter
+   * `image`, `sprite` or `brain` (nil for those not given, all nil for no
+   * filter): bump's buffer holds the filter's image, sprite and brain; each
+   * range sensor's holds them followed by the range `range`.
+   */
+  function filterArgs(
+    tileName: string,
+    image: wendoo.Value,
+    sprite: wendoo.Value,
+    brain: wendoo.Value,
+    range: wendoo.Value
+  ): wendoo.Value[] {
+    return tileName === wendoo.BUMP_TILE ? [image, sprite, brain] : [image, sprite, brain, range];
+  }
+
+  /**
+   * What the proximity sensor `tileName` reads on `reader`'s behalf given the
+   * filter `image` or `sprite` and, on a range sensor, the range `range`.
+   */
+  function sense(
+    tileName: string,
+    reader: Sprite,
+    image: wendoo.Value,
+    sprite: wendoo.Value,
+    range: wendoo.Value
+  ): wendoo.Value {
+    return act(tileBody(tileName), reader, filterArgs(tileName, image, sprite, wendoo.NIL_VALUE, range));
+  }
+
+  /**
+   * What the proximity sensor `tileName` reads on behalf of the sprite whose
+   * world is `world` given the brain filter `brain` and, on a range sensor,
+   * the range `range`.
+   */
+  function senseBrain(
+    tileName: string,
+    world: wendoo.SpriteWorld,
+    brain: wendoo.Value,
+    range: wendoo.Value
+  ): wendoo.Value {
+    const nil = wendoo.NIL_VALUE;
+    const body = tileBody(tileName);
+    return body ? body.execSync(contextIn(world), filterArgs(tileName, nil, nil, brain, range)) : nil;
+  }
+
+  /** Whether `value` is nil. */
+  function readsNothing(value: wendoo.Value): boolean {
+    return value.t === wendoo.ValueTag.Nil;
+  }
+
+  /** The proximity sensors, each by its tile name and the stem of the names of its filter checks. */
+  const PROXIMITY_SENSORS = [
+    [wendoo.BUMP_TILE, "bump"],
+    [wendoo.IN_RANGE_TILE, "in-range"],
+    [wendoo.OUT_OF_RANGE_TILE, "out-of-range"],
+  ];
+
+  /**
+   * In a scene of its own, check the one filter grammar every proximity
+   * sensor takes, each sensor's body called directly with the values a
+   * compiled program passes it, around a reader touching a plain sprite 2
+   * pixels away and a sprite wearing the hero image's pixels 6 pixels away,
+   * with another wearing them 100 pixels away; the out-of-range sensor is
+   * given a range of 3, the others none. Given an image, each reads the
+   * nearest sprite whose image has the same pixels -- touched, for bump --
+   * and nothing when no sprite looks like it or no factory holds the image;
+   * given a sprite, each reads that sprite alone, and nothing for a value
+   * standing for no sprite in the scene or for the reader itself; given no
+   * filter, each reads the nearest sprite -- touched, for bump -- whatever
+   * image it wears. At equal ranges exactly one of
+   * the range pair reads the nearest admitted sprite whenever one exists, and
+   * neither reads while the filter admits none. Then a compiled program
+   * placing the range pair given an image and a range moves its sprite by
+   * the nearest sprite wearing the image alone.
+   */
+  function checkSpriteFilters(): void {
+    game.pushScene();
+    const reader = solidSprite(8, 30, 60);
+    const plainNear = solidSprite(8, 32, 60);
+    const twin = heroSprite(36, 60);
+    const farHero = heroSprite(130, 60);
+    const gone = solidSprite(8, 31, 60);
+    gone.destroy();
+    const hero = imageLiteral(HERO_ASSET_ID);
+    const nil = wendoo.NIL_VALUE;
+    const narrow = wendoo.mkNumber(3);
+    for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
+      const tile = PROXIMITY_SENSORS[i][0];
+      const stem = PROXIMITY_SENSORS[i][1];
+      const range = tile === wendoo.OUT_OF_RANGE_TILE ? narrow : nil;
+      check(
+        `${stem}-given-an-image-reads-the-nearest-sprite-that-looks-like-it`,
+        twin.image !== heroPicture() &&
+          standsFor(sense(tile, reader, hero, nil, range), twin) &&
+          standsFor(sense(tile, reader, imageLiteral(HERO_DISPLAY_NAME), nil, range), twin)
+      );
+      check(
+        `${stem}-given-an-image-no-sprite-looks-like-reads-nothing`,
+        readsNothing(sense(tile, reader, imageLiteral(LATE_ASSET_ID), nil, range))
+      );
+      check(
+        `${stem}-given-an-image-gone-from-the-project-reads-nothing`,
+        readsNothing(sense(tile, reader, imageLiteral(DELETED_ASSET_ID), nil, range))
+      );
+      check(
+        `${stem}-given-a-sprite-reads-that-sprite-alone`,
+        standsFor(sense(tile, reader, nil, wendoo.spriteValue(twin), range), twin)
+      );
+      check(
+        `${stem}-given-a-value-standing-for-no-sprite-in-the-scene-reads-nothing`,
+        readsNothing(sense(tile, reader, nil, wendoo.spriteValue(gone), range)) &&
+          readsNothing(sense(tile, reader, nil, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), twin), range))
+      );
+      check(
+        `${stem}-given-its-own-sprite-reads-nothing`,
+        readsNothing(sense(tile, reader, nil, wendoo.spriteValue(reader), range))
+      );
+    }
+    check(
+      "bump-given-a-sprite-it-does-not-touch-reads-nothing",
+      readsNothing(sense(wendoo.BUMP_TILE, reader, nil, wendoo.spriteValue(farHero), nil))
+    );
+    check(
+      "proximity-sensors-given-no-filter-read-as-unfiltered",
+      standsFor(act(tileBody(wendoo.BUMP_TILE), reader, []), plainNear) &&
+        standsFor(sense(wendoo.BUMP_TILE, reader, nil, nil, nil), plainNear) &&
+        standsFor(act(tileBody(wendoo.IN_RANGE_TILE), reader, []), plainNear) &&
+        standsFor(sense(wendoo.IN_RANGE_TILE, reader, nil, nil, nil), plainNear) &&
+        readsNothing(act(tileBody(wendoo.OUT_OF_RANGE_TILE), reader, [])) &&
+        standsFor(sense(wendoo.OUT_OF_RANGE_TILE, reader, nil, nil, wendoo.mkNumber(1)), plainNear)
+    );
+
+    const ranges = [0, 2, 5, 6, 7, 99, 100, 101, 200];
+    let complementary = true;
+    for (let i = 0; i < ranges.length; i++) {
+      const range = wendoo.mkNumber(ranges[i]);
+      const inside = sense(wendoo.IN_RANGE_TILE, reader, hero, nil, range);
+      const beyond = sense(wendoo.OUT_OF_RANGE_TILE, reader, hero, nil, range);
+      const holds =
+        ranges[i] >= 6
+          ? standsFor(inside, twin) && readsNothing(beyond)
+          : readsNothing(inside) && standsFor(beyond, twin);
+      if (!holds) {
+        complementary = false;
+      }
+      const emptyInside = sense(wendoo.IN_RANGE_TILE, reader, imageLiteral(LATE_ASSET_ID), nil, range);
+      const emptyBeyond = sense(wendoo.OUT_OF_RANGE_TILE, reader, imageLiteral(LATE_ASSET_ID), nil, range);
+      if (!readsNothing(emptyInside) || !readsNothing(emptyBeyond)) {
+        complementary = false;
+      }
+    }
+    check("range-pair-is-complementary-within-the-admitted-set", complementary);
+    reader.destroy();
+    plainNear.destroy();
+    twin.destroy();
+    farHero.destroy();
+    pause(FRAMES_MS);
+
+    const runner = solidSprite(8, 40, 60);
+    const decoy = solidSprite(8, 45, 60);
+    wendoo.runBrain(runner, wendooBrains.p_eitherHeroFilt01);
+    pause(FRAMES_MS);
+    runner.vx = 37;
+    pause(FRAMES_MS);
+    const restsWithoutHero = movesAt(runner, 37, 0);
+    const nearHero = heroSprite(70, 60);
+    pause(FRAMES_MS);
+    const upNearHero = movesAt(runner, 0, -100);
+    runner.setPosition(40, 60);
+    decoy.setPosition(45, 60);
+    nearHero.setPosition(90, 60);
+    pause(FRAMES_MS);
+    check(
+      "filtered-range-rules-read-the-nearest-sprite-wearing-the-image",
+      restsWithoutHero && upNearHero && movesAt(runner, 0, 100) && faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
+  /** Wendoo type name of a brain reference value. */
+  const BRAIN_TYPE = "Brain";
+
+  /** The one field of a brain reference value: the brain's document id. */
+  const BRAIN_ID_FIELD = "id";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Brain` type. */
+  const BRAIN_ATOM = 1027;
+
+  /** A document id no program in the project carries. */
+  const UNKNOWN_BRAIN_ID = "nobodyRunsThis01";
+
+  /**
+   * The `Brain` value a compiled program carries for the brain `documentId`:
+   * a plain struct holding the document id at the field id the project's ids
+   * module allocates the type's id field.
+   */
+  function brainLiteral(documentId: string): wendoo.Value {
+    const fieldId = wendoo.projectIds().fieldId(BRAIN_TYPE, BRAIN_ID_FIELD);
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i <= fieldId; i++) {
+      slots.push(wendoo.NIL_VALUE);
+    }
+    slots[fieldId] = wendoo.mkString(documentId);
+    return wendoo.mkStruct(wendoo.structTypeId(BRAIN_TYPE), slots);
+  }
+
+  /** A world of `sprite` whose program host is the current scene's, for calling a tile's body on its behalf. */
+  function hostedWorld(sprite: Sprite): wendoo.SpriteWorld {
+    const world = new wendoo.SpriteWorld(sprite);
+    world.host = wendoo.sceneProgramHost(game.currentScene());
+    return world;
+  }
+
+  /**
+   * In a scene of its own, check the brain filter every proximity sensor
+   * takes: the `Brain` type takes its atom and its one field from the
+   * project's ids module and reads the document id only of its own values;
+   * a scene's program host lists the worlds running a brain; around a
+   * reader touching a plain sprite 2 pixels away, a sprite running no brain
+   * 3 pixels away and a sprite running the ticker 6 pixels away, with
+   * another running it 100 pixels away, each sensor given the ticker's brain
+   * reads the nearest sprite running it -- the out-of-range sensor given a
+   * range of 3 -- reads nothing given a brain no sprite runs or a value
+   * naming no brain, and given the brain its
+   * own sprite runs reads another sprite running it, never its own, and
+   * nothing while no other does. Then a compiled program filtering both
+   * range sensors on its own brain moves a lone runner by neither, two
+   * runners near each other by in range, and two far apart by out of range.
+   */
+  function checkBrainFilters(): void {
+    game.pushScene();
+    const host = wendoo.sceneProgramHost(game.currentScene());
+    const brainType = wendoo.hostRegistries().types.getByTypeId(wendoo.structTypeId(BRAIN_TYPE));
+    check(
+      "brain-type-takes-its-atom-and-field-from-the-manifest",
+      brainType !== undefined &&
+        brainType.atomId === BRAIN_ATOM &&
+        brainType.fieldIds.length === 1 &&
+        brainType.fieldIds[0] === wendoo.projectIds().fieldId(BRAIN_TYPE, BRAIN_ID_FIELD)
+    );
+    check(
+      "brain-type-reads-the-document-id-of-its-own-values",
+      wendoo.brainBinding.documentIdOf(brainLiteral(TICKER_ID)) === TICKER_ID &&
+        wendoo.brainBinding.documentIdOf(imageLiteral(HERO_ASSET_ID)) === "" &&
+        wendoo.brainBinding.documentIdOf(wendoo.NIL_VALUE) === ""
+    );
+
+    const reader = solidSprite(8, 30, 60);
+    const plainNear = solidSprite(8, 32, 60);
+    const nearRunner = solidSprite(8, 36, 60);
+    const farRunner = solidSprite(8, 130, 60);
+    const idle = solidSprite(8, 33, 60);
+    wendoo.runBrain(idle, wendooBrains.none);
+    wendoo.runBrain(nearRunner, wendooBrains.p_akBQz0nySKaYx37w);
+    wendoo.runBrain(farRunner, wendooBrains.p_akBQz0nySKaYx37w);
+    pause(FRAMES_MS);
+    const running = host.worldsRunning(TICKER_ID);
+    check(
+      "host-lists-the-worlds-running-a-brain",
+      running.length === 2 &&
+        (running[0] as wendoo.SpriteWorld).sprite === nearRunner &&
+        (running[1] as wendoo.SpriteWorld).sprite === farRunner &&
+        host.worldsRunning(UNKNOWN_BRAIN_ID).length === 0
+    );
+
+    const world = hostedWorld(reader);
+    const ticker = brainLiteral(TICKER_ID);
+    const nil = wendoo.NIL_VALUE;
+    const narrow = wendoo.mkNumber(3);
+    for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
+      const tile = PROXIMITY_SENSORS[i][0];
+      const stem = PROXIMITY_SENSORS[i][1];
+      const range = tile === wendoo.OUT_OF_RANGE_TILE ? narrow : nil;
+      check(
+        `${stem}-given-a-brain-reads-the-nearest-sprite-running-it`,
+        standsFor(senseBrain(tile, world, ticker, range), nearRunner)
+      );
+      check(
+        `${stem}-given-a-brain-no-sprite-runs-reads-nothing`,
+        readsNothing(senseBrain(tile, world, brainLiteral(UNKNOWN_BRAIN_ID), range)) &&
+          readsNothing(senseBrain(tile, world, imageLiteral(HERO_ASSET_ID), range))
+      );
+    }
+
+    wendoo.runBrain(reader, wendooBrains.p_akBQz0nySKaYx37w);
+    pause(FRAMES_MS);
+    const ownWorld = hostedWorld(reader);
+    let readsAnother = true;
+    for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
+      const tile = PROXIMITY_SENSORS[i][0];
+      const range = tile === wendoo.OUT_OF_RANGE_TILE ? narrow : nil;
+      if (!standsFor(senseBrain(tile, ownWorld, ticker, range), nearRunner)) {
+        readsAnother = false;
+      }
+    }
+    nearRunner.destroy();
+    farRunner.destroy();
+    pause(FRAMES_MS);
+    let readsNoneAlone = true;
+    for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
+      if (!readsNothing(senseBrain(PROXIMITY_SENSORS[i][0], ownWorld, ticker, nil))) {
+        readsNoneAlone = false;
+      }
+    }
+    check(
+      "proximity-sensors-given-their-own-brain-read-another-runner-never-their-own-sprite",
+      readsAnother && readsNoneAlone
+    );
+    reader.destroy();
+    plainNear.destroy();
+    idle.destroy();
+    pause(FRAMES_MS);
+
+    const lone = solidSprite(8, 80, 60);
+    wendoo.runBrain(lone, wendooBrains.p_kinBrainFilter01);
+    pause(FRAMES_MS);
+    lone.vx = 37;
+    pause(FRAMES_MS);
+    const loneRests = movesAt(lone, 37, 0);
+    lone.destroy();
+    pause(FRAMES_MS);
+    check(
+      "own-brain-range-rules-read-other-runners-and-never-their-own-sprite",
+      loneRests &&
+        pairMovesAt(wendooBrains.p_kinBrainFilter01, 30, 0, -100) &&
+        pairMovesAt(wendooBrains.p_kinBrainFilter01, 100, 0, 100) &&
+        faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
+  /** The output each proximity sensor writes: its tile name, its output's name, and the stem of its checks' names. */
+  const SENSOR_OUTPUTS = [
+    [wendoo.BUMP_TILE, "bumped", "bump"],
+    [wendoo.IN_RANGE_TILE, "inRange", "in-range"],
+    [wendoo.OUT_OF_RANGE_TILE, "outOfRange", "out-of-range"],
+  ];
+
+  /** Rule funcId the output checks run a parent rule's sensor under. */
+  const OUTPUT_PARENT_RULE = 0;
+
+  /** Rule funcId the output checks run a child rule's sensor under. */
+  const OUTPUT_CHILD_RULE = 1;
+
+  /** FuncId of the core host function reading a rule variable by name. */
+  const RULE_CONTEXT_GET_VARIABLE = 50;
+
+  /** The rule variable the `Sprite` output named `name` is stored under. */
+  function spriteOutputKey(name: string): string {
+    return wendoo.actionOutputVariableName(wendoo.structTypeId("Sprite"), name);
+  }
+
+  /**
+   * A context running under a child rule whose parent is
+   * {@link OUTPUT_PARENT_RULE}, its world a fresh world of `sprite`; it runs
+   * under the parent until its rule funcId is changed.
+   */
+  function chainContextOn(sprite: Sprite): wendoo.ExecutionContext {
+    const ctx = contextOn(sprite);
+    ctx.services.program.ruleChildren = [OUTPUT_CHILD_RULE];
+    ctx.services.program.ruleParents = [OUTPUT_PARENT_RULE];
+    ctx.currentRuleFuncId = OUTPUT_PARENT_RULE;
+    return ctx;
+  }
+
+  /** What the output tile of the `Sprite` output `name` reads in `ctx`, through the core rule-variable read. */
+  function readOutput(ctx: wendoo.ExecutionContext, name: string): wendoo.Value {
+    const fn = wendoo.hostRegistries().functions.getById(RULE_CONTEXT_GET_VARIABLE);
+    return fn ? fn.exec(ctx, [wendoo.NIL_VALUE, wendoo.mkString(spriteOutputKey(name))]) : wendoo.NIL_VALUE;
+  }
+
+  /**
+   * In a scene of its own, check the proximity sensors' outputs: each sensor
+   * writes the sprite its result carries to its own output when it fires,
+   * and clears it when it does not; a child rule reads its parent's output
+   * beside its own sensor's; a child reading the output of a sprite
+   * destroyed since its parent fired reads the value standing for it,
+   * without a fault, and a filter on it admits nothing. Then compiled
+   * programs: a bump rule dressing its sprite in the bumped sprite, and a
+   * child rule filtering bump by its parent's in-range output and dressing
+   * in it.
+   */
+  function checkSensorOutputs(): void {
+    game.pushScene();
+    const reader = solidSprite(8, 30, 60);
+    const other = heroSprite(36, 60);
+    for (let i = 0; i < SENSOR_OUTPUTS.length; i++) {
+      const tile = SENSOR_OUTPUTS[i][0];
+      const output = SENSOR_OUTPUTS[i][1];
+      const stem = SENSOR_OUTPUTS[i][2];
+      const ctx = chainContextOn(reader);
+      const body = tileBody(tile);
+      const firesNear = tile !== wendoo.OUT_OF_RANGE_TILE;
+      other.setPosition(firesNear ? 36 : 130, 60);
+      const fired = body.execSync(ctx, []);
+      const written = readOutput(ctx, output);
+      other.setPosition(firesNear ? 130 : 36, 60);
+      const quiet = body.execSync(ctx, []);
+      const cleared = readOutput(ctx, output);
+      check(
+        `${stem}-writes-its-output-when-it-fires-and-clears-it-when-it-does-not`,
+        standsFor(fired, other) && standsFor(written, other) && readsNothing(quiet) && readsNothing(cleared)
+      );
+    }
+
+    other.setPosition(36, 60);
+    const chain = chainContextOn(reader);
+    tileBody(wendoo.BUMP_TILE).execSync(chain, []);
+    chain.currentRuleFuncId = OUTPUT_CHILD_RULE;
+    tileBody(wendoo.IN_RANGE_TILE).execSync(chain, []);
+    check(
+      "two-sensors-outputs-coexist-in-one-rule-chain",
+      standsFor(readOutput(chain, "bumped"), other) &&
+        standsFor(readOutput(chain, "inRange"), other) &&
+        readsNothing(readOutput(chain, "outOfRange"))
+    );
+
+    const doomed = heroSprite(34, 60);
+    const parent = chainContextOn(reader);
+    tileBody(wendoo.BUMP_TILE).execSync(parent, []);
+    const bumpedFirst = standsFor(readOutput(parent, "bumped"), doomed);
+    doomed.destroy();
+    parent.currentRuleFuncId = OUTPUT_CHILD_RULE;
+    const dead = readOutput(parent, "bumped");
+    const nil = wendoo.NIL_VALUE;
+    const filtered = tileBody(wendoo.IN_RANGE_TILE).execSync(parent, [nil, dead, nil, nil]);
+    check(
+      "a-child-reads-a-destroyed-sprites-output-without-fault-and-a-filter-on-it-admits-nothing",
+      bumpedFirst && standsFor(dead, doomed) && readsNothing(filtered) && !parent.hasFault()
+    );
+    reader.destroy();
+    other.destroy();
+    pause(FRAMES_MS);
+
+    const dressed = solidSprite(8, 40, 60);
+    const bumper = heroSprite(46, 60);
+    wendoo.runBrain(dressed, wendooBrains.p_lookerBumpLook01);
+    pause(FRAMES_MS);
+    check("bump-rule-dresses-in-the-bumped-sprite", dressed.image === bumper.image && faultsInScene() === 0);
+    dressed.destroy();
+    bumper.destroy();
+    pause(FRAMES_MS);
+
+    const kin = solidSprite(8, 40, 60);
+    const kinImage = kin.image;
+    const visitor = heroSprite(70, 60);
+    wendoo.runBrain(kin, wendooBrains.p_kinshipRangeOut1);
+    pause(FRAMES_MS);
+    const untouched = kin.image === kinImage;
+    visitor.setPosition(46, 60);
+    pause(FRAMES_MS);
+    check(
+      "child-rule-reads-its-parents-range-output",
+      untouched && kin.image === visitor.image && faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
+  /** Value a present modifier slot carries: its one occurrence. */
+  const PRESENT = wendoo.mkNumber(1);
+
+  /**
+   * What the proximity sensor `tileName` reads on `reader`'s behalf given the
+   * positional modifiers `above`, `below`, `left` and `right` -- each present
+   * when `true` -- the image filter `image`, and on a range sensor the range
+   * `range`: bump's buffer holds its filter's image, sprite and brain, then
+   * the four modifiers; each range sensor's holds its filter, its range, then
+   * the four modifiers.
+   */
+  function sensePositioned(
+    tileName: string,
+    reader: Sprite,
+    above: boolean,
+    below: boolean,
+    left: boolean,
+    right: boolean,
+    image: wendoo.Value,
+    range: wendoo.Value
+  ): wendoo.Value {
+    const nil = wendoo.NIL_VALUE;
+    const head = tileName === wendoo.BUMP_TILE ? [image, nil, nil] : [image, nil, nil, range];
+    const modifiers = [above ? PRESENT : nil, below ? PRESENT : nil, left ? PRESENT : nil, right ? PRESENT : nil];
+    return act(tileBody(tileName), reader, head.concat(modifiers));
+  }
+
+  /**
+   * In a scene of its own, check the positional modifiers every proximity
+   * sensor takes, each sensor's body called directly, around a reader 48
+   * pixels square touching a sprite 20 pixels above it, one 20 below, one 20
+   * to its left and one 20 to its right, with one above and to the right of
+   * it a little farther; the out-of-range sensor is given a range of 1, the
+   * others none. Above, below, left and right each read the nearest sprite
+   * whose center lies strictly on that side of the reader's center; above
+   * and right together read only the sprite strictly on both. Given an image
+   * too, a modifier reads the nearest sprite on its side that looks like it.
+   * Then a compiled program placing in range given above pursues a sprite
+   * above it and leaves one below it alone.
+   */
+  function checkPositionalModifiers(): void {
+    game.pushScene();
+    const reader = solidSprite(48, 80, 60);
+    const north = solidSprite(8, 80, 40);
+    const south = solidSprite(8, 80, 80);
+    const west = solidSprite(8, 60, 60);
+    const east = solidSprite(8, 100, 60);
+    const northEast = heroSprite(95, 45);
+    const nil = wendoo.NIL_VALUE;
+    for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
+      const tile = PROXIMITY_SENSORS[i][0];
+      const stem = PROXIMITY_SENSORS[i][1];
+      const range = tile === wendoo.OUT_OF_RANGE_TILE ? wendoo.mkNumber(1) : nil;
+      check(
+        `${stem}-given-above-reads-the-nearest-sprite-above`,
+        standsFor(sensePositioned(tile, reader, true, false, false, false, nil, range), north)
+      );
+      check(
+        `${stem}-given-below-reads-the-nearest-sprite-below`,
+        standsFor(sensePositioned(tile, reader, false, true, false, false, nil, range), south)
+      );
+      check(
+        `${stem}-given-left-reads-the-nearest-sprite-to-the-left`,
+        standsFor(sensePositioned(tile, reader, false, false, true, false, nil, range), west)
+      );
+      check(
+        `${stem}-given-right-reads-the-nearest-sprite-to-the-right`,
+        standsFor(sensePositioned(tile, reader, false, false, false, true, nil, range), east)
+      );
+      check(
+        `${stem}-given-above-and-right-reads-only-a-sprite-strictly-on-both-sides`,
+        standsFor(sensePositioned(tile, reader, true, false, false, true, nil, range), northEast) &&
+          readsNothing(sensePositioned(tile, reader, false, true, true, false, nil, range))
+      );
+    }
+    const hero = imageLiteral(HERO_ASSET_ID);
+    check(
+      "positional-modifiers-compose-with-the-filter",
+      standsFor(sensePositioned(wendoo.IN_RANGE_TILE, reader, true, false, false, false, hero, nil), northEast) &&
+        readsNothing(sensePositioned(wendoo.IN_RANGE_TILE, reader, false, true, false, false, hero, nil))
+    );
+    reader.destroy();
+    north.destroy();
+    south.destroy();
+    west.destroy();
+    east.destroy();
+    northEast.destroy();
+    pause(FRAMES_MS);
+
+    const climber = solidSprite(8, 80, 60);
+    const beneath = solidSprite(8, 80, 90);
+    wendoo.runBrain(climber, wendooBrains.p_perchAboveRange1);
+    pause(FRAMES_MS);
+    climber.vx = 37;
+    pause(FRAMES_MS);
+    const ignoresBelow = movesAt(climber, 37, 0);
+    climber.setPosition(80, 60);
+    const overhead = solidSprite(8, 80, 30);
+    pause(FRAMES_MS);
+    check(
+      "range-rule-given-above-pursues-only-a-sprite-above",
+      ignoresBelow && pursues(climber, overhead, 100) && faultsInScene() === 0
+    );
+    beneath.destroy();
+    overhead.destroy();
+    game.popScene();
+  }
+
+  /**
+   * Width of the move's argument buffer: the target toward or away carries
+   * once toward is placed (a point, then a sprite), the same pair once only
+   * away is, its direction, `slowly`, `quickly`, speed, the four cardinals,
+   * `toward`, `away` and `wander`.
+   */
+  const MOVE_ARGS_WIDTH = 15;
+
+  /** Argument-buffer positions of the move's target point and target sprite once toward is placed. */
+  const MOVE_TARGET_POINT = 0;
+  const MOVE_TARGET_SPRITE = 1;
+
+  /** Argument-buffer positions of the move's target point and target sprite once only away is placed. */
+  const MOVE_AWAY_TARGET_POINT = 2;
+  const MOVE_AWAY_TARGET_SPRITE = 3;
+
+  /** Argument-buffer positions of the move's `slowly`, `quickly`, speed, `up`, `right`, `toward`, `away` and `wander` slots. */
+  const MOVE_SLOWLY = 5;
+  const MOVE_QUICKLY = 6;
+  const MOVE_SPEED = 7;
+  const MOVE_UP = 8;
+  const MOVE_RIGHT = 11;
+  const MOVE_TOWARD = 12;
+  const MOVE_AWAY = 13;
+  const MOVE_WANDER = 14;
+
+  /** Arcade's physics engine's top speed, in pixels per second: the fastest any move may set a sprite going. */
+  const ENGINE_TOP_SPEED = 500;
+
+  /** Duration of the frame the direct move checks think in, in milliseconds. */
+  const STEP_MS = 20;
+
+  /**
+   * Frame durations of a game running at about 60, 50 and 30 frames a
+   * second, in milliseconds, each repeated in order: the whole milliseconds
+   * Arcade's frame clock advances by.
+   */
+  const FRAME_SCHEDULES: number[][] = [[17, 17, 16], [20], [33, 33, 34]];
+
+  /**
+   * The speed a move heading straight for a goal `distance` pixels away goes
+   * at, asked to go at `speed` in a frame of `stepMs` milliseconds: `speed`,
+   * or the speed covering exactly `distance` in the frame when that is less.
+   */
+  function speedToReach(speed: number, distance: number, stepMs: number): number {
+    const reaching = (distance * 1000) / stepMs;
+    return speed < reaching ? speed : reaching;
+  }
+
+  /**
+   * Stop the current scene's frames: none of its frame handlers -- physics,
+   * programs, move arbitration -- runs until {@link resumeFrames}, so a check
+   * places sprites and steps the scene itself.
+   */
+  function stopFrames(): void {
+    control.pushEventContext();
+  }
+
+  /** Resume the current scene's frames, which {@link stopFrames} stopped. */
+  function resumeFrames(): void {
+    control.popEventContext();
+  }
+
+  /** Put `sprite` at rest with its center at `x`, `y`. */
+  function placeAt(sprite: Sprite, x: number, y: number): void {
+    sprite.vx = 0;
+    sprite.vy = 0;
+    sprite.setPosition(x, y);
+  }
+
+  /**
+   * Step the current scene, its frames stopped, through `frames` frames of
+   * the durations `schedule` repeats, the way its frame loop runs a frame:
+   * the scene's physics moves its sprites over the frame, then the move in
+   * `args` thinks in `ctx` at the frame's time with the frame's duration and
+   * its arbitration resolves. After each frame `afterFrame` is called with
+   * the frame's time, in milliseconds since the first frame began.
+   */
+  function stepMove(
+    ctx: wendoo.ExecutionContext,
+    args: wendoo.Value[],
+    schedule: number[],
+    frames: number,
+    afterFrame: (timeMs: number) => void
+  ): void {
+    let time = 0;
+    for (let frame = 0; frame < frames; frame++) {
+      const stepMs = schedule[frame % schedule.length];
+      time += stepMs;
+      game.currentScene().physicsEngine.move(stepMs / 1000);
+      ctx.time = time;
+      ctx.dt = stepMs;
+      moveNow(ctx, args);
+      afterFrame(time);
+    }
+  }
+
+  /** A move argument buffer with every slot empty. */
+  function moveBuffer(): wendoo.Value[] {
+    const args: wendoo.Value[] = [];
+    for (let i = 0; i < MOVE_ARGS_WIDTH; i++) {
+      args.push(wendoo.NIL_VALUE);
+    }
+    return args;
+  }
+
+  /**
+   * Run the move's body in `ctx` given `args`, then resolve the current
+   * scene's move arbitration at once, leaving the sprite moving at the
+   * velocity that one move asks for. Call it only in a scene running no
+   * program.
+   */
+  function moveNow(ctx: wendoo.ExecutionContext, args: wendoo.Value[]): void {
+    tileBody(wendoo.MOVE_TILE).execSync(ctx, args);
+    wendoo.sceneMotionArbiter(game.currentScene()).resolve(ctx.dt);
+  }
+
+  /** The `Vector2` value naming the point `x`, `y`. */
+  function pointValue(x: number, y: number): wendoo.Value {
+    return wendoo.vector2Value(new wendoo.DirectionVector(x, y));
+  }
+
+  /**
+   * In a scene of its own, check the target toward and away may carry, the
+   * move's body called directly with the buffers a compiled program passes
+   * it, its rule's WHEN having produced a decoy sprite: given no target,
+   * toward steers by the WHEN's sprite; given a sprite, toward pursues it and
+   * away flees it, read where it is at every move; given a point, toward
+   * heads for it and away flees it, wherever the sprite has moved, and a
+   * point at the sprite's own center adds nothing; a destroyed sprite's
+   * value adds nothing, without a fault; and toward and away placed together
+   * share the one target, from either pair of slots. Then compiled programs:
+   * in range moving toward quickly given the sprite in range, in both orders
+   * of toward and quickly, pursues it; and child rules firing on the dpad
+   * move toward or away from their parent's sprite in range, not the dpad's
+   * way, turning as it moves.
+   */
+  function checkMoveTargets(): void {
+    game.pushScene();
+    const mover = solidSprite(8, 40, 60);
+    const quarry = solidSprite(8, 100, 60);
+    const decoy = solidSprite(8, 40, 110);
+    const ctx = chainContextOn(mover);
+    ctx.services.ruleVars.setByName(OUTPUT_PARENT_RULE, wendoo.WHEN_RESULT_VAR, wendoo.spriteValue(decoy));
+
+    const plain = moveBuffer();
+    plain[MOVE_TOWARD] = PRESENT;
+    moveNow(ctx, plain);
+    check("toward-given-no-target-steers-by-the-when-result", pursues(mover, decoy, 100));
+
+    const tracked = moveBuffer();
+    tracked[MOVE_TOWARD] = PRESENT;
+    tracked[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    moveNow(ctx, tracked);
+    const pursuedFirst = pursues(mover, quarry, 100);
+    quarry.setPosition(90, 20);
+    moveNow(ctx, tracked);
+    check(
+      "toward-given-a-sprite-pursues-it-over-the-when-result-as-it-moves",
+      pursuedFirst && pursues(mover, quarry, 100)
+    );
+
+    const fled = moveBuffer();
+    fled[MOVE_AWAY] = PRESENT;
+    fled[MOVE_AWAY_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    moveNow(ctx, fled);
+    check("away-given-a-sprite-flees-it-over-the-when-result", flees(mover, quarry, 100));
+
+    const headed = moveBuffer();
+    headed[MOVE_TOWARD] = PRESENT;
+    headed[MOVE_TARGET_POINT] = pointValue(130, 20);
+    moveNow(ctx, headed);
+    const headedFirst = movesAlong(mover, 90, -40, 100);
+    mover.setPosition(100, 100);
+    moveNow(ctx, headed);
+    const headedAgain = movesAlong(mover, 30, -80, 100);
+    const origin = moveBuffer();
+    origin[MOVE_TOWARD] = PRESENT;
+    origin[MOVE_TARGET_POINT] = pointValue(0, 0);
+    moveNow(ctx, origin);
+    check(
+      "toward-given-a-point-heads-for-that-fixed-point",
+      headedFirst && headedAgain && movesAlong(mover, -100, -100, 100)
+    );
+
+    const shunned = moveBuffer();
+    shunned[MOVE_AWAY] = PRESENT;
+    shunned[MOVE_AWAY_TARGET_POINT] = pointValue(130, 20);
+    moveNow(ctx, shunned);
+    check("away-given-a-point-flees-that-fixed-point", movesAlong(mover, -30, 80, 100));
+
+    const centered = moveBuffer();
+    centered[MOVE_TOWARD] = PRESENT;
+    centered[MOVE_UP] = PRESENT;
+    centered[MOVE_TARGET_POINT] = pointValue(100, 100);
+    moveNow(ctx, centered);
+    check("a-point-at-the-sprites-own-center-adds-nothing", movesAt(mover, 0, -100));
+
+    const doomed = solidSprite(8, 10, 10);
+    const doomedValue = wendoo.spriteValue(doomed);
+    doomed.destroy();
+    const lost = moveBuffer();
+    lost[MOVE_TOWARD] = PRESENT;
+    lost[MOVE_TARGET_SPRITE] = doomedValue;
+    moveNow(ctx, lost);
+    const lostFallsBack = movesAt(mover, 100, 0);
+    lost[MOVE_UP] = PRESENT;
+    moveNow(ctx, lost);
+    check(
+      "a-destroyed-sprite-target-adds-nothing-without-a-fault",
+      lostFallsBack && movesAt(mover, 0, -100) && !ctx.hasFault()
+    );
+
+    const shared = moveBuffer();
+    shared[MOVE_TOWARD] = PRESENT;
+    shared[MOVE_AWAY] = PRESENT;
+    shared[MOVE_UP] = PRESENT;
+    shared[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    moveNow(ctx, shared);
+    const sharedFirst = movesAt(mover, 0, -100);
+    shared[MOVE_TARGET_SPRITE] = wendoo.NIL_VALUE;
+    shared[MOVE_AWAY_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    moveNow(ctx, shared);
+    check("toward-and-away-share-one-target", sharedFirst && movesAt(mover, 0, -100));
+
+    stopFrames();
+    ctx.dt = STEP_MS;
+    const landing = moveBuffer();
+    landing[MOVE_TOWARD] = PRESENT;
+    landing[MOVE_SPEED] = wendoo.mkNumber(400);
+    landing[MOVE_TARGET_POINT] = pointValue(103, 104);
+    placeAt(mover, 100, 100);
+    moveNow(ctx, landing);
+    const pointLands = movesAlong(mover, 3, 4, speedToReach(400, 5, STEP_MS));
+    landing[MOVE_TARGET_POINT] = pointValue(130, 100);
+    placeAt(mover, 100, 100);
+    moveNow(ctx, landing);
+    check(
+      "toward-a-point-within-one-step-lands-on-it-and-keeps-its-speed-beyond",
+      pointLands && movesAt(mover, 400, 0)
+    );
+
+    const caught = moveBuffer();
+    caught[MOVE_TOWARD] = PRESENT;
+    caught[MOVE_SPEED] = wendoo.mkNumber(400);
+    caught[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    placeAt(quarry, 104, 97);
+    placeAt(mover, 100, 100);
+    moveNow(ctx, caught);
+    const spriteLands = movesAlong(mover, 4, -3, speedToReach(400, 5, STEP_MS));
+    const steered = moveBuffer();
+    steered[MOVE_TOWARD] = PRESENT;
+    steered[MOVE_SPEED] = wendoo.mkNumber(400);
+    placeAt(decoy, 97, 104);
+    moveNow(ctx, steered);
+    check(
+      "toward-a-sprite-within-one-step-lands-on-it",
+      spriteLands && movesAlong(mover, -3, 4, speedToReach(400, 5, STEP_MS))
+    );
+
+    const holding = moveBuffer();
+    holding[MOVE_TOWARD] = PRESENT;
+    holding[MOVE_TARGET_POINT] = pointValue(100, 100);
+    moveNow(ctx, holding);
+    const holdsAtPoint = movesAt(mover, 0, 0);
+    holding[MOVE_TARGET_POINT] = wendoo.NIL_VALUE;
+    holding[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    placeAt(quarry, 100, 100);
+    moveNow(ctx, holding);
+    const holdsAtSprite = movesAt(mover, 0, 0);
+    holding[MOVE_TARGET_SPRITE] = wendoo.NIL_VALUE;
+    placeAt(decoy, 100, 100);
+    moveNow(ctx, holding);
+    const holdsAtWhenSprite = movesAt(mover, 0, 0);
+    holding[MOVE_AWAY] = PRESENT;
+    moveNow(ctx, holding);
+    const holdsBesideAway = movesAt(mover, 0, 0);
+    ctx.dt = 0;
+    holding[MOVE_AWAY] = wendoo.NIL_VALUE;
+    moveNow(ctx, holding);
+    check(
+      "toward-arrived-holds-still-at-its-goal",
+      holdsAtPoint && holdsAtSprite && holdsAtWhenSprite && holdsBesideAway && movesAt(mover, 0, 0)
+    );
+
+    ctx.dt = STEP_MS;
+    const bent = moveBuffer();
+    bent[MOVE_TOWARD] = PRESENT;
+    bent[MOVE_UP] = PRESENT;
+    bent[MOVE_SPEED] = wendoo.mkNumber(400);
+    bent[MOVE_TARGET_POINT] = pointValue(103, 104);
+    moveNow(ctx, bent);
+    const bentKeepsSpeed = movesAlong(mover, 0.6, 0.8 - 1, 400);
+    const shy = moveBuffer();
+    shy[MOVE_AWAY] = PRESENT;
+    shy[MOVE_SPEED] = wendoo.mkNumber(400);
+    shy[MOVE_AWAY_TARGET_POINT] = pointValue(103, 104);
+    moveNow(ctx, shy);
+    check("a-move-not-heading-for-one-goal-alone-keeps-its-speed", bentKeepsSpeed && movesAlong(mover, -3, -4, 400));
+
+    const pursuit = moveBuffer();
+    pursuit[MOVE_TOWARD] = PRESENT;
+    pursuit[MOVE_QUICKLY] = wendoo.mkNumber(3);
+    pursuit[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+    let neverPasses = true;
+    let holdsThere = true;
+    for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
+      placeAt(quarry, 113, 60);
+      placeAt(mover, 20, 60);
+      let farthest = mover.x;
+      stepMove(ctx, pursuit, FRAME_SCHEDULES[i], 90, (timeMs: number) => {
+        farthest = Math.max(farthest, mover.x);
+      });
+      neverPasses = neverPasses && farthest <= 113 + 0.5;
+      holdsThere = holdsThere && distanceBetween(mover, quarry) < 0.5 && Math.abs(mover.vx) < 1;
+    }
+    check("toward-a-sprite-at-speed-never-passes-it-and-holds-there", neverPasses && holdsThere);
+    resumeFrames();
+    mover.destroy();
+    quarry.destroy();
+    decoy.destroy();
+    pause(FRAMES_MS);
+
+    const prey = solidSprite(8, 80, 60);
+    const pouncer = solidSprite(8, 35, 60);
+    const pouncerFlipped = solidSprite(8, 125, 60);
+    wendoo.runBrain(pouncer, wendooBrains.p_pounceTowardQk01);
+    wendoo.runBrain(pouncerFlipped, wendooBrains.p_pounceQkToward01);
+    pause(FRAMES_MS);
+    check(
+      "move-toward-quickly-given-the-sprite-in-range-pursues-it",
+      pursues(pouncer, prey, 200) && pursues(pouncerFlipped, prey, 200) && faultsInScene() === 0
+    );
+    pouncer.destroy();
+    pouncerFlipped.destroy();
+    prey.setPosition(80, 90);
+    pause(FRAMES_MS);
+
+    const heeding = solidSprite(8, 30, 90);
+    const spurning = solidSprite(8, 95, 90);
+    wendoo.runBrain(heeding, wendooBrains.p_heedDpadTarget01);
+    wendoo.runBrain(spurning, wendooBrains.p_spurnDpadTarget1);
+    pause(FRAMES_MS);
+    const quietWithoutDpad = movesAt(heeding, 0, 0) && movesAt(spurning, 0, 0);
+    controller.right.setPressed(true);
+    pause(FRAMES_MS);
+    const firstHeading = pursues(heeding, prey, 100) && flees(spurning, prey, 100);
+    prey.vy = -40;
+    pause(FRAMES_MS);
+    check(
+      "a-child-moves-toward-or-away-from-its-parents-sprite-in-range-over-its-dpad",
+      quietWithoutDpad &&
+        firstHeading &&
+        pursues(heeding, prey, 100) &&
+        flees(spurning, prey, 100) &&
+        faultsInScene() === 0
+    );
+    controller.right.setPressed(false);
+    game.popScene();
+  }
+
+  /** A wander random source answering each pick with the least whole number it may, or the greatest, and recording each range asked. */
+  class PinnedRandom extends wendoo.WanderRandom {
+    /** Whether each pick answers the greatest number it may. */
+    high: boolean;
+    /** The bounds of each pick asked, least then greatest, in the order asked. */
+    asked: number[] = [];
+
+    constructor(high: boolean) {
+      super();
+      this.high = high;
+    }
+
+    pick(min: number, max: number): number {
+      this.asked.push(min);
+      this.asked.push(max);
+      return this.high ? max : min;
+    }
+  }
+
+  /** A wander random source answering its picks with the numbers it is given, in order, then with the least number each pick may. */
+  class QueuedRandom extends wendoo.WanderRandom {
+    /** The answers, in order. */
+    answers: number[];
+    /** How many picks have been asked. */
+    taken = 0;
+
+    constructor(answers: number[]) {
+      super();
+      this.answers = answers;
+    }
+
+    pick(min: number, max: number): number {
+      const answer = this.taken < this.answers.length ? this.answers[this.taken] : min;
+      this.taken++;
+      return answer;
+    }
+  }
+
+  /** A wander random source answering each pick from a fixed-seed linear congruential sequence, the same numbers on every run. */
+  class SeededRandom extends wendoo.WanderRandom {
+    /** The sequence's current state. */
+    state: number;
+
+    constructor(seed: number) {
+      super();
+      this.state = seed;
+    }
+
+    pick(min: number, max: number): number {
+      this.state = (Math.imul(this.state, 1664525) + 1013904223) | 0;
+      return min + ((this.state >>> 8) % (max - min + 1));
+    }
+  }
+
+  /** How long the wander-at-speed run lasts at each frame rate, in milliseconds of game time. */
+  const WANDER_RUN_MS = 6000;
+
+  /** The fewest destinations the wander-at-speed run must arrive at, at every frame rate. */
+  const WANDER_RUN_LEAST_ARRIVALS = 30;
+
+  /** The direction from `x`, `y` toward `toX`, `toY`, scaled to length 1; the points must differ. */
+  function unitBetween(x: number, y: number, toX: number, toY: number): wendoo.DirectionVector {
+    const dx = toX - x;
+    const dy = toY - y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    return new wendoo.DirectionVector(dx / length, dy / length);
+  }
+
+  /** The distance from the center of `sprite` to the point `x`, `y`, in pixels. */
+  function distanceTo(sprite: Sprite, x: number, y: number): number {
+    const dx = x - sprite.x;
+    const dy = y - sprite.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /** Whether `leg` heads for the point `x`, `y`. */
+  function legAt(leg: wendoo.WanderLeg, x: number, y: number): boolean {
+    return leg !== undefined && leg.x === x && leg.y === y;
+  }
+
+  /** Whether `leg` lies on the screen, inside the wander margin, while the camera is unmoved. */
+  function legOnScreen(leg: wendoo.WanderLeg): boolean {
+    const margin = wendoo.WANDER_SCREEN_MARGIN;
+    return leg.x >= margin && leg.x <= screen.width - margin && leg.y >= margin && leg.y <= screen.height - margin;
+  }
+
+  /** The world `sprite`'s program runs in, in the current scene. */
+  function runningWorld(sprite: Sprite): wendoo.SpriteWorld {
+    return hostedOf(sprite).world as wendoo.SpriteWorld;
+  }
+
+  /** Duration of the current scene's last frame, in milliseconds: the time its programs last thought over. */
+  function lastFrameMs(): number {
+    return game.currentScene().eventContext.deltaTimeMillis;
+  }
+
+  /**
+   * Whether `sprite` runs one wander rule, its destination on screen inside
+   * the margin, and moves straight for it at `speed` pixels per second, or
+   * slower when the destination lies within one frame's move.
+   */
+  function headsForItsLeg(sprite: Sprite, speed: number): boolean {
+    const wander = runningWorld(sprite).wander;
+    if (wander.legs.length !== 1) {
+      return false;
+    }
+    const leg = wander.legs[0];
+    const reached = speedToReach(speed, distanceTo(sprite, leg.x, leg.y), lastFrameMs());
+    return legOnScreen(leg) && movesAlong(sprite, leg.x - sprite.x, leg.y - sprite.y, reached);
+  }
+
+  /**
+   * In a scene of its own, check the move's wander: destinations picked on
+   * screen inside the margin, in the camera's view as it moves, with the
+   * random source a sprite's world carries; a wander heading straight for
+   * its destination, keeping it while the sprite is farther than the arrival
+   * distance and before its deadline, and picking anew on arrival, the
+   * arrival distance included, or once the deadline passes; two call sites
+   * keeping their own destinations; and the move's body heading for the
+   * destination its call site holds, picked at its think's time, composing
+   * with slowly and a cardinal. Then compiled programs, picking with
+   * Arcade's own random numbers: a bare wander, a slow one and a quick one
+   * each head for an on-screen destination at their speed; toward with
+   * wander bends pursuit toward the destination; and two wander rules on one
+   * sprite keep two destinations, the sprite moving by both.
+   */
+  function checkWander(): void {
+    game.pushScene();
+    const camera = game.currentScene().camera;
+    const margin = wendoo.WANDER_SCREEN_MARGIN;
+    const walker = solidSprite(8, 40, 60);
+
+    const lowWorld = new wendoo.SpriteWorld(walker);
+    const low = new PinnedRandom(false);
+    lowWorld.wander.random = low;
+    lowWorld.wander.bearing(walker, 1, 0, camera);
+    const highWorld = new wendoo.SpriteWorld(walker);
+    highWorld.wander.random = new PinnedRandom(true);
+    highWorld.wander.bearing(walker, 1, 0, camera);
+    camera.offsetX = 40;
+    camera.offsetY = 30;
+    const shiftedWorld = new wendoo.SpriteWorld(walker);
+    shiftedWorld.wander.random = new PinnedRandom(false);
+    shiftedWorld.wander.bearing(walker, 1, 0, camera);
+    camera.offsetX = 0;
+    camera.offsetY = 0;
+    check(
+      "wander-picks-its-destination-on-screen-inside-the-margin",
+      low.asked.join(",") === [margin, screen.width - margin, margin, screen.height - margin].join(",") &&
+        legAt(lowWorld.wander.leg(1), margin, margin) &&
+        legAt(highWorld.wander.leg(1), screen.width - margin, screen.height - margin) &&
+        legAt(shiftedWorld.wander.leg(1), 40 + margin, 30 + margin)
+    );
+
+    const world = new wendoo.SpriteWorld(walker);
+    const queued = new QueuedRandom([120, 90, 30, 20, 140, 100]);
+    world.wander.random = queued;
+    const first = world.wander.bearing(walker, 4, 1000, camera);
+    const firstUnit = unitBetween(40, 60, 120, 90);
+    check(
+      "wander-heads-straight-for-its-destination",
+      pointsAt(first, firstUnit.x, firstUnit.y) && legAt(world.wander.leg(4), 120, 90)
+    );
+
+    walker.setPosition(100, 80);
+    const kept = world.wander.bearing(walker, 4, 2000, camera);
+    const keptUnit = unitBetween(100, 80, 120, 90);
+    const keptFar = pointsAt(kept, keptUnit.x, keptUnit.y);
+    walker.setPosition(120 - wendoo.WANDER_ARRIVAL_DISTANCE - 1, 90);
+    world.wander.bearing(walker, 4, 2000, camera);
+    check(
+      "wander-keeps-its-destination-until-it-arrives",
+      keptFar && queued.taken === 2 && legAt(world.wander.leg(4), 120, 90)
+    );
+
+    walker.setPosition(120 - wendoo.WANDER_ARRIVAL_DISTANCE, 90);
+    const repicked = world.wander.bearing(walker, 4, 2000, camera);
+    const repickedUnit = unitBetween(120 - wendoo.WANDER_ARRIVAL_DISTANCE, 90, 30, 20);
+    check(
+      "wander-picks-anew-on-arrival",
+      queued.taken === 4 && legAt(world.wander.leg(4), 30, 20) && pointsAt(repicked, repickedUnit.x, repickedUnit.y)
+    );
+
+    walker.setPosition(100, 100);
+    world.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS - 1, camera);
+    const keptBeforeDeadline = queued.taken === 4 && legAt(world.wander.leg(4), 30, 20);
+    world.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS, camera);
+    check(
+      "wander-picks-anew-once-its-deadline-passes",
+      keptBeforeDeadline &&
+        queued.taken === 6 &&
+        legAt(world.wander.leg(4), 140, 100) &&
+        world.wander.leg(4).deadline === 2000 + 2 * wendoo.WANDER_DEADLINE_MS
+    );
+
+    const pair = new wendoo.SpriteWorld(walker);
+    pair.wander.random = new QueuedRandom([20, 20, 140, 100, 60, 30]);
+    walker.setPosition(80, 60);
+    const toFirst = pair.wander.bearing(walker, 3, 0, camera);
+    const toSecond = pair.wander.bearing(walker, 7, 0, camera);
+    const firstPairUnit = unitBetween(80, 60, 20, 20);
+    const secondPairUnit = unitBetween(80, 60, 140, 100);
+    walker.setPosition(20, 20);
+    pair.wander.bearing(walker, 3, 10, camera);
+    check(
+      "two-wander-call-sites-keep-their-own-destinations",
+      pointsAt(toFirst, firstPairUnit.x, firstPairUnit.y) &&
+        pointsAt(toSecond, secondPairUnit.x, secondPairUnit.y) &&
+        legAt(pair.wander.leg(3), 60, 30) &&
+        legAt(pair.wander.leg(7), 140, 100)
+    );
+
+    const bodyWorld = new wendoo.SpriteWorld(walker);
+    bodyWorld.wander.random = new QueuedRandom([120, 90]);
+    walker.setPosition(40, 60);
+    const ctx = contextIn(bodyWorld);
+    ctx.currentCallSiteId = 9;
+    ctx.time = 1500;
+    const args = moveBuffer();
+    args[MOVE_WANDER] = PRESENT;
+    moveNow(ctx, args);
+    const bodyLeg = bodyWorld.wander.leg(9);
+    const movedFirst = movesAlong(walker, 80, 30, 100);
+    const composed = moveBuffer();
+    composed[MOVE_WANDER] = PRESENT;
+    composed[MOVE_SLOWLY] = PRESENT;
+    composed[MOVE_UP] = PRESENT;
+    moveNow(ctx, composed);
+    const heading = unitBetween(40, 60, 120, 90);
+    check(
+      "move-wander-heads-for-the-destination-its-call-site-holds",
+      legAt(bodyLeg, 120, 90) &&
+        bodyLeg.deadline === 1500 + wendoo.WANDER_DEADLINE_MS &&
+        movedFirst &&
+        movesAlong(walker, heading.x, heading.y - 1, 50)
+    );
+
+    stopFrames();
+    const closeWorld = new wendoo.SpriteWorld(walker);
+    closeWorld.wander.random = new QueuedRandom([43, 64]);
+    placeAt(walker, 40, 60);
+    const closeCtx = contextIn(closeWorld);
+    closeCtx.currentCallSiteId = 2;
+    closeCtx.dt = STEP_MS;
+    const brisk = moveBuffer();
+    brisk[MOVE_WANDER] = PRESENT;
+    brisk[MOVE_SPEED] = wendoo.mkNumber(400);
+    moveNow(closeCtx, brisk);
+    check(
+      "wander-within-one-step-lands-on-its-destination",
+      legAt(closeWorld.wander.leg(2), 43, 64) && movesAlong(walker, 3, 4, speedToReach(400, 5, STEP_MS))
+    );
+
+    const restWorld = new wendoo.SpriteWorld(walker);
+    restWorld.wander.random = new QueuedRandom([40, 60]);
+    const restCtx = contextIn(restWorld);
+    restCtx.currentCallSiteId = 2;
+    restCtx.dt = STEP_MS;
+    moveNow(restCtx, brisk);
+    check("wander-arrived-holds-still", legAt(restWorld.wander.leg(2), 40, 60) && movesAt(walker, 0, 0));
+
+    const arrivals: number[] = [];
+    for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
+      const roving = new wendoo.SpriteWorld(walker);
+      roving.wander.random = new SeededRandom(7);
+      placeAt(walker, 80, 60);
+      const rovingCtx = contextIn(roving);
+      rovingCtx.currentCallSiteId = 5;
+      const fast = moveBuffer();
+      fast[MOVE_WANDER] = PRESENT;
+      fast[MOVE_QUICKLY] = wendoo.mkNumber(3);
+      let leg: wendoo.WanderLeg;
+      let arrived = 0;
+      let deadlines = 0;
+      let frames = 0;
+      let elapsed = 0;
+      while (elapsed < WANDER_RUN_MS) {
+        elapsed += FRAME_SCHEDULES[i][frames % FRAME_SCHEDULES[i].length];
+        frames++;
+      }
+      stepMove(rovingCtx, fast, FRAME_SCHEDULES[i], frames, (timeMs: number) => {
+        const current = roving.wander.leg(5);
+        if (leg !== undefined && current !== leg) {
+          if (timeMs >= leg.deadline) {
+            deadlines++;
+          } else {
+            arrived++;
+          }
+        }
+        leg = current;
+      });
+      arrivals.push(deadlines > 0 ? 0 : arrived);
+    }
+    resumeFrames();
+    let fewest = arrivals[0];
+    let most = arrivals[0];
+    for (let i = 1; i < arrivals.length; i++) {
+      fewest = Math.min(fewest, arrivals[i]);
+      most = Math.max(most, arrivals[i]);
+    }
+    check(
+      "wander-at-speed-arrives-alike-at-every-frame-rate",
+      fewest >= WANDER_RUN_LEAST_ARRIVALS && most - fewest <= most * 0.15
+    );
+    walker.destroy();
+    pause(FRAMES_MS);
+
+    const roamer = solidSprite(8, 40, 40);
+    const ambler = solidSprite(8, 120, 40);
+    const darter = solidSprite(8, 40, 100);
+    wendoo.runBrain(roamer, wendooBrains.p_roamBareWander01);
+    wendoo.runBrain(ambler, wendooBrains.p_ambleSlowWander1);
+    wendoo.runBrain(darter, wendooBrains.p_dartQuickWander1);
+    pause(FRAMES_MS);
+    check("a-bare-wander-heads-for-an-on-screen-destination", headsForItsLeg(roamer, 100) && faultsInScene() === 0);
+    check("wander-composes-with-slowly-and-quickly", headsForItsLeg(ambler, 50) && headsForItsLeg(darter, 200));
+    roamer.destroy();
+    ambler.destroy();
+    darter.destroy();
+    pause(FRAMES_MS);
+
+    const lure = solidSprite(8, 80, 60);
+    const drawn = solidSprite(8, 40, 60);
+    wendoo.runBrain(drawn, wendooBrains.p_drawnTowardWndr1);
+    pause(FRAMES_MS);
+    const drawnWander = runningWorld(drawn).wander;
+    const drawnLeg = drawnWander.legs[0];
+    const toLure = unitToward(drawn, lure);
+    const toLeg = unitBetween(drawn.x, drawn.y, drawnLeg.x, drawnLeg.y);
+    check(
+      "toward-with-wander-bends-pursuit-toward-the-destination",
+      drawnWander.legs.length === 1 &&
+        legOnScreen(drawnLeg) &&
+        movesAlong(drawn, toLure.x + toLeg.x, toLure.y + toLeg.y, 100)
+    );
+    lure.destroy();
+    drawn.destroy();
+    pause(FRAMES_MS);
+
+    const doubled = solidSprite(8, 80, 60);
+    wendoo.runBrain(doubled, wendooBrains.p_twofoldWander001);
+    pause(FRAMES_MS);
+    const doubledWander = runningWorld(doubled).wander;
+    let twoLegs = doubledWander.legs.length === 2 && doubledWander.callSiteIds[0] !== doubledWander.callSiteIds[1];
+    let blendX = 0;
+    let blendY = 0;
+    for (let i = 0; twoLegs && i < 2; i++) {
+      const leg = doubledWander.legs[i];
+      twoLegs = legOnScreen(leg);
+      const toward = unitBetween(doubled.x, doubled.y, leg.x, leg.y);
+      const share = speedToReach(100, distanceTo(doubled, leg.x, leg.y), lastFrameMs()) / 2;
+      blendX += share * toward.x;
+      blendY += share * toward.y;
+    }
+    check(
+      "two-wander-rules-on-one-sprite-keep-two-destinations",
+      twoLegs && movesAt(doubled, blendX, blendY) && faultsInScene() === 0
+    );
+    game.popScene();
+  }
+
+  /**
+   * In a scene of its own, its frames stopped, check the top speed a move
+   * sets its sprite going: a move asking for more than the engine's top
+   * speed goes at the top speed in the direction it asks, on a diagonal as
+   * on a straight line, and a move below it at its own speed; and the direct
+   * applicator holds a verdict faster than the top speed to the top speed in
+   * the verdict's own direction, and sets any other verdict as it is.
+   */
+  function checkSpeedLimit(): void {
+    game.pushScene();
+    stopFrames();
+    const racer = solidSprite(8, 80, 60);
+    const ctx = contextOn(racer);
+    const dash = moveBuffer();
+    dash[MOVE_QUICKLY] = wendoo.mkNumber(3);
+    dash[MOVE_RIGHT] = PRESENT;
+    moveNow(ctx, dash);
+    const straight = movesAt(racer, ENGINE_TOP_SPEED, 0);
+    dash[MOVE_UP] = PRESENT;
+    moveNow(ctx, dash);
+    const diagonal = movesAlong(racer, 1, -1, ENGINE_TOP_SPEED);
+    dash[MOVE_QUICKLY] = wendoo.NIL_VALUE;
+    dash[MOVE_SPEED] = wendoo.mkNumber(400);
+    moveNow(ctx, dash);
+    check(
+      "move-past-the-engines-top-speed-goes-at-it-in-the-direction-asked",
+      straight && diagonal && movesAlong(racer, 1, -1, 400)
+    );
+
+    const applicator = new wendoo.DirectMotionApplicator();
+    applicator.apply(new wendoo.MotionVerdict(racer, 480, -640, new wendoo.AppliedMotion()), 0);
+    const held = movesAt(racer, 300, -400);
+    applicator.apply(new wendoo.MotionVerdict(racer, -300, 400, new wendoo.AppliedMotion()), 0);
+    const atTop = movesAt(racer, -300, 400);
+    applicator.apply(new wendoo.MotionVerdict(racer, 120, 0, new wendoo.AppliedMotion()), 0);
+    check(
+      "the-direct-applicator-holds-a-velocity-to-the-top-speed-in-its-direction",
+      held && atTop && movesAt(racer, 120, 0)
+    );
+    racer.destroy();
+    resumeFrames();
+    game.popScene();
+  }
+
+  /** The smoothing time constants the smoothing checks set, in milliseconds: a moderate one and a heavy one. */
+  const SMOOTHING_TIME_CONSTANTS = [100, 150];
+
+  /** The fraction of the gap to its asked velocity a move smoothed with time constant `smoothingMs` closes over a frame of `stepMs` milliseconds. */
+  function easedShare(stepMs: number, smoothingMs: number): number {
+    return 1 - Math.exp(-stepMs / smoothingMs);
+  }
+
+  /** Whether `motion` is the velocity `vx`, `vy` to within {@link NUMBER_TOLERANCE}. */
+  function motionIs(motion: wendoo.AppliedMotion, vx: number, vy: number): boolean {
+    return near(motion.vx, vx, NUMBER_TOLERANCE) && near(motion.vy, vy, NUMBER_TOLERANCE);
+  }
+
+  /** How many frames of the durations `schedule` repeats make up `durationMs` milliseconds, rounded up. */
+  function frameCount(schedule: number[], durationMs: number): number {
+    let elapsed = 0;
+    let frames = 0;
+    while (elapsed < durationMs) {
+      elapsed += schedule[frames % schedule.length];
+      frames++;
+    }
+    return frames;
+  }
+
+  /** How long the smoothed-start runs last, in milliseconds of game time. */
+  const SMOOTHED_RUN_MS = 600;
+
+  /** The earliest time after its first frame began, as a multiple of the smoothing time constant, at which a smoothed move from rest may first reach 90% of its speed. */
+  const SMOOTHED_RISE_LEAST = 2;
+
+  /** The latest time after its first frame began, as a multiple of the smoothing time constant, at which a smoothed move from rest may first reach 90% of its speed. */
+  const SMOOTHED_RISE_MOST = 2.8;
+
+  /** How far apart the smoothed-start runs at about 60 and 30 frames a second may be at each 100 ms mark, in pixels. */
+  const SMOOTHED_TRACK_TOLERANCE = 1.5;
+
+  /**
+   * In a scene of its own, its frames stopped, check move smoothing at each
+   * of {@link SMOOTHING_TIME_CONSTANTS}: the direct applicator eases a
+   * speed-up by the exponential of the frame's duration, eases a turn at the
+   * same speed, and sets a slow-down and a stop at once; it reads the
+   * setting on every verdict, sets every verdict at once while smoothing is
+   * off or the frame's duration is 0, and keeps the velocity it set while
+   * off; stepped at about 60, 50 and 30 frames a second, a move from rest
+   * reaches 90% of its speed within its envelope and stops on the first
+   * frame without a move, and the runs at about 60 and 30 travel alike; and
+   * a move toward a still sprite never passes it, and a move toward a point
+   * its sprite already holds sets it still at once, whatever velocity it
+   * last set. Each check holds at every time constant.
+   */
+  function checkMoveSmoothing(): void {
+    game.pushScene();
+    stopFrames();
+    const glider = solidSprite(8, 20, 60);
+    const quarry = solidSprite(8, 113, 60);
+    const applicator = new wendoo.DirectMotionApplicator();
+    let easesSpeedUps = true;
+    let snapsSlowing = true;
+    let readsLive = true;
+    let risesAndStops = true;
+    let travelsAlike = true;
+    let keepsGoals = true;
+    for (let t = 0; t < SMOOTHING_TIME_CONSTANTS.length; t++) {
+      const smoothingMs = SMOOTHING_TIME_CONSTANTS[t];
+      const share = easedShare(STEP_MS, smoothingMs);
+      wendoo.moveSmoothing = smoothingMs;
+
+      const rising = new wendoo.AppliedMotion();
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, rising), STEP_MS);
+      const firstEase = motionIs(rising, 100 * share, 0) && movesAt(glider, rising.vx, 0);
+      const afterFirst = rising.vx;
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, rising), 2 * STEP_MS);
+      easesSpeedUps =
+        easesSpeedUps &&
+        firstEase &&
+        motionIs(rising, afterFirst + (100 - afterFirst) * easedShare(2 * STEP_MS, smoothingMs), 0);
+
+      const cruising = new wendoo.AppliedMotion();
+      cruising.vx = 100;
+      applicator.apply(new wendoo.MotionVerdict(glider, 40, 30, cruising), STEP_MS);
+      const slowsAtOnce = cruising.vx === 40 && cruising.vy === 30 && movesAt(glider, 40, 30);
+      applicator.apply(new wendoo.MotionVerdict(glider, -30, 40, cruising), STEP_MS);
+      const turnEases = motionIs(cruising, 40 - 70 * share, 30 + 10 * share);
+      applicator.release(glider, cruising);
+      snapsSlowing =
+        snapsSlowing && slowsAtOnce && turnEases && cruising.vx === 0 && cruising.vy === 0 && movesAt(glider, 0, 0);
+
+      const live = new wendoo.AppliedMotion();
+      wendoo.moveSmoothing = 0;
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, live), STEP_MS);
+      const offSetsAtOnce = live.vx === 100 && live.vy === 0 && movesAt(glider, 100, 0);
+      wendoo.moveSmoothing = smoothingMs;
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, live), STEP_MS);
+      const keptWhileOff = live.vx === 100;
+      applicator.apply(new wendoo.MotionVerdict(glider, 200, 0, live), STEP_MS);
+      const easesOnceOn = motionIs(live, 100 + 100 * share, 0);
+      applicator.apply(new wendoo.MotionVerdict(glider, 300, 0, live), 0);
+      const untimedSetsAtOnce = live.vx === 300;
+      wendoo.moveSmoothing = 0;
+      applicator.apply(new wendoo.MotionVerdict(glider, 400, -100, live), STEP_MS);
+      readsLive =
+        readsLive &&
+        offSetsAtOnce &&
+        keptWhileOff &&
+        easesOnceOn &&
+        untimedSetsAtOnce &&
+        live.vx === 400 &&
+        live.vy === -100 &&
+        movesAt(glider, 400, -100);
+
+      wendoo.moveSmoothing = smoothingMs;
+      const rightward = moveBuffer();
+      rightward[MOVE_RIGHT] = PRESENT;
+      const marks: number[][] = [];
+      for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
+        placeAt(glider, 20, 60);
+        const world = new wendoo.SpriteWorld(glider);
+        const ctx = contextIn(world);
+        const positions: number[] = [];
+        let rise = -1;
+        stepMove(
+          ctx,
+          rightward,
+          FRAME_SCHEDULES[i],
+          frameCount(FRAME_SCHEDULES[i], SMOOTHED_RUN_MS),
+          (timeMs: number) => {
+            if (rise < 0 && glider.vx >= 90) {
+              rise = timeMs;
+            }
+            if (timeMs % 100 === 0) {
+              positions.push(glider.x);
+            }
+          }
+        );
+        marks.push(positions);
+        const stopMs = FRAME_SCHEDULES[i][0];
+        game.currentScene().physicsEngine.move(stopMs / 1000);
+        wendoo.sceneMotionArbiter(game.currentScene()).resolve(stopMs);
+        risesAndStops =
+          risesAndStops &&
+          rise >= SMOOTHED_RISE_LEAST * smoothingMs &&
+          rise <= SMOOTHED_RISE_MOST * smoothingMs &&
+          glider.vx === 0 &&
+          glider.vy === 0 &&
+          world.motion.vx === 0;
+      }
+      const last = marks.length - 1;
+      travelsAlike =
+        travelsAlike && marks[0].length === SMOOTHED_RUN_MS / 100 && marks[last].length === marks[0].length;
+      for (let i = 0; travelsAlike && i < marks[0].length; i++) {
+        travelsAlike = Math.abs(marks[0][i] - marks[last][i]) <= SMOOTHED_TRACK_TOLERANCE;
+      }
+
+      const pursuit = moveBuffer();
+      pursuit[MOVE_TOWARD] = PRESENT;
+      pursuit[MOVE_QUICKLY] = wendoo.mkNumber(3);
+      pursuit[MOVE_TARGET_SPRITE] = wendoo.spriteValue(quarry);
+      for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
+        placeAt(quarry, 113, 60);
+        placeAt(glider, 20, 60);
+        const ctx = contextIn(new wendoo.SpriteWorld(glider));
+        let farthest = glider.x;
+        stepMove(ctx, pursuit, FRAME_SCHEDULES[i], 90, (timeMs: number) => {
+          farthest = Math.max(farthest, glider.x);
+        });
+        keepsGoals =
+          keepsGoals && farthest <= 113 + 0.5 && distanceBetween(glider, quarry) < 0.5 && Math.abs(glider.vx) < 1;
+      }
+      const holder = new wendoo.SpriteWorld(glider);
+      holder.motion.vx = 250;
+      const holdCtx = contextIn(holder);
+      holdCtx.dt = STEP_MS;
+      const holding = moveBuffer();
+      holding[MOVE_TOWARD] = PRESENT;
+      holding[MOVE_TARGET_POINT] = pointValue(60, 60);
+      placeAt(glider, 60, 60);
+      moveNow(holdCtx, holding);
+      keepsGoals = keepsGoals && glider.vx === 0 && glider.vy === 0 && holder.motion.vx === 0;
+    }
+    wendoo.moveSmoothing = 0;
+    check("smoothing-eases-a-speed-up-by-the-exponential-of-the-frame-time", easesSpeedUps);
+    check("smoothing-sets-a-slow-down-and-a-stop-at-once-and-eases-a-turn", snapsSlowing);
+    check("smoothing-reads-its-setting-live-and-sets-at-once-when-off", readsLive);
+    check("smoothing-eases-a-start-within-its-envelope-and-stops-at-once", risesAndStops);
+    check("smoothing-travels-alike-at-60-and-30-frames-a-second", travelsAlike);
+    check("smoothing-keeps-goal-landings-and-the-arrival-hold-exact", keepsGoals);
+    glider.destroy();
+    quarry.destroy();
+    resumeFrames();
     game.popScene();
   }
 
@@ -1290,6 +2817,26 @@ namespace arcadeSelftest {
     controller.right.setPressed(false);
   }
 
+  /** Line the selftest prints as it turns the Wendoo extensions' debug logging on. */
+  const DEBUG_ON_LINE = "DEBUG ON";
+
+  /**
+   * With the Wendoo extensions' debug logging left as the game starts --
+   * off -- provoke what they log while it is on: the first frames of the
+   * game's first scene, whose program host refuses programs, a message the
+   * VM extension refuses, and an image no factory holds; then print
+   * {@link DEBUG_ON_LINE} and turn debug logging on for the rest of the run.
+   */
+  function checkDebugLoggingOff(): void {
+    check("debug-logging-defaults-off", !wendoo.debug);
+    check("move-smoothing-defaults-off", wendoo.moveSmoothing === 0);
+    wendoo.receiveSimMessage(Buffer.fromArray([0x78, 0x0a]));
+    wendoo.imageOf(imageLiteral("imageQuiet"));
+    pause(FRAMES_MS);
+    console.log(DEBUG_ON_LINE);
+    wendoo.debug = true;
+  }
+
   /**
    * Give sprites their programs, let the game run, and check the programs
    * ran on their sprites: paired by id, thinking each frame, two programs
@@ -1299,10 +2846,14 @@ namespace arcadeSelftest {
    * base pack's direction arithmetic, how its tiles move sprites, how the
    * running game takes program updates, the bump sensor, the move's toward
    * and away modifiers, the in-range and out-of-range sensors, image assets
-   * with the tiles reading them, and the arcade icon encoder.
+   * with the tiles reading them, the proximity sensors' image, sprite and
+   * brain filters, their outputs and their positional modifiers, the target
+   * the move's toward and away carry, the move's wander, and the arcade icon
+   * encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
+    checkDebugLoggingOff();
 
     const ticker = newSprite(SpriteKind.Player);
     const twinA = newSprite(SpriteKind.Player);
@@ -1357,6 +2908,14 @@ namespace arcadeSelftest {
     checkRelationalModifiers();
     checkRangeSensors();
     checkImageAssets();
+    checkSpriteFilters();
+    checkBrainFilters();
+    checkSensorOutputs();
+    checkPositionalModifiers();
+    checkMoveTargets();
+    checkWander();
+    checkSpeedLimit();
+    checkMoveSmoothing();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

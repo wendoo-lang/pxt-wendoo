@@ -2,8 +2,9 @@ import type { WendooEnvironment } from "@wendoo/core/app";
 import type { Localizer } from "@wendoo/core/localization";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import type { AssetLiteral } from "@/services/asset-literals";
+import type { BrainLiteral } from "@/services/brain-literals";
 import { BRAIN_SOURCE_NAMESPACE } from "@/services/brain-source";
-import { createAssetLiteralTypes, createTileVisualProvider } from "./visual-provider";
+import { createAssetLiteralTypes, createBrainLiteralTypes, createTileVisualProvider } from "./visual-provider";
 
 /**
  * The display name of each type `environment` registers, keyed by type id:
@@ -37,22 +38,28 @@ function localizerView(base: Localizer): Localizer {
  * config re-reads every rule sentence, words of literals relabelled in place
  * included -- each registered type named by its registry name, tiles shown
  * through the visual provider over `assetLiterals`, a display-only literal
- * type per asset type those literals hold, and brain files saved and loaded
- * relative to {@link BRAIN_SOURCE_NAMESPACE}. The config supplies no
- * data-type icons. Build a new config whenever the environment is rebuilt or
- * the asset literals change.
+ * type per asset type those literals hold and per brain type `brainLiterals`
+ * hold, and brain files saved and loaded relative to
+ * {@link BRAIN_SOURCE_NAMESPACE}. The config supplies no data-type icons.
+ * Build a new config whenever the environment is rebuilt or the asset or
+ * brain literals change.
  *
  * @param environment - The brains store's current environment.
  * @param assetLiterals - The environment's asset literals, as the brains store reports them.
+ * @param brainLiterals - The environment's brain literals, as the brains store reports them.
  */
 export function buildBrainEditorConfig(
   environment: WendooEnvironment,
-  assetLiterals: ReadonlyMap<string, AssetLiteral>
+  assetLiterals: ReadonlyMap<string, AssetLiteral>,
+  brainLiterals: ReadonlyMap<string, BrainLiteral>
 ): BrainEditorConfig {
   return {
     dataTypeIcons: new Map(),
     dataTypeNames: registeredTypeNames(environment),
-    customLiteralTypes: createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
+    customLiteralTypes: [
+      ...createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
+      ...createBrainLiteralTypes(environment.brainServices.runtime.types, brainLiterals),
+    ],
     resolveTileVisual: createTileVisualProvider(assetLiterals),
     brainServices: environment.brainServices,
     localizer: localizerView(environment.appServices.localizer),

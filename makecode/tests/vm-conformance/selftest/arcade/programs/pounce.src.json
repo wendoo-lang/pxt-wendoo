@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "pounceTowardQk01",
+  "name": "Pounce",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0pounceTwQk00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0pounceTwQk00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.modifier->modifier.quickly",
+            "tile.out->struct:<Sprite>.inRange"
+          ],
+          "children": [],
+          "ruleId": "fRu0pounceTwQk00"
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 /**
  * Sprites as Wendoo values: the `Sprite` type an Arcade sprite crosses into
- * a program as, the sprite a value stands for, and the direction toward it.
+ * a program as, the sprite a value stands for, and whether it is destroyed.
  * A `Sprite` value is opaque -- the type declares no fields -- and is backed
  * by the sprite it stands for.
  */
@@ -42,26 +42,12 @@ namespace wendoo {
   }
 
   /**
-   * The direction from the center of `sprite` to the center of the sprite
-   * `subject` stands for, scaled to length 1, read from where both sprites
-   * are now. `undefined` when `subject` is not a `Sprite` value -- nil
-   * included -- or the two centers coincide.
+   * Whether `sprite` has been destroyed.
    *
-   * @param sprite - The sprite the direction starts at.
-   * @param subject - Any value a program produced.
+   * @param sprite - Any sprite.
    */
   //% hidden
-  export function directionToward(sprite: Sprite, subject: Value): DirectionVector {
-    const other = spriteOf(subject);
-    if (!other) {
-      return undefined;
-    }
-    const x = other.x - sprite.x;
-    const y = other.y - sprite.y;
-    if (x === 0 && y === 0) {
-      return undefined;
-    }
-    const length = Math.sqrt(x * x + y * y);
-    return new DirectionVector(x / length, y / length);
+  export function isDestroyed(sprite: Sprite): boolean {
+    return (sprite.flags & sprites.Flag.Destroyed) !== 0;
   }
 }

@@ -1,11 +1,14 @@
 /**
  * Directions as Wendoo values: the `Vector2` struct type a direction crosses
  * into a program as, and the arithmetic the arcade vocabulary does on
- * directions -- masking components, summing chosen direction modifiers, and
- * clamping to the unit circle.
+ * directions -- reading a `Vector2` as a direction or a point, masking
+ * components, summing chosen direction modifiers, and clamping to the unit
+ * circle. A `Vector2` stands for
+ * a direction in most slots and for a point on the screen in a slot that
+ * names a place to head for, such as the target a move's `toward` carries.
  */
 namespace wendoo {
-  /** Wendoo type name of a direction value: a struct of two numbers, `x` and `y`, in Arcade's screen convention. */
+  /** Wendoo type name of a direction or point value: a struct of two numbers, `x` and `y`, in Arcade's screen convention. */
   //% hidden
   export const TYPE_VECTOR2 = "Vector2";
 
@@ -50,14 +53,15 @@ namespace wendoo {
   }
 
   /**
-   * The direction `value` carries: its `x` and `y` when it is a `Vector2`
-   * whose fields both hold numbers and whose direction is not the zero
-   * vector; `undefined` for any other value, nil included.
+   * The `x` and `y` `value` carries when it is a `Vector2` whose fields both
+   * hold numbers, the zero vector included -- a direction, or a point on the
+   * screen in the coordinates sprite positions use; `undefined` for any
+   * other value, nil included.
    *
    * @param value - Any value a program produced.
    */
   //% hidden
-  export function directionOf(value: Value): DirectionVector {
+  export function vector2Of(value: Value): DirectionVector {
     if (!value || value.t !== ValueTag.Struct || value.typeId !== structTypeId(TYPE_VECTOR2)) {
       return undefined;
     }
@@ -66,8 +70,36 @@ namespace wendoo {
     if (!x || !y || x.t !== ValueTag.Number || y.t !== ValueTag.Number) {
       return undefined;
     }
-    const direction = new DirectionVector(x.num, y.num);
-    return direction.isZero() ? undefined : direction;
+    return new DirectionVector(x.num, y.num);
+  }
+
+  /**
+   * The direction `value` carries: its `x` and `y` when it is a `Vector2`
+   * whose fields both hold numbers and whose direction is not the zero
+   * vector; `undefined` for any other value, nil included.
+   *
+   * @param value - Any value a program produced.
+   */
+  //% hidden
+  export function directionOf(value: Value): DirectionVector {
+    const direction = vector2Of(value);
+    return direction && !direction.isZero() ? direction : undefined;
+  }
+
+  /**
+   * The vector `x`, `y` scaled to length 1, or `undefined` when it is the
+   * zero vector.
+   *
+   * @param x - Horizontal component; positive is rightward.
+   * @param y - Vertical component; positive is downward.
+   */
+  //% hidden
+  export function unitVector(x: number, y: number): DirectionVector {
+    if (x === 0 && y === 0) {
+      return undefined;
+    }
+    const length = Math.sqrt(x * x + y * y);
+    return new DirectionVector(x / length, y / length);
   }
 
   /**
@@ -98,11 +130,12 @@ namespace wendoo {
    * The direction the chosen direction modifiers specify: the sum of a unit
    * vector for each flag set -- `up` (0, -1), `down` (0, 1), `left` (-1, 0),
    * `right` (1, 0), `toward` the direction `bearing` holds, and `away` its
-   * opposite -- scaled to length 1. So two perpendicular cardinals give the
-   * exact diagonal, a cardinal bends `toward` or `away`, and opposite pairs,
-   * `toward` with `away` among them, cancel. `toward` and `away` add nothing
-   * while `bearing` is `undefined`. `undefined` when no flag adds anything or
-   * the chosen modifiers cancel to the zero vector.
+   * opposite -- and of `wander` when it is given, scaled to length 1. So two
+   * perpendicular cardinals give the exact diagonal, a cardinal bends
+   * `toward`, `away` or a wander, and opposite pairs, `toward` with `away`
+   * among them, cancel. `toward` and `away` add nothing while `bearing` is
+   * `undefined`. `undefined` when nothing adds anything or what is added
+   * cancels to the zero vector.
    *
    * @param up - Whether up is chosen.
    * @param down - Whether down is chosen.
@@ -111,6 +144,7 @@ namespace wendoo {
    * @param toward - Whether toward is chosen.
    * @param away - Whether away is chosen.
    * @param bearing - The direction `toward` adds, 1 long; `undefined` when there is none.
+   * @param wander - The direction a wander adds, 1 long; `undefined` when wander is not chosen or adds none.
    */
   //% hidden
   export function specifiedDirection(
@@ -120,7 +154,8 @@ namespace wendoo {
     right: boolean,
     toward: boolean,
     away: boolean,
-    bearing: DirectionVector
+    bearing: DirectionVector,
+    wander: DirectionVector
   ): DirectionVector {
     let x = (right ? 1 : 0) - (left ? 1 : 0);
     let y = (down ? 1 : 0) - (up ? 1 : 0);
@@ -134,11 +169,11 @@ namespace wendoo {
         y -= bearing.y;
       }
     }
-    if (x === 0 && y === 0) {
-      return undefined;
+    if (wander) {
+      x += wander.x;
+      y += wander.y;
     }
-    const length = Math.sqrt(x * x + y * y);
-    return new DirectionVector(x / length, y / length);
+    return unitVector(x, y);
   }
 
   /**

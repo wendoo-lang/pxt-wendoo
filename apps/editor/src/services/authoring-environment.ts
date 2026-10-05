@@ -4,6 +4,7 @@ import type { NumberPrecision, StructTypeDef } from "@wendoo/core/runtime";
 import { createProfileNumerics, mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import { ASSET_FIELD, AssetLiterals, type AssetType } from "./asset-literals";
+import { BRAIN_FIELD, BrainLiterals, type BrainType } from "./brain-literals";
 import { type CATALOG_UNREADABLE, type CatalogPack, type CatalogProblem, parseCatalog } from "./catalog";
 import { allocateIds } from "./id-allocation";
 import { type PackBindingProblem, packModule } from "./pack-binding";
@@ -54,6 +55,12 @@ export interface AuthoringEnvironment {
    * source is bound.
    */
   readonly assetLiterals: AssetLiterals;
+  /**
+   * The environment's brain literal tiles, one set per catalog brain type the
+   * environment binds; none are minted until the held brains are applied or
+   * a brain source is bound.
+   */
+  readonly brainLiterals: BrainLiterals;
 }
 
 /**
@@ -74,6 +81,23 @@ function boundAssetTypes(environment: WendooEnvironment, packs: readonly Catalog
 }
 
 /**
+ * The brain types among `packs`' types that `environment` binds: each type
+ * the catalog marks as a brain type whose struct definition the environment
+ * registers with an `id` field.
+ */
+function boundBrainTypes(environment: WendooEnvironment, packs: readonly CatalogPack[]): BrainType[] {
+  const types: BrainType[] = [];
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    if (type.brain !== true) continue;
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    const typeDef = environment.brainServices.runtime.types.get(typeId) as StructTypeDef | undefined;
+    if (typeDef?.fieldIndexByName?.get(BRAIN_FIELD) === undefined) continue;
+    types.push({ typeId, typeDef });
+  }
+  return types;
+}
+
+/**
  * Builds a fresh environment for the session catalog `catalogText`: the core
  * module installed, numbers computed at {@link MAKECODE_VM_PRECISION}, and
  * document ids minted from an entropy-seeded stream.
@@ -89,8 +113,9 @@ function boundAssetTypes(environment: WendooEnvironment, packs: readonly Catalog
  * catalog content.
  *
  * The result's asset literals cover every bound type the catalog declares an
- * asset kind for; apply the session's asset snapshot to them, and bind each
- * brain source before reading or compiling it.
+ * asset kind for, and its brain literals every bound type the catalog marks
+ * as a brain type; apply the session's asset snapshot and the held brains to
+ * them, and bind each brain source to both before reading or compiling it.
  *
  * @param catalogText - The session catalog's serialized text, or `undefined` while none has arrived.
  * @param ids - The project's id allocation the editor holds; omit it while the editor holds none.
@@ -123,6 +148,13 @@ export function buildAuthoringEnvironment(
     rng: createEntropySeededRng(),
     numerics: createProfileNumerics(MAKECODE_VM_PRECISION),
   });
-  const assetTypes = ids === undefined || catalog === undefined ? [] : boundAssetTypes(environment, catalog.packs);
-  return { environment, diagnostics, assetLiterals: new AssetLiterals(environment.brainServices, assetTypes) };
+  const bound = ids !== undefined && catalog !== undefined;
+  const assetTypes = bound ? boundAssetTypes(environment, catalog.packs) : [];
+  const brainTypes = bound ? boundBrainTypes(environment, catalog.packs) : [];
+  return {
+    environment,
+    diagnostics,
+    assetLiterals: new AssetLiterals(environment.brainServices, assetTypes),
+    brainLiterals: new BrainLiterals(environment.brainServices, brainTypes),
+  };
 }

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "perchAboveRange1",
+  "name": "Perch",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "Xkljm2m0OJfeVXvr",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "Xkljm2m0OJfeVXvr",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range",
+            "tile.modifier->modifier.position.above"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward"
+          ],
+          "children": [],
+          "ruleId": "uCaT0dHdipq62vqw"
+        }
+      ]
+    }
+  ]
+}

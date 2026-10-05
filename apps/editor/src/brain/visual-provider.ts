@@ -5,6 +5,7 @@ import { getClosedStructFieldByName, NativeType } from "@wendoo/core/runtime";
 import type { CustomLiteralType, TileVisual } from "@wendoo/ui";
 import { createElement } from "react";
 import { ASSET_FIELD, type AssetLiteral } from "@/services/asset-literals";
+import { BRAIN_FIELD, type BrainLiteral } from "@/services/brain-literals";
 
 /** The registered types an asset literal's value is read through. */
 export interface AssetTypeRegistry {
@@ -92,6 +93,52 @@ export function createAssetLiteralTypes(
           className: "block h-12 w-12 object-contain",
         });
       },
+    };
+  });
+}
+
+/**
+ * The document id `value` names: `value` itself when it is text -- a
+ * literal's value label, which is its document id -- or the `id` field of a
+ * struct value of the brain type `typeId`; `undefined` when it names none.
+ */
+function documentIdOf(types: AssetTypeRegistry, typeId: TypeId, value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  const typeDef = types.get(typeId) as StructTypeDef | undefined;
+  const struct = value as StructValue | undefined;
+  if (typeDef === undefined || struct?.t !== NativeType.Struct) return undefined;
+  const field = getClosedStructFieldByName(typeDef, struct, BRAIN_FIELD);
+  return field?.t === NativeType.String ? field.v : undefined;
+}
+
+/**
+ * The brain editor's literal types for the brain types `brainLiterals` hold
+ * literals of, one per type: each display-only, formatting a value -- or a
+ * literal's value label -- as its literal's label, the brain's name, and
+ * drawing a placed literal's value box as that label's text.
+ *
+ * Build new types whenever the brain literals change.
+ *
+ * @param types - The environment's type registry.
+ * @param brainLiterals - The environment's brain literals, keyed by tile id.
+ */
+export function createBrainLiteralTypes(
+  types: AssetTypeRegistry,
+  brainLiterals: ReadonlyMap<string, BrainLiteral>
+): CustomLiteralType[] {
+  const typeIds = new Set<TypeId>();
+  for (const literal of brainLiterals.values()) typeIds.add(literal.typeId);
+  return [...typeIds].map((typeId) => {
+    const labelOf = (value: unknown): string => {
+      const id = documentIdOf(types, typeId, value);
+      if (id === undefined) return "";
+      return brainLiterals.get(mkLiteralTileId(typeId, id))?.label ?? id;
+    };
+    return {
+      typeId,
+      description: "A brain in this project.",
+      formatValue: labelOf,
+      renderValue: () => undefined,
     };
   });
 }

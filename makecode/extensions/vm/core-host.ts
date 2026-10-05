@@ -81,6 +81,76 @@ namespace wendoo {
     ConvStringToBoolean = 46,
     /** Implicit conversion of a boolean to the string `true` or `false`. */
     ConvBooleanToString = 47,
+    /** Read a brain variable by name. */
+    BrainContextGetVariable = 48,
+    /** Write a brain variable by name. */
+    BrainContextSetVariable = 49,
+    /** Read a rule variable by name, on the running rule or the nearest rule above it. */
+    RuleContextGetVariable = 50,
+    /** Write a rule variable by name, on the running rule. */
+    RuleContextSetVariable = 51,
+  }
+
+  /** Argument-buffer position of a context variable function's variable name, after its method receiver. */
+  const CONTEXT_VARIABLE_NAME_SLOT = 1;
+
+  /** Argument-buffer position of a context variable write's value, after the variable name. */
+  const CONTEXT_VARIABLE_VALUE_SLOT = 2;
+
+  /** Which variables a {@link ContextVariableRead} or {@link ContextVariableWrite} reaches. */
+  enum ContextVariableScope {
+    /** The brain's variables, by name. */
+    Brain = 0,
+    /** The running rule's variables, by name. */
+    Rule = 1,
+  }
+
+  /**
+   * `BrainContext.getVariable` and `RuleContext.getVariable`: the variable
+   * named by the name slot -- a brain variable, or a rule variable on the
+   * running rule or the nearest rule above it -- or nil when none holds it.
+   */
+  class ContextVariableRead extends HostFunction {
+    private scope: ContextVariableScope;
+
+    constructor(scope: ContextVariableScope) {
+      super();
+      this.scope = scope;
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const name = args[CONTEXT_VARIABLE_NAME_SLOT].str;
+      if (this.scope === ContextVariableScope.Brain) {
+        return ctx.variables.getByName(name);
+      }
+      return ctx.services.ruleVars.getByName(ctx.currentRuleFuncId, name);
+    }
+  }
+
+  /**
+   * `BrainContext.setVariable` and `RuleContext.setVariable`: write the value
+   * slot to the variable named by the name slot -- a brain variable, or a
+   * rule variable on the running rule, written nowhere while no rule runs --
+   * and evaluate to nil.
+   */
+  class ContextVariableWrite extends HostFunction {
+    private scope: ContextVariableScope;
+
+    constructor(scope: ContextVariableScope) {
+      super();
+      this.scope = scope;
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const name = args[CONTEXT_VARIABLE_NAME_SLOT].str;
+      const value = args[CONTEXT_VARIABLE_VALUE_SLOT];
+      if (this.scope === ContextVariableScope.Brain) {
+        ctx.variables.setByName(name, value);
+      } else {
+        ctx.services.ruleVars.setByName(ctx.currentRuleFuncId, name, value);
+      }
+      return NIL_VALUE;
+    }
   }
 
   /** Stable action ids of the core host actions. */
@@ -638,6 +708,11 @@ namespace wendoo {
     registry.register(CoreFuncId.ConvBooleanToNumber, new TypeConversion(ConversionKind.BooleanToNumber, numerics));
     registry.register(CoreFuncId.ConvStringToBoolean, new TypeConversion(ConversionKind.StringToBoolean, numerics));
     registry.register(CoreFuncId.ConvBooleanToString, new TypeConversion(ConversionKind.BooleanToString, numerics));
+
+    registry.register(CoreFuncId.BrainContextGetVariable, new ContextVariableRead(ContextVariableScope.Brain));
+    registry.register(CoreFuncId.BrainContextSetVariable, new ContextVariableWrite(ContextVariableScope.Brain));
+    registry.register(CoreFuncId.RuleContextGetVariable, new ContextVariableRead(ContextVariableScope.Rule));
+    registry.register(CoreFuncId.RuleContextSetVariable, new ContextVariableWrite(ContextVariableScope.Rule));
   }
 
   /**

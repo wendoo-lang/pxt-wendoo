@@ -63,7 +63,11 @@ describe("BrainEditorSession", () => {
       },
     };
     const tree = BrainEditorSession({
-      config: buildBrainEditorConfig(store.getSnapshot().environment, store.getSnapshot().assetLiterals),
+      config: buildBrainEditorConfig(
+        store.getSnapshot().environment,
+        store.getSnapshot().assetLiterals,
+        store.getSnapshot().brainLiterals
+      ),
       editing,
       isOpen: true,
       onOpenChange: (open) => {

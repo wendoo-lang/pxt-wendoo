@@ -25,6 +25,12 @@ namespace wendoo {
    */
   //% hidden
   export class ActorWorld extends HostWorld {
+    /**
+     * The program host running the actor's program, assigned when a host
+     * starts a program on this world; `undefined` until then.
+     */
+    host: ProgramHost = undefined;
+
     constructor() {
       super();
     }
@@ -98,7 +104,7 @@ namespace wendoo {
    * The first call drains every pending pack registration through the
    * project's id manifest ({@link projectIds}), which closes registration,
    * and logs each registration diagnostic on record as
-   * `wendoo <code> <name> <pack>`; every later call returns the same
+   * `wendoo <code> <name> <pack>` through {@link debugLog}; every later call returns the same
    * registries. Call it once the program's top-level code has run, so every
    * pack and the manifest have registered.
    */
@@ -116,7 +122,7 @@ namespace wendoo {
     drainedRegistries = new HostRegistries(functions, actions, types);
     const recorded = registrationDiagnostics();
     for (let i = 0; i < recorded.length; i++) {
-      console.log(`wendoo ${recorded[i].code} ${recorded[i].name} ${recorded[i].pack}`);
+      debugLog(`wendoo ${recorded[i].code} ${recorded[i].name} ${recorded[i].pack}`);
     }
     return drainedRegistries;
   }
@@ -183,7 +189,7 @@ namespace wendoo {
      * start ending the program its actor ran; think every running program
      * once, in start order; then log each field programs addressed that its
      * registered type does not declare, not logged before by any host, as
-     * `wendoo field-undeclared <typeId> <fieldId>`.
+     * `wendoo field-undeclared <typeId> <fieldId>` through {@link debugLog}.
      *
      * @param timeMs - Cumulative scheduled time of this pass, in milliseconds.
      */
@@ -219,13 +225,29 @@ namespace wendoo {
       const undeclared = registries.types.undeclaredFieldAccesses();
       for (; registries.undeclaredLogged < undeclared.length; registries.undeclaredLogged++) {
         const access = undeclared[registries.undeclaredLogged];
-        console.log(`wendoo ${FIELD_UNDECLARED} ${access.typeId} ${access.fieldId}`);
+        debugLog(`wendoo ${FIELD_UNDECLARED} ${access.typeId} ${access.fieldId}`);
       }
     }
 
     /** The programs running now, in start order. */
     hostedPrograms(): HostedProgram[] {
       return this.running;
+    }
+
+    /**
+     * The worlds of the actors running the compiled brain `documentId` now,
+     * in start order; empty when none does.
+     *
+     * @param documentId - Document id of a compiled brain.
+     */
+    worldsRunning(documentId: string): ActorWorld[] {
+      const worlds: ActorWorld[] = [];
+      for (let i = 0; i < this.running.length; i++) {
+        if (this.running[i].loaded.registration.id === documentId) {
+          worlds.push(this.running[i].world);
+        }
+      }
+      return worlds;
     }
 
     /** Every compiled brain whose current program was refused when loaded, in load order. */
@@ -258,6 +280,7 @@ namespace wendoo {
         this.caps,
         request.world
       );
+      request.world.host = this;
       runtime.startup();
       this.running.push(new HostedProgram(request.world, loaded, runtime));
     }
@@ -321,10 +344,10 @@ namespace wendoo {
     }
   }
 
-  /** Log `loaded`'s refusal as `wendoo program-rejected <code> <id>`; an accepted program logs nothing. */
+  /** Log `loaded`'s refusal as `wendoo program-rejected <code> <id>` through {@link debugLog}; an accepted program logs nothing. */
   function logRefusal(loaded: LoadedProgram): void {
     if (loaded.errorCode.length > 0) {
-      console.log(`wendoo program-rejected ${loaded.errorCode} ${loaded.registration.id}`);
+      debugLog(`wendoo program-rejected ${loaded.errorCode} ${loaded.registration.id}`);
     }
   }
 }

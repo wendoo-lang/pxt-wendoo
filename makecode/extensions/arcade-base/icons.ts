@@ -235,6 +235,27 @@ namespace wendoo {
     . . . . . . . . . . . . . . . .
   `;
 
+  /** Icon of the move's `wander` modifier: a winding trail climbing to a destination. */
+  //% hidden
+  export const WANDER_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . 2 2 .
+    . . . . . . . . . . . . 2 2 2 2
+    . . . . . . . . . . . . 2 2 2 2
+    . . . . . . . . . . . 7 . 2 2 .
+    . . . . . . . . . . 7 . . . . .
+    . . 7 7 . 7 7 . 7 7 . . . . . .
+    . 7 . . . . . . . . . . . . . .
+    . 7 . . . . . . . . . . . . . .
+    . . 7 7 . 7 7 . 7 7 . . . . . .
+    . . . . . . . . . . 7 . . . . .
+    . . . . . . . . . . 7 . . . . .
+    . . 7 7 . 7 7 . 7 7 . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
   /** Icon of the move's `slowly` modifier: one chevron. */
   //% hidden
   export const SLOWLY_ICON = img`
@@ -296,5 +317,89 @@ namespace wendoo {
     . . . f f 5 5 5 5 5 5 f f . . .
     . . . . . f f f f f f . . . . .
     . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the positional modifier above: another sprite above the program's sprite, past the line through its center. */
+  //% hidden
+  export const ABOVE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . 7 7 7 7 . . . . . .
+    b . b . b . 7 7 7 7 . b . b . b
+    . . . . . . 7 7 7 7 . . . . . .
+    . . . . . . 7 7 7 7 . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the positional modifier below: another sprite below the program's sprite, past the line through its center. */
+  //% hidden
+  export const BELOW_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . 7 7 7 7 . . . . . .
+    . . . . . . 7 7 7 7 . . . . . .
+    b . b . b . 7 7 7 7 . b . b . b
+    . . . . . . 7 7 7 7 . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . 2 2 2 2 . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the positional modifier left of: another sprite left of the program's sprite, past the line through its center. */
+  //% hidden
+  export const LEFT_OF_ICON = img`
+    . . . . . . . . . b . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . b . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . b . . . . . .
+    . . . . . . . . . . . . . . . .
+    . 2 2 2 2 . . . 7 7 7 7 . . . .
+    . 2 2 2 2 . . . 7 7 7 7 . . . .
+    . 2 2 2 2 . . . 7 7 7 7 . . . .
+    . 2 2 2 2 . . . 7 7 7 7 . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . b . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . b . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . b . . . . . .
+  `;
+
+  /** Icon of the positional modifier right of: another sprite right of the program's sprite, past the line through its center. */
+  //% hidden
+  export const RIGHT_OF_ICON = img`
+    . . . . . . b . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . b . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . b . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . 7 7 7 7 . . . 2 2 2 2 .
+    . . . . 7 7 7 7 . . . 2 2 2 2 .
+    . . . . 7 7 7 7 . . . 2 2 2 2 .
+    . . . . 7 7 7 7 . . . 2 2 2 2 .
+    . . . . . . . . . . . . . . . .
+    . . . . . . b . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . b . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . b . . . . . . . . .
   `;
 }

@@ -13,6 +13,7 @@ import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-s
 import type { AssetLiteral } from "./asset-literals";
 import type { AuthoringEnvironment, CatalogDiagnostic } from "./authoring-environment";
 import { buildAuthoringEnvironment } from "./authoring-environment";
+import type { BrainLiteral, UnresolvedBrainReference } from "./brain-literals";
 import type { BrainSourceCompile } from "./brain-source";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
@@ -147,6 +148,18 @@ export interface BrainsViewState {
    */
   readonly unresolvedAssets: ReadonlyMap<string, readonly AssetLiteral[]>;
   /**
+   * The environment's brain literal tiles, keyed by tile id: one per held
+   * brain for each catalog brain type, and one per such literal a held brain
+   * references, unresolved while the store does not hold its brain.
+   */
+  readonly brainLiterals: ReadonlyMap<string, BrainLiteral>;
+  /**
+   * The unresolved brain literals each brain references, keyed by document
+   * id, for each brain referencing any, each carrying its stable code. Such
+   * a brain compiles as it did while the brains it names were held.
+   */
+  readonly unresolvedBrains: ReadonlyMap<string, readonly UnresolvedBrainReference[]>;
+  /**
    * `true` while the session is connected and the latest handshake's
    * reconciliation has finished, so edits and re-pushes reach the MakeCode
    * project at once; `false` from the next disconnection, and while a new
@@ -190,6 +203,13 @@ export interface BrainsViewState {
  * adding, deleting or restoring an asset updates the literals in place: it
  * never rebuilds the environment, recompiles a brain, or pushes one.
  *
+ * The environment's brain literals follow the held brains the same way: a
+ * literal per held brain of a catalog brain type, and a literal per such
+ * literal any brain source references, bound before the source is read or
+ * compiled. Adding, renaming or removing a brain updates the literals in
+ * place, and a brain naming a brain the store no longer holds is reported
+ * under {@link BrainsViewState.unresolvedBrains}.
+ *
  * Given a sync source, the store keeps its brains in step with the MakeCode
  * project over each makecode handshake. When a handshake completes, the
  * store reconciles: a handshake of a different binding than the previous
@@ -230,6 +250,14 @@ export class BrainsStore {
         readonly literals: ReadonlyMap<string, AssetLiteral>;
         readonly assets: readonly MakeCodeAsset[] | undefined;
         readonly found: ReadonlyMap<string, readonly AssetLiteral[]>;
+      }
+    | undefined;
+  /** The unresolved brain literals each brain referenced when last found, with the brains and literals they were found for. */
+  private _unresolvedBrains:
+    | {
+        readonly brains: ReadonlyMap<string, BrainEntry>;
+        readonly literals: ReadonlyMap<string, BrainLiteral>;
+        readonly found: ReadonlyMap<string, readonly UnresolvedBrainReference[]>;
       }
     | undefined;
   /** The id allocation held for the current binding, or `undefined` until a handshake has read the project's manifest. */
@@ -383,6 +411,7 @@ export class BrainsStore {
     const held = this._brains.get(id);
     if (held?.source === source) return;
     this._environment.assetLiterals.bindSource(source);
+    this._environment.brainLiterals.bindSource(source);
     const sourceHash = brainSourceHash(source);
     const compile = compileBrainSource(this._environment.environment, source);
     const entry: BrainEntry = {
@@ -635,6 +664,7 @@ export class BrainsStore {
   private readPulled(brain: MakeCodeBrain): BrainDamageCode | { entry: BrainEntry; recompiled: boolean } {
     const environment = this._environment.environment;
     this._environment.assetLiterals.bindSource(brain.source);
+    this._environment.brainLiterals.bindSource(brain.source);
     let definition: BrainDef;
     try {
       definition = readBrainSource(environment, brain.source);
@@ -778,7 +808,11 @@ export class BrainsStore {
   private buildEnvironment(): AuthoringEnvironment {
     const built = buildAuthoringEnvironment(this._catalogText, this._ids);
     built.assetLiterals.applySnapshot(this._assets);
-    for (const entry of this._brains.values()) built.assetLiterals.bindSource(entry.source);
+    built.brainLiterals.applyBrains(this._brains);
+    for (const entry of this._brains.values()) {
+      built.assetLiterals.bindSource(entry.source);
+      built.brainLiterals.bindSource(entry.source);
+    }
     return built;
   }
 
@@ -829,6 +863,20 @@ export class BrainsStore {
     return found;
   }
 
+  /** The unresolved brain literals each held brain references, found again only when the brains or the literals changed. */
+  private unresolvedBrains(): ReadonlyMap<string, readonly UnresolvedBrainReference[]> {
+    const literals = this._environment.brainLiterals;
+    const held = this._unresolvedBrains;
+    if (held !== undefined && held.brains === this._brains && held.literals === literals.view) return held.found;
+    const found = new Map<string, readonly UnresolvedBrainReference[]>();
+    for (const [id, entry] of this._brains) {
+      const unresolved = literals.unresolvedIn(entry.source);
+      if (unresolved.length > 0) found.set(id, unresolved);
+    }
+    this._unresolvedBrains = { brains: this._brains, literals: literals.view, found };
+    return found;
+  }
+
   private readState(): BrainsViewState {
     return {
       environment: this._environment.environment,
@@ -838,6 +886,8 @@ export class BrainsStore {
       brains: this._brains,
       assetLiterals: this._environment.assetLiterals.view,
       unresolvedAssets: this.unresolvedAssets(),
+      brainLiterals: this._environment.brainLiterals.view,
+      unresolvedBrains: this.unresolvedBrains(),
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,
       damaged: this._damaged,
@@ -845,8 +895,9 @@ export class BrainsStore {
     };
   }
 
-  /** Publishes a new snapshot to every subscriber. */
+  /** Applies the held brains to the environment's brain literals, then publishes a new snapshot to every subscriber. */
   private publish(): void {
+    this._environment.brainLiterals.applyBrains(this._brains);
     this._state = this.readState();
     for (const listener of this._listeners) listener();
   }

@@ -11,11 +11,13 @@
  *   registration order.
  * - A type entry carries `name`, `native` (backed by host objects through
  *   registered hooks), `asset` (on an asset type, the kind of the project
- *   assets its values name), `fields` (each with `name`, `type`,
+ *   assets its values name), `brain` (on a brain type, whose values each name
+ *   one of the project's brains), `fields` (each with `name`, `type`,
  *   `readOnly`), and the metadata fields.
  * - A tile entry carries `name`, `kind`, `async`, its argument grammar as
  *   either `args` or `call`, `returns`, `outputs` (each with `name` and
- *   `type`), `consumesWhenResult` (the type name of the WHEN result the tile
+ *   `type`, then the output tile's `label`, `docs` and `icon`),
+ *   `consumesWhenResult` (the type name of the WHEN result the tile
  *   requires), the metadata fields, and `language`.
  * - A tile's argument grammar is a list of top-level items that match as the
  *   items of one bag. It is written as `args` when every item has a flat
@@ -54,8 +56,9 @@
  * - The metadata fields are `label`, `group`, `docs` (markdown text,
  *   verbatim) and `icon` (the encoder's text form).
  * - A diagnostic entry carries `code`, `name`, `pack`, `otherPack` and
- *   `spec` (the call spec within the registration the problem is about: for
- *   a slot's icon, the slot's name, or its `tileId` when it is unnamed).
+ *   `spec` (the part of the registration the problem is about: for a slot's
+ *   icon, the slot's name, or its `tileId` when it is unnamed; for an
+ *   output's icon, the output's name).
  *
  * Omission conventions, applied uniformly: a boolean field is present only
  * when true, a string field only when non-empty, an array field only when
@@ -443,7 +446,7 @@ namespace wendoo {
      * @param icon - Opaque icon value, or `undefined` when none is declared.
      * @param name - Name of the registration declaring it.
      * @param pack - Pack the registration is registered under.
-     * @param spec - Name of the call spec declaring it, or `""` when the registration itself does.
+     * @param spec - Name of the call spec or output declaring it, or `""` when the registration itself does.
      */
     // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
     private iconText(icon: any, name: string, pack: string, spec: string): string {
@@ -498,6 +501,7 @@ namespace wendoo {
      * @param fields - Declared fields, in declaration order.
      * @param native - Whether the type is backed by host objects through registered hooks.
      * @param assetKind - Kind of the project assets an asset type's values name; `""` for any other type.
+     * @param brain - Whether the type is a brain type, its values each naming one of the project's brains.
      * @param meta - Catalog metadata, or `undefined` when the registration declared none.
      */
     struct(
@@ -506,6 +510,7 @@ namespace wendoo {
       fields: StructFieldSpec[],
       native: boolean,
       assetKind: string,
+      brain: boolean,
       meta: CatalogMeta
     ): void {
       let entry = `{"name":${jsonQuote(name)}`;
@@ -514,6 +519,9 @@ namespace wendoo {
       }
       if (assetKind.length > 0) {
         entry += `,"asset":${jsonQuote(assetKind)}`;
+      }
+      if (brain) {
+        entry += ',"brain":true';
       }
       if (fields.length > 0) {
         const rendered: string[] = [];
@@ -553,7 +561,15 @@ namespace wendoo {
           const rendered: string[] = [];
           for (let i = 0; i < spec.outputs.length; i++) {
             const declared = spec.outputs[i];
-            rendered.push(`{"name":${jsonQuote(declared.name)},"type":${jsonQuote(declared.type)}}`);
+            let output = `{"name":${jsonQuote(declared.name)},"type":${jsonQuote(declared.type)}`;
+            if (declared.label.length > 0) {
+              output += `,"label":${jsonQuote(declared.label)}`;
+            }
+            if (declared.docs.length > 0) {
+              output += `,"docs":${jsonQuote(declared.docs)}`;
+            }
+            output += this.iconText(declared.icon, name, pack, declared.name);
+            rendered.push(`${output}}`);
           }
           entry += `,"outputs":${jsonArray(rendered)}`;
         }

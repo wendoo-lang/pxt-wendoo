@@ -12,14 +12,22 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
-import { stream } from "@wendoo/core";
-import { BrainDef, mkLiteralTileId, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
+import { List, stream } from "@wendoo/core";
+import { BrainDef, CoreTypeIds, mkLiteralTileId, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
+import { RuleSide } from "@wendoo/core/brain";
+import {
+  buildInsertionContext,
+  collectRuleHierarchyOutputKeys,
+  suggestTiles,
+} from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
 import type { StructValue } from "@wendoo/core/runtime";
 import {
   BrainRuntime,
   linkedBrainProgramFromBytes,
   mkActuatorTileId,
+  mkOutputTileId,
   mkPrivateArgId,
   mkTypeId,
   NativeType,
@@ -180,6 +188,20 @@ const ARCADE_SOURCES = [
   "standoff.src.json",
   "leash-quickly.src.json",
   "keep-away-slowly.src.json",
+  "either-hero.src.json",
+  "kin.src.json",
+  "looker.src.json",
+  "kinship.src.json",
+  "perch.src.json",
+  "pounce.src.json",
+  "pounce-flipped.src.json",
+  "heed.src.json",
+  "spurn.src.json",
+  "roam.src.json",
+  "amble.src.json",
+  "dart.src.json",
+  "drawn.src.json",
+  "twofold.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -387,15 +409,22 @@ function arcadeEnvironment(): ReturnType<typeof buildAuthoringEnvironment>["envi
 
 /**
  * The arcade selftest's programs: the registration selftest's ticker and
- * twins, the arcade selftest's own programs, the two programs the loader
- * refuses, and the two programs referencing ids the arcade selftest's
- * allocation does not hold.
+ * twins, the arcade selftest's own programs, each asset and brain literal
+ * they place bound from its reference, the two programs the loader refuses, and the two
+ * programs referencing ids the arcade selftest's allocation does not hold.
  */
 function arcadePrograms(): SelftestProgram[] {
-  const environment = arcadeEnvironment();
+  const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
+  const paths = [
+    ...ARCADE_SHARED_SOURCES.map((file) => `${SELFTEST_SOURCES_DIR}/${file}`),
+    ...ARCADE_SOURCES.map((file) => `${ARCADE_SOURCES_DIR}/${file}`),
+  ];
+  for (const path of paths) {
+    built.assetLiterals.bindSource(readRepoFile(path));
+    built.brainLiterals.bindSource(readRepoFile(path));
+  }
   return [
-    ...ARCADE_SHARED_SOURCES.map((file) => compiledProgram(environment, `${SELFTEST_SOURCES_DIR}/${file}`)),
-    ...ARCADE_SOURCES.map((file) => compiledProgram(environment, `${ARCADE_SOURCES_DIR}/${file}`)),
+    ...paths.map((path) => compiledProgram(built.environment, path)),
     ...refusedPrograms(),
     ...unmappedIdPrograms(),
   ];
@@ -601,6 +630,29 @@ export const IMAGE_LITERAL_ASSET_ID = "image1";
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding an `Image` value. */
 export const IMAGE_LITERAL = "<image literal>";
 
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding the number 40. */
+export const NUMBER_LITERAL = "<number literal>";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the output tile of the `Sprite` output named by the rest of
+ * the entry, such as `output:bumped`.
+ */
+export const OUTPUT_ENTRY_PREFIX = "output:";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the shared modifier tile the whole entry declares, such as
+ * `modifier.position.above`.
+ */
+export const MODIFIER_ENTRY_PREFIX = "modifier.";
+
+/** Document id of the brain the brain literal tile of {@link arcadeImageRuleDiagnosticCodes} names. */
+export const BRAIN_LITERAL_ID = "kinBrainFilter01";
+
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding a `Brain` value. */
+export const BRAIN_LITERAL = "<brain literal>";
+
 /** The snapshot entry of the image {@link IMAGE_LITERAL} stands for. */
 const IMAGE_ASSET: MakeCodeAsset = {
   kind: "image",
@@ -612,21 +664,42 @@ const IMAGE_ASSET: MakeCodeAsset = {
 };
 
 /**
- * The one-rule program in the environment binding the arcade selftest's
+ * The one-rule brain in the environment binding the arcade selftest's
  * catalog, its asset literals minted from a snapshot holding the image
  * {@link IMAGE_LITERAL} stands for: its WHEN side the tiles `when` names, its
  * DO side the tiles `act` names, each entry the name of a sensor (on the WHEN
- * side) or an actuator (on the DO side), or {@link IMAGE_LITERAL} for that
- * image's literal tile. Returns the program's source and the environment it
- * was authored in.
+ * side) or an actuator (on the DO side), {@link IMAGE_LITERAL} for that
+ * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
+ * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
+ * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
+ * catalog, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
+ * output's tile, or an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
+ * shared modifier tile it declares. Given `child`, the rule holds one child rule, its WHEN side
+ * and DO side the tiles `child.when` and `child.act` name. Returns the
+ * brain, its rule, the environment it was authored in, and the tile ids of
+ * the image's and the brain's literals.
  */
-function arcadeImageRule(when: string[], act: string[]) {
+function arcadeImageRuleBrain(when: string[], act: string[], child?: { when: string[]; act: string[] }) {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
   built.assetLiterals.applySnapshot([IMAGE_ASSET]);
+  built.brainLiterals.applyBrains(new Map([[BRAIN_LITERAL_ID, { name: "Kin" }]]));
   const { environment } = built;
+  const brainDef = BrainDef.emptyBrainDef(environment.brainServices, "image-rule");
+  const number = new BrainTileLiteralDef(CoreTypeIds.Number, 40, {}, environment.brainServices);
+  brainDef.catalog().registerTileDef(number);
   const literalId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Image"), IMAGE_LITERAL_ASSET_ID);
+  const brainLiteralId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Brain"), BRAIN_LITERAL_ID);
   const tileOf = (entry: string, tileId: (name: string) => string) => {
-    const id = entry === IMAGE_LITERAL ? literalId : tileId(entry);
+    if (entry === NUMBER_LITERAL) return number;
+    const id = entry.startsWith(MODIFIER_ENTRY_PREFIX)
+      ? mkModifierTileId(entry)
+      : entry.startsWith(OUTPUT_ENTRY_PREFIX)
+        ? mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length))
+        : entry === IMAGE_LITERAL
+          ? literalId
+          : entry === BRAIN_LITERAL
+            ? brainLiteralId
+            : tileId(entry);
     const found = environment
       .tileCatalogs()
       .map((catalog) => catalog.get(id))
@@ -634,11 +707,62 @@ function arcadeImageRule(when: string[], act: string[]) {
     if (found === undefined) throw new Error(`no tile ${entry}`);
     return found;
   };
-  const brainDef = BrainDef.emptyBrainDef(environment.brainServices, "image-rule");
   const rule = (brainDef.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
   for (const entry of when) rule.when().appendTile(tileOf(entry, mkSensorTileId));
   for (const entry of act) rule.do().appendTile(tileOf(entry, mkActuatorTileId));
+  if (child !== undefined) {
+    const childRule = rule.appendNewRule();
+    for (const entry of child.when) childRule.when().appendTile(tileOf(entry, mkSensorTileId));
+    for (const entry of child.act) childRule.do().appendTile(tileOf(entry, mkActuatorTileId));
+  }
+  return { environment, brainDef, rule, literalId, brainLiteralId };
+}
+
+/**
+ * The one-rule program of {@link arcadeImageRuleBrain}: its source and the
+ * environment it was authored in.
+ */
+function arcadeImageRule(when: string[], act: string[]) {
+  const { environment, brainDef } = arcadeImageRuleBrain(when, act);
   return { environment, source: serializeBrainSource(brainDef) };
+}
+
+/**
+ * Whether the candidate strip offers the tile `literal` -- {@link IMAGE_LITERAL},
+ * {@link BRAIN_LITERAL}, an output entry, or a modifier entry -- at the end of the WHEN
+ * side holding the tiles `when` names or, given `act`, at the end of the DO
+ * side holding the tiles `act` names, each as
+ * {@link arcadeImageRuleDiagnosticCodes} names them, given the side's
+ * typechecked expression and the outputs the rule's hierarchy provides, as
+ * the brain editor gives them.
+ *
+ * @param literal - The entry looked for, named as {@link arcadeImageRuleDiagnosticCodes} names entries.
+ * @param when - The WHEN side's entries, such as `["sensor.arcade.bump"]`.
+ * @param act - The DO side's entries; omit to look at the end of the WHEN side.
+ */
+export function arcadeOffersLiteral(literal: string, when: string[], act?: string[]): boolean {
+  const { environment, brainDef, rule, literalId, brainLiteralId } = arcadeImageRuleBrain(when, act ?? []);
+  brainDef.typecheck();
+  const wanted = literal.startsWith(MODIFIER_ENTRY_PREFIX)
+    ? mkModifierTileId(literal)
+    : literal.startsWith(OUTPUT_ENTRY_PREFIX)
+      ? mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), literal.slice(OUTPUT_ENTRY_PREFIX.length))
+      : literal === BRAIN_LITERAL
+        ? brainLiteralId
+        : literalId;
+  const side = act === undefined ? RuleSide.When : RuleSide.Do;
+  const tileSet = side === RuleSide.When ? rule.when() : rule.do();
+  const context = buildInsertionContext({
+    side,
+    expr: tileSet.expr(),
+    ruleDef: rule,
+    existingTiles: tileSet.tiles(),
+    availableOutputKeys: collectRuleHierarchyOutputKeys(rule),
+  });
+  const result = suggestTiles(context, List.from(environment.tileCatalogs()), environment.brainServices);
+  const has = (suggestions: typeof result.exact) =>
+    suggestions.findIndex((suggestion) => suggestion.tileDef.tileId === wanted) !== -1;
+  return has(result.exact) || has(result.withConversion);
 }
 
 /**
@@ -646,8 +770,13 @@ function arcadeImageRule(when: string[], act: string[]) {
  * environment binding the arcade selftest's catalog, in the order reported:
  * its WHEN side the tiles `when` names, its DO side the tiles `act` names,
  * each entry the name of a sensor (on the WHEN side) or an actuator (on the
- * DO side), or {@link IMAGE_LITERAL} for the literal tile the editor mints
- * for the image whose id is {@link IMAGE_LITERAL_ASSET_ID}.
+ * DO side), {@link IMAGE_LITERAL} for the literal tile the editor mints
+ * for the image whose id is {@link IMAGE_LITERAL_ASSET_ID},
+ * {@link BRAIN_LITERAL} for the literal tile of the brain
+ * {@link BRAIN_LITERAL_ID}, {@link NUMBER_LITERAL} for a literal tile
+ * holding the number 40, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
+ * `Sprite` output's tile, or an entry starting {@link MODIFIER_ENTRY_PREFIX}
+ * for the shared modifier tile it names.
  *
  * @param when - The WHEN side's entries, such as `["sensor.arcade.bump", IMAGE_LITERAL]`.
  * @param act - The DO side's entries, such as `["actuator.arcade.look-like", IMAGE_LITERAL]`.
@@ -655,6 +784,48 @@ function arcadeImageRule(when: string[], act: string[]) {
 export function arcadeImageRuleDiagnosticCodes(when: string[], act: string[]): number[] {
   const { environment, source } = arcadeImageRule(when, act);
   return compileBrainSource(environment, source).diagnostics.map((diagnostic) => diagnostic.code);
+}
+
+/**
+ * What compiling, in the environment binding the arcade selftest's catalog,
+ * a brain of one rule holding one child rule produces: the stable codes of
+ * its diagnostics in the order reported, and its program, `undefined` when
+ * an error stopped the build. The rule's and the child's sides name their
+ * tiles as {@link arcadeImageRuleDiagnosticCodes} names them.
+ *
+ * @param when - The rule's WHEN side's entries.
+ * @param act - The rule's DO side's entries.
+ * @param child - The child rule's WHEN and DO sides' entries.
+ */
+export function arcadeChainCompile(
+  when: string[],
+  act: string[],
+  child: { when: string[]; act: string[] }
+): { codes: number[]; bytecode: Uint8Array | undefined } {
+  const { environment, brainDef } = arcadeImageRuleBrain(when, act, child);
+  const compiled = compileBrainSource(environment, serializeBrainSource(brainDef));
+  return { codes: compiled.diagnostics.map((diagnostic) => diagnostic.code), bytecode: compiled.bytecode };
+}
+
+/**
+ * The label the environment binding the arcade selftest's catalog under its
+ * allocation gives the output tile of the `Sprite` output named `name`, and
+ * the label the arcade selftest's catalog carries on that output; either
+ * `undefined` when there is none.
+ *
+ * @param name - The output's name, such as `bumped`.
+ */
+export function arcadeSpriteOutputLabels(name: string): { bound: string | undefined; carried: string | undefined } {
+  const tileId = mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), name);
+  const bound = arcadeEnvironment()
+    .tileCatalogs()
+    .map((catalog) => catalog.get(tileId))
+    .find((tile) => tile !== undefined)?.metadata?.label;
+  const carried = parseCatalog(arcadeCatalog())
+    .packs.flatMap((pack) => pack.tiles)
+    .flatMap((tile) => tile.outputs)
+    .find((output) => output.name === name && output.type === "Sprite")?.label;
+  return { bound, carried };
 }
 
 /**

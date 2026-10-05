@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "lookerBumpLook01",
+  "name": "Looker",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "0YBiq7rqhICj50ud",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "0YBiq7rqhICj50ud",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.look-like",
+            "tile.out->struct:<Sprite>.bumped"
+          ],
+          "children": [],
+          "ruleId": "0IG6wXV3ZiCLRcT1"
+        }
+      ]
+    }
+  ]
+}

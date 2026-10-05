@@ -9,6 +9,7 @@
     "files": [
         "README.md",
         "main.ts",
+        "debug.ts",
         "value.ts",
         "bytecode.ts",
         "program.ts",
@@ -16,6 +17,7 @@
         "handle.ts",
         "context.ts",
         "asset-types.ts",
+        "brain-types.ts",
         "registration.ts",
         "catalog.ts",
         "numerics.ts",

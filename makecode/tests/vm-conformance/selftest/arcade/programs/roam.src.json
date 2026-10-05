@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "id": "roamBareWander01",
+  "name": "Roam",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0roamWander00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0roamWander00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.wander"
+          ],
+          "children": [],
+          "ruleId": "fRu0roamWander00"
+        }
+      ]
+    }
+  ]
+}

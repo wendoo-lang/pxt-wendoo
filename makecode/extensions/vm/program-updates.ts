@@ -66,7 +66,7 @@ namespace wendoo {
    *   as `wendoo program-update-rejected <code> <id>`: the loader's code, or
    *   {@link UPDATE_ERROR_UNMAPPED_ID}.
    *
-   * Each replacement advances the registration's
+   * Each line is logged through {@link debugLog}. Each replacement advances the registration's
    * {@link CompiledBrainRegistration.revision}. Call it from a program host
    * drain; every host shares the one queue, so the first drain after an
    * update arrives applies it.
@@ -101,7 +101,7 @@ namespace wendoo {
       const candidate = new CompiledBrainRegistration(update.documentId, update.name, bytecode);
       const code = updateRefusal(loadCompiledProgram(candidate, registries.types), registries);
       if (code.length > 0) {
-        console.log(`wendoo program-update-rejected ${code} ${update.documentId}`);
+        debugLog(`wendoo program-update-rejected ${code} ${update.documentId}`);
         return;
       }
       registration.name = update.name;
@@ -109,9 +109,9 @@ namespace wendoo {
     registration.bytecode = bytecode;
     registration.revision++;
     if (removal) {
-      console.log(`wendoo program-removed ${update.documentId}`);
+      debugLog(`wendoo program-removed ${update.documentId}`);
     } else {
-      console.log(`wendoo program-updated ${update.documentId} ${update.sourceHash}`);
+      debugLog(`wendoo program-updated ${update.documentId} ${update.sourceHash}`);
     }
   }
 

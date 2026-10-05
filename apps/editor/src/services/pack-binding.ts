@@ -1,6 +1,7 @@
 import type { BrainActionCallSpec, ITileMetadata, WendooModule, WendooModuleApi } from "@wendoo/core/app";
 import {
   bag,
+  buildDescriptorOutputTiles,
   choice,
   conditional,
   createHostActuator,
@@ -166,7 +167,9 @@ function defaultValueOf(json: unknown): Value {
  * language model's own builders: each struct type, each tile -- with the
  * parameter and modifier tiles its grammar's slots need -- and each operator,
  * under the ids `ids` allocates. Each tile's and slot tile's display metadata
- * carries the label, sentence words and icon its catalog entry carries. An entry the model cannot take is left out
+ * carries the label, sentence words and icon its catalog entry carries, and
+ * each output a tile declares is bound as its output tile, carrying the
+ * output's label, docs and icon. An entry the model cannot take is left out
  * and reported, and the rest is bound.
  */
 class PackBinder {
@@ -351,6 +354,9 @@ class PackBinder {
     const outputs: ActionOutputSpec[] = tile.outputs.map((output) => ({
       name: output.name,
       type: this.typeOf(output.type),
+      ...(output.label === undefined ? {} : { label: output.label }),
+      ...(output.docs === undefined ? {} : { docsMarkdown: output.docs }),
+      ...(output.iconUrl === undefined ? {} : { iconUrl: output.iconUrl }),
     }));
     const consumesWhenResult = tile.consumesWhenResult === undefined ? undefined : this.typeOf(tile.consumesWhenResult);
     const metadata: ITileMetadata = {
@@ -375,12 +381,22 @@ class PackBinder {
         : createHostSensor({ ...common, outputType, fn: inertSync(NIL_VALUE) });
       this.registerSlotTiles(tiles);
       this.api.registerHostSensor(definition);
+      this.registerOutputTiles(outputs);
     } else {
       const definition = tile.async
         ? createHostActuator({ ...common, isAsync: true, fn: inertAsync(VOID_VALUE) })
         : createHostActuator({ ...common, fn: inertSync(VOID_VALUE) });
       this.registerSlotTiles(tiles);
       this.api.registerHostActuator(definition);
+      this.registerOutputTiles(outputs);
+    }
+  }
+
+  /** Registers the output tile of each of `outputs` the environment does not hold yet, the first declaration of an output identity standing. */
+  private registerOutputTiles(outputs: readonly ActionOutputSpec[]): void {
+    const catalog = this.api.brainServices.edit.tiles;
+    for (const tile of buildDescriptorOutputTiles(outputs)) {
+      if (!catalog.has(tile.tileId)) this.api.registerTile(tile);
     }
   }
 

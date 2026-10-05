@@ -18,6 +18,7 @@ import {
   picture,
   pictureBrainSource,
 } from "../test-support/asset-catalog.js";
+import { BRAIN_CATALOG, brainCatalogIds, kinBrainSource, kinTileId } from "../test-support/brain-catalog.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
 
 /** The attribute marking a placed tile's value frame, the box its value is drawn in. */
@@ -53,7 +54,7 @@ function bothDefs() {
 describe("a placed asset literal tile", () => {
   it("draws its asset's preview in its value box, as minted and as the brain reader places it", () => {
     const { built, defs } = bothDefs();
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view);
+    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
 
     for (const def of defs) {
       const frame = valueFrame(config, def);
@@ -67,12 +68,31 @@ describe("a placed asset literal tile", () => {
   it("draws its label as text, with no preview, while its asset is unresolved", () => {
     const { built, defs } = bothDefs();
     built.assetLiterals.applySnapshot([]);
-    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view);
+    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
 
     for (const def of defs) {
       const frame = valueFrame(config, def);
       assert.doesNotMatch(frame, /<img/);
       assert.match(frame, />prince</);
+    }
+  });
+});
+
+describe("a placed brain literal tile", () => {
+  it("draws its brain's name as text in its value box, never its document id, as minted and as placed", () => {
+    const built = buildAuthoringEnvironment(BRAIN_CATALOG, brainCatalogIds());
+    built.brainLiterals.applyBrains(new Map([["chaserBrain00001", { name: "Chaser" }]]));
+    const literalId = kinTileId("chaserBrain00001");
+    const minted = catalogTile(built.environment, literalId);
+    const read = readBrainSource(built.environment, kinBrainSource(built.environment, literalId, "seekerBrain00001"));
+    const placed = ((read.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef).when().tiles().get(1);
+    const config = buildBrainEditorConfig(built.environment, built.assetLiterals.view, built.brainLiterals.view);
+
+    for (const def of [minted, placed]) {
+      const frame = valueFrame(config, def);
+      assert.doesNotMatch(frame, /<img/);
+      assert.doesNotMatch(frame, /chaserBrain00001/);
+      assert.match(frame, />Chaser</);
     }
   });
 });

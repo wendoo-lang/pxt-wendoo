@@ -90,6 +90,12 @@ export interface CatalogType extends CatalogMeta {
    * one project asset of that kind by its short id, in its `asset` field.
    */
   readonly asset?: string;
+  /**
+   * `true` for a brain type, absent for any other type. A value of a brain
+   * type names one of the project's brains by its document id, in its `id`
+   * field.
+   */
+  readonly brain?: true;
 }
 
 /** What an action does with a numeric argument outside a slot's range. */
@@ -189,10 +195,18 @@ export type CatalogArgNode =
   | CatalogRepeatNode
   | CatalogConditionalNode;
 
-/** One named output a tile declares. */
+/** One named output a tile declares, with what the editor shows for its output tile. Each display field is absent when undeclared. */
 export interface CatalogOutput {
+  /** Output name; with `type`, the output's identity. */
   readonly name: string;
+  /** Type name of the output's value. */
   readonly type: string;
+  /** Display label of the output's tile. */
+  readonly label?: string;
+  /** Markdown document of the output's tile. */
+  readonly docs?: string;
+  /** Icon of the output's tile, as a data URI usable as an image source as it is; render it only as an image source, never as markup. */
+  readonly iconUrl?: string;
 }
 
 /** One tile of a pack. */
@@ -475,9 +489,15 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
   } else if (!TILE_KINDS.has(kind)) {
     problems.push({ code: CatalogProblemCode.TILE_KIND_UNKNOWN, pack, name: entry.name, token: kind });
   }
-  const outputs = arrayField(entry, "outputs").flatMap((output) =>
-    isNamed(output) && typeof output.type === "string" ? [{ name: output.name, type: output.type }] : []
-  );
+  const outputs = arrayField(entry, "outputs").flatMap((output) => {
+    if (!isNamed(output) || typeof output.type !== "string") return [];
+    const display: { label?: string; docs?: string; iconUrl?: string } = {};
+    for (const key of ["label", "docs", "iconUrl"] as const) {
+      const value = stringField(output, key);
+      if (value !== undefined) display[key] = value;
+    }
+    return [{ name: output.name, type: output.type, ...display }];
+  });
   const returns = stringField(entry, "returns");
   const consumesWhenResult = stringField(entry, "consumesWhenResult");
   const language = languageOf(entry.language, reportFrame);
@@ -508,6 +528,7 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
     fields,
     ...metaOf(entry),
     ...(asset === undefined ? {} : { asset }),
+    ...(entry.brain === true ? { brain: true as const } : {}),
   };
 }
 

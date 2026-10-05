@@ -29,7 +29,8 @@
  * `EXPECTED_ARCADE_REJECTIONS` in that order, the program-update lines in
  * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, the
  * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
- * no other, `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
+ * no other, a `DEBUG ON` line no line the Wendoo extensions log precedes,
+ * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its tiles and
  * modifier slots carrying 16 by 16 icons.
@@ -47,6 +48,7 @@ const { provision } = require("./provision");
 
 /** Every check the selftest is expected to report, and to report as holding. */
 const EXPECTED_CHECKS = [
+  "debug-logging-defaults-off",
   "beacon-pack-registered-before-drain",
   "chime-pack-registered-before-drain",
   "duplicate-name-diagnosed-once",
@@ -64,6 +66,9 @@ const EXPECTED_CHECKS = [
   "late-registration-not-bound",
   "action-output-readable-by-name",
   "action-output-core-typed-readable-by-name",
+  "rule-context-get-variable-reads-up-the-rule-chain",
+  "rule-context-set-variable-writes-the-running-rule-alone",
+  "brain-context-variables-read-and-write-by-name",
   "catalog-serialize-repeatable",
   "slot-builders-carry-labels",
   "language-builders-carry-words",
@@ -141,6 +146,8 @@ const EXPECTED_DIAGNOSTICS = [
 
 /** Every check the arcade selftest is expected to report, and to report as holding. */
 const EXPECTED_ARCADE_CHECKS = [
+  "debug-logging-defaults-off",
+  "move-smoothing-defaults-off",
   "program-waits-for-the-next-frame",
   "program-runs-on-its-sprite-by-id",
   "programs-think-each-frame",
@@ -156,6 +163,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "when-result-direction-beats-the-default",
   "default-direction-without-a-given-or-sensed-one",
   "move-speed-counts-steps-and-clamps-the-argument",
+  "move-reach-holds-speed-in-pixels-per-second-over-milliseconds",
   "cardinals-sum-and-normalize",
   "cancelling-cardinals-specify-no-direction",
   "direction-modifiers-beat-the-direction-argument",
@@ -206,7 +214,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "toward-with-a-direction-modifier-bends-pursuit",
   "away-with-a-direction-modifier-bends-flight",
   "relational-modifiers-compose-with-speed",
-  "a-shared-center-adds-nothing-to-pursuit",
+  "a-shared-center-holds-pursuit-still",
   "toward-without-a-sprite-moves-in-the-default-direction",
   "away-under-a-dpad-follows-the-dpad",
   "program-update-turns-pursuit-to-flight-live",
@@ -230,11 +238,101 @@ const EXPECTED_ARCADE_CHECKS = [
   "look-like-wears-the-image-the-other-sprite-wears-now",
   "look-like-keeps-its-image-when-the-asset-is-gone",
   "look-like-keeps-its-image-given-no-sprite",
-  "bump-given-an-image-reads-the-nearest-touched-sprite-that-looks-like-it",
-  "bump-given-no-image-reads-the-nearest-touched-sprite",
-  "bump-given-an-image-gone-from-the-project-reads-nothing",
-  "bump-given-an-image-no-touched-sprite-looks-like-reads-nothing",
   "toward-reads-only-a-sprite-value",
+  "bump-given-an-image-reads-the-nearest-sprite-that-looks-like-it",
+  "bump-given-an-image-no-sprite-looks-like-reads-nothing",
+  "bump-given-an-image-gone-from-the-project-reads-nothing",
+  "bump-given-a-sprite-reads-that-sprite-alone",
+  "bump-given-a-value-standing-for-no-sprite-in-the-scene-reads-nothing",
+  "bump-given-its-own-sprite-reads-nothing",
+  "in-range-given-an-image-reads-the-nearest-sprite-that-looks-like-it",
+  "in-range-given-an-image-no-sprite-looks-like-reads-nothing",
+  "in-range-given-an-image-gone-from-the-project-reads-nothing",
+  "in-range-given-a-sprite-reads-that-sprite-alone",
+  "in-range-given-a-value-standing-for-no-sprite-in-the-scene-reads-nothing",
+  "in-range-given-its-own-sprite-reads-nothing",
+  "out-of-range-given-an-image-reads-the-nearest-sprite-that-looks-like-it",
+  "out-of-range-given-an-image-no-sprite-looks-like-reads-nothing",
+  "out-of-range-given-an-image-gone-from-the-project-reads-nothing",
+  "out-of-range-given-a-sprite-reads-that-sprite-alone",
+  "out-of-range-given-a-value-standing-for-no-sprite-in-the-scene-reads-nothing",
+  "out-of-range-given-its-own-sprite-reads-nothing",
+  "bump-given-a-sprite-it-does-not-touch-reads-nothing",
+  "proximity-sensors-given-no-filter-read-as-unfiltered",
+  "range-pair-is-complementary-within-the-admitted-set",
+  "filtered-range-rules-read-the-nearest-sprite-wearing-the-image",
+  "brain-type-takes-its-atom-and-field-from-the-manifest",
+  "brain-type-reads-the-document-id-of-its-own-values",
+  "host-lists-the-worlds-running-a-brain",
+  "bump-given-a-brain-reads-the-nearest-sprite-running-it",
+  "bump-given-a-brain-no-sprite-runs-reads-nothing",
+  "in-range-given-a-brain-reads-the-nearest-sprite-running-it",
+  "in-range-given-a-brain-no-sprite-runs-reads-nothing",
+  "out-of-range-given-a-brain-reads-the-nearest-sprite-running-it",
+  "out-of-range-given-a-brain-no-sprite-runs-reads-nothing",
+  "proximity-sensors-given-their-own-brain-read-another-runner-never-their-own-sprite",
+  "own-brain-range-rules-read-other-runners-and-never-their-own-sprite",
+  "bump-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
+  "in-range-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
+  "out-of-range-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
+  "two-sensors-outputs-coexist-in-one-rule-chain",
+  "a-child-reads-a-destroyed-sprites-output-without-fault-and-a-filter-on-it-admits-nothing",
+  "bump-rule-dresses-in-the-bumped-sprite",
+  "child-rule-reads-its-parents-range-output",
+  "bump-given-above-reads-the-nearest-sprite-above",
+  "bump-given-below-reads-the-nearest-sprite-below",
+  "bump-given-left-reads-the-nearest-sprite-to-the-left",
+  "bump-given-right-reads-the-nearest-sprite-to-the-right",
+  "bump-given-above-and-right-reads-only-a-sprite-strictly-on-both-sides",
+  "in-range-given-above-reads-the-nearest-sprite-above",
+  "in-range-given-below-reads-the-nearest-sprite-below",
+  "in-range-given-left-reads-the-nearest-sprite-to-the-left",
+  "in-range-given-right-reads-the-nearest-sprite-to-the-right",
+  "in-range-given-above-and-right-reads-only-a-sprite-strictly-on-both-sides",
+  "out-of-range-given-above-reads-the-nearest-sprite-above",
+  "out-of-range-given-below-reads-the-nearest-sprite-below",
+  "out-of-range-given-left-reads-the-nearest-sprite-to-the-left",
+  "out-of-range-given-right-reads-the-nearest-sprite-to-the-right",
+  "out-of-range-given-above-and-right-reads-only-a-sprite-strictly-on-both-sides",
+  "positional-modifiers-compose-with-the-filter",
+  "range-rule-given-above-pursues-only-a-sprite-above",
+  "toward-given-no-target-steers-by-the-when-result",
+  "toward-given-a-sprite-pursues-it-over-the-when-result-as-it-moves",
+  "away-given-a-sprite-flees-it-over-the-when-result",
+  "toward-given-a-point-heads-for-that-fixed-point",
+  "away-given-a-point-flees-that-fixed-point",
+  "a-point-at-the-sprites-own-center-adds-nothing",
+  "a-destroyed-sprite-target-adds-nothing-without-a-fault",
+  "toward-and-away-share-one-target",
+  "toward-a-point-within-one-step-lands-on-it-and-keeps-its-speed-beyond",
+  "toward-a-sprite-within-one-step-lands-on-it",
+  "toward-arrived-holds-still-at-its-goal",
+  "a-move-not-heading-for-one-goal-alone-keeps-its-speed",
+  "toward-a-sprite-at-speed-never-passes-it-and-holds-there",
+  "move-toward-quickly-given-the-sprite-in-range-pursues-it",
+  "a-child-moves-toward-or-away-from-its-parents-sprite-in-range-over-its-dpad",
+  "wander-picks-its-destination-on-screen-inside-the-margin",
+  "wander-heads-straight-for-its-destination",
+  "wander-keeps-its-destination-until-it-arrives",
+  "wander-picks-anew-on-arrival",
+  "wander-picks-anew-once-its-deadline-passes",
+  "two-wander-call-sites-keep-their-own-destinations",
+  "move-wander-heads-for-the-destination-its-call-site-holds",
+  "wander-within-one-step-lands-on-its-destination",
+  "wander-arrived-holds-still",
+  "wander-at-speed-arrives-alike-at-every-frame-rate",
+  "a-bare-wander-heads-for-an-on-screen-destination",
+  "wander-composes-with-slowly-and-quickly",
+  "toward-with-wander-bends-pursuit-toward-the-destination",
+  "two-wander-rules-on-one-sprite-keep-two-destinations",
+  "move-past-the-engines-top-speed-goes-at-it-in-the-direction-asked",
+  "the-direct-applicator-holds-a-velocity-to-the-top-speed-in-its-direction",
+  "smoothing-eases-a-speed-up-by-the-exponential-of-the-frame-time",
+  "smoothing-sets-a-slow-down-and-a-stop-at-once-and-eases-a-turn",
+  "smoothing-reads-its-setting-live-and-sets-at-once-when-off",
+  "smoothing-eases-a-start-within-its-envelope-and-stops-at-once",
+  "smoothing-travels-alike-at-60-and-30-frames-a-second",
+  "smoothing-keeps-goal-landings-and-the-arrival-hold-exact",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -243,8 +341,8 @@ const EXPECTED_ARCADE_CHECKS = [
 /**
  * Every unresolved-asset line the arcade selftest is expected to log, in
  * order, each without its `wendoo ` prefix: the late image, used once before
- * its factory is registered, then the deleted image, which look like and bump
- * each use more than once.
+ * its factory is registered, then the deleted image, which look like and the
+ * proximity sensors' filters each use more than once.
  */
 const EXPECTED_ARCADE_ASSET_LINES = ["WENDOO_ASSET_UNRESOLVED image image9", "WENDOO_ASSET_UNRESOLVED image image404"];
 
@@ -269,8 +367,13 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.direction.right",
   "modifier.movement.toward",
   "modifier.movement.away",
+  "modifier.movement.wander",
   "modifier.slowly",
   "modifier.quickly",
+  "modifier.position.above",
+  "modifier.position.below",
+  "modifier.position.left",
+  "modifier.position.right",
 ];
 
 /** Width and height, in pixels, of every arcade base pack icon. */
@@ -291,13 +394,19 @@ const ARCADE_HOST_REJECTIONS = [
 /**
  * Every refusal the arcade selftest is expected to log, as `<code> <id>`, in
  * order: each scene's program host logs the refused programs at its first
- * frame -- the game's first scene, the scene the selftest pushes to check
- * paused programs, the scene it pushes to check paused program updates, the
- * scene it pushes to check the bump sensor, the scene it pushes to check the
- * move's toward and away modifiers, and the scene it pushes to check the
- * in-range and out-of-range sensors.
+ * frame while debug logging is on. The scenes are the ones the selftest
+ * pushes to check paused programs, paused program updates, the bump sensor,
+ * the move's toward and away modifiers, the in-range and out-of-range
+ * sensors, the proximity sensors' filters, their brain filter, their
+ * outputs, their positional modifiers, the targets the move's toward and
+ * away carry, and the move's wander.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -337,6 +446,24 @@ const UPDATE_LINE_PREFIXES = [
   "wendoo program-update-rejected ",
   "wendoo sim-channel-rejected ",
 ];
+
+/** The line the arcade selftest prints as it turns the Wendoo extensions' debug logging on. */
+const DEBUG_ON_LINE = "DEBUG ON";
+
+/** The prefix of every line the Wendoo extensions log while debug logging is on. */
+const WENDOO_LINE_PREFIX = "wendoo ";
+
+/**
+ * The ways the capture `log` misses the debug-logging contract: exactly one
+ * {@link DEBUG_ON_LINE}, and no line the Wendoo extensions log before it.
+ */
+function debugLoggingFailures(log) {
+  const lines = linesOf(log);
+  const on = lines.indexOf(DEBUG_ON_LINE);
+  if (on < 0 || lines.lastIndexOf(DEBUG_ON_LINE) !== on) return [`no single "${DEBUG_ON_LINE}" line`];
+  const early = lines.slice(0, on).filter((line) => line.startsWith(WENDOO_LINE_PREFIX));
+  return early.length > 0 ? [`logged before debug logging was on: ${early.join(" | ")}`] : [];
+}
 
 /** The kinds of the frames the arcade selftest must post on the simulator extension's channel, in order. */
 const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
@@ -388,10 +515,14 @@ function parseArgs(argv) {
   return options;
 }
 
-/** Builds the generated project with the target checkout's own pxt CLI, JS only. */
+/** Builds the generated project with the target checkout's own pxt CLI, JS only, collecting its whole output however long. */
 function build(targetDir, projectDir) {
   const pxt = path.join(targetDir, "node_modules", "pxt-core", "built", "pxt.js");
-  const run = spawnSync(process.execPath, [pxt, "build", "--debug"], { cwd: projectDir, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [pxt, "build", "--debug"], {
+    cwd: projectDir,
+    encoding: "utf8",
+    maxBuffer: Number.POSITIVE_INFINITY,
+  });
   return { ok: run.status === 0, output: (run.stdout || "") + (run.stderr || "") };
 }
 
@@ -617,6 +748,7 @@ function arcadeContractFailures(exitCode, log, simxLog) {
     failures.push(`posted catalog ${posted.payload}`, `expected catalog ${expected}`);
   }
   if (posted) failures.push(...arcadeIconFailures(posted.payload));
+  failures.push(...debugLoggingFailures(log));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
   return failures;
 }

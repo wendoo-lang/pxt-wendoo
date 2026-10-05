@@ -14,11 +14,13 @@
         "direction.ts",
         "sprite-value.ts",
         "image-asset.ts",
+        "brain-value.ts",
         "icons.ts",
         "icon-encoder.ts",
         "proximity-read.ts",
         "overlap-read.ts",
         "motion.ts",
+        "wander.ts",
         "vocabulary.ts"
     ],
     "supportedTargets": [

@@ -13,7 +13,8 @@ namespace wendoo {
   /**
    * Log code: a value named an asset the project holds none of -- one it has
    * deleted, or renamed away from the id the value holds. Logged as
-   * `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>`, once per asset id.
+   * `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>`, once per asset id, while
+   * {@link debug} is on.
    */
   export const ASSET_UNRESOLVED = "WENDOO_ASSET_UNRESOLVED";
 
@@ -54,8 +55,9 @@ namespace wendoo {
 
     /**
      * Log that the project holds no asset under `assetId`, as
-     * `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>`: the first time it is
-     * reported, and never again in the same program run.
+     * `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` through {@link debugLog}:
+     * the first time it is reported, and never again in the same program
+     * run.
      *
      * @param assetId - The asset id a value held.
      */
@@ -64,7 +66,7 @@ namespace wendoo {
         return;
       }
       this.unresolved.push(assetId);
-      console.log(`wendoo ${ASSET_UNRESOLVED} ${this.assetKind} ${assetId}`);
+      debugLog(`wendoo ${ASSET_UNRESOLVED} ${this.assetKind} ${assetId}`);
     }
   }
 }

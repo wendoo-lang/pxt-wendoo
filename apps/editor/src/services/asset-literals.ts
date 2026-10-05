@@ -57,7 +57,7 @@ function assetKey(kind: string, id: string): string {
 }
 
 /** Every tile reference the rules of the parsed brain source `document` hold, in no particular order. */
-function ruleTileRefs(document: unknown): unknown[] {
+export function ruleTileRefs(document: unknown): unknown[] {
   const refs: unknown[] = [];
   const visitRule = (rule: unknown): void => {
     if (typeof rule !== "object" || rule === null) return;
@@ -238,7 +238,7 @@ export class AssetLiterals {
  * of `typeId` -- a plain tile id, or a structured literal reference -- and
  * `undefined` otherwise.
  */
-function literalIdOf(ref: unknown, typeId: TypeId): string | undefined {
+export function literalIdOf(ref: unknown, typeId: TypeId): string | undefined {
   if (typeof ref === "string") {
     const prefix = mkLiteralTileId(typeId, "");
     return ref.startsWith(prefix) && ref.length > prefix.length ? ref.slice(prefix.length) : undefined;

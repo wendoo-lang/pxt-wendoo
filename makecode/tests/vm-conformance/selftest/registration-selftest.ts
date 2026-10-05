@@ -483,6 +483,110 @@ namespace registrationSelftest {
     check("action-output-core-typed-readable-by-name", isNumber(readBack, CORE_OUTPUT_VALUE));
   }
 
+  /** FuncId of the core host function reading a brain variable by name. */
+  const BRAIN_CONTEXT_GET_VARIABLE = 48;
+
+  /** FuncId of the core host function writing a brain variable by name. */
+  const BRAIN_CONTEXT_SET_VARIABLE = 49;
+
+  /** FuncId of the core host function reading a rule variable by name. */
+  const RULE_CONTEXT_GET_VARIABLE = 50;
+
+  /** FuncId of the core host function writing a rule variable by name. */
+  const RULE_CONTEXT_SET_VARIABLE = 51;
+
+  /** Rule funcId of the parent rule the rule-variable checks read through. */
+  const PARENT_RULE = 3;
+
+  /** Rule funcId of the child rule the rule-variable checks run in. */
+  const CHILD_RULE = 4;
+
+  /**
+   * What the core host function `funcId` returns given the method receiver
+   * nil, then `args`, in `ctx`; `undefined` when no function is registered
+   * under `funcId`.
+   */
+  function callContextFunction(
+    functions: wendoo.HostFunctionRegistry,
+    funcId: number,
+    ctx: wendoo.ExecutionContext,
+    args: wendoo.Value[]
+  ): wendoo.Value {
+    const fn = functions.getById(funcId);
+    return fn ? fn.exec(ctx, [wendoo.NIL_VALUE].concat(args)) : undefined;
+  }
+
+  /**
+   * The context variable host functions: reading a rule variable by name
+   * finds it on the running rule or the nearest rule above it, nil when none
+   * holds it; writing one stores it on the running rule alone, and nowhere
+   * while no rule runs; reading a brain variable by name reads the program's
+   * variable of that name, its starting value until written, writing one
+   * stores it there, a name the program declares no variable for is stored
+   * apart and read back, and an unwritten one reads nil.
+   */
+  function checkContextVariables(functions: wendoo.HostFunctionRegistry): void {
+    const ruleCtx = newContext();
+    ruleCtx.services.program.ruleChildren = [CHILD_RULE];
+    ruleCtx.services.program.ruleParents = [PARENT_RULE];
+    ruleCtx.services.ruleVars.setByName(PARENT_RULE, "shared", wendoo.mkNumber(5));
+    ruleCtx.currentRuleFuncId = CHILD_RULE;
+    const inherited = callContextFunction(functions, RULE_CONTEXT_GET_VARIABLE, ruleCtx, [wendoo.mkString("shared")]);
+    const missing = callContextFunction(functions, RULE_CONTEXT_GET_VARIABLE, ruleCtx, [wendoo.mkString("absent")]);
+    check(
+      "rule-context-get-variable-reads-up-the-rule-chain",
+      inherited !== undefined && isNumber(inherited, 5) && missing !== undefined && missing.t === wendoo.ValueTag.Nil
+    );
+
+    const written = callContextFunction(functions, RULE_CONTEXT_SET_VARIABLE, ruleCtx, [
+      wendoo.mkString("own"),
+      wendoo.mkNumber(7),
+    ]);
+    const ownRead = ruleCtx.services.ruleVars.getByName(CHILD_RULE, "own");
+    const parentRead = ruleCtx.services.ruleVars.getByName(PARENT_RULE, "own");
+    ruleCtx.currentRuleFuncId = wendoo.NO_RULE;
+    callContextFunction(functions, RULE_CONTEXT_SET_VARIABLE, ruleCtx, [wendoo.mkString("stray"), wendoo.mkNumber(1)]);
+    check(
+      "rule-context-set-variable-writes-the-running-rule-alone",
+      written !== undefined &&
+        written.t === wendoo.ValueTag.Nil &&
+        isNumber(ownRead, 7) &&
+        parentRead.t === wendoo.ValueTag.Nil &&
+        ruleCtx.services.ruleVars.getByName(PARENT_RULE, "stray").t === wendoo.ValueTag.Nil &&
+        ruleCtx.services.ruleVars.getByName(CHILD_RULE, "stray").t === wendoo.ValueTag.Nil
+    );
+
+    const brainCtx = newContext();
+    const program = brainCtx.services.program;
+    program.variableNames = ["score"];
+    program.constValues = [wendoo.mkNumber(10)];
+    program.variableInitValues = [0];
+    brainCtx.variables.install(program);
+    const seeded = callContextFunction(functions, BRAIN_CONTEXT_GET_VARIABLE, brainCtx, [wendoo.mkString("score")]);
+    const set = callContextFunction(functions, BRAIN_CONTEXT_SET_VARIABLE, brainCtx, [
+      wendoo.mkString("score"),
+      wendoo.mkNumber(11),
+    ]);
+    callContextFunction(functions, BRAIN_CONTEXT_SET_VARIABLE, brainCtx, [
+      wendoo.mkString("extra"),
+      wendoo.mkNumber(12),
+    ]);
+    const extra = callContextFunction(functions, BRAIN_CONTEXT_GET_VARIABLE, brainCtx, [wendoo.mkString("extra")]);
+    const unwritten = callContextFunction(functions, BRAIN_CONTEXT_GET_VARIABLE, brainCtx, [wendoo.mkString("never")]);
+    check(
+      "brain-context-variables-read-and-write-by-name",
+      seeded !== undefined &&
+        isNumber(seeded, 10) &&
+        set !== undefined &&
+        set.t === wendoo.ValueTag.Nil &&
+        isNumber(brainCtx.variables.getBySlot(0), 11) &&
+        extra !== undefined &&
+        isNumber(extra, 12) &&
+        unwritten !== undefined &&
+        unwritten.t === wendoo.ValueTag.Nil
+    );
+  }
+
   /** Field name of every asset type's one field, which holds the asset's id. */
   const ASSET_FIELD_NAME = "asset";
 
@@ -799,6 +903,8 @@ namespace registrationSelftest {
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
+    check("debug-logging-defaults-off", !wendoo.debug);
+    wendoo.debug = true;
 
     const registries = wendoo.hostRegistries();
     const ids = wendoo.projectIds();
@@ -816,6 +922,7 @@ namespace registrationSelftest {
     checkIllFormedGrammars(ids);
     checkActionOutput();
     checkCoreTypedActionOutput();
+    checkContextVariables(functions);
     checkCatalog();
     checkSlotBuilderLabels();
     checkLanguageBuilders();

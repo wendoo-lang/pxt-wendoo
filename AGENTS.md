@@ -321,17 +321,27 @@ the current slice alone.
     to rename. Four unit kinds:
     - `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
       VM in MakeCode static TypeScript (a conforming Wendoo VM per
-      `.github/instructions/vm.instructions.md`), the trace emitter, the
+      `.github/instructions/vm.instructions.md`), the trace emitter, debug
+      logging (`wendoo.debug`, off until a program sets it, the way Arcade's
+      own `game.debug` works: every machine-readable console line the
+      extensions write goes through `debugLog`, because console output has
+      visible side effects in the MakeCode editor), the
       tile bind API (asset types included: `defineAssetType` declares a
       struct type whose values name a project asset of a pack-given kind
       by its id, in one read-only `asset` field, the catalog carrying the
       kind -- the mechanism only, every asset kind declared by a target's
-      pack), the language-level tiles, the compiled-brain
+      pack; and brain types: `defineBrainType` declares a struct type whose
+      values name one of the project's compiled brains by its document id,
+      in one read-only `id` field, the catalog marking the type `brain` --
+      again the mechanism only, declared by a target's base pack), the
+      language-level tiles, the compiled-brain
       registry, the project id manifest's reader (the calls the generated
       `ids.g.ts` makes), the program loader, the target-blind program host
       (the single-entry host loop a target's frame loop drains; every host
       of a program run shares the one drain of every pack's registrations
-      through the project's id manifest, `hostRegistries`), and the
+      through the project's id manifest, `hostRegistries`; each actor's
+      world names the host that started its program, which lists the
+      actors running a given brain), and the
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
       NO block definitions -- the compiled-brain type's
@@ -354,13 +364,15 @@ the current slice alone.
       registered as the pack `arcade`; it depends on the VM extension and
       Arcade's `device` library. It owns the sprite's program world (the
       `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
-      through), the `Vector2` direction type, the `Sprite` type (an opaque
+      through), the `Vector2` type (a direction, or a point in a slot naming
+      a place to head for), the `Sprite` type (an opaque
       host value: no fields, each value backed by the sprite it stands
       for), the `Image` asset type (a plain struct holding the pxt asset
       id of one of the project's images, resolved through pxt's image
       factories when a tile uses it, never baked into a program; an id no
       factory holds resolves to nothing, logged once per id, and the game
-      runs on), the arcade icon encoder (each tile icon, an img literal,
+      runs on), the `Brain` type (the vm's brain type, naming one of the
+      project's brains by document id), the arcade icon encoder (each tile icon, an img literal,
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile icons, the controller read (one module owning every
@@ -369,23 +381,54 @@ the current slice alone.
       nearest-sprite scan and its center-distance metric, made
       synchronously at sense time), the overlap read (one module owning
       every sprite-touch read, picking among touched sprites through the
-      proximity read's scan), the `dpad`, `bump`, `in range` and
+      proximity read's scan), the wander module (one module owning each
+      wandering move's random on-screen destination, kept per call site in
+      the sprite's world, its re-picks on arrival or deadline, and the random
+      source picking it), the `dpad`, `bump`, `in range` and
       `out of range` sensors and the `move` and `look like` actuators
-      (bump given an image reads only a touched sprite whose image has
-      the same pixels; look like requires an image or a sprite and dresses
-      its sprite in that image, or in the image that sprite wears, at the
-      moment it acts; each of the range pair reads the nearest sprite
-      against its range -- an optional
-      anonymous number of pixels, else the shared default -- so at equal
-      ranges exactly one of the pair fires whenever another sprite exists,
-      and neither fires in an empty scene;
+      (the three proximity sensors share one optional anonymous filter,
+      an image, a sprite or a brain, applied through the proximity scan's
+      admits predicate: an image admits the sprites whose image has the
+      same pixels, a sprite admits that sprite alone, a brain admits the
+      sprites running it in the reading program's host, an image no
+      factory holds, a value standing for no sprite or a brain no sprite
+      runs admits none, and the program's own sprite is never read; the
+      shared `modifier.position.*` fragments -- above or below, left or
+      right, at most one per axis by grammar -- add to the same predicate
+      that the other sprite's center lies strictly on each given side of
+      the program's sprite's center; each
+      also writes the sprite it reads, or nil, to a declared `Sprite`
+      output of its own on every run -- `bumped`, `inRange`,
+      `outOfRange` -- which the output's tile reads in the sensor's rule
+      and the rules below it, while the rule's WHEN result keeps carrying
+      the same sprite; look like requires an image or a sprite and
+      dresses its sprite in that image, or in the image that sprite wears,
+      at the moment it acts; each of the range pair reads the nearest
+      admitted sprite against its range -- an optional anonymous number of
+      pixels, else the shared default -- so at equal ranges and filters
+      exactly one of the pair fires whenever an admitted sprite exists, and
+      neither fires while none does;
       the shared `modifier.direction.*` fragments filter dpad's reading and
       specify move's direction; move's `modifier.movement.toward` and
-      `modifier.movement.away` add the direction toward or away from the
-      sprite its WHEN produced, summed with the cardinals), and move
-      arbitration with its motion applicator (the direct applicator sets
-      sprite velocity; a motion model such as physics replaces the
-      applicator and consumes the same verdicts).
+      `modifier.movement.away` add the direction toward or away from their
+      one shared target -- an optional anonymous sprite (live) or `Vector2`
+      point (fixed), which the grammar offers only once either is placed --
+      else from the sprite its WHEN produced, and `modifier.movement.wander`
+      the direction toward its destination, all summed with the
+      cardinals; a move heading for one goal alone -- toward its target or
+      wander toward its destination, nothing else adding a direction --
+      goes no farther than the goal in one frame, its speed held to the
+      remaining distance over the frame's duration, and a toward or wander
+      at its goal holds the sprite still rather than falling back), and
+      move arbitration with its motion applicator (the direct applicator
+      sets sprite velocity, held in its own direction to the physics
+      engine's top speed, and -- while `wendoo.moveSmoothing`, a time
+      constant in milliseconds, 0 and off by default, is set -- eases
+      toward a velocity at least as fast as the one the sprite's program
+      last set, exponentially in the frame's duration, and sets a slower
+      one at once, the last-set velocity kept in the sprite's world; a
+      motion model such as physics replaces the applicator and consumes
+      the same verdicts).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the

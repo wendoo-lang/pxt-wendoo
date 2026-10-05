@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "kinshipRangeOut1",
+  "name": "Kinship",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "ZAjH9fStQhRPxbtx",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "ZAjH9fStQhRPxbtx",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.sensor->sensor.arcade.bump",
+                "tile.out->struct:<Sprite>.inRange"
+              ],
+              "do": [
+                "tile.actuator->actuator.arcade.look-like",
+                "tile.out->struct:<Sprite>.inRange"
+              ],
+              "children": [],
+              "ruleId": "ficNZnFFAU8Yd8dP"
+            }
+          ],
+          "ruleId": "OGkC2ibSlJzSjS6v"
+        }
+      ]
+    }
+  ]
+}

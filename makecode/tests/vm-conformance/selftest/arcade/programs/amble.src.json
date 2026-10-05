@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "ambleSlowWander1",
+  "name": "Amble",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0ambleSlowW00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0ambleSlowW00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.wander",
+            "tile.modifier->modifier.slowly"
+          ],
+          "children": [],
+          "ruleId": "fRu0ambleSlowW00"
+        }
+      ]
+    }
+  ]
+}

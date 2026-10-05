@@ -55,8 +55,11 @@ interface BrainEditorProps {
  */
 export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
   const store = useBrains();
-  const { environment, assetLiterals } = useBrainsState();
-  const config = useMemo(() => buildBrainEditorConfig(environment, assetLiterals), [environment, assetLiterals]);
+  const { environment, assetLiterals, brainLiterals } = useBrainsState();
+  const config = useMemo(
+    () => buildBrainEditorConfig(environment, assetLiterals, brainLiterals),
+    [environment, assetLiterals, brainLiterals]
+  );
   const [editing] = useState(() => openBrainEditing(store, brainId));
   const [isOpen, setIsOpen] = useState(true);
 

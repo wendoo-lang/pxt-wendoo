@@ -82,12 +82,13 @@ function parseArgs(argv) {
   return options;
 }
 
-/** Builds one generated project with the target checkout's own pxt CLI, JS only. */
+/** Builds one generated project with the target checkout's own pxt CLI, JS only, collecting its whole output however long. */
 function build(targetDir, projectDir) {
   const pxt = path.join(targetDir, "node_modules", "pxt-core", "built", "pxt.js");
   const run = spawnSync(process.execPath, [pxt, "build", "--debug"], {
     cwd: projectDir,
     encoding: "utf8",
+    maxBuffer: Number.POSITIVE_INFINITY,
   });
   return { ok: run.status === 0, output: (run.stdout || "") + (run.stderr || "") };
 }

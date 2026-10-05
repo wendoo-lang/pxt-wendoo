@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "drawnTowardWndr1",
+  "name": "Drawn",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0drawnTwWnd00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0drawnTwWnd00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.modifier->modifier.movement.wander"
+          ],
+          "children": [],
+          "ruleId": "fRu0drawnTwWnd00"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "spurnDpadTarget1",
+  "name": "Spurn",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0spurnDpadT00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0spurnDpadT00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.sensor->sensor.arcade.dpad"
+              ],
+              "do": [
+                "tile.actuator->actuator.arcade.move",
+                "tile.modifier->modifier.movement.away",
+                "tile.out->struct:<Sprite>.inRange"
+              ],
+              "children": [],
+              "ruleId": "fRu0spurnDpadT01"
+            }
+          ],
+          "ruleId": "fRu0spurnDpadT00"
+        }
+      ]
+    }
+  ]
+}
