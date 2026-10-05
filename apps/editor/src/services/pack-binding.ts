@@ -17,7 +17,12 @@ import {
   TilePlacement,
   VOID_VALUE,
 } from "@wendoo/core/app";
-import { BrainTileModifierDef, BrainTileOperatorDef, BrainTileParameterDef } from "@wendoo/core/brain/tiles";
+import {
+  BrainTileAccessorDef,
+  BrainTileModifierDef,
+  BrainTileOperatorDef,
+  BrainTileParameterDef,
+} from "@wendoo/core/brain/tiles";
 import type {
   ActionOutputSpec,
   BrainActionArgRange,
@@ -165,9 +170,10 @@ function defaultValueOf(json: unknown): Value {
 
 /**
  * Binds a session catalog's packs into an authoring environment, through the
- * language model's own builders: each struct type, each tile -- with the
- * parameter and modifier tiles its grammar's slots need -- and each operator,
- * under the ids `ids` allocates. Each tile's and slot tile's display metadata
+ * language model's own builders: each struct type -- with the accessor tile
+ * of each field declaring one -- each tile -- with the parameter and modifier
+ * tiles its grammar's slots need -- and each operator, under the ids `ids`
+ * allocates. Each tile's, slot tile's and accessor tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
  * each output a tile declares is bound as its output tile, carrying the
  * output's label, docs and icon. Each icon a pack gives a core tile is put in
@@ -188,6 +194,10 @@ class PackBinder {
    * Binds every entry of `packs`: every pack's core tile icons first, while
    * the environment holds only core tiles, then every pack's types, so any
    * pack's entry may refer to them, then each pack's tiles and operators.
+   * Types bind in catalog order, except that a type whose field is of a
+   * declared type not yet registered waits until that type is; a type still
+   * waiting once no other can bind is bound as it stands, and its refusal
+   * reported.
    */
   bind(packs: readonly CatalogPack[]): void {
     this.bindCoreTileIcons(packs);
@@ -195,7 +205,10 @@ class PackBinder {
     for (const { type } of declared) {
       this.typeIds.set(type.name, mkTypeId(NativeType.Struct, type.name));
     }
-    for (const { pack, type } of declared) {
+    const waiting = [...declared];
+    while (waiting.length > 0) {
+      const ready = waiting.findIndex(({ type }) => this.fieldTypesRegistered(type));
+      const [{ pack, type }] = waiting.splice(ready === -1 ? 0 : ready, 1);
       this.attempt(pack.name, type.name, () => {
         this.bindType(type);
       });
@@ -255,7 +268,24 @@ class PackBinder {
     return typeId;
   }
 
-  /** Registers `type` under its allocated atom, each field at the id the allocation gives it. */
+  /**
+   * Whether every field of `type` is of a type the environment registers
+   * already: a core type, or a declared type bound before it. A field naming
+   * no type at all counts as registered, so binding the type reports it.
+   */
+  private fieldTypesRegistered(type: CatalogType): boolean {
+    const types = this.api.brainServices.runtime.types;
+    return type.fields.every((field) => {
+      const typeId = this.typeIds.get(field.type);
+      return typeId === undefined || types.get(typeId) !== undefined;
+    });
+  }
+
+  /**
+   * Registers `type` under its allocated atom, each field at the id the
+   * allocation gives it, and the accessor tile of each field declaring one,
+   * read-only when the field is.
+   */
   private bindType(type: CatalogType): void {
     const entry = this.ids.types.find((allocated) => allocated.name === type.name);
     if (entry === undefined) throw new EntryProblem(PackBindingCode.TILE_REJECTED);
@@ -265,13 +295,27 @@ class PackBinder {
       fieldIndex: entry.fields.indexOf(field.name),
       ...(field.readOnly ? { readOnly: true } : {}),
     }));
+    const typeId = mkTypeId(NativeType.Struct, type.name);
     this.api.defineType({
       coreType: NativeType.Struct,
-      typeId: mkTypeId(NativeType.Struct, type.name),
+      typeId,
       name: type.name,
       atomId: entry.atom,
       fields: List.from(fields),
     });
+    const catalog = this.api.brainServices.edit.tiles;
+    for (const field of type.fields) {
+      if (field.accessor === undefined) continue;
+      const tile = new BrainTileAccessorDef(typeId, field.name, this.typeOf(field.type), {
+        ...(field.readOnly ? { readOnly: true } : {}),
+        metadata: {
+          label: field.accessor.label ?? field.name,
+          ...(field.accessor.docs === undefined ? {} : { docsMarkdown: field.accessor.docs }),
+          ...(field.accessor.iconUrl === undefined ? {} : { iconUrl: field.accessor.iconUrl }),
+        },
+      });
+      if (!catalog.has(tile.tileId)) this.api.registerTile(tile);
+    }
   }
 
   /** The call spec of the slot `slot` of the tile `tile` of the pack `pack`, recording the slot tile it needs in `tiles`. */
@@ -401,9 +445,15 @@ class PackBinder {
     };
     if (tile.kind === "sensor") {
       const outputType = tile.returns === undefined ? CoreTypeIds.Void : this.typeOf(tile.returns);
+      const sensor = {
+        ...common,
+        outputType,
+        ...(tile.inline ? { inline: true } : {}),
+        ...(tile.writableResult ? { writableResult: true } : {}),
+      };
       const definition = tile.async
-        ? createHostSensor({ ...common, outputType, isAsync: true, fn: inertAsync(NIL_VALUE) })
-        : createHostSensor({ ...common, outputType, fn: inertSync(NIL_VALUE) });
+        ? createHostSensor({ ...sensor, isAsync: true, fn: inertAsync(NIL_VALUE) })
+        : createHostSensor({ ...sensor, fn: inertSync(NIL_VALUE) });
       this.registerSlotTiles(tiles);
       this.api.registerHostSensor(definition);
       this.registerOutputTiles(outputs);
@@ -496,8 +546,9 @@ function inertAsync(result: Value): HostAsyncFn {
 }
 
 /**
- * The module binding `packs` -- every struct type, tile and operator a
- * session catalog's packs declare, and every icon they give a core tile --
+ * The module binding `packs` -- every struct type with its accessor tiles,
+ * tile and operator a session catalog's packs declare, and every icon they
+ * give a core tile --
  * into an environment, under the ids
  * `ids` allocates; `ids` must allocate every name the packs declare. Pack
  * actions run nothing in the editor: a sensor reads nil and an actuator does

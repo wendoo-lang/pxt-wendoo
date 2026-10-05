@@ -11,10 +11,11 @@
  * mapping's, never the order the fields are declared in.
  *
  * A registration also carries its declared shape and catalog metadata --
- * fields, an asset type's asset kind, argument grammar (each slot with its
- * tile's display label and icon, and each modifier slot with its tile's
- * sentence words), returns, outputs, consumed WHEN result, label, group,
- * docs, icon, sentence words. A pack may also give core tiles icons. The
+ * fields (each with its accessor tile's metadata), an asset type's asset
+ * kind, argument grammar (each slot with its tile's display label and icon,
+ * and each modifier slot with its tile's sentence words), returns, outputs,
+ * consumed WHEN result, a sensor's inline and writable-result flags, label,
+ * group, docs, icon, sentence words. A pack may also give core tiles icons. The
  * drain installs behavior only and ignores all of it; the catalog serializer
  * reads it through {@link writeCatalogEntries}.
  *
@@ -388,7 +389,7 @@ namespace wendoo {
     return language;
   }
 
-  /** One declared field of a struct type: its name, its value type, and its writability. */
+  /** One declared field of a struct type: its name, its value type, its writability, and its accessor tile. */
   export class StructFieldSpec {
     /** Field name, as brains address it. */
     name: string;
@@ -396,6 +397,14 @@ namespace wendoo {
     type: string;
     /** Whether brains can only read the field. */
     readOnly: boolean;
+    /**
+     * Catalog metadata of the field's accessor tile -- the tile a brain
+     * places after a value of the type to read the field, and to write it
+     * when the field is writable -- or `undefined` when the field has no
+     * accessor tile. Set it with {@link withAccessor}. Catalog data only: the
+     * drain ignores it.
+     */
+    accessor: CatalogMeta = undefined;
 
     constructor(name: string, type: string, readOnly: boolean) {
       this.name = name;
@@ -422,6 +431,26 @@ namespace wendoo {
    */
   export function readOnlyField(name: string, type: string): StructFieldSpec {
     return new StructFieldSpec(name, type, true);
+  }
+
+  /**
+   * `spec`, given an accessor tile: a tile reading the field, and writing it
+   * unless the field is read-only. Set further catalog metadata, such as
+   * docs, on the returned field's {@link StructFieldSpec.accessor}.
+   *
+   * @param spec - The field the accessor tile reads.
+   * @param label - Display label of the accessor tile; omit to declare none, and the editor labels it by the field's name.
+   * @param icon - Icon of the accessor tile, in the host target's own icon form; omit to declare none.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+  export function withAccessor(spec: StructFieldSpec, label?: string, icon?: any): StructFieldSpec {
+    const meta = new CatalogMeta();
+    if (label) {
+      meta.label = label;
+    }
+    meta.icon = icon;
+    spec.accessor = meta;
+    return spec;
   }
 
   /** Call-spec kind of an argument slot: {@link ArgSlotSpec}. */
@@ -1049,6 +1078,18 @@ namespace wendoo {
     consumesWhenResult: string = "";
     /** Sentence words of the tile; each field `""` when undeclared, and the editor reads the tile by its label. */
     language: TileLanguage = new TileLanguage();
+    /**
+     * Whether a sensor taking no arguments reads as a value inside an
+     * expression, so operators and accessor tiles may follow it. Read on
+     * sensors only.
+     */
+    inline: boolean = false;
+    /**
+     * Whether a sensor's result is a live reference a brain may write a
+     * field through, as in assigning to an accessor tile placed after it.
+     * Read on sensors only.
+     */
+    writableResult: boolean = false;
 
     constructor(kind: string, args: TileArgSpec[], returns: string) {
       super();
@@ -1335,7 +1376,7 @@ namespace wendoo {
      * {@link structFieldKey} and left without one.
      *
      * @param name - Wendoo type name; struct values of the type carry the TypeId derived from it.
-     * @param fields - Field specs; the binding's `fieldIds` follow their order.
+     * @param fields - Field specs, each with its accessor tile if {@link withAccessor} gave it one; the binding's `fieldIds` follow their order.
      * @param binding - Type binding carrying the type's hooks.
      * @param meta - Catalog metadata of the type; the drain ignores it.
      */

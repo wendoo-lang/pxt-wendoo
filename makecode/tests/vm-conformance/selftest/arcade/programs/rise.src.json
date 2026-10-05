@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "id": "riseTowardAbove1",
+  "name": "Rise",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0riseTowardAb",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0riseTowardAb",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.out->struct:<Sprite>.inRange",
+                "tile.accessor->struct:<Sprite>->position",
+                "tile.accessor->struct:<Vector2>->y",
+                "tile.op->lt",
+                "tile.sensor->sensor.arcade.myself",
+                "tile.accessor->struct:<Sprite>->position",
+                "tile.accessor->struct:<Vector2>->y"
+              ],
+              "do": [
+                "tile.actuator->actuator.arcade.move",
+                "tile.modifier->modifier.direction.up"
+              ],
+              "children": [],
+              "ruleId": "fRu1riseTowardAb"
+            }
+          ],
+          "ruleId": "fRu0riseTowardAb"
+        }
+      ]
+    }
+  ]
+}

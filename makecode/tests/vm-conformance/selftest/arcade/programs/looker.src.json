@@ -22,8 +22,11 @@
             "tile.sensor->sensor.arcade.bump"
           ],
           "do": [
-            "tile.actuator->actuator.arcade.look-like",
-            "tile.out->struct:<Sprite>.bumped"
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->image",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->image"
           ],
           "children": [],
           "ruleId": "0IG6wXV3ZiCLRcT1"

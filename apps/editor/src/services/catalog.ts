@@ -74,6 +74,12 @@ export interface CatalogField {
   readonly type: string;
   /** Whether brains can only read the field. */
   readonly readOnly: boolean;
+  /**
+   * The metadata of the field's accessor tile -- the tile placed after a
+   * value of the type to read the field, and to write it unless the field is
+   * read-only -- or absent when the field has no accessor tile.
+   */
+  readonly accessor?: CatalogMeta;
 }
 
 /** One struct type of a pack. */
@@ -230,6 +236,10 @@ export interface CatalogTile extends CatalogMeta {
   readonly consumesWhenResult?: string;
   /** Sentence words of the tile, or absent when it declares none. */
   readonly language?: CatalogLanguage;
+  /** `true` for a sensor taking no arguments that reads as a value inside an expression; absent otherwise. */
+  readonly inline?: true;
+  /** `true` for a sensor whose result a brain may write a field through; absent otherwise. */
+  readonly writableResult?: true;
 }
 
 /** One operator of a pack. */
@@ -521,6 +531,8 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
     ...(consumesWhenResult === undefined ? {} : { consumesWhenResult }),
     ...metaOf(entry),
     ...(language === undefined ? {} : { language }),
+    ...(entry.inline === true ? { inline: true as const } : {}),
+    ...(entry.writableResult === true ? { writableResult: true as const } : {}),
   };
 }
 
@@ -528,7 +540,14 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
 function typeOf(entry: JsonObject & { name: string }): CatalogType {
   const fields = arrayField(entry, "fields").flatMap((field) =>
     isNamed(field) && typeof field.type === "string"
-      ? [{ name: field.name, type: field.type, readOnly: field.readOnly === true }]
+      ? [
+          {
+            name: field.name,
+            type: field.type,
+            readOnly: field.readOnly === true,
+            ...(isObject(field.accessor) ? { accessor: metaOf(field.accessor) } : {}),
+          },
+        ]
       : []
   );
   const asset = stringField(entry, "asset");

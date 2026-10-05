@@ -306,6 +306,32 @@ namespace registrationSelftest {
     );
   }
 
+  /**
+   * The accessor builder gives the field it is passed an accessor carrying
+   * the label and icon it is passed, none when given none, and returns that
+   * same field; a field built without it has no accessor; and a tile spec
+   * declares neither sensor flag until set.
+   */
+  function checkAccessorAndSensorFlagDefaults(): void {
+    const plain = wendoo.field("f", wendoo.TYPE_NUMBER);
+    const accessible = wendoo.field("f", wendoo.TYPE_NUMBER);
+    const bare = wendoo.withAccessor(wendoo.field("g", wendoo.TYPE_NUMBER)).accessor;
+    const spec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_NUMBER);
+    check(
+      "accessor-builder-carries-metadata-and-sensor-flags-default-off",
+      wendoo.withAccessor(accessible, BUILDER_LABEL, "icon") === accessible &&
+        accessible.accessor.label === BUILDER_LABEL &&
+        accessible.accessor.icon === "icon" &&
+        bare !== undefined &&
+        bare.label === "" &&
+        bare.icon === undefined &&
+        plain.accessor === undefined &&
+        wendoo.readOnlyField("r", wendoo.TYPE_NUMBER).accessor === undefined &&
+        !spec.inline &&
+        !spec.writableResult
+    );
+  }
+
   /** Sentence form the language builder check declares. */
   const BUILDER_FORM = "builder form";
 
@@ -940,6 +966,7 @@ namespace registrationSelftest {
     checkCatalog();
     checkSlotBuilderLabels();
     checkLanguageBuilders();
+    checkAccessorAndSensorFlagDefaults();
     checkAssetType(ids, types);
     checkCompiledBrains();
     checkLoader();

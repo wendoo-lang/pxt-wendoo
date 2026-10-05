@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "flockOwnBrain001",
+  "name": "Flock",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0flockOwnBrn0",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0flockOwnBrn0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->brain"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward"
+          ],
+          "children": [],
+          "ruleId": "fRu0flockOwnBrn0"
+        }
+      ]
+    }
+  ]
+}

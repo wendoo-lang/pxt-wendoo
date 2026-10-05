@@ -29,11 +29,13 @@
  * `EXPECTED_ARCADE_REJECTIONS` in that order, the program-update lines in
  * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, the
  * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
- * no other, a `DEBUG ON` line no line the Wendoo extensions log precedes,
+ * no other, the unresolved-brain lines in `EXPECTED_ARCADE_BRAIN_LINES` in
+ * that order and no other, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its types,
- * tiles, modifier slots and core tile icon entries carrying 16 by 16 icons.
+ * accessors, tiles, modifier slots and core tile icon entries carrying 16 by
+ * 16 icons.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -73,6 +75,7 @@ const EXPECTED_CHECKS = [
   "catalog-serialize-repeatable",
   "slot-builders-carry-labels",
   "language-builders-carry-words",
+  "accessor-builder-carries-metadata-and-sensor-flags-default-off",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
   "compiled-brain-declarations-bound-by-id",
@@ -235,12 +238,14 @@ const EXPECTED_ARCADE_CHECKS = [
   "speed-words-compose-with-range-rules",
   "program-update-swaps-in-range-to-out-of-range-live",
   "image-type-takes-its-atom-and-field-from-the-manifest",
-  "look-like-wears-the-image-its-asset-resolves-to",
   "image-resolves-when-it-is-used",
-  "look-like-wears-the-image-the-other-sprite-wears-now",
-  "look-like-keeps-its-image-when-the-asset-is-gone",
-  "look-like-keeps-its-image-given-no-sprite",
   "toward-reads-only-a-sprite-value",
+  "image-reads-the-image-the-sprite-wears-its-asset-reading-empty",
+  "image-write-wears-the-image-its-asset-resolves-to",
+  "image-write-of-an-image-no-factory-holds-or-a-value-naming-no-image-keeps-the-image",
+  "image-write-of-another-sprites-image-wears-that-same-image-and-keeps-it-when-that-sprite-changes",
+  "proximity-filters-read-a-worn-image-by-its-pixels",
+  "image-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
   "bump-given-an-image-reads-the-nearest-sprite-that-looks-like-it",
   "bump-given-an-image-no-sprite-looks-like-reads-nothing",
   "bump-given-an-image-gone-from-the-project-reads-nothing",
@@ -274,12 +279,30 @@ const EXPECTED_ARCADE_CHECKS = [
   "out-of-range-given-a-brain-no-sprite-runs-reads-nothing",
   "proximity-sensors-given-their-own-brain-read-another-runner-never-their-own-sprite",
   "own-brain-range-rules-read-other-runners-and-never-their-own-sprite",
+  "sprite-type-takes-its-fields-from-the-manifest-and-reads-and-writes-them-through-its-hooks",
+  "position-reads-a-snapshot-of-the-sprites-center",
+  "position-write-sets-the-center-at-once-and-keeps-the-velocity",
+  "position-write-of-a-value-naming-no-point-moves-nothing",
+  "brain-reads-the-brain-its-sprite-runs-or-nil",
+  "brain-write-waits-for-the-drain-which-starts-the-brain",
+  "brain-write-of-the-brain-already-running-restarts-nothing",
+  "brain-write-of-another-brain-replaces-the-program-at-the-drain",
+  "brain-write-of-nil-ends-the-program-and-starts-nothing-on-a-sprite-running-none",
+  "brain-write-of-a-brain-no-registration-holds-changes-nothing",
+  "a-destroyed-sprite-reads-nil-and-ignores-writes",
+  "myself-reads-the-sprite-its-program-runs-on",
+  "in-range-given-its-own-sprites-brain-closes-on-another-runner-past-a-plain-sprite",
+  "move-toward-the-bumped-sprites-position-lands-on-the-center-it-read",
+  "a-position-assignment-puts-its-sprite-on-the-bumped-sprites-center",
+  "a-brain-assignment-to-its-own-sprite-swaps-the-program-after-its-think",
+  "comparing-y-accessors-moves-up-toward-a-sprite-above-and-not-below",
   "bump-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
   "in-range-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
   "out-of-range-writes-its-output-when-it-fires-and-clears-it-when-it-does-not",
   "two-sensors-outputs-coexist-in-one-rule-chain",
   "a-child-reads-a-destroyed-sprites-output-without-fault-and-a-filter-on-it-admits-nothing",
   "bump-rule-dresses-in-the-bumped-sprite",
+  "bump-rule-wears-the-image-asset-it-is-given",
   "child-rule-reads-its-parents-range-output",
   "bump-given-above-reads-the-nearest-sprite-above",
   "bump-given-below-reads-the-nearest-sprite-below",
@@ -343,13 +366,24 @@ const EXPECTED_ARCADE_CHECKS = [
 /**
  * Every unresolved-asset line the arcade selftest is expected to log, in
  * order, each without its `wendoo ` prefix: the late image, used once before
- * its factory is registered, then the deleted image, which look like and the
- * proximity sensors' filters each use more than once.
+ * its factory is registered, then the deleted image, which writes to a
+ * sprite's image and the proximity sensors' filters each use more than once.
  */
 const EXPECTED_ARCADE_ASSET_LINES = ["WENDOO_ASSET_UNRESOLVED image image9", "WENDOO_ASSET_UNRESOLVED image image404"];
 
 /** The prefix of the line the VM extension logs for an asset id no factory holds. */
 const ASSET_LINE_PREFIX = "wendoo WENDOO_ASSET_UNRESOLVED ";
+
+/**
+ * Every unresolved-brain line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one per document id that a write
+ * to a sprite's brain names and no registration holds, however many times it
+ * is written.
+ */
+const EXPECTED_ARCADE_BRAIN_LINES = ["WENDOO_BRAIN_UNRESOLVED nobodyRunsThis01"];
+
+/** The prefix of the line the VM extension logs for a brain document id no registration holds. */
+const BRAIN_LINE_PREFIX = "wendoo WENDOO_BRAIN_UNRESOLVED ";
 
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
 const ARCADE_ICONED_TILES = [
@@ -358,7 +392,7 @@ const ARCADE_ICONED_TILES = [
   "sensor.arcade.bump",
   "sensor.arcade.in-range",
   "sensor.arcade.out-of-range",
-  "actuator.arcade.look-like",
+  "sensor.arcade.myself",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -417,6 +451,9 @@ const ARCADE_ICONED_CORE_TILES = [
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
 const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain"];
 
+/** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
+const ARCADE_ICONED_ACCESSORS = ["Vector2.x", "Vector2.y", "Sprite.image", "Sprite.position", "Sprite.brain"];
+
 /** Width and height, in pixels, of every arcade base pack icon. */
 const ARCADE_ICON_SIZE = 16;
 
@@ -438,11 +475,13 @@ const ARCADE_HOST_REJECTIONS = [
  * frame while debug logging is on. The scenes are the ones the selftest
  * pushes to check paused programs, paused program updates, the bump sensor,
  * the move's toward and away modifiers, the in-range and out-of-range
- * sensors, the proximity sensors' filters, their brain filter, their
- * outputs, their positional modifiers, the targets the move's toward and
- * away carry, and the move's wander.
+ * sensors, the proximity sensors' filters, their brain filter, the
+ * `Sprite` type's fields, the myself sensor, their outputs, their positional modifiers, the
+ * targets the move's toward and away carry, and the move's wander.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -612,6 +651,13 @@ function reportedAssetLines(log) {
     .map((line) => line.slice("wendoo ".length));
 }
 
+/** Every unresolved-brain line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedBrainLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(BRAIN_LINE_PREFIX))
+    .map((line) => line.slice("wendoo ".length));
+}
+
 /**
  * The bits per pixel, width and height an icon's catalog text declares, and
  * whether its byte count is the one they imply: the text is lowercase hex of
@@ -654,7 +700,8 @@ function grammarSlots(nodes) {
 
 /**
  * The ways the arcade catalog payload `payload` misses its icons: each type
- * in `ARCADE_ICONED_TYPES`, each tile in `ARCADE_ICONED_TILES`, each slot of
+ * in `ARCADE_ICONED_TYPES`, each accessor in `ARCADE_ICONED_ACCESSORS`, each
+ * tile in `ARCADE_ICONED_TILES`, each slot of
  * any tile a modifier in `ARCADE_ICONED_MODIFIERS` fills, and exactly one core
  * tile icon entry for each core tile in `ARCADE_ICONED_CORE_TILES`, carries an
  * icon of 16 by 16 pixels.
@@ -667,6 +714,14 @@ function arcadeIconFailures(payload) {
   for (const name of ARCADE_ICONED_TYPES) {
     const type = types.find((entry) => entry.name === name);
     failures.push(...(type ? iconProblems(`type ${name}`, type.icon) : [`no type ${name}`]));
+  }
+  for (const name of ARCADE_ICONED_ACCESSORS) {
+    const [typeName, fieldName] = name.split(".");
+    const type = types.find((entry) => entry.name === typeName);
+    const declared = type ? (type.fields || []).find((entry) => entry.name === fieldName) : undefined;
+    failures.push(
+      ...(declared?.accessor ? iconProblems(`accessor ${name}`, declared.accessor.icon) : [`no accessor ${name}`])
+    );
   }
   for (const name of ARCADE_ICONED_TILES) {
     const tile = tiles.find((entry) => entry.name === name);
@@ -787,6 +842,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const assetLines = reportedAssetLines(log);
   if (assetLines.join("\n") !== EXPECTED_ARCADE_ASSET_LINES.join("\n")) {
     failures.push(`unresolved assets logged: ${assetLines.join(" | ")}`);
+  }
+  const brainLines = reportedBrainLines(log);
+  if (brainLines.join("\n") !== EXPECTED_ARCADE_BRAIN_LINES.join("\n")) {
+    failures.push(`unresolved brains logged: ${brainLines.join(" | ")}`);
   }
   const frames = catalog
     .channelMessages(simxLog)

@@ -94,15 +94,24 @@ namespace beacon {
   beaconMeta.label = "Beacon";
   beaconMeta.docs = "# Beacon\n\nA beacon at a fixed position, read through its field hooks.";
   beaconMeta.icon = "beacon";
-  pack.defineStruct(
-    "Beacon",
-    [wendoo.field("x", wendoo.TYPE_NUMBER), wendoo.field("y", wendoo.TYPE_NUMBER)],
-    new BeaconTypeBinding(),
-    beaconMeta
-  );
 
-  /** Declared shape of the reading tile, with a named output and sample metadata, sentence words included, the catalog assertions pin. */
+  /** The `x` field, its accessor tile carrying sample metadata the catalog assertions pin. */
+  const xField = wendoo.withAccessor(wendoo.field("x", wendoo.TYPE_NUMBER), "beacon x", "beacon-x");
+  xField.accessor.docs = "# Beacon x";
+
+  /** The `y` field, its accessor tile carrying an icon the selftest's encoder refuses to render. */
+  const yField = wendoo.withAccessor(wendoo.field("y", wendoo.TYPE_NUMBER), undefined, "unencodable");
+
+  pack.defineStruct("Beacon", [xField, yField], new BeaconTypeBinding(), beaconMeta);
+
+  /**
+   * Declared shape of the reading tile, with a named output, sample metadata,
+   * sentence words included, and both sensor flags, the catalog assertions
+   * pin.
+   */
   const readingSpec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_STRING);
+  readingSpec.inline = true;
+  readingSpec.writableResult = true;
   readingSpec.outputs = [wendoo.output("position", "Beacon")];
   readingSpec.label = "beacon reading";
   readingSpec.group = "Beacons";

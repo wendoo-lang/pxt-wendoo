@@ -32,8 +32,8 @@ looks.
 - **bumped sprite**, **sprite in range** and **sprite out of range** --
   the sprite **bump**, **in range** or **out of range** found, as a tile of
   its own you can use later in the same rule, or in the rules tucked under
-  it: **WHEN bump DO look like bumped sprite** dresses your sprite just
-  like whatever it bumps.
+  it: **WHEN bump DO myself image = bumped sprite image** dresses your
+  sprite just like whatever it bumps.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or
@@ -50,8 +50,23 @@ looks.
   direction its WHEN carries, or rightward when there is none. Add
   **slowly** or **quickly** (up to three times) to change its speed, or
   give it a **speed** in pixels per second -- see the speed table below.
-- **look like** -- a DO tile that changes the sprite's picture. Give it one
-  of your project's images to wear, or a sprite to dress just like.
+- **myself** -- your own sprite, as a tile you can put anywhere a sprite
+  goes: **WHEN in range myself brain DO move toward** gathers sprites
+  running the same brain into a flock, without naming the brain.
+- **image**, **position** and **brain** -- put one after a sprite, like
+  **myself** or **bumped sprite**, to read that part of it: the picture it
+  wears, the spot its center is at, or the brain it runs (nothing while it
+  runs none). Add **=** to change your own sprite: **DO myself image =**
+  one of your project's images changes its picture, **DO myself position =
+  bumped sprite position** jumps it onto what it bumps, and **DO myself
+  brain =** another brain switches to that brain from the next frame --
+  set it to nothing to stop.
+- **x** and **y** -- put one after a position to read just one number of
+  it: **x** grows to the right and **y** grows downward, the same way
+  **up** and **down** point on **move**. Compare them with **<** and **>**:
+  tucked under **WHEN in range**, a rule **WHEN sprite in range position y
+  < myself position y DO move up** climbs while that sprite is higher up
+  the screen than yours.
 
 ### How fast a move goes
 

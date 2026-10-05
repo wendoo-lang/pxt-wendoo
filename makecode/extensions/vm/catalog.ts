@@ -14,9 +14,13 @@
  *   registered hooks), `asset` (on an asset type, the kind of the project
  *   assets its values name), `brain` (on a brain type, whose values each name
  *   one of the project's brains), `fields` (each with `name`, `type`,
- *   `readOnly`), and the metadata fields.
- * - A tile entry carries `name`, `kind`, `async`, its argument grammar as
- *   either `args` or `call`, `returns`, `outputs` (each with `name` and
+ *   `readOnly`, and `accessor` -- present exactly when the field has an
+ *   accessor tile -- holding the accessor's metadata fields), and the
+ *   metadata fields.
+ * - A tile entry carries `name`, `kind`, `async`, `inline` (a sensor reading
+ *   as a value inside an expression), `writableResult` (a sensor whose result
+ *   a brain may write a field through), its argument grammar as either
+ *   `args` or `call`, `returns`, `outputs` (each with `name` and
  *   `type`, then the output tile's `label`, `docs` and `icon`),
  *   `consumesWhenResult` (the type name of the WHEN result the tile
  *   requires), the metadata fields, and `language`.
@@ -61,7 +65,8 @@
  * - A diagnostic entry carries `code`, `name`, `pack`, `otherPack` and
  *   `spec` (the part of the registration the problem is about: for a slot's
  *   icon, the slot's name, or its `tileId` when it is unnamed; for an
- *   output's icon, the output's name). A core tile icon's diagnostic names
+ *   output's icon, the output's name; for an accessor's icon, its field's
+ *   name). A core tile icon's diagnostic names
  *   the core tile's id as its `name`.
  *
  * Omission conventions, applied uniformly: a boolean field is present only
@@ -472,9 +477,10 @@ namespace wendoo {
      * The metadata fields of `meta`, rendered under the payload's omission
      * conventions, each prefixed by its separating comma. An icon the
      * encoder cannot render is left out and recorded under
-     * {@link CATALOG_ICON_UNENCODABLE} against `name` and `pack`.
+     * {@link CATALOG_ICON_UNENCODABLE} against `name`, `pack` and `spec`
+     * (`""` when the registration itself declares the metadata).
      */
-    private metaText(name: string, pack: string, meta: CatalogMeta): string {
+    private metaText(name: string, pack: string, meta: CatalogMeta, spec: string): string {
       if (!meta) {
         return "";
       }
@@ -488,14 +494,22 @@ namespace wendoo {
       if (meta.docs.length > 0) {
         out += `,"docs":${jsonQuote(meta.docs)}`;
       }
-      return out + this.iconText(meta.icon, name, pack, "");
+      return out + this.iconText(meta.icon, name, pack, spec);
     }
 
-    /** JSON object text of one declared struct field. */
-    private fieldText(spec: StructFieldSpec): string {
+    /**
+     * JSON object text of one declared field of the struct type `typeName`
+     * under `pack`, its accessor's metadata rendered as the metadata fields
+     * are; an accessor icon the encoder cannot render is left out and
+     * recorded against the type, naming the field as its spec.
+     */
+    private fieldText(pack: string, typeName: string, spec: StructFieldSpec): string {
       let out = `{"name":${jsonQuote(spec.name)},"type":${jsonQuote(spec.type)}`;
       if (spec.readOnly) {
         out += ',"readOnly":true';
+      }
+      if (spec.accessor) {
+        out += `,"accessor":{${this.metaText(typeName, pack, spec.accessor, spec.name).substr(1)}}`;
       }
       return `${out}}`;
     }
@@ -533,11 +547,11 @@ namespace wendoo {
       if (fields.length > 0) {
         const rendered: string[] = [];
         for (let i = 0; i < fields.length; i++) {
-          rendered.push(this.fieldText(fields[i]));
+          rendered.push(this.fieldText(pack, name, fields[i]));
         }
         entry += `,"fields":${jsonArray(rendered)}`;
       }
-      entry += this.metaText(name, pack, meta);
+      entry += this.metaText(name, pack, meta, "");
       this.typeEntries[this.packIndex(pack)].push(`${entry}}`);
     }
 
@@ -558,6 +572,12 @@ namespace wendoo {
         entry += ',"async":true';
       }
       if (spec) {
+        if (spec.inline) {
+          entry += ',"inline":true';
+        }
+        if (spec.writableResult) {
+          entry += ',"writableResult":true';
+        }
         entry += grammarText(spec.args, (slot: ArgSlotSpec) =>
           this.iconText(slot.icon, name, pack, slot.name.length > 0 ? slot.name : slot.tileId)
         );
@@ -583,7 +603,7 @@ namespace wendoo {
         if (spec.consumesWhenResult.length > 0) {
           entry += `,"consumesWhenResult":${jsonQuote(spec.consumesWhenResult)}`;
         }
-        entry += this.metaText(name, pack, spec);
+        entry += this.metaText(name, pack, spec, "");
         entry += languageText(spec.language);
       }
       this.tileEntries[this.packIndex(pack)].push(`${entry}}`);

@@ -1,8 +1,9 @@
 /**
- * The arcade base pack's vocabulary: the `Vector2` type, the
- * `Sprite` type, the `Image` asset type, the `Brain` type, the `dpad`,
- * `bump`, `in range` and `out of range` sensors, and the `move` and
- * `look like` actuators, each tile with its icon, registered from this
+ * The arcade base pack's vocabulary: the `Vector2` type, its `x` and `y`
+ * read-only accessors, the `Sprite` type, its `image`, `position` and
+ * `brain` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
+ * `bump`, `in range`, `out of range` and `myself` sensors, and the `move`
+ * actuator, each tile and accessor with its icon, registered from this
  * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
  * each with its icon; and the icons it gives the core tiles -- the page
  * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
@@ -64,11 +65,17 @@
  *   given, never faster than {@link ENGINE_MAX_SPEED}. The direction is held
  *   to the unit circle, so a diagonal moves as fast as a straight line and a
  *   part-deflected analog stick moves slower.
- * - `DO [look like]` dresses the program's sprite in the image it is given,
- *   as {@link imageOf} finds it when it acts, or in the image the sprite it
- *   is given wears at that moment -- that same image, not a copy. It must be
- *   given one or the other. Given an image no factory holds, or a value
- *   standing for no sprite, it leaves the sprite's image as it was.
+ * - `[myself]` reads the program's own sprite as a `Sprite`, a value
+ *   inside an expression that accessors may follow and whose fields a
+ *   brain may write: `DO [myself][image] [=] [bumped sprite][image]`
+ *   dresses the sprite in the image the sprite it bumps wears.
+ * - The accessors read a value's fields: a sprite's `position`, a fresh
+ *   `Vector2` of its center at every read; its `image`, the image it wears;
+ *   its `brain`, the brain it runs, or nil while it runs none; and a
+ *   `Vector2`'s `x` and `y`, which a brain only reads. Writing a sprite's
+ *   `position` puts its center there at once, its `image` dresses it, and
+ *   its `brain` runs that brain from the next frame, nil ending the one it
+ *   runs.
  */
 namespace wendoo {
   /** Name the arcade base pack's registrations are reported under. */
@@ -95,9 +102,9 @@ namespace wendoo {
   //% hidden
   export const OUT_OF_RANGE_TILE = "sensor.arcade.out-of-range";
 
-  /** Tile name of the look-like actuator. */
+  /** Tile name of the myself sensor. */
   //% hidden
-  export const LOOK_LIKE_TILE = "actuator.arcade.look-like";
+  export const MYSELF_TILE = "sensor.arcade.myself";
 
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
@@ -186,10 +193,6 @@ namespace wendoo {
   const POSITION_BELOW = 1;
   const POSITION_LEFT = 2;
   const POSITION_RIGHT = 3;
-
-  /** Argument-buffer positions of the look-like actuator's image and sprite. */
-  const LOOK_SLOT_IMAGE = 0;
-  const LOOK_SLOT_SPRITE = 1;
 
   /** Whether the slot at `slot` of `args` is filled. */
   function isFilled(args: Value[], slot: number): boolean {
@@ -460,6 +463,17 @@ namespace wendoo {
     }
   }
 
+  /** `sensor.arcade.myself`: the `Sprite` value standing for the program's own sprite. */
+  class MyselfSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return spriteValue((ctx.data as SpriteWorld).sprite);
+    }
+  }
+
   /** A direction that points nowhere: the move of a sprite holding still at its goal. */
   const HOLD_STILL = new DirectionVector(0, 0);
 
@@ -520,31 +534,6 @@ namespace wendoo {
         }
       }
       sceneMotionArbiter(game.currentScene()).addIntent(new MoveIntent(sprite, direction, speed, 1, world.motion));
-      return VOID_VALUE;
-    }
-  }
-
-  /**
-   * `actuator.arcade.look-like`: dresses the program's sprite in the image
-   * {@link imageOf} finds for its image slot, or in the image the sprite its
-   * sprite slot stands for wears now, and leaves the sprite's image as it
-   * was when neither gives one.
-   */
-  class LookLikeActuator extends HostActionBinding {
-    constructor() {
-      super(false);
-    }
-
-    execSync(ctx: ExecutionContext, args: Value[]): Value {
-      const sprite = (ctx.data as SpriteWorld).sprite;
-      let look: Image;
-      if (isFilled(args, LOOK_SLOT_IMAGE)) {
-        look = imageOf(args[LOOK_SLOT_IMAGE]);
-      } else {
-        const other = spriteOf(args[LOOK_SLOT_SPRITE]);
-        look = other ? other.image : undefined;
-      }
-      sprite.setImage(look);
       return VOID_VALUE;
     }
   }
@@ -653,7 +642,7 @@ namespace wendoo {
   const arcadePack = pack(ARCADE_PACK_NAME);
 
   arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding, iconMeta(VECTOR2_TYPE_ICON));
-  arcadePack.defineStruct(TYPE_SPRITE, [], spriteBinding, iconMeta(SPRITE_TYPE_ICON));
+  arcadePack.defineStruct(TYPE_SPRITE, spriteFields(), spriteBinding, iconMeta(SPRITE_TYPE_ICON));
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, iconMeta(BRAIN_TYPE_ICON));
 
@@ -723,14 +712,12 @@ namespace wendoo {
   outOfRangeSpec.language.bare = "of anything";
   arcadePack.bind(OUT_OF_RANGE_TILE, new RangeSensor(false, OUT_OF_RANGE_OUTPUT), outOfRangeSpec);
 
-  const lookLikeSpec = new TileSpec(
-    TILE_KIND_ACTUATOR,
-    [choice([anonymousArg(TYPE_IMAGE), anonymousArg(TYPE_SPRITE)])],
-    ""
-  );
-  lookLikeSpec.label = "look like";
-  lookLikeSpec.icon = LOOK_LIKE_ICON;
-  arcadePack.bind(LOOK_LIKE_TILE, new LookLikeActuator(), lookLikeSpec);
+  const myselfSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_SPRITE);
+  myselfSpec.label = "myself";
+  myselfSpec.icon = SPRITE_TYPE_ICON;
+  myselfSpec.inline = true;
+  myselfSpec.writableResult = true;
+  arcadePack.bind(MYSELF_TILE, new MyselfSensor(), myselfSpec);
 
   arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", CORE_ON_PAGE_ENTERED_ICON);
   arcadePack.defineCoreTileIcon("tile.actuator->switch-page", CORE_SWITCH_PAGE_ICON);

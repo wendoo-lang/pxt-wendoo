@@ -30,8 +30,11 @@
                 "tile.out->struct:<Sprite>.inRange"
               ],
               "do": [
-                "tile.actuator->actuator.arcade.look-like",
-                "tile.out->struct:<Sprite>.inRange"
+                "tile.sensor->sensor.arcade.myself",
+                "tile.accessor->struct:<Sprite>->image",
+                "tile.op->assign",
+                "tile.out->struct:<Sprite>.inRange",
+                "tile.accessor->struct:<Sprite>->image"
               ],
               "children": [],
               "ruleId": "ficNZnFFAU8Yd8dP"

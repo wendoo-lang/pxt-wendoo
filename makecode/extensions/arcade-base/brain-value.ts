@@ -1,8 +1,9 @@
 /**
  * Brains as Wendoo values: the `Brain` type a program names one of the
- * project's brains by, and the sprites running the brain such a value
- * names. A value holds the brain's document id only; which sprites run it is
- * read when the value is used.
+ * project's brains by, the sprites running the brain such a value names, the
+ * brain one sprite runs, and a program's request that a sprite run a brain.
+ * A value holds the brain's document id only; which sprites run it is read
+ * when the value is used.
  */
 namespace wendoo {
   /** Wendoo type name of a brain value: a plain struct naming one of the project's brains by its document id. */
@@ -39,5 +40,84 @@ namespace wendoo {
       }
     }
     return runners;
+  }
+
+  /** The program host of the world `ctx` runs in, or `undefined` when that world is no actor's or no host runs it. */
+  function hostOf(ctx: ExecutionContext): ProgramHost {
+    return ctx.data instanceof ActorWorld ? (ctx.data as ActorWorld).host : undefined;
+  }
+
+  /** The document id of the brain `sprite` runs in `host` now, or `""` when it runs none or `host` is `undefined`. */
+  function documentIdRunningOn(host: ProgramHost, sprite: Sprite): string {
+    if (!host) {
+      return "";
+    }
+    const hosted = host.hostedPrograms();
+    for (let i = 0; i < hosted.length; i++) {
+      const world = hosted[i].world;
+      if (world instanceof SpriteWorld && (world as SpriteWorld).sprite === sprite) {
+        return hosted[i].loaded.registration.id;
+      }
+    }
+    return "";
+  }
+
+  /** The compiled brain registered under `documentId`, or `undefined` when none is. */
+  function registrationOf(documentId: string): CompiledBrainRegistration {
+    const registered = compiledBrainRegistrations();
+    for (let i = 0; i < registered.length; i++) {
+      if (registered[i].id === documentId) {
+        return registered[i];
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The `Brain` value naming the brain `sprite` runs now in the program host
+   * of the world `ctx` runs in; `undefined` when it runs none -- the empty
+   * program {@link wendooBrains.none} included -- or that world has no
+   * program host. A brain asked for but not yet started is not read.
+   *
+   * @param ctx - Execution context of the program reading the brain.
+   * @param sprite - The sprite whose brain is read.
+   */
+  //% hidden
+  export function brainRunningOn(ctx: ExecutionContext, sprite: Sprite): Value {
+    const documentId = documentIdRunningOn(hostOf(ctx), sprite);
+    return documentId.length > 0 ? brainBinding.valueNaming(documentId) : undefined;
+  }
+
+  /**
+   * Ask the program host of the world `ctx` runs in to run on `sprite`, from
+   * its next drain, the brain `value` names, ending the program the sprite
+   * runs then; given a value naming no brain, nil included, the empty program
+   * {@link wendooBrains.none}, which ends the sprite's program. Asks nothing
+   * when the sprite runs that brain already, or runs none and is given no
+   * brain, or the world has no program host; and when no compiled brain is
+   * registered under the document id `value` holds, asks nothing and reports
+   * the id unresolved. Only records the request: nothing starts or ends
+   * before the drain.
+   *
+   * @param ctx - Execution context of the program asking.
+   * @param sprite - The sprite to run the brain on.
+   * @param value - The brain to run: a `Brain` value, or nil to run none.
+   */
+  //% hidden
+  export function requestBrain(ctx: ExecutionContext, sprite: Sprite, value: Value): void {
+    const host = hostOf(ctx);
+    const documentId = brainBinding.documentIdOf(value);
+    if (!host || documentId === documentIdRunningOn(host, sprite)) {
+      return;
+    }
+    let registration = wendooBrains.none;
+    if (documentId.length > 0) {
+      registration = registrationOf(documentId);
+      if (!registration) {
+        brainBinding.reportUnresolved(documentId);
+        return;
+      }
+    }
+    host.attach(new SpriteWorld(sprite), registration);
   }
 }

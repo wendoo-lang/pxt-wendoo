@@ -8,13 +8,14 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * bump, in-range, out-of-range and move tiles, driven by pressing the
- * controller's buttons and placing and moving sprites from game code, and
- * programs updated while the game runs, through the messages the Wendoo
- * simulator extension posts. It also calls the bump, in-range, out-of-range
- * and look-like tiles' bodies directly with image asset, sprite and brain
- * values, images resolved through an image factory registered the way a
- * project's images module registers one, and the move tile's body with
+ * bump, in-range, out-of-range, myself and move tiles and the `Sprite` and
+ * `Vector2` accessors, driven by pressing the controller's buttons and
+ * placing and moving sprites from game code, and programs updated while the
+ * game runs, through the messages the Wendoo simulator extension posts. It
+ * also calls the bump, in-range, out-of-range and myself tiles' bodies and
+ * the `Sprite` type's field hooks directly with image asset, sprite and
+ * brain values, images resolved through an image factory registered the way
+ * a project's images module registers one, and the move tile's body with
  * sprite and point targets and with wander destinations picked from random
  * sources it scripts.
  *
@@ -31,7 +32,11 @@
  *   removal taken, update refused, and message refused, as the VM extension
  *   logs them.
  * - `wendoo WENDOO_ASSET_UNRESOLVED image <id>` -- one per image asset id no
- *   factory held when a tile first used it, as the VM extension logs it.
+ *   factory held when a tile or a sprite's image first used it, as the VM
+ *   extension logs it.
+ * - `wendoo WENDOO_BRAIN_UNRESOLVED <id>` -- one per brain document id no
+ *   compiled brain holds when a sprite's brain was first set to it, as the
+ *   arcade base pack logs it.
  * - `DEBUG ON` -- the run turned the Wendoo extensions' debug logging on;
  *   none of the `wendoo` lines above precede it.
  * - `SIMCAP PASS <case>` -- the run reached its end.
@@ -854,9 +859,6 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
-  /** Tile name of the look-like actuator. */
-  const LOOK_LIKE_TILE = "actuator.arcade.look-like";
-
   /** Wendoo type name of an image asset value. */
   const IMAGE_TYPE = "Image";
 
@@ -958,15 +960,101 @@ namespace arcadeSelftest {
   }
 
   /**
-   * In a scene of its own, check image assets and the look-like tile reading
-   * them, its body called directly with the values a compiled program
-   * passes it: the `Image` type takes its atom and its one field from the
-   * project's ids module; look like wears the image an asset id or display
-   * name resolves to at the moment it acts, or the image another sprite wears
-   * at that moment -- the same image, not a copy -- and leaves the sprite as
-   * it was given an image no factory holds or a value standing for no sprite;
-   * and the goal toward heads for is read from a WHEN's result only when it
-   * is a `Sprite` value.
+   * Check the `Sprite` type's `image` field around `model`, a sprite in the
+   * current scene, through the type's field hooks as the VM dispatches them:
+   * a read is the image the sprite wears, that same image, its `asset` field
+   * reading the empty string; a write of an image asset wears the image its
+   * asset id or display name resolves to when written, and keeps the
+   * sprite's image given an image no factory holds or a value naming no
+   * image; a write of another sprite's image wears that same image -- pixels
+   * drawn on it show on both sprites, and the other sprite changing images
+   * leaves the written one as it was; the proximity filters read the image a
+   * sprite wears by its pixels; and a destroyed sprite reads nil and ignores
+   * writes.
+   */
+  function checkImageField(model: Sprite): void {
+    const world = hostedWorld(model);
+    const read = readField(world, model, "image");
+    const assetSlot = read.fields ? read.fields[wendoo.projectIds().fieldId(IMAGE_TYPE, IMAGE_ASSET_FIELD)] : undefined;
+    check(
+      "image-reads-the-image-the-sprite-wears-its-asset-reading-empty",
+      read.t === wendoo.ValueTag.Struct &&
+        read.typeId === wendoo.structTypeId(IMAGE_TYPE) &&
+        read.native === model.image &&
+        wendoo.imageOf(read) === model.image &&
+        assetSlot !== undefined &&
+        assetSlot.t === wendoo.ValueTag.String &&
+        assetSlot.str === ""
+    );
+
+    const byId = solidSprite(8, 20, 40);
+    const byName = solidSprite(8, 40, 40);
+    const wrote =
+      writeField(world, byId, "image", imageLiteral(HERO_ASSET_ID)) &&
+      writeField(world, byName, "image", imageLiteral(HERO_DISPLAY_NAME));
+    check(
+      "image-write-wears-the-image-its-asset-resolves-to",
+      wrote && byId.image.equals(heroPicture()) && byName.image.equals(heroPicture())
+    );
+
+    const steady = solidSprite(8, 60, 40);
+    const steadyImage = steady.image;
+    const keptGone =
+      writeField(world, steady, "image", imageLiteral(DELETED_ASSET_ID)) &&
+      writeField(world, steady, "image", imageLiteral(DELETED_ASSET_ID));
+    const keptOther =
+      writeField(world, steady, "image", wendoo.NIL_VALUE) &&
+      writeField(world, steady, "image", wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model.image)) &&
+      writeField(world, steady, "image", brainLiteral(TICKER_ID));
+    check(
+      "image-write-of-an-image-no-factory-holds-or-a-value-naming-no-image-keeps-the-image",
+      keptGone && keptOther && steady.image === steadyImage
+    );
+
+    const source = solidSprite(8, 80, 40);
+    const mimic = solidSprite(8, 100, 40);
+    const shared = writeField(world, mimic, "image", readField(world, source, "image"));
+    const sameInstance = mimic.image === source.image;
+    source.image.setPixel(0, 0, 7);
+    const drawnOnBoth = mimic.image.getPixel(0, 0) === 7;
+    const worn = mimic.image;
+    const other = image.create(6, 6);
+    other.fill(9);
+    source.setImage(other);
+    check(
+      "image-write-of-another-sprites-image-wears-that-same-image-and-keeps-it-when-that-sprite-changes",
+      shared && sameInstance && drawnOnBoth && mimic.image === worn && source.image === other
+    );
+
+    const nil = wendoo.NIL_VALUE;
+    const twin = heroSprite(byId.x + 3, byId.y);
+    const reader = solidSprite(8, twin.x + 3, twin.y);
+    const plain = solidSprite(8, reader.x + 1, reader.y);
+    const nearest = act(tileBody(wendoo.BUMP_TILE), reader, [readField(world, byId, "image"), nil, nil]);
+    check("proximity-filters-read-a-worn-image-by-its-pixels", standsFor(nearest, twin));
+
+    const doomed = solidSprite(8, 120, 40);
+    const doomedImage = doomed.image;
+    doomed.destroy();
+    check(
+      "image-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
+      readsNothing(readField(world, doomed, "image")) &&
+        writeField(world, doomed, "image", imageLiteral(HERO_ASSET_ID)) &&
+        doomed.image === doomedImage
+    );
+    const placed = [byId, byName, steady, source, mimic, twin, reader, plain];
+    for (let i = 0; i < placed.length; i++) {
+      placed[i].destroy();
+    }
+  }
+
+  /**
+   * In a scene of its own, check image assets: the `Image` type takes its
+   * atom and its one field from the project's ids module; an image asset
+   * written to a sprite's image resolves at the moment it is written; the
+   * `Sprite` type's image field reads and writes as {@link checkImageField}
+   * checks; and the goal toward heads for is read from a WHEN's result only
+   * when it is a `Sprite` value.
    */
   function checkImageAssets(): void {
     game.pushScene();
@@ -979,42 +1067,18 @@ namespace arcadeSelftest {
         imageType.fieldIds[0] === wendoo.projectIds().fieldId(IMAGE_TYPE, IMAGE_ASSET_FIELD)
     );
 
-    const lookLike = tileBody(LOOK_LIKE_TILE);
-    const byId = solidSprite(8, 20, 20);
-    const byName = solidSprite(8, 40, 20);
-    act(lookLike, byId, [imageLiteral(HERO_ASSET_ID), wendoo.NIL_VALUE]);
-    act(lookLike, byName, [imageLiteral(HERO_DISPLAY_NAME), wendoo.NIL_VALUE]);
-    check(
-      "look-like-wears-the-image-its-asset-resolves-to",
-      byId.image.equals(heroPicture()) && byName.image.equals(heroPicture())
-    );
-
     const late = solidSprite(8, 60, 20);
+    const world = hostedWorld(late);
     const lateLiteral = imageLiteral(LATE_ASSET_ID);
     const beforeLate = late.image;
-    act(lookLike, late, [lateLiteral, wendoo.NIL_VALUE]);
+    writeField(world, late, "image", lateLiteral);
     const unchangedBeforeLate = late.image === beforeLate;
     helpers._registerFactory("image", (name: string) => (name === LATE_ASSET_ID ? latePicture() : null));
-    act(lookLike, late, [lateLiteral, wendoo.NIL_VALUE]);
+    writeField(world, late, "image", lateLiteral);
     check("image-resolves-when-it-is-used", unchangedBeforeLate && late.image.equals(latePicture()));
 
     const model = solidSprite(8, 80, 20);
-    const mimic = solidSprite(8, 100, 20);
-    act(lookLike, mimic, [wendoo.NIL_VALUE, wendoo.spriteValue(model)]);
-    const wornFirst = mimic.image === model.image;
-    const changed = image.create(6, 6);
-    changed.fill(9);
-    model.setImage(changed);
-    act(lookLike, mimic, [wendoo.NIL_VALUE, wendoo.spriteValue(model)]);
-    check("look-like-wears-the-image-the-other-sprite-wears-now", wornFirst && mimic.image === changed);
-
-    const steady = solidSprite(8, 120, 20);
-    const steadyImage = steady.image;
-    act(lookLike, steady, [imageLiteral(DELETED_ASSET_ID), wendoo.NIL_VALUE]);
-    act(lookLike, steady, [imageLiteral(DELETED_ASSET_ID), wendoo.NIL_VALUE]);
-    check("look-like-keeps-its-image-when-the-asset-is-gone", steady.image === steadyImage);
-    act(lookLike, steady, [wendoo.NIL_VALUE, wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model)]);
-    check("look-like-keeps-its-image-given-no-sprite", steady.image === steadyImage);
+    checkImageField(model);
 
     const goal = wendoo.moveGoal(wendoo.NIL_VALUE, wendoo.spriteValue(model));
     check(
@@ -1376,6 +1440,280 @@ namespace arcadeSelftest {
     [wendoo.OUT_OF_RANGE_TILE, "outOfRange", "out-of-range"],
   ];
 
+  /** Wendoo type name of a sprite value. */
+  const SPRITE_TYPE = "Sprite";
+
+  /** The `Sprite` type's fields, in the order the arcade base pack declares them and the manifest allocates them. */
+  const SPRITE_FIELDS = ["image", "position", "brain"];
+
+  /** The field id the project's ids module allocates the `Sprite` field `field`. */
+  function spriteFieldId(field: string): number {
+    return wendoo.projectIds().fieldId(SPRITE_TYPE, field);
+  }
+
+  /**
+   * What a program running in `world` reads from the field `field` of the
+   * `Sprite` value standing for `sprite`, through the type's field getter as
+   * the VM dispatches it: nil when the getter reads nothing.
+   */
+  function readField(world: wendoo.SpriteWorld, sprite: Sprite, field: string): wendoo.Value {
+    const read = wendoo.spriteBinding.fieldGetter(wendoo.spriteValue(sprite), spriteFieldId(field), contextIn(world));
+    return read ? read : wendoo.NIL_VALUE;
+  }
+
+  /**
+   * Whether the type's field setter accepts a program running in `world`
+   * writing `value` into the field `field` of the `Sprite` value standing for
+   * `sprite`, as the VM dispatches it; a refusal would fault the program.
+   */
+  function writeField(world: wendoo.SpriteWorld, sprite: Sprite, field: string, value: wendoo.Value): boolean {
+    return wendoo.spriteBinding.fieldSetter(wendoo.spriteValue(sprite), spriteFieldId(field), value, contextIn(world));
+  }
+
+  /** Whether `value` is a `Vector2` holding the point `x`, `y`. */
+  function holdsPoint(value: wendoo.Value, x: number, y: number): boolean {
+    const point = wendoo.vector2Of(value);
+    return point !== undefined && point.x === x && point.y === y;
+  }
+
+  /** Whether `value` is a `Brain` value naming the brain `documentId`. */
+  function namesBrain(value: wendoo.Value, documentId: string): boolean {
+    return value.t === wendoo.ValueTag.Struct && wendoo.brainBinding.documentIdOf(value) === documentId;
+  }
+
+  /**
+   * In a scene of its own, check the `Sprite` type's fields, each through
+   * the type's field hooks as the VM dispatches them: the type takes its
+   * field ids from the project's ids module and reads and writes every field
+   * through its hooks. `position` reads a snapshot of the sprite's center, a
+   * fresh value per read that later moves leave alone; a write sets the
+   * center at once and leaves the velocity alone, and a value naming no
+   * point moves nothing. `brain` reads the brain the sprite runs, nil while
+   * it runs none; a write starts nothing before the next drain, which starts
+   * the brain, replaces another brain, ends the program given nil, and
+   * restarts nothing given the brain already running or nil on a sprite
+   * running none; a brain no registration holds changes nothing and is
+   * logged once. A destroyed sprite reads nil from both fields and ignores
+   * writes to them.
+   */
+  function checkSpriteFields(): void {
+    game.pushScene();
+    const reader = solidSprite(8, 20, 100);
+    const world = hostedWorld(reader);
+    let fieldIdsMatch = wendoo.spriteBinding.fieldIds.length === SPRITE_FIELDS.length;
+    for (let i = 0; i < SPRITE_FIELDS.length; i++) {
+      fieldIdsMatch = fieldIdsMatch && wendoo.spriteBinding.fieldIds[i] === spriteFieldId(SPRITE_FIELDS[i]);
+    }
+    check(
+      "sprite-type-takes-its-fields-from-the-manifest-and-reads-and-writes-them-through-its-hooks",
+      fieldIdsMatch && wendoo.spriteBinding.hasFieldGetter && wendoo.spriteBinding.hasFieldSetter
+    );
+
+    const walker = solidSprite(8, 40, 50);
+    const first = readField(world, walker, "position");
+    walker.setPosition(60, 70);
+    const second = readField(world, walker, "position");
+    check(
+      "position-reads-a-snapshot-of-the-sprites-center",
+      holdsPoint(first, 40, 50) && holdsPoint(second, 60, 70) && first !== second
+    );
+
+    walker.vx = 30;
+    walker.vy = -20;
+    const accepted = writeField(world, walker, "position", wendoo.vector2Value(new wendoo.DirectionVector(80, 90)));
+    check(
+      "position-write-sets-the-center-at-once-and-keeps-the-velocity",
+      accepted && walker.x === 80 && walker.y === 90 && walker.vx === 30 && walker.vy === -20
+    );
+    walker.vx = 0;
+    walker.vy = 0;
+
+    const keptNil = writeField(world, walker, "position", wendoo.NIL_VALUE);
+    const keptOther = writeField(world, walker, "position", imageLiteral(HERO_ASSET_ID));
+    check(
+      "position-write-of-a-value-naming-no-point-moves-nothing",
+      keptNil && keptOther && walker.x === 80 && walker.y === 90
+    );
+
+    const runner = solidSprite(8, 120, 100);
+    const idle = solidSprite(8, 140, 100);
+    const dormant = solidSprite(8, 160, 100);
+    wendoo.runBrain(runner, wendooBrains.p_akBQz0nySKaYx37w);
+    wendoo.runBrain(idle, wendooBrains.none);
+    pause(FRAMES_MS);
+    check(
+      "brain-reads-the-brain-its-sprite-runs-or-nil",
+      namesBrain(readField(world, runner, "brain"), TICKER_ID) &&
+        readsNothing(readField(world, idle, "brain")) &&
+        readsNothing(readField(world, dormant, "brain"))
+    );
+
+    const started = writeField(world, dormant, "brain", brainLiteral(TICKER_ID));
+    const waited = programOf(dormant) === NOT_RUNNING && readsNothing(readField(world, dormant, "brain"));
+    pause(FRAMES_MS);
+    check(
+      "brain-write-waits-for-the-drain-which-starts-the-brain",
+      started && waited && programOf(dormant) === TICKER_ID
+    );
+
+    const instance = hostedOf(runner);
+    const ticks = ticksOf(runner);
+    let repeated = true;
+    for (let i = 0; i < 3; i++) {
+      repeated = writeField(world, runner, "brain", brainLiteral(TICKER_ID)) && repeated;
+      pause(FRAMES_MS / 4);
+    }
+    check(
+      "brain-write-of-the-brain-already-running-restarts-nothing",
+      repeated && hostedOf(runner) === instance && ticksOf(runner) > ticks
+    );
+
+    const replaced = writeField(world, runner, "brain", brainLiteral(TWIN_IDS[0]));
+    const stillTicker = programOf(runner) === TICKER_ID;
+    pause(FRAMES_MS);
+    check(
+      "brain-write-of-another-brain-replaces-the-program-at-the-drain",
+      replaced && stillTicker && programOf(runner) === TWIN_IDS[0]
+    );
+
+    const ended = writeField(world, runner, "brain", wendoo.NIL_VALUE);
+    const neverRan = solidSprite(8, 180, 100);
+    const nothingToEnd = writeField(world, neverRan, "brain", wendoo.NIL_VALUE);
+    pause(FRAMES_MS);
+    check(
+      "brain-write-of-nil-ends-the-program-and-starts-nothing-on-a-sprite-running-none",
+      ended &&
+        nothingToEnd &&
+        programOf(runner) === wendooBrains.none.id &&
+        readsNothing(readField(world, runner, "brain")) &&
+        programOf(neverRan) === NOT_RUNNING
+    );
+
+    const unresolvedFirst = writeField(world, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
+    const unresolvedAgain = writeField(world, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
+    pause(FRAMES_MS);
+    check(
+      "brain-write-of-a-brain-no-registration-holds-changes-nothing",
+      unresolvedFirst && unresolvedAgain && programOf(dormant) === TICKER_ID
+    );
+
+    const doomed = solidSprite(8, 200, 100);
+    wendoo.runBrain(doomed, wendooBrains.p_akBQz0nySKaYx37w);
+    pause(FRAMES_MS);
+    doomed.destroy();
+    const x = doomed.x;
+    check(
+      "a-destroyed-sprite-reads-nil-and-ignores-writes",
+      readsNothing(readField(world, doomed, "position")) &&
+        readsNothing(readField(world, doomed, "brain")) &&
+        writeField(world, doomed, "position", wendoo.vector2Value(new wendoo.DirectionVector(5, 5))) &&
+        writeField(world, doomed, "brain", brainLiteral(TWIN_IDS[0])) &&
+        doomed.x === x &&
+        faultsInScene() === 0
+    );
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
+  /** Tile name of the myself sensor. */
+  const MYSELF_TILE = "sensor.arcade.myself";
+
+  /** Speed a move goes at when nothing sets it, in pixels per second. */
+  const DEFAULT_MOVE_SPEED = 100;
+
+  /**
+   * In a scene of its own, check the myself sensor and the compiled programs
+   * reading and writing a sprite's fields through it: myself reads the
+   * sprite its program runs on; in range given its own sprite's brain closes
+   * on another sprite running that brain past a nearer plain sprite; a move
+   * toward the bumped sprite's position lands on the center it read; an
+   * assignment to its own sprite's position puts it on the bumped sprite's
+   * center; an assignment to its own sprite's brain swaps the program at the
+   * drain after its think; and a child rule comparing the y of the sprite in
+   * range with its own sprite's moves up while that sprite is above and not
+   * while it is below.
+   */
+  function checkMyself(): void {
+    game.pushScene();
+    const self = solidSprite(8, 20, 20);
+    check("myself-reads-the-sprite-its-program-runs-on", standsFor(act(tileBody(MYSELF_TILE), self, []), self));
+    self.destroy();
+
+    const plain = solidSprite(8, 30, 60);
+    const flockA = solidSprite(8, 40, 60);
+    const flockB = solidSprite(8, 80, 60);
+    wendoo.runBrain(flockA, wendooBrains.p_flockOwnBrain001);
+    wendoo.runBrain(flockB, wendooBrains.p_flockOwnBrain001);
+    pause(FRAMES_MS);
+    check(
+      "in-range-given-its-own-sprites-brain-closes-on-another-runner-past-a-plain-sprite",
+      pursues(flockA, flockB, DEFAULT_MOVE_SPEED) &&
+        pursues(flockB, flockA, DEFAULT_MOVE_SPEED) &&
+        faultsInScene() === 0
+    );
+    plain.destroy();
+    flockA.destroy();
+    flockB.destroy();
+    pause(FRAMES_MS);
+
+    const pursuer = solidSprite(8, 40, 60);
+    const goal = solidSprite(8, 46, 60);
+    wendoo.runBrain(pursuer, wendooBrains.p_pursuePosition01);
+    pause(FRAMES_MS);
+    check(
+      "move-toward-the-bumped-sprites-position-lands-on-the-center-it-read",
+      near(distanceBetween(pursuer, goal), 0, 0.5) && faultsInScene() === 0
+    );
+    pursuer.destroy();
+    goal.destroy();
+    pause(FRAMES_MS);
+
+    const jumper = solidSprite(8, 40, 60);
+    const landing = solidSprite(8, 46, 62);
+    wendoo.runBrain(jumper, wendooBrains.p_jumpToBumped0001);
+    pause(FRAMES_MS);
+    check(
+      "a-position-assignment-puts-its-sprite-on-the-bumped-sprites-center",
+      jumper.x === landing.x && jumper.y === landing.y && faultsInScene() === 0
+    );
+    jumper.destroy();
+    landing.destroy();
+    pause(FRAMES_MS);
+
+    const convert = solidSprite(8, 40, 60);
+    const bumped = solidSprite(8, 46, 60);
+    const lone = solidSprite(8, 120, 100);
+    wendoo.runBrain(convert, wendooBrains.p_convertOnBump001);
+    wendoo.runBrain(lone, wendooBrains.p_convertOnBump001);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-assignment-to-its-own-sprite-swaps-the-program-after-its-think",
+      programOf(convert) === TICKER_ID && programOf(lone) === "convertOnBump001" && faultsInScene() === 0
+    );
+    convert.destroy();
+    bumped.destroy();
+    lone.destroy();
+    pause(FRAMES_MS);
+
+    const riser = solidSprite(8, 80, 80);
+    const above = solidSprite(8, 80, 50);
+    wendoo.runBrain(riser, wendooBrains.p_riseTowardAbove1);
+    pause(FRAMES_MS);
+    const rose = movesAt(riser, 0, -DEFAULT_MOVE_SPEED);
+    above.destroy();
+    riser.setPosition(80, 80);
+    const below = solidSprite(8, 80, 110);
+    pause(FRAMES_MS);
+    check(
+      "comparing-y-accessors-moves-up-toward-a-sprite-above-and-not-below",
+      rose && movesAt(riser, 0, 0) && faultsInScene() === 0
+    );
+    riser.destroy();
+    below.destroy();
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
   /** Rule funcId the output checks run a parent rule's sensor under. */
   const OUTPUT_PARENT_RULE = 0;
 
@@ -1416,9 +1754,10 @@ namespace arcadeSelftest {
    * beside its own sensor's; a child reading the output of a sprite
    * destroyed since its parent fired reads the value standing for it,
    * without a fault, and a filter on it admits nothing. Then compiled
-   * programs: a bump rule dressing its sprite in the bumped sprite, and a
-   * child rule filtering bump by its parent's in-range output and dressing
-   * in it.
+   * programs: a bump rule setting its own sprite's image to the bumped
+   * sprite's, a bump rule setting it to an image asset, and a child rule
+   * filtering bump by its parent's in-range output and setting its own
+   * sprite's image to that sprite's.
    */
   function checkSensorOutputs(): void {
     game.pushScene();
@@ -1479,6 +1818,18 @@ namespace arcadeSelftest {
     check("bump-rule-dresses-in-the-bumped-sprite", dressed.image === bumper.image && faultsInScene() === 0);
     dressed.destroy();
     bumper.destroy();
+    pause(FRAMES_MS);
+
+    const wearer = solidSprite(8, 40, 60);
+    const touched = solidSprite(8, 46, 60);
+    wendoo.runBrain(wearer, wendooBrains.p_dresserBumpWear1);
+    pause(FRAMES_MS);
+    check(
+      "bump-rule-wears-the-image-asset-it-is-given",
+      wearer.image.equals(heroPicture()) && !touched.image.equals(heroPicture()) && faultsInScene() === 0
+    );
+    wearer.destroy();
+    touched.destroy();
     pause(FRAMES_MS);
 
     const kin = solidSprite(8, 40, 60);
@@ -2596,7 +2947,7 @@ namespace arcadeSelftest {
     );
     const icons = [
       wendoo.DPAD_ICON,
-      wendoo.LOOK_LIKE_ICON,
+      wendoo.IMAGE_ACCESSOR_ICON,
       heroPicture(),
       image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX)),
     ];
@@ -2910,6 +3261,8 @@ namespace arcadeSelftest {
     checkImageAssets();
     checkSpriteFilters();
     checkBrainFilters();
+    checkSpriteFields();
+    checkMyself();
     checkSensorOutputs();
     checkPositionalModifiers();
     checkMoveTargets();

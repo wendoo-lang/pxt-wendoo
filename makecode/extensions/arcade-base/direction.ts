@@ -26,10 +26,19 @@ namespace wendoo {
   //% hidden
   export const vector2Binding = new StructTypeBinding();
 
-  /** The `Vector2` type's declared fields: `x` then `y`, both numbers, at their `VECTOR2_FIELD_*` positions. */
+  /**
+   * The `Vector2` type's declared fields: `x` then `y`, both numbers, at
+   * their `VECTOR2_FIELD_*` positions, each read-only with an accessor tile.
+   * As on the screen, `x` grows rightward and `y` grows downward, in pixels,
+   * so a `Vector2` pointing down holds a positive `y` and one pointing up a
+   * negative `y`.
+   */
   //% hidden
   export function vector2Fields(): StructFieldSpec[] {
-    return [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
+    return [
+      withAccessor(readOnlyField("x", TYPE_NUMBER), "x", X_ACCESSOR_ICON),
+      withAccessor(readOnlyField("y", TYPE_NUMBER), "y", Y_ACCESSOR_ICON),
+    ];
   }
 
   /**

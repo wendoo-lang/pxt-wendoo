@@ -326,13 +326,20 @@ the current slice alone.
       own `game.debug` works: every machine-readable console line the
       extensions write goes through `debugLog`, because console output has
       visible side effects in the MakeCode editor), the
-      tile bind API (asset types included: `defineAssetType` declares a
+      tile bind API (struct fields may carry accessor tiles: `withAccessor`
+      gives a field one, the catalog carrying its label and icon on the
+      field, the accessor read-only exactly when the field is; a sensor may
+      be declared inline -- reading as a value inside an expression -- and
+      writable-result -- a live reference a brain may write a field
+      through; asset types included: `defineAssetType` declares a
       struct type whose values name a project asset of a pack-given kind
       by its id, in one read-only `asset` field, the catalog carrying the
       kind -- the mechanism only, every asset kind declared by a target's
       pack; and brain types: `defineBrainType` declares a struct type whose
       values name one of the project's compiled brains by its document id,
-      in one read-only `id` field, the catalog marking the type `brain` --
+      in one read-only `id` field, the catalog marking the type `brain`,
+      the binding minting a value naming a brain and logging a document id
+      no compiled brain holds, once per id --
       again the mechanism only, declared by a target's base pack; and core
       tile icons: `defineCoreTileIcon` gives a core tile -- one of the
       editor's own core vocabulary, addressed by its stable tile id -- an
@@ -370,18 +377,30 @@ the current slice alone.
       Arcade's `device` library. It owns the sprite's program world (the
       `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
       through), the `Vector2` type (a direction, or a point in a slot naming
-      a place to head for), the `Sprite` type (an opaque
-      host value: no fields, each value backed by the sprite it stands
-      for), the `Image` asset type (a plain struct holding the pxt asset
-      id of one of the project's images, resolved through pxt's image
-      factories when a tile uses it, never baked into a program; an id no
-      factory holds resolves to nothing, logged once per id, and the game
-      runs on), the `Brain` type (the vm's brain type, naming one of the
-      project's brains by document id), the arcade icon encoder (each tile icon, an img literal,
+      a place to head for; its `x` and `y` read-only accessors, `y` growing
+      downward as the move's direction modifiers do), the `Sprite` type (a
+      host value backed by the sprite it stands for, its fields read from
+      and written to that sprite through field hooks, each with an accessor:
+      `image` reads the image the sprite wears and a write dresses it,
+      keeping its image given none; `position` reads a fresh `Vector2`
+      snapshot of its center and a write sets the center at once, velocity
+      left to move arbitration; `brain` reads the brain it runs through the
+      actor world's program host, nil while none runs, and a write only
+      records an attach request the drain applies -- idempotent for the
+      brain already running, nil running the empty program, a document id
+      no compiled brain holds a logged no-op; a destroyed sprite reads nil
+      and ignores writes, and no write is ever refused), the `Image` asset
+      type (a plain struct holding the pxt asset id of one of the project's
+      images, resolved through pxt's image factories when a tile uses it,
+      never baked into a program; an id no factory holds resolves to
+      nothing, logged once per id, and the game runs on; a value read from
+      a sprite's image instead wraps that image object itself, its asset id
+      reading empty), the `Brain` type (the vm's brain type, naming one of
+      the project's brains by document id), the arcade icon encoder (each tile icon, an img literal,
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
-      the pack's tile icons, the icons of its `Vector2`, `Sprite` and
-      `Brain` types, and the icons it gives the core tiles (the page tiles,
+      the pack's tile and accessor icons, the icons of its `Vector2`,
+      `Sprite` and `Brain` types, and the icons it gives the core tiles (the page tiles,
       the timer, AND, OR, NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and
       the variable and tile factories), the controller read (one module owning every
@@ -393,9 +412,11 @@ the current slice alone.
       proximity read's scan), the wander module (one module owning each
       wandering move's random on-screen destination, kept per call site in
       the sprite's world, its re-picks on arrival or deadline, and the random
-      source picking it), the `dpad`, `bump`, `in range` and
-      `out of range` sensors and the `move` and `look like` actuators
-      (the three proximity sensors share one optional anonymous filter,
+      source picking it), the `dpad`, `bump`, `in range`, `out of range`
+      and `myself` sensors and the `move` actuator (`myself` reads the
+      program's own sprite, inline and writable-result, so accessors follow
+      it and `[myself][image] = ...` writes a field;
+      the three proximity sensors share one optional anonymous filter,
       an image, a sprite or a brain, applied through the proximity scan's
       admits predicate: an image admits the sprites whose image has the
       same pixels, a sprite admits that sprite alone, a brain admits the
@@ -410,9 +431,7 @@ the current slice alone.
       output of its own on every run -- `bumped`, `inRange`,
       `outOfRange` -- which the output's tile reads in the sensor's rule
       and the rules below it, while the rule's WHEN result keeps carrying
-      the same sprite; look like requires an image or a sprite and
-      dresses its sprite in that image, or in the image that sprite wears,
-      at the moment it acts; each of the range pair reads the nearest
+      the same sprite; each of the range pair reads the nearest
       admitted sprite against its range -- an optional anonymous number of
       pixels, else the shared default -- so at equal ranges and filters
       exactly one of the pair fires whenever an admitted sprite exists, and
@@ -494,7 +513,9 @@ the current slice alone.
     over the bridge, so the catalog is session data, never build
     configuration -- the editor binds the catalog's packs into its
     authoring environment through the language model's own builders, under
-    the ids it allocates and keeps in the project's id manifest, and puts
+    the ids it allocates and keeps in the project's id manifest -- each
+    declared accessor as an accessor tile, each type once the types its
+    fields name are bound -- and puts
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold
     ignored, and binds each catalog type's icon to the bound type, which

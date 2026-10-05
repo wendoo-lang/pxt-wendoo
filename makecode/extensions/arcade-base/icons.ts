@@ -1,8 +1,8 @@
 /**
  * The arcade base pack's icons: one 16 by 16 image per tile and per
- * modifier tile its tiles' argument grammars declare, per core tile it gives
- * an icon, and per type it gives one, each an img literal the catalog
- * carries through the arcade icon encoder.
+ * modifier tile its tiles' argument grammars declare, per accessor tile its
+ * types declare, per core tile it gives an icon, and per type it gives one,
+ * each an img literal the catalog carries through the arcade icon encoder.
  */
 namespace wendoo {
   /** Icon of the dpad sensor: a dpad cross. */
@@ -296,27 +296,6 @@ namespace wendoo {
     . 4 4 . . . . . 4 4 . . . . . .
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
-    . . . . . . . . . . . . . . . .
-  `;
-
-  /** Icon of the look-like actuator: a face. */
-  //% hidden
-  export const LOOK_LIKE_ICON = img`
-    . . . . . . . . . . . . . . . .
-    . . . . . f f f f f f . . . . .
-    . . . f f 5 5 5 5 5 5 f f . . .
-    . . f 5 5 5 5 5 5 5 5 5 5 f . .
-    . . f 5 5 5 5 5 5 5 5 5 5 f . .
-    . f 5 5 5 f f 5 5 f f 5 5 5 f .
-    . f 5 5 5 f f 5 5 f f 5 5 5 f .
-    . f 5 5 5 5 5 5 5 5 5 5 5 5 f .
-    . f 5 5 5 5 5 5 5 5 5 5 5 5 f .
-    . f 5 5 f 5 5 5 5 5 5 f 5 5 f .
-    . f 5 5 5 f f f f f f 5 5 5 f .
-    . . f 5 5 5 5 5 5 5 5 5 5 f . .
-    . . f 5 5 5 5 5 5 5 5 5 5 f . .
-    . . . f f 5 5 5 5 5 5 f f . . .
-    . . . . . f f f f f f . . . . .
     . . . . . . . . . . . . . . . .
   `;
 
@@ -1135,6 +1114,90 @@ namespace wendoo {
     . . a a . a a a . a a a . a a .
     . . . a a a a a . a a a a a . .
     . . . . . a a . . a a . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `x` accessor of a `Vector2`: the letter x over a left-right arrow. */
+  //% hidden
+  export const X_ACCESSOR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . f f . . . . f f . . . .
+    . . . . f f . . . . f f . . . .
+    . . . . . f f . . f f . . . . .
+    . . . . . . f f f f . . . . . .
+    . . . . . . . f f . . . . . . .
+    . . . . . . f f f f . . . . . .
+    . . . . . f f . . f f . . . . .
+    . . . . f f . . . . f f . . . .
+    . . . . f f . . . . f f . . . .
+    . . . . . . . . . . . . . . . .
+    . . . 8 . . . . . . . . 8 . . .
+    . . 8 8 . . . . . . . . 8 8 . .
+    . 8 8 8 8 8 8 8 8 8 8 8 8 8 8 .
+    . . 8 8 . . . . . . . . 8 8 . .
+    . . . 8 . . . . . . . . 8 . . .
+  `;
+
+  /** Icon of the `y` accessor of a `Vector2`: the letter y beside an up-down arrow. */
+  //% hidden
+  export const Y_ACCESSOR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . f f . . . f f . . . . 8 . . .
+    . f f . . . f f . . . 8 8 8 . .
+    . . f f . f f . . . 8 8 8 8 8 .
+    . . . f f f . . . . . . 8 . . .
+    . . . . f . . . . . . . 8 . . .
+    . . . . f . . . . . . . 8 . . .
+    . . . . f . . . . . . . 8 . . .
+    . . . . f . . . . . . . 8 . . .
+    . . . . f . . . . . . . 8 . . .
+    . . . . . . . . . . . . 8 . . .
+    . . . . . . . . . . . . 8 . . .
+    . . . . . . . . . . 8 8 8 8 8 .
+    . . . . . . . . . . . 8 8 8 . .
+    . . . . . . . . . . . . 8 . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `position` accessor of a `Sprite`: a sprite's center marked inside crosshairs. */
+  //% hidden
+  export const POSITION_ACCESSOR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . 8 8 . . . . . . .
+    . . . . . . . 8 8 . . . . . . .
+    . . . . . 8 8 8 8 8 8 . . . . .
+    . . . . 8 8 . 8 8 . 8 8 . . . .
+    . . . 8 8 . . . . . . 8 8 . . .
+    . . . 8 . . . 2 2 . . . 8 . . .
+    . 8 8 8 8 . 2 2 2 2 . 8 8 8 8 .
+    . 8 8 8 8 . 2 2 2 2 . 8 8 8 8 .
+    . . . 8 . . . 2 2 . . . 8 . . .
+    . . . 8 8 . . . . . . 8 8 . . .
+    . . . . 8 8 . 8 8 . 8 8 . . . .
+    . . . . . 8 8 8 8 8 8 . . . . .
+    . . . . . . . 8 8 . . . . . . .
+    . . . . . . . 8 8 . . . . . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the `image` accessor of a `Sprite`: a framed picture of a hill under the sun. */
+  //% hidden
+  export const IMAGE_ACCESSOR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . f f f f f f f f f f f f f f .
+    . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
+    . f 9 9 9 9 9 9 9 9 5 5 9 9 f .
+    . f 9 9 9 9 9 9 9 9 5 5 9 9 f .
+    . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
+    . f 9 9 9 9 7 9 9 9 9 9 9 9 f .
+    . f 9 9 9 7 7 7 9 9 9 9 9 9 f .
+    . f 9 9 7 7 7 7 7 9 9 7 9 9 f .
+    . f 9 7 7 7 7 7 7 7 7 7 7 9 f .
+    . f 7 7 7 7 7 7 7 7 7 7 7 7 f .
+    . f 7 7 7 7 7 7 7 7 7 7 7 7 f .
+    . f f f f f f f f f f f f f f .
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
   `;

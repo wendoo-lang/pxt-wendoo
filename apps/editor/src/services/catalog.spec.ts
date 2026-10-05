@@ -293,6 +293,72 @@ describe("parseCatalog", () => {
     });
   });
 
+  it("reads a field's accessor metadata, an empty accessor as one, and no accessor where none or a non-object is carried", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "lookout",
+          types: [
+            {
+              name: "Spot",
+              fields: [
+                {
+                  name: "place",
+                  type: "Point",
+                  accessor: {
+                    label: "place",
+                    group: "Spots",
+                    docs: "# Place",
+                    iconUrl: "data:image/svg+xml;base64,cA==",
+                  },
+                },
+                { name: "x", type: "number", readOnly: true, accessor: {} },
+                { name: "id", type: "number", readOnly: true },
+                { name: "odd", type: "number", accessor: "place" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const { packs, problems } = parseCatalog(text);
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(packs[0]?.types[0]?.fields, [
+      {
+        name: "place",
+        type: "Point",
+        readOnly: false,
+        accessor: { label: "place", group: "Spots", docs: "# Place", iconUrl: "data:image/svg+xml;base64,cA==" },
+      },
+      { name: "x", type: "number", readOnly: true, accessor: {} },
+      { name: "id", type: "number", readOnly: true },
+      { name: "odd", type: "number", readOnly: false },
+    ]);
+  });
+
+  it("reads a tile's inline and writable-result flags when true, and neither otherwise", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "lookout",
+          tiles: [
+            { name: "sensor.lookout.here", kind: "sensor", inline: true, writableResult: true, returns: "number" },
+            { name: "sensor.lookout.there", kind: "sensor", inline: "yes", writableResult: false, returns: "number" },
+          ],
+        },
+      ],
+    });
+
+    const [here, there] = parseCatalog(text).packs[0]?.tiles ?? [];
+
+    assert.equal(here?.inline, true);
+    assert.equal(here?.writableResult, true);
+    assert.equal(there !== undefined && "inline" in there, false);
+    assert.equal(there !== undefined && "writableResult" in there, false);
+  });
+
   it("reads each pack's core tile icons in declaration order, dropping an entry missing its tile id or its icon, or no object", () => {
     const text = JSON.stringify({
       packs: [

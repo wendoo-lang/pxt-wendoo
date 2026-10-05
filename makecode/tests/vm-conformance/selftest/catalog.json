@@ -9,11 +9,17 @@
           "fields": [
             {
               "name": "x",
-              "type": "number"
+              "type": "number",
+              "accessor": {
+                "label": "beacon x",
+                "docs": "# Beacon x",
+                "icon": "img<beacon-x>"
+              }
             },
             {
               "name": "y",
-              "type": "number"
+              "type": "number",
+              "accessor": {}
             }
           ],
           "label": "Beacon",
@@ -25,6 +31,8 @@
         {
           "name": "sensor.beacon.reading",
           "kind": "sensor",
+          "inline": true,
+          "writableResult": true,
           "returns": "string",
           "outputs": [
             {
@@ -504,6 +512,12 @@
       "code": "registration-after-snapshot",
       "name": "tile.op->not",
       "pack": "selftest"
+    },
+    {
+      "code": "catalog-icon-unencodable",
+      "name": "Beacon",
+      "pack": "beacon",
+      "spec": "y"
     },
     {
       "code": "catalog-icon-unencodable",

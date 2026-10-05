@@ -13,15 +13,23 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { List, stream } from "@wendoo/core";
-import { BrainDef, CoreTypeIds, mkLiteralTileId, mkModifierTileId, mkSensorTileId } from "@wendoo/core/app";
-import { RuleSide } from "@wendoo/core/brain";
+import {
+  BrainDef,
+  CoreOpId,
+  CoreTypeIds,
+  mkLiteralTileId,
+  mkModifierTileId,
+  mkOperatorTileId,
+  mkSensorTileId,
+} from "@wendoo/core/app";
+import { isInlineTileDef, mkAccessorTileId, RuleSide } from "@wendoo/core/brain";
 import {
   buildInsertionContext,
   collectRuleHierarchyOutputKeys,
   suggestTiles,
 } from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
+import { BrainTileLiteralDef, type BrainTileSensorDef } from "@wendoo/core/brain/tiles";
 import type { StructValue } from "@wendoo/core/runtime";
 import {
   BrainRuntime,
@@ -39,7 +47,7 @@ import { enrichCatalogIcons } from "../../../../makecode/simx/bridge/src/catalog
 import { writeIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
 import { createTileVisualProvider } from "../brain/visual-provider.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
-import { compileBrainSource, serializeBrainSource } from "../services/brain-source.js";
+import { compileBrainSource, readBrainSource, serializeBrainSource } from "../services/brain-source.js";
 import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
 import { allocateIds } from "../services/id-allocation.js";
@@ -202,6 +210,12 @@ const ARCADE_SOURCES = [
   "dart.src.json",
   "drawn.src.json",
   "twofold.src.json",
+  "flock.src.json",
+  "pursue.src.json",
+  "convert.src.json",
+  "jump.src.json",
+  "rise.src.json",
+  "dresser.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -230,6 +244,30 @@ const UNMAPPED_ATOM_PROGRAM_ID = "unmappedType0001";
 
 /** First id the allocations of the unmapped-id programs hand out: beyond every id the arcade selftest's allocation holds. */
 const UNMAPPED_ID_BASE = 1100;
+
+/**
+ * The project allocation the arcade selftest's catalog is allocated against:
+ * it holds an id for `actuator.arcade.look-like`, a tile the catalog does
+ * not declare, which keeps that id, and a `Sprite` type with no fields.
+ */
+const ARCADE_PRIOR_IDS: MakeCodeIdManifest = {
+  actions: [
+    { name: "sensor.arcade.dpad", id: 1024 },
+    { name: "actuator.arcade.move", id: 1025 },
+    { name: "sensor.arcade.bump", id: 1026 },
+    { name: "sensor.arcade.in-range", id: 1027 },
+    { name: "sensor.arcade.out-of-range", id: 1028 },
+    { name: "actuator.arcade.look-like", id: 1029 },
+  ],
+  operators: [],
+  types: [
+    { name: "Vector2", atom: 1024, fields: ["x", "y"] },
+    { name: "Sprite", atom: 1025, fields: [] },
+    { name: "Image", atom: 1026, fields: ["asset"] },
+    { name: "Brain", atom: 1027, fields: ["id"] },
+  ],
+  next: { action: 1030, operator: 1024, atom: 1028 },
+};
 
 /** The allocation an arcade project holds before its first catalog: none. */
 const EMPTY_IDS: MakeCodeIdManifest = {
@@ -397,9 +435,9 @@ function arcadeCatalog(): string {
   return JSON.stringify(JSON.parse(readRepoFile(ARCADE_CATALOG)));
 }
 
-/** The editor's allocation for the arcade selftest's catalog, made in a project holding none. */
+/** The editor's allocation for the arcade selftest's catalog, made in a project holding {@link ARCADE_PRIOR_IDS}. */
 function arcadeIds(): MakeCodeIdManifest {
-  return allocateIds(EMPTY_IDS, parseCatalog(arcadeCatalog()));
+  return allocateIds(ARCADE_PRIOR_IDS, parseCatalog(arcadeCatalog()));
 }
 
 /** The environment binding the arcade selftest's catalog under its allocation. */
@@ -524,6 +562,36 @@ export function arcadeCarriedTileLabel(tileName: string): string | undefined {
     .find((entry) => entry.name === tileName)?.label;
 }
 
+/**
+ * Whether the arcade selftest's catalog carries the tile named `tileName`
+ * as an inline sensor: one reading as a value inside an expression.
+ *
+ * @param tileName - The tile's name, such as `sensor.arcade.myself`.
+ */
+export function arcadeCarriedTileInline(tileName: string): boolean {
+  return (
+    parseCatalog(arcadeCatalog())
+      .packs.flatMap((pack) => pack.tiles)
+      .find((entry) => entry.name === tileName)?.inline === true
+  );
+}
+
+/**
+ * Whether the environment binding the arcade selftest's catalog under its
+ * allocation binds the sensor `tileName` as an inline sensor whose result a
+ * brain may write a field through.
+ *
+ * @param tileName - The sensor's name, such as `sensor.arcade.myself`.
+ */
+export function arcadeBindsWritableInlineSensor(tileName: string): boolean {
+  const tileId = mkSensorTileId(tileName);
+  const sensor = arcadeEnvironment()
+    .tileCatalogs()
+    .map((catalog) => catalog.get(tileId))
+    .find((found) => found !== undefined) as BrainTileSensorDef | undefined;
+  return sensor !== undefined && isInlineTileDef(sensor) && sensor.writableResult;
+}
+
 /** Sentence words a catalog entry carries, each field absent when undeclared. */
 export interface CarriedLanguage {
   readonly form?: string;
@@ -624,6 +692,48 @@ export function arcadeCompileDiagnosticCodes(file: string): number[] {
   return compiled.diagnostics.map((diagnostic) => diagnostic.code);
 }
 
+/**
+ * What reading, in the environment binding the arcade selftest's catalog, a
+ * brain source of one rule doing the tile `tileId` alone produces: the kind
+ * of tile the rule holds, the tile id its source carries once written back,
+ * the stable codes compiling it reports, in the order reported, and whether
+ * the compile still produced a program.
+ *
+ * @param tileId - The persisted tile id the rule's DO side holds, such as `tile.actuator->actuator.arcade.look-like`.
+ */
+export function arcadeReadOfTileReference(tileId: string): {
+  kind: string;
+  written: string;
+  codes: number[];
+  compiles: boolean;
+} {
+  const environment = arcadeEnvironment();
+  const source = JSON.stringify({
+    version: 1,
+    id: "retiredTileRef01",
+    name: "Retired",
+    catalog: [{ version: 2, kind: "page", pageId: "fPg0retiredTile0", label: "Unnamed Page" }],
+    pages: [
+      {
+        version: 2,
+        pageId: "fPg0retiredTile0",
+        name: "Unnamed Page",
+        rules: [{ version: 1, when: [], do: [tileId], children: [], ruleId: "fRu0retiredTile0" }],
+      },
+    ],
+  });
+  const brain = readBrainSource(environment, source);
+  const rule = (brain.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+  const written = JSON.parse(serializeBrainSource(brain)) as { pages: { rules: { do: string[] }[] }[] };
+  const compiled = compileBrainSource(environment, source);
+  return {
+    kind: rule.do().tiles().get(0)?.kind ?? "",
+    written: written.pages[0]?.rules[0]?.do[0] ?? "",
+    codes: compiled.diagnostics.map((diagnostic) => diagnostic.code),
+    compiles: compiled.bytecode !== undefined,
+  };
+}
+
 /** Asset id the image literal tile of {@link arcadeImageRuleDiagnosticCodes} carries. */
 export const IMAGE_LITERAL_ASSET_ID = "image1";
 
@@ -646,6 +756,47 @@ export const OUTPUT_ENTRY_PREFIX = "output:";
  * `modifier.position.above`.
  */
 export const MODIFIER_ENTRY_PREFIX = "modifier.";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the accessor tile of the field the rest of the entry names as
+ * `Type.field`, such as `accessor:Sprite.position`.
+ */
+export const ACCESSOR_ENTRY_PREFIX = "accessor:";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the sensor the rest of the entry names, on either side, such
+ * as `sensor:sensor.arcade.myself`.
+ */
+export const SENSOR_ENTRY_PREFIX = "sensor:";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the tile of the core operator the rest of the entry names by
+ * its operator id, such as `op:lt`.
+ */
+export const OPERATOR_ENTRY_PREFIX = "op:";
+
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the assignment operator's tile. */
+export const ASSIGN = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.Assign}`;
+
+/** The tile id of the tile an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides names, given how a bare tile name reads on its side. */
+function entryTileId(entry: string, bareTileId: (name: string) => string, literalId: string, brainLiteralId: string) {
+  if (entry.startsWith(OPERATOR_ENTRY_PREFIX)) return mkOperatorTileId(entry.slice(OPERATOR_ENTRY_PREFIX.length));
+  if (entry === IMAGE_LITERAL) return literalId;
+  if (entry === BRAIN_LITERAL) return brainLiteralId;
+  if (entry.startsWith(MODIFIER_ENTRY_PREFIX)) return mkModifierTileId(entry);
+  if (entry.startsWith(OUTPUT_ENTRY_PREFIX)) {
+    return mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length));
+  }
+  if (entry.startsWith(SENSOR_ENTRY_PREFIX)) return mkSensorTileId(entry.slice(SENSOR_ENTRY_PREFIX.length));
+  if (entry.startsWith(ACCESSOR_ENTRY_PREFIX)) {
+    const [type, field] = entry.slice(ACCESSOR_ENTRY_PREFIX.length).split(".");
+    return mkAccessorTileId(mkTypeId(NativeType.Struct, type ?? ""), field ?? "");
+  }
+  return bareTileId(entry);
+}
 
 /** Document id of the brain the brain literal tile of {@link arcadeImageRuleDiagnosticCodes} names. */
 export const BRAIN_LITERAL_ID = "kinBrainFilter01";
@@ -673,8 +824,12 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
  * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
  * catalog, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
- * output's tile, or an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
- * shared modifier tile it declares. Given `child`, the rule holds one child rule, its WHEN side
+ * output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
+ * shared modifier tile it declares, an entry starting
+ * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
+ * {@link SENSOR_ENTRY_PREFIX} for a sensor on either side, or an entry
+ * starting {@link OPERATOR_ENTRY_PREFIX} for a core operator's tile, such
+ * as {@link ASSIGN}. Given `child`, the rule holds one child rule, its WHEN side
  * and DO side the tiles `child.when` and `child.act` name. Returns the
  * brain, its rule, the environment it was authored in, and the tile ids of
  * the image's and the brain's literals.
@@ -691,15 +846,7 @@ function arcadeImageRuleBrain(when: string[], act: string[], child?: { when: str
   const brainLiteralId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Brain"), BRAIN_LITERAL_ID);
   const tileOf = (entry: string, tileId: (name: string) => string) => {
     if (entry === NUMBER_LITERAL) return number;
-    const id = entry.startsWith(MODIFIER_ENTRY_PREFIX)
-      ? mkModifierTileId(entry)
-      : entry.startsWith(OUTPUT_ENTRY_PREFIX)
-        ? mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length))
-        : entry === IMAGE_LITERAL
-          ? literalId
-          : entry === BRAIN_LITERAL
-            ? brainLiteralId
-            : tileId(entry);
+    const id = entryTileId(entry, tileId, literalId, brainLiteralId);
     const found = environment
       .tileCatalogs()
       .map((catalog) => catalog.get(id))
@@ -729,7 +876,8 @@ function arcadeImageRule(when: string[], act: string[]) {
 
 /**
  * Whether the candidate strip offers the tile `literal` -- {@link IMAGE_LITERAL},
- * {@link BRAIN_LITERAL}, an output entry, or a modifier entry -- at the end of the WHEN
+ * {@link BRAIN_LITERAL}, or an output, modifier, accessor, sensor or
+ * operator entry -- at the end of the WHEN
  * side holding the tiles `when` names or, given `act`, at the end of the DO
  * side holding the tiles `act` names, each as
  * {@link arcadeImageRuleDiagnosticCodes} names them, given the side's
@@ -743,13 +891,7 @@ function arcadeImageRule(when: string[], act: string[]) {
 export function arcadeOffersLiteral(literal: string, when: string[], act?: string[]): boolean {
   const { environment, brainDef, rule, literalId, brainLiteralId } = arcadeImageRuleBrain(when, act ?? []);
   brainDef.typecheck();
-  const wanted = literal.startsWith(MODIFIER_ENTRY_PREFIX)
-    ? mkModifierTileId(literal)
-    : literal.startsWith(OUTPUT_ENTRY_PREFIX)
-      ? mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), literal.slice(OUTPUT_ENTRY_PREFIX.length))
-      : literal === BRAIN_LITERAL
-        ? brainLiteralId
-        : literalId;
+  const wanted = entryTileId(literal, () => literalId, literalId, brainLiteralId);
   const side = act === undefined ? RuleSide.When : RuleSide.Do;
   const tileSet = side === RuleSide.When ? rule.when() : rule.do();
   const context = buildInsertionContext({
@@ -775,11 +917,15 @@ export function arcadeOffersLiteral(literal: string, when: string[], act?: strin
  * {@link BRAIN_LITERAL} for the literal tile of the brain
  * {@link BRAIN_LITERAL_ID}, {@link NUMBER_LITERAL} for a literal tile
  * holding the number 40, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
- * `Sprite` output's tile, or an entry starting {@link MODIFIER_ENTRY_PREFIX}
- * for the shared modifier tile it names.
+ * `Sprite` output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX}
+ * for the shared modifier tile it names, an entry starting
+ * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
+ * {@link SENSOR_ENTRY_PREFIX} for a sensor on either side, or an entry
+ * starting {@link OPERATOR_ENTRY_PREFIX} for a core operator's tile, such
+ * as {@link ASSIGN}.
  *
  * @param when - The WHEN side's entries, such as `["sensor.arcade.bump", IMAGE_LITERAL]`.
- * @param act - The DO side's entries, such as `["actuator.arcade.look-like", IMAGE_LITERAL]`.
+ * @param act - The DO side's entries, such as `["actuator.arcade.move", IMAGE_LITERAL]`.
  */
 export function arcadeImageRuleDiagnosticCodes(when: string[], act: string[]): number[] {
   const { environment, source } = arcadeImageRule(when, act);

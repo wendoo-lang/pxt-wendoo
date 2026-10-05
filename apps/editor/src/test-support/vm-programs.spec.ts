@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { CoreOpId } from "@wendoo/core/app";
 import { CompilationDiagCode, ParseDiagCode, TypeDiagCode } from "@wendoo/core/brain/compiler";
 import {
+  ACCESSOR_ENTRY_PREFIX,
   ARCADE_REFUSED_SOURCE,
+  ASSIGN,
   arcadeBindingDiagnosticCodes,
+  arcadeBindsWritableInlineSensor,
   arcadeCarriedSlotLabel,
+  arcadeCarriedTileInline,
   arcadeCarriedTileLabel,
   arcadeCarriedTileLanguage,
   arcadeChainCompile,
@@ -15,6 +20,7 @@ import {
   arcadeLoneSensorSentence,
   arcadeModifierLabel,
   arcadeOffersLiteral,
+  arcadeReadOfTileReference,
   arcadeRenderedIcons,
   arcadeRenderedTypeIcons,
   arcadeSensorLabel,
@@ -27,9 +33,11 @@ import {
   IMAGE_LITERAL_ASSET_ID,
   MODIFIER_ENTRY_PREFIX,
   NUMBER_LITERAL,
+  OPERATOR_ENTRY_PREFIX,
   OUTPUT_ENTRY_PREFIX,
   type RenderedFile,
   renderVmPrograms,
+  SENSOR_ENTRY_PREFIX,
 } from "./vm-programs.js";
 
 describe("the MakeCode VM extension's compiled programs", () => {
@@ -50,6 +58,10 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.equal(checkedInText(file.path), file.text, "run `npm run gen:vm-programs` in apps/editor");
     });
   }
+
+  const myself = `${SENSOR_ENTRY_PREFIX}sensor.arcade.myself`;
+  const imageOf = `${ACCESSOR_ENTRY_PREFIX}Sprite.image`;
+  const setMyImage = [myself, imageOf, ASSIGN];
 
   it("binds the arcade catalog clean, dpad and move sharing the direction modifiers", () => {
     assert.deepEqual(arcadeBindingDiagnosticCodes(), []);
@@ -81,7 +93,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       const carried = arcadeCarriedTileLanguage(tileName);
       const { frame, words } = arcadeLoneSensorSentence(tileName);
 
-      assert.equal(frame, carried?.frame ?? "verb");
+      assert.equal(frame, arcadeCarriedTileInline(tileName) ? undefined : (carried?.frame ?? "verb"));
       assert.deepEqual(words[0], { text: carried?.form ?? arcadeCarriedTileLabel(tileName), sourceTileIndex: 0 });
       if (carried?.bare !== undefined) {
         assert.deepEqual(words.slice(1), [{ text: carried.bare, sourceTileIndex: 0 }]);
@@ -89,10 +101,27 @@ describe("the MakeCode VM extension's compiled programs", () => {
     });
   }
 
-  it("compiles look like given an image, and refuses it given nothing", () => {
-    const lookLike = "actuator.arcade.look-like";
-    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [lookLike, IMAGE_LITERAL]), []);
-    assert.ok(arcadeImageRuleDiagnosticCodes([], [lookLike]).includes(ParseDiagCode.ActionCallParseFailure));
+  it("compiles myself's image set to an image, and refuses the assignment given nothing", (t) => {
+    t.mock.method(console, "warn", () => {});
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [...setMyImage, IMAGE_LITERAL]), []);
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], setMyImage), [
+      ParseDiagCode.ExpectedExpressionInSubExpr,
+      CompilationDiagCode.UncompilableExpressionDropped,
+    ]);
+  });
+
+  it("reads a brain placing the retired look-like tile as a missing tile keeping its id, dropped from a program still built", (t) => {
+    t.mock.method(console, "warn", () => {});
+    const lookLike = "tile.actuator->actuator.arcade.look-like";
+    const read = arcadeReadOfTileReference(lookLike);
+
+    assert.equal(read.kind, "missing");
+    assert.equal(read.written, lookLike);
+    assert.deepEqual(read.codes, [
+      ParseDiagCode.UnexpectedTokenKindInExpression,
+      CompilationDiagCode.UncompilableExpressionDropped,
+    ]);
+    assert.ok(read.compiles);
   });
 
   const proximitySensors = ["sensor.arcade.bump", "sensor.arcade.in-range", "sensor.arcade.out-of-range"];
@@ -122,10 +151,10 @@ describe("the MakeCode VM extension's compiled programs", () => {
     });
   }
 
-  it("offers a brain literal at no slot but a brain filter's", () => {
-    assert.equal(arcadeOffersLiteral(BRAIN_LITERAL, [], ["actuator.arcade.look-like"]), false);
+  it("offers a brain literal at no slot but a brain filter's and a brain assignment's", () => {
+    assert.equal(arcadeOffersLiteral(BRAIN_LITERAL, [], setMyImage), false);
     assert.equal(arcadeOffersLiteral(BRAIN_LITERAL, [], ["actuator.arcade.move"]), false);
-    assert.ok(arcadeOffersLiteral(IMAGE_LITERAL, [], ["actuator.arcade.look-like"]));
+    assert.ok(arcadeOffersLiteral(IMAGE_LITERAL, [], setMyImage));
   });
 
   for (const sensor of ["sensor.arcade.in-range", "sensor.arcade.out-of-range"]) {
@@ -160,24 +189,24 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.equal(bound, carried);
     });
 
-    it(`compiles look like dressed in ${sensor}'s output on its DO side, the program reading the output's key`, () => {
-      const look = ["actuator.arcade.look-like", `${OUTPUT_ENTRY_PREFIX}${output}`];
-      assert.deepEqual(arcadeImageRuleDiagnosticCodes([sensor], look), []);
-      const { holding } = arcadeImageRulePrograms([sensor], look);
+    it(`compiles myself's image set to ${sensor}'s output's image on its DO side, the program reading the output's key`, () => {
+      const dress = [...setMyImage, `${OUTPUT_ENTRY_PREFIX}${output}`, imageOf];
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([sensor], dress), []);
+      const { holding } = arcadeImageRulePrograms([sensor], dress);
       assert.ok(new TextDecoder().decode(holding).includes(`__out.struct:<Sprite>.${output}`));
     });
 
-    it(`offers ${sensor}'s output at look like's slot on the DO side of its rule, and not without the sensor`, () => {
+    it(`offers ${sensor}'s output after myself's image assignment on the DO side of its rule, and not without the sensor`, () => {
       const outputEntry = `${OUTPUT_ENTRY_PREFIX}${output}`;
-      assert.ok(arcadeOffersLiteral(outputEntry, [sensor], ["actuator.arcade.look-like"]));
-      assert.equal(arcadeOffersLiteral(outputEntry, ["sensor.arcade.dpad"], ["actuator.arcade.look-like"]), false);
+      assert.ok(arcadeOffersLiteral(outputEntry, [sensor], setMyImage));
+      assert.equal(arcadeOffersLiteral(outputEntry, ["sensor.arcade.dpad"], setMyImage), false);
     });
   }
 
-  it("compiles a child rule filtering bump by its parent's in-range output and dressing in it", () => {
+  it("compiles a child rule filtering bump by its parent's in-range output and setting myself's image to its image", () => {
     const { codes, bytecode } = arcadeChainCompile(["sensor.arcade.in-range"], [], {
       when: ["sensor.arcade.bump", `${OUTPUT_ENTRY_PREFIX}inRange`],
-      act: ["actuator.arcade.look-like", `${OUTPUT_ENTRY_PREFIX}inRange`],
+      act: [...setMyImage, `${OUTPUT_ENTRY_PREFIX}inRange`, imageOf],
     });
 
     assert.deepEqual(codes, []);
@@ -228,7 +257,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
     ["bump's image filter", ["sensor.arcade.bump", IMAGE_LITERAL], ["actuator.arcade.move"]],
     ["in range's image filter", ["sensor.arcade.in-range", IMAGE_LITERAL, NUMBER_LITERAL], ["actuator.arcade.move"]],
     ["out of range's image filter", ["sensor.arcade.out-of-range", IMAGE_LITERAL], ["actuator.arcade.move"]],
-    ["look like's image", [], ["actuator.arcade.look-like", IMAGE_LITERAL]],
+    ["myself's image set to an image", [], [...setMyImage, IMAGE_LITERAL]],
   ] as const) {
     it(`compiles ${consumer} to the same bytes whether the snapshot holds the image or lacks it`, () => {
       const { holding, lacking } = arcadeImageRulePrograms([...when], [...act]);
@@ -278,6 +307,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
   const slowly = `${MODIFIER_ENTRY_PREFIX}slowly`;
   const up = `${MODIFIER_ENTRY_PREFIX}direction.up`;
   const spriteInRange = `${OUTPUT_ENTRY_PREFIX}inRange`;
+  const position = `${ACCESSOR_ENTRY_PREFIX}Sprite.position`;
   const inRange = ["sensor.arcade.in-range"];
 
   for (const act of [
@@ -315,16 +345,19 @@ describe("the MakeCode VM extension's compiled programs", () => {
     }
   });
 
-  it("offers the sprite in range as the move's target only once toward or away is placed, and not once one is given", () => {
-    assert.equal(arcadeOffersLiteral(spriteInRange, inRange, [move]), false);
-    assert.equal(arcadeOffersLiteral(spriteInRange, inRange, [move, quickly]), false);
-    assert.equal(arcadeOffersLiteral(spriteInRange, inRange, [move, up, slowly]), false);
+  it("offers the sprite in range as the move's target once toward or away is placed", () => {
     assert.ok(arcadeOffersLiteral(spriteInRange, inRange, [move, toward]));
     assert.ok(arcadeOffersLiteral(spriteInRange, inRange, [move, away]));
     assert.ok(arcadeOffersLiteral(spriteInRange, inRange, [move, toward, quickly]));
     assert.ok(arcadeOffersLiteral(spriteInRange, inRange, [move, toward, away]));
-    assert.equal(arcadeOffersLiteral(spriteInRange, inRange, [move, toward, spriteInRange]), false);
-    assert.equal(arcadeOffersLiteral(spriteInRange, inRange, [move, away, quickly, spriteInRange]), false);
+  });
+
+  it("offers the sprite in range at a move's direction slot too, to read a Vector2 through its position", () => {
+    for (const act of [[move], [move, quickly], [move, up, slowly], [move, toward, spriteInRange]]) {
+      assert.ok(arcadeOffersLiteral(spriteInRange, inRange, act), act.join(" "));
+    }
+    assert.ok(arcadeOffersLiteral(position, inRange, [move, spriteInRange]));
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes(inRange, [move, spriteInRange, position]), []);
   });
 
   it("offers the move's other tiles after its target", () => {
@@ -361,6 +394,64 @@ describe("the MakeCode VM extension's compiled programs", () => {
 
   it("compiles toward given the sprite in range beside wander", () => {
     assert.deepEqual(arcadeImageRuleDiagnosticCodes(inRange, [move, wander, toward, spriteInRange]), []);
+  });
+
+  const brainOf = `${ACCESSOR_ENTRY_PREFIX}Sprite.brain`;
+  const yOf = `${ACCESSOR_ENTRY_PREFIX}Vector2.y`;
+  const bumped = `${OUTPUT_ENTRY_PREFIX}bumped`;
+  const bump = "sensor.arcade.bump";
+
+  it("binds myself as an inline sensor whose result a brain may write a field through", () => {
+    assert.ok(arcadeBindsWritableInlineSensor("sensor.arcade.myself"));
+  });
+
+  it("offers myself wherever a sprite goes: a proximity filter, a move's target, and the head of a DO side", () => {
+    assert.ok(arcadeOffersLiteral(myself, [bump]));
+    assert.ok(arcadeOffersLiteral(myself, ["sensor.arcade.in-range"]));
+    assert.ok(arcadeOffersLiteral(myself, inRange, [move, toward]));
+    assert.ok(arcadeOffersLiteral(myself, [], []));
+  });
+
+  it("offers each Sprite accessor after myself, and the assignment after a writable one", () => {
+    for (const accessor of [position, brainOf, imageOf]) {
+      assert.ok(arcadeOffersLiteral(accessor, [], [myself]), accessor);
+    }
+    assert.ok(arcadeOffersLiteral(ASSIGN, [], [myself, imageOf]));
+  });
+
+  for (const [sentence, when, act] of [
+    ["in range given myself's brain, moving toward", ["sensor.arcade.in-range", myself, brainOf], [move, toward]],
+    ["a move toward the bumped sprite's position", [bump], [move, toward, bumped, position]],
+    ["myself's image set to the bumped sprite's", [bump], [myself, imageOf, ASSIGN, bumped, imageOf]],
+    ["myself's image set to an image asset", [bump], [myself, imageOf, ASSIGN, IMAGE_LITERAL]],
+    ["myself's position set to the bumped sprite's", [bump], [myself, position, ASSIGN, bumped, position]],
+    ["myself's brain set to a brain", [bump], [myself, brainOf, ASSIGN, BRAIN_LITERAL]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("compiles a child comparing the y of the sprite in range with its own sprite's", () => {
+    const { codes } = arcadeChainCompile(inRange, [], {
+      when: [spriteInRange, position, yOf, `${OPERATOR_ENTRY_PREFIX}${CoreOpId.LessThan}`, myself, position, yOf],
+      act: [move, up],
+    });
+
+    assert.deepEqual(codes, []);
+  });
+
+  it("refuses an assignment through an output tile's field, and to a Vector2's x or y", () => {
+    assert.ok(
+      arcadeImageRuleDiagnosticCodes([bump], [bumped, brainOf, ASSIGN, BRAIN_LITERAL]).includes(
+        ParseDiagCode.ReadOnlyResultFieldAssignment
+      )
+    );
+    assert.ok(
+      arcadeImageRuleDiagnosticCodes([], [myself, position, yOf, ASSIGN, NUMBER_LITERAL]).includes(
+        ParseDiagCode.ReadOnlyFieldAssignment
+      )
+    );
   });
 
   it("refuses a dpad given one direction modifier twice", (t) => {
