@@ -1,6 +1,6 @@
 /**
  * Debug logging: the machine-readable lines the Wendoo extensions write to
- * the console -- program refusals and updates, refused messages,
+ * the console -- program refusals, updates and faults, refused messages,
  * registration diagnostics, unresolved assets -- written only while a
  * developer has turned it on.
  */

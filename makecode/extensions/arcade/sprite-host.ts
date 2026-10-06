@@ -12,11 +12,14 @@ namespace wendoo {
   /** Key the program host of a scene is kept under in the scene's data. */
   const SCENE_HOST_KEY = "wendoo.programHost";
 
+  /** Icon encoder every scene's frames publish the catalog through. */
+  const catalogIconEncoder = new ImageIconEncoder();
+
   /**
    * The program host of `gameScene`, created on first use with its drain
    * registered on the scene's update loop. Each frame of the scene publishes
-   * the catalog to the Wendoo simulator extension, its icons rendered by the
-   * {@link ImageIconEncoder}, then drains the host at the scene's elapsed
+   * the catalog to the Wendoo simulator extension, its icons rendered by
+   * {@link catalogIconEncoder}, then drains the host at the scene's elapsed
    * time. A scene the game has pushed a new scene over runs no frames, so its
    * programs pause with it and resume when it is popped back.
    *
@@ -31,7 +34,7 @@ namespace wendoo {
     const host = new ProgramHost(new VmObserver());
     gameScene.data[SCENE_HOST_KEY] = host;
     gameScene.eventContext.registerFrameHandler(scene.UPDATE_PRIORITY, () => {
-      publishCatalog(new ImageIconEncoder());
+      publishCatalog(catalogIconEncoder);
       host.drain(gameScene.millis());
     });
     return host;

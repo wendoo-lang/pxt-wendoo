@@ -106,9 +106,13 @@ unless noted otherwise.
   sts-f64 (device-profile id 2001, binary64 numbers): the loader refuses
   an artifact carrying another profile id or another format version by
   stable code, and the refused program never runs while the rest of the
-  game does. Brain-observable numeric results -- operator rounding and
-  number/text conversion -- flow through the numerics instance handed to
-  `registerCoreHostFunctions`.
+  game does. Brain-observable numeric results -- operator rounding,
+  number/text conversion, and random-number readings -- flow through the
+  one numerics instance handed to `registerCoreHostFunctions` and
+  `registerCoreHostActions`. Random-number readings draw from the
+  `RngServices` stream handed to `registerCoreHostActions`: the
+  platform's own random numbers in a program run, and any stream a test
+  harness injects.
 - `apps/editor` is an authoring surface. It may compile, inspect, and
   visualize, but the Arcade platform's execution semantics are the extension's.
 - `makecode/simx/*` components are messaging endpoints between the editor and

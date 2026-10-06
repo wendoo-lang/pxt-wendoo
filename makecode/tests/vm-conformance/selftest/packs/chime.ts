@@ -19,7 +19,30 @@
  * too, and the boolean type, an icon the encoder refuses to render.
  */
 namespace chime {
-  /** `actuator.chime.ring`: rings the chime, counting the rings. */
+  /** {@link ringFailure}: the ring tile rings. */
+  export const RING_RINGS = 0;
+
+  /** {@link ringFailure}: the ring tile's body raises a `HostError` fault and does not ring. */
+  export const RING_FAULTS = 1;
+
+  /** {@link ringFailure}: the ring tile's body raises a `HostError` fault, then throws, and does not ring. */
+  export const RING_THROWS = 2;
+
+  /** {@link ringFailure}: the ring tile's page-activation hook throws; its body rings. */
+  export const RING_HOOK_THROWS = 3;
+
+  /**
+   * How the ring tile fails: one of the `RING_*` modes, read every time its
+   * body or its page-activation hook runs; {@link RING_RINGS} until a check
+   * sets another.
+   */
+  // biome-ignore lint/style/useConst: the selftest assigns it.
+  export let ringFailure = RING_RINGS;
+
+  /** Diagnostic message of the fault the ring tile's body raises under {@link RING_FAULTS}. */
+  export const CRACKED_MESSAGE = "the chime is cracked";
+
+  /** `actuator.chime.ring`: rings the chime, counting the rings, or fails as {@link ringFailure} says. */
   class RingActuator extends wendoo.HostActionBinding {
     /** How many times the chime has been rung. */
     rings: number = 0;
@@ -29,10 +52,27 @@ namespace chime {
     }
 
     execSync(ctx: wendoo.ExecutionContext, args: wendoo.Value[]): wendoo.Value {
+      if (ringFailure === RING_FAULTS) {
+        ctx.raise(wendoo.ErrorCode.HostError, CRACKED_MESSAGE);
+        return wendoo.VOID_VALUE;
+      }
+      if (ringFailure === RING_THROWS) {
+        ctx.raise(wendoo.ErrorCode.HostError, CRACKED_MESSAGE);
+        throw "the chime fell";
+      }
       this.rings++;
       return wendoo.VOID_VALUE;
     }
+
+    onPageEntered(ctx: wendoo.ExecutionContext): void {
+      if (ringFailure === RING_HOOK_THROWS) {
+        throw "the chime is missing";
+      }
+    }
   }
+
+  /** The ring tile's body, whose rings a check counts. */
+  export const ringActuator = new RingActuator();
 
   /** `sensor.beacon.reading`: the name of the pack whose registration of this tile stands. */
   class ReadingSensor extends wendoo.HostActionBinding {
@@ -103,7 +143,7 @@ namespace chime {
   ringSpec.docs = "# Ring the chime\n\nRings the chime once, or `times` times, louder with `loudly`.";
   ringSpec.icon = "chime";
   ringSpec.language = wendoo.tileLanguage("ring");
-  pack.bind("actuator.chime.ring", new RingActuator(), ringSpec);
+  pack.bind("actuator.chime.ring", ringActuator, ringSpec);
 
   pack.bind("sensor.beacon.reading", new ReadingSensor());
 

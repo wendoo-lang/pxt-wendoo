@@ -54,10 +54,7 @@
       "operators": [
         {
           "name": "beacon.combine",
-          "operands": [
-            "number",
-            "number"
-          ],
+          "operands": ["number", "number"],
           "returns": "number"
         }
       ],

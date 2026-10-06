@@ -18,6 +18,8 @@
  *   byte for byte;
  * - one `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` line per entry in
  *   `EXPECTED_ASSET_LINES`, in that order, and no other;
+ * - one `wendoo program-faulted <code> <id>` line per entry in
+ *   `EXPECTED_FAULT_LINES`, in that order, and no other;
  * - one `CATALOG <payload>` line whose payload is `EXPECTED_CATALOG`'s
  *   bytes, and, across the runs of one target, byte-identical payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
@@ -30,7 +32,7 @@
  * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, the
  * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
  * no other, the unresolved-brain lines in `EXPECTED_ARCADE_BRAIN_LINES` in
- * that order and no other, a `DEBUG ON` line no line the Wendoo extensions log precedes,
+ * that order and no other, no program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its types,
@@ -91,6 +93,15 @@ const EXPECTED_CHECKS = [
   "host-thinks-each-running-program-once-per-drain",
   "host-replaces-an-actors-program",
   "host-ends-an-ended-actors-program",
+  "a-faulting-program-reports-every-fault-to-its-hosts-observer-with-its-code-message-and-site",
+  "a-throwing-tile-faults-its-fiber-and-every-drain-runs-on",
+  "a-throwing-page-hook-faults-its-program-and-every-drain-runs-on",
+  "a-page-hook-throwing-on-a-page-switch-faults-its-program-and-every-drain-runs-on",
+  "timer-switches-each-page-in-turn",
+  "timer-restarts-when-its-page-is-entered-again",
+  "timer-defaults-to-one-second-and-refuses-what-is-no-number",
+  "random-reads-numbers-from-zero-up-to-one",
+  "random-reads-the-stream-it-is-registered-with",
   "call-spec-well-formed-tiles-registered",
   "call-spec-rejects-default-and-derived",
   "call-spec-rejects-required-with-default",
@@ -126,9 +137,37 @@ const HOST_REJECTIONS = [
 
 /**
  * Every refusal the selftest is expected to log, in order: its program host
- * check's host, then the host the pack-tile program is traced on.
+ * check's host, the hosts of its four fault checks, the host of its timer
+ * check, then the host the pack-tile program is traced on.
  */
-const EXPECTED_REJECTIONS = [...HOST_REJECTIONS, ...HOST_REJECTIONS];
+const EXPECTED_REJECTIONS = [
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
+];
+
+/**
+ * Every program-fault line the selftest is expected to log, in order, each
+ * without its `wendoo ` prefix: one per fault code per running program,
+ * however many times the program raises it -- the pack-tile program whose
+ * tile faults `HostError` (3) at every think, then the one whose tile
+ * throws at every think, the one whose page-activation hook throws as it
+ * starts, and the two-page program whose second page's hook throws as it
+ * switches to that page, each faulting `ScriptError` (4).
+ */
+const EXPECTED_FAULT_LINES = [
+  "program-faulted 3 ringerRingerRing",
+  "program-faulted 4 ringerRingerRing",
+  "program-faulted 4 ringerRingerRing",
+  "program-faulted 4 pealerPealerPeal",
+];
+
+/** The prefix of the line the VM extension logs for a fault code a running program raises. */
+const FAULT_LINE_PREFIX = "wendoo program-faulted ";
 
 /** The reference VM's trace of the pack-tile program over the selftest's schedule, rendered by the editor's tooling. */
 const EXPECTED_TRACE = fs.readFileSync(path.join(__dirname, "selftest", "ringer.trace"), "utf8");
@@ -360,6 +399,10 @@ const EXPECTED_ARCADE_CHECKS = [
   "smoothing-eases-a-start-within-its-envelope-and-stops-at-once",
   "smoothing-travels-alike-at-60-and-30-frames-a-second",
   "smoothing-keeps-goal-landings-and-the-arrival-hold-exact",
+  "a-vector2-holding-an-infinity-or-a-nan-reads-as-no-point",
+  "a-move-toward-or-away-from-a-non-finite-point-moves-as-a-move-given-no-target",
+  "position-write-of-a-non-finite-point-moves-nothing",
+  "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -656,6 +699,13 @@ function reportedAssetLines(log) {
     .map((line) => line.slice("wendoo ".length));
 }
 
+/** Every program-fault line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedFaultLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(FAULT_LINE_PREFIX))
+    .map((line) => line.slice("wendoo ".length));
+}
+
 /** Every unresolved-brain line the capture logged, in order, each without its `wendoo ` prefix. */
 function reportedBrainLines(log) {
   return linesOf(log)
@@ -817,6 +867,10 @@ function contractFailures(exitCode, log) {
   if (assetLines.join("\n") !== EXPECTED_ASSET_LINES.join("\n")) {
     failures.push(`unresolved assets logged: ${assetLines.join(" | ")}`);
   }
+  const faultLines = reportedFaultLines(log);
+  if (faultLines.join("\n") !== EXPECTED_FAULT_LINES.join("\n")) {
+    failures.push(`program faults logged: ${faultLines.join(" | ")}`);
+  }
   failures.push(...catalogFailures(log));
   const trace = reportedTrace(log);
   if (trace !== EXPECTED_TRACE) {
@@ -858,6 +912,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const brainLines = reportedBrainLines(log);
   if (brainLines.join("\n") !== EXPECTED_ARCADE_BRAIN_LINES.join("\n")) {
     failures.push(`unresolved brains logged: ${brainLines.join(" | ")}`);
+  }
+  const faultLines = reportedFaultLines(log);
+  if (faultLines.length > 0) {
+    failures.push(`program faults logged: ${faultLines.join(" | ")}`);
   }
   const frames = catalog
     .channelMessages(simxLog)

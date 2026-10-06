@@ -55,6 +55,57 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The observer of one hosted program: hands every effect the program has
+   * to its host's observer, and logs each fault code the program raises the
+   * first time it raises it, as `wendoo program-faulted <code> <id>` through
+   * {@link debugLog}.
+   */
+  //% hidden
+  export class HostedProgramObserver extends VmObserver {
+    private hostObserver: VmObserver;
+    private documentId: string;
+    /** The fault codes the program has raised, in the order first raised: at most one entry per {@link ErrorCode}. */
+    private loggedCodes: number[] = [];
+
+    /**
+     * @param hostObserver - The program host's observer, which every effect is handed to.
+     * @param documentId - Document id of the program's compiled brain, which the log line names.
+     */
+    constructor(hostObserver: VmObserver, documentId: string) {
+      super();
+      this.hostObserver = hostObserver;
+      this.documentId = documentId;
+    }
+
+    onHostActionCall(actionId: number, callSiteId: number, args: Value[], result: Value): void {
+      this.hostObserver.onHostActionCall(actionId, callSiteId, args, result);
+    }
+
+    onHostActionCallAsync(actionId: number, callSiteId: number, args: Value[]): void {
+      this.hostObserver.onHostActionCallAsync(actionId, callSiteId, args);
+    }
+
+    onFiberFault(fiberId: number, fault: VmFault): void {
+      if (this.loggedCodes.indexOf(fault.code) < 0) {
+        this.loggedCodes.push(fault.code);
+        debugLog(`wendoo program-faulted ${fault.code} ${this.documentId}`);
+      }
+      this.hostObserver.onFiberFault(fiberId, fault);
+    }
+
+    /**
+     * Report `thrown`, thrown out of the program outside every fiber, as the
+     * fault {@link thrownFault} makes of it, raised on no fiber.
+     *
+     * @param thrown - The value thrown.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    onThrown(thrown: any): void {
+      this.onFiberFault(NO_FIBER, thrownFault(thrown, -1, -1));
+    }
+  }
+
   /** One program running on one actor. */
   //% hidden
   export class HostedProgram {
@@ -64,19 +115,23 @@ namespace wendoo {
     loaded: LoadedProgram;
     /** The program's runtime, which the host loop alone thinks. */
     runtime: BrainRuntime;
+    /** The observer the program's runtime reports to. */
+    observer: HostedProgramObserver;
 
-    constructor(world: ActorWorld, loaded: LoadedProgram, runtime: BrainRuntime) {
+    constructor(world: ActorWorld, loaded: LoadedProgram, runtime: BrainRuntime, observer: HostedProgramObserver) {
       this.world = world;
       this.loaded = loaded;
       this.runtime = runtime;
+      this.observer = observer;
     }
   }
 
   /**
    * The host registries every program of one program run resolves against:
    * the core host functions computing in the sts-f64 world, the core host
-   * actions, and every pack registration, drained through the project's id
-   * manifest. Obtain them with {@link hostRegistries}.
+   * actions -- the random-number sensor drawing from the platform's own
+   * random numbers -- and every pack registration, drained through the
+   * project's id manifest. Obtain them with {@link hostRegistries}.
    */
   //% hidden
   export class HostRegistries {
@@ -113,10 +168,11 @@ namespace wendoo {
     if (drainedRegistries) {
       return drainedRegistries;
     }
+    const numerics = new F64Numerics();
     const functions = new HostFunctionRegistry();
-    registerCoreHostFunctions(functions, new F64Numerics());
+    registerCoreHostFunctions(functions, numerics);
     const actions = new HostActionRegistry();
-    registerCoreHostActions(actions);
+    registerCoreHostActions(actions, numerics, new RngServices());
     const types = new StructTypeRegistry();
     applyPendingRegistrations(projectIds(), functions, actions, types);
     drainedRegistries = new HostRegistries(functions, actions, types);
@@ -157,7 +213,7 @@ namespace wendoo {
     private running: HostedProgram[] = [];
 
     /**
-     * @param observer - Passive observer of every hosted program's visible effects.
+     * @param observer - Passive observer of every hosted program's visible effects and faults.
      */
     constructor(observer: VmObserver) {
       this.caps = new VmCaps(STS_F64_DEFAULT_BUDGET, STS_F64_MAX_STACK_SIZE, STS_F64_MAX_HANDLES);
@@ -191,6 +247,11 @@ namespace wendoo {
      * registered type does not declare, not logged before by any host, as
      * `wendoo field-undeclared <typeId> <fieldId>` through {@link debugLog}.
      *
+     * A throw out of a program's start or think, outside every fiber of it,
+     * is reported as that program's fault through its
+     * {@link HostedProgramObserver}; the program stays on its actor and
+     * thinks again at the next pass, and the pass goes on.
+     *
      * @param timeMs - Cumulative scheduled time of this pass, in milliseconds.
      */
     drain(timeMs: number): void {
@@ -218,7 +279,12 @@ namespace wendoo {
       }
 
       for (let i = 0; i < this.running.length; i++) {
-        this.running[i].runtime.think(timeMs);
+        const hosted = this.running[i];
+        try {
+          hosted.runtime.think(timeMs);
+        } catch (e) {
+          hosted.observer.onThrown(e);
+        }
       }
 
       const registries = this.registries;
@@ -271,18 +337,23 @@ namespace wendoo {
       if (loaded.errorCode.length > 0) {
         return;
       }
+      const observer = new HostedProgramObserver(this.observer, loaded.registration.id);
       const runtime = new BrainRuntime(
         loaded.program,
         this.registries.functions,
         this.registries.actions,
         this.registries.types,
-        this.observer,
+        observer,
         this.caps,
         request.world
       );
       request.world.host = this;
-      runtime.startup();
-      this.running.push(new HostedProgram(request.world, loaded, runtime));
+      try {
+        runtime.startup();
+      } catch (e) {
+        observer.onThrown(e);
+      }
+      this.running.push(new HostedProgram(request.world, loaded, runtime, observer));
     }
 
     /**

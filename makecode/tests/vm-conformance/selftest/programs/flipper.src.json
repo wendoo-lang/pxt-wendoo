@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "id": "flipperFlipperFl",
+  "name": "Flipper",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "flipperFirstPage",
+      "label": "First Page"
+    },
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "flipperOtherPage",
+      "label": "Other Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0.1,
+      "valueLabel": "0.1",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 2,
+      "valueLabel": "2",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "flipperFirstPage",
+      "name": "First Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": ["tile.sensor->sensor.timeout", "tile.literal->number:<number>->0.1"],
+          "do": ["tile.actuator->switch-page", "tile.literal->number:<number>->2"],
+          "children": [],
+          "ruleId": "flipperFirstRule"
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "pageId": "flipperOtherPage",
+      "name": "Other Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": ["tile.sensor->sensor.timeout", "tile.literal->number:<number>->0.1"],
+          "do": ["tile.actuator->switch-page", "tile.literal->number:<number>->1"],
+          "children": [],
+          "ruleId": "flipperOtherRule"
+        }
+      ]
+    }
+  ]
+}

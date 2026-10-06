@@ -258,8 +258,8 @@ namespace wendoo {
       this.writer.hostActionCallAsync(actionId, callSiteId, args);
     }
 
-    onFiberFault(fiberId: number, code: number): void {
-      this.writer.fiberFault(fiberId, code);
+    onFiberFault(fiberId: number, fault: VmFault): void {
+      this.writer.fiberFault(fiberId, fault.code);
     }
   }
 }

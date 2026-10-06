@@ -357,7 +357,11 @@ the current slice alone.
       of a program run shares the one drain of every pack's registrations
       through the project's id manifest, `hostRegistries`; each actor's
       world names the host that started its program, which lists the
-      actors running a given brain), and the
+      actors running a given brain; each program's faults reach the host's
+      observer as they are raised, retained nowhere, and are logged once
+      per fault code through `debugLog`; a throw out of a program's start
+      or think faults that program, which stays on its actor, and the
+      drain goes on), and the
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
       NO block definitions -- the compiled-brain type's
@@ -382,7 +386,9 @@ the current slice alone.
       `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
       through), the `Vector2` type (a direction, or a point in a slot naming
       a place to head for; its `x` and `y` read-only accessors, `y` growing
-      downward as the move's direction modifiers do), the `Sprite` type (a
+      downward as the move's direction modifiers do; one holding an
+      infinity or a not-a-number reads to the pack's tiles as no `Vector2`
+      at all), the `Sprite` type (a
       host value backed by the sprite it stands for, its fields read from
       and written to that sprite through field hooks, each with an accessor:
       `image` reads the image the sprite wears and a write dresses it,
@@ -460,8 +466,9 @@ the current slice alone.
       toward a velocity at least as fast as the one the sprite's program
       last set, exponentially in the frame's duration, and sets a slower
       one at once, the last-set velocity kept in the sprite's world; a
-      motion model such as physics replaces the applicator and consumes
-      the same verdicts).
+      verdict coming to an infinite or not-a-number velocity stops the
+      sprite as a release does; a motion model such as physics replaces
+      the applicator and consumes the same verdicts).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the

@@ -12,7 +12,8 @@
  * harness to replay the shared conformance corpus: the target-partition
  * host actions and operator overloads listed below, over a world that
  * owns no clock and no random stream, so two runs of one program over one
- * schedule observe the same world.
+ * schedule observe the same world. Every random read of a replay draws from
+ * the profile's declared list of numbers, in order.
  *
  * - `echo(value)` -- synchronous sensor returning its argument unchanged.
  * - `emit(value)` -- synchronous actuator returning void, the corpus's
@@ -135,6 +136,7 @@ namespace wendoo {
     DeferTarget = 1037,
     EmitAll = 1038,
     DestroyAnchor = 1039,
+    NotANumber = 1040,
   }
 
   /**
@@ -175,6 +177,34 @@ namespace wendoo {
 
   /** `value` of the target host object every later resolution returns; exactly representable at f32. */
   const CONFORMANCE_TARGET_LATER_VALUE = 8.5;
+
+  /**
+   * The numbers a replay's random stream yields, in order, starting over from
+   * the first once the last has been drawn. Every draw lies in [0, 1) and is
+   * exactly representable at f32.
+   */
+  const CONFORMANCE_RANDOM_DRAWS = [0.25, 0.875, 0, 0.5, 0.0625];
+
+  /**
+   * The random stream every random read of a replay draws from: the
+   * {@link CONFORMANCE_RANDOM_DRAWS} in order, cycling. A fresh instance
+   * starts at the first draw.
+   */
+  class ConformanceRandomStream extends RngServices {
+    private nextIndex: number;
+
+    constructor() {
+      super();
+      this.nextIndex = 0;
+    }
+
+    /** The next declared draw; advances the stream, wrapping after the last. */
+    next(): number {
+      const draw = CONFORMANCE_RANDOM_DRAWS[this.nextIndex];
+      this.nextIndex = (this.nextIndex + 1) % CONFORMANCE_RANDOM_DRAWS.length;
+      return draw;
+    }
+  }
 
   /** The mutable host object behind every `Anchor` value of one world. */
   export class ConformanceAnchor {
@@ -753,6 +783,17 @@ namespace wendoo {
     }
   }
 
+  /** `not a number()`: returns the number not-a-number. */
+  class NotANumberSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return mkNumber(0 / 0);
+    }
+  }
+
   /** `defer target()`: resolves its handle to a fresh resolver-backed `Target` value one tick after its dispatch. */
   class DeferTargetSensor extends HostActionBinding {
     constructor() {
@@ -1101,6 +1142,12 @@ namespace wendoo {
     new DestroyAnchorActuator(),
     actuatorSpec([], "destroy anchor")
   );
+  bindConformanceAction(
+    "sensor.conformance.not-a-number",
+    ConformanceActionId.NotANumber,
+    new NotANumberSensor(),
+    sensorSpec([], TYPE_NUMBER, "not a number")
+  );
 
   bindConformanceOperator(
     "conformance.defer-add",
@@ -1117,6 +1164,21 @@ namespace wendoo {
 
   /** Line that closes the trace body of a replayed case. */
   export const CONFORMANCE_TRACE_END = "SIMCAP TRACE-END";
+
+  /** A trace tap that also keeps every fault one replay raises, for the diagnostics following its trace body. */
+  class FaultKeepingTraceTap extends TraceTap {
+    /** Every fault the replay has raised so far, in the order raised. */
+    faults: VmFault[] = [];
+
+    constructor(writer: ObservableTraceWriter) {
+      super(writer);
+    }
+
+    onFiberFault(fiberId: number, fault: VmFault): void {
+      super.onFiberFault(fiberId, fault);
+      this.faults.push(fault);
+    }
+  }
 
   /** The registries of one replay: host functions, host actions, and struct types. */
   class ConformanceRegistries {
@@ -1140,10 +1202,11 @@ namespace wendoo {
    * the profile's catalog.
    */
   function drainConformanceRegistrations(): ConformanceRegistries {
+    const numerics = new F64Numerics();
     const functions = new HostFunctionRegistry();
-    registerCoreHostFunctions(functions, new F64Numerics());
+    registerCoreHostFunctions(functions, numerics);
     const actions = new HostActionRegistry();
-    registerCoreHostActions(actions);
+    registerCoreHostActions(actions, numerics, new ConformanceRandomStream());
     const types = new StructTypeRegistry();
     applyPendingRegistrations(conformanceIds, functions, actions, types);
     publishCatalog(new CatalogIconEncoder());
@@ -1194,12 +1257,13 @@ namespace wendoo {
     const writer = new ObservableTraceWriter(sink, decoded.profileId);
 
     const world = new ConformanceWorld();
+    const tap = new FaultKeepingTraceTap(writer);
     const runtime = new BrainRuntime(
       decoded.program,
       hostFunctions,
       hostActions,
       types,
-      new TraceTap(writer),
+      tap,
       new VmCaps(CONFORMANCE_DEFAULT_BUDGET, CONFORMANCE_MAX_STACK_SIZE, CONFORMANCE_MAX_HANDLES),
       world
     );
@@ -1219,7 +1283,7 @@ namespace wendoo {
     if (decoded.profileId !== CONFORMANCE_PROFILE_ID) {
       console.log(`DIAG profile-mismatch ${hexU32(decoded.profileId)}`);
     }
-    const faults = runtime.faults();
+    const faults = tap.faults;
     for (let i = 0; i < faults.length; i++) {
       const fault = faults[i];
       console.log(`DIAG fault code=${fault.code} func=${fault.funcId} pc=${fault.pc} ${fault.message}`);

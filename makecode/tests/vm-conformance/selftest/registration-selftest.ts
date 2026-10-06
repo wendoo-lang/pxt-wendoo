@@ -35,11 +35,13 @@
  * before the project's main file ran, that the loader accepts the programs
  * built for the sts-f64 world and refuses the rest by code, and that a
  * program host runs them on actors: pairing each actor with the program it
- * was given, thinking every running program once per drain, and ending an
- * actor's program when the actor ends. One of the programs places a pack
- * tile; the selftest runs it on a program host of its own, tracing what it
- * does, for the node-side runner to hold to the trace the reference VM
- * renders of the same program.
+ * was given, thinking every running program once per drain, ending an
+ * actor's program when the actor ends, and reporting each fault a program
+ * raises -- a throw out of its tile or its page-activation hook among them --
+ * to the host's observer while every drain runs on. One of the programs
+ * places a pack tile; the selftest runs it on a program host of its own,
+ * tracing what it does, for the node-side runner to hold to the trace the
+ * reference VM renders of the same program.
  *
  * Output grammar, one line each:
  *
@@ -51,6 +53,8 @@
  * - `CATALOG <payload>` -- the serialized catalog, verbatim.
  * - `wendoo program-rejected <code> <id>` -- one per program a host
  *   refused, as the host logs it.
+ * - `wendoo program-faulted <code> <id>` -- one per fault code each running
+ *   program raises, the first time it raises it, as the host logs it.
  * - `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` -- one per asset id the
  *   asset type check reports unresolved, as the VM extension logs it.
  * - `TRACE <line>` -- one per line of the observable trace of the pack-tile
@@ -699,6 +703,12 @@ namespace registrationSelftest {
   /** Document id of the program placing the chime pack's ring tile. */
   const RINGER_ID = "ringerRingerRing";
 
+  /** Document id of the program whose first page switches to its second, which places the chime pack's ring tile. */
+  const PEALER_ID = "pealerPealerPeal";
+
+  /** Document id of the program whose two pages each switch to the other once their timer runs out. */
+  const FLIPPER_ID = "flipperFlipperFl";
+
   /** Document id of the program compiled for a foreign device profile. */
   const WRONG_PROFILE_ID = "wrongProfile0001";
 
@@ -711,7 +721,9 @@ namespace registrationSelftest {
     TWIN_IDS[1],
     UNNAMED_ID,
     TICKER_ID,
+    FLIPPER_ID,
     CHASER_ID,
+    PEALER_ID,
     RINGER_ID,
     WRONG_FORMAT_ID,
     WRONG_PROFILE_ID,
@@ -806,20 +818,40 @@ namespace registrationSelftest {
     }
   }
 
-  /** Counts the page switches the programs it observes make. */
-  class PageSwitchCounter extends wendoo.VmObserver {
+  /** Records what the programs it observes do: the page switches they make and the faults they raise. */
+  class EffectRecorder extends wendoo.VmObserver {
     /** Page switches seen so far. */
     switches: number;
+    /** Faults seen so far. */
+    faults: number;
+    /** Id of the fiber the latest fault was raised on, or -1 before the first fault. */
+    lastFiberId: number;
+    /** The latest fault, or `undefined` before the first fault. */
+    lastFault: wendoo.VmFault;
 
     constructor() {
       super();
       this.switches = 0;
+      this.faults = 0;
+      this.lastFiberId = -1;
+      this.lastFault = undefined;
     }
 
     onHostActionCall(actionId: number, callSiteId: number, args: wendoo.Value[], result: wendoo.Value): void {
       if (actionId === wendoo.CoreActionId.SwitchPage) {
         this.switches++;
       }
+    }
+
+    onFiberFault(fiberId: number, fault: wendoo.VmFault): void {
+      this.faults++;
+      this.lastFiberId = fiberId;
+      this.lastFault = fault;
+    }
+
+    /** Whether the latest fault carries `code`. */
+    lastFaultIs(code: number): boolean {
+      return this.lastFault !== undefined && this.lastFault.code === code;
     }
   }
 
@@ -849,7 +881,7 @@ namespace registrationSelftest {
    * and ends an actor's program when the actor ends.
    */
   function checkProgramHost(): void {
-    const counter = new PageSwitchCounter();
+    const counter = new EffectRecorder();
     const host = new wendoo.ProgramHost(counter);
     const ticker = new SelftestActor();
     const twinA = new SelftestActor();
@@ -904,15 +936,381 @@ namespace registrationSelftest {
     twinA.ended = true;
     time += DRAIN_INTERVAL_MS;
     host.drain(time);
-    let faults = 0;
-    const hosted = host.hostedPrograms();
-    for (let i = 0; i < hosted.length; i++) {
-      faults += hosted[i].runtime.faults().length;
-    }
     check(
       "host-ends-an-ended-actors-program",
-      programOf(host, twinA) === NOT_RUNNING && hosted.length === 3 && counter.switches === 14 && faults === 0
+      programOf(host, twinA) === NOT_RUNNING &&
+        host.hostedPrograms().length === 3 &&
+        counter.switches === 14 &&
+        counter.faults === 0
     );
+  }
+
+  /** How many drains the fault checks run while the ring tile fails. */
+  const FAILING_DRAINS = 3;
+
+  /** Run one drain of `host` at `timeMs`, and answer whether it returned without throwing. */
+  function drainSurvives(host: wendoo.ProgramHost, timeMs: number): boolean {
+    let survived = true;
+    try {
+      host.drain(timeMs);
+    } catch (e) {
+      survived = false;
+    }
+    return survived;
+  }
+
+  /** The program running on `actor` in `host`, or `undefined` when none does. */
+  function hostedOn(host: wendoo.ProgramHost, actor: wendoo.ActorWorld): wendoo.HostedProgram {
+    const hosted = host.hostedPrograms();
+    for (let i = 0; i < hosted.length; i++) {
+      if (hosted[i].world === actor) {
+        return hosted[i];
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * A program whose tile faults at every think reports each fault to its
+   * host's observer as the fault is raised -- its code, its message and the
+   * instruction that raised it -- and runs on, thinking and faulting again at
+   * every drain.
+   */
+  function checkFaultEvents(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const actor = new SelftestActor();
+    host.attach(actor, wendooBrains.p_ringerRingerRing);
+    chime.ringFailure = chime.RING_FAULTS;
+    let time = 0;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      host.drain(time);
+    }
+    chime.ringFailure = chime.RING_RINGS;
+    const last = recorder.lastFault;
+    check(
+      "a-faulting-program-reports-every-fault-to-its-hosts-observer-with-its-code-message-and-site",
+      recorder.faults === FAILING_DRAINS &&
+        recorder.lastFaultIs(wendoo.ErrorCode.HostError) &&
+        last.message === chime.CRACKED_MESSAGE &&
+        last.funcId >= 0 &&
+        last.pc >= 0 &&
+        recorder.lastFiberId !== wendoo.NO_FIBER &&
+        programOf(host, actor) === RINGER_ID
+    );
+  }
+
+  /**
+   * A program whose tile raises a fault and then throws at every think
+   * faults the fiber running the tile `ScriptError` at each throw, the fault
+   * raised before the throw discarded, reported to its host's observer,
+   * while every drain runs on: the other program thinks at every drain, and
+   * the throwing program stays on its actor, thinks again at the next drain,
+   * and rings without a fault once its tile no longer throws.
+   */
+  function checkThrowingTile(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const ringing = new SelftestActor();
+    const ticking = new SelftestActor();
+    host.attach(ringing, wendooBrains.p_ringerRingerRing);
+    host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    chime.ringFailure = chime.RING_THROWS;
+    let time = 0;
+    let survived = true;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      survived = drainSurvives(host, time) && survived;
+    }
+    chime.ringFailure = chime.RING_RINGS;
+    const faultsWhileThrowing = recorder.faults;
+    const faultedScriptError = recorder.lastFaultIs(wendoo.ErrorCode.ScriptError);
+    const faultedOnAFiber = recorder.lastFiberId !== wendoo.NO_FIBER && recorder.lastFault.funcId >= 0;
+    const rings = chime.ringActuator.rings;
+    time += DRAIN_INTERVAL_MS;
+    survived = drainSurvives(host, time) && survived;
+    check(
+      "a-throwing-tile-faults-its-fiber-and-every-drain-runs-on",
+      survived &&
+        faultsWhileThrowing === FAILING_DRAINS &&
+        faultedScriptError &&
+        faultedOnAFiber &&
+        recorder.faults === FAILING_DRAINS &&
+        recorder.switches === FAILING_DRAINS + 1 &&
+        programOf(host, ringing) === RINGER_ID &&
+        chime.ringActuator.rings === rings + 1
+    );
+  }
+
+  /**
+   * A program whose tile's page-activation hook throws as the program starts
+   * faults `ScriptError` outside every fiber, reported to its host's
+   * observer, while every drain runs on: the other program thinks at every
+   * drain, and the throwing program stays on its actor and thinks at every
+   * drain.
+   */
+  function checkThrowingPageHook(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const ringing = new SelftestActor();
+    const ticking = new SelftestActor();
+    host.attach(ringing, wendooBrains.p_ringerRingerRing);
+    host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    chime.ringFailure = chime.RING_HOOK_THROWS;
+    let time = 0;
+    let survived = true;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      survived = drainSurvives(host, time) && survived;
+    }
+    chime.ringFailure = chime.RING_RINGS;
+    const hosted = hostedOn(host, ringing);
+    check(
+      "a-throwing-page-hook-faults-its-program-and-every-drain-runs-on",
+      survived &&
+        recorder.faults === 1 &&
+        recorder.lastFiberId === wendoo.NO_FIBER &&
+        recorder.lastFaultIs(wendoo.ErrorCode.ScriptError) &&
+        recorder.switches === FAILING_DRAINS &&
+        hosted !== undefined &&
+        hosted.runtime.tickCount() === FAILING_DRAINS
+    );
+  }
+
+  /**
+   * A program whose second page's tile has a page-activation hook that
+   * throws, as the program's first think switches to that page, faults
+   * `ScriptError` outside every fiber in the think that activates the page,
+   * reported to its host's observer, while every drain runs on: the other
+   * program thinks at every drain, and the throwing program stays on its
+   * actor and thinks again at the next drain.
+   */
+  function checkThrowingPageSwitch(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const pealing = new SelftestActor();
+    const ticking = new SelftestActor();
+    host.attach(pealing, wendooBrains.p_pealerPealerPeal);
+    host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    chime.ringFailure = chime.RING_HOOK_THROWS;
+    let time = 0;
+    let survived = true;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      survived = drainSurvives(host, time) && survived;
+    }
+    chime.ringFailure = chime.RING_RINGS;
+    const hosted = hostedOn(host, pealing);
+    check(
+      "a-page-hook-throwing-on-a-page-switch-faults-its-program-and-every-drain-runs-on",
+      survived &&
+        recorder.faults === 1 &&
+        recorder.lastFiberId === wendoo.NO_FIBER &&
+        recorder.lastFaultIs(wendoo.ErrorCode.ScriptError) &&
+        recorder.switches === FAILING_DRAINS + 1 &&
+        hosted !== undefined &&
+        hosted.loaded.registration.id === PEALER_ID &&
+        hosted.runtime.tickCount() === FAILING_DRAINS - 1
+    );
+  }
+
+  /** Records the drain each page switch a program makes is made in, and counts the faults programs raise. */
+  class SwitchTimeline extends wendoo.VmObserver {
+    /** The 1-based number of the drain running now; the selftest sets it before each drain. */
+    drain: number;
+    /** The drain of each page switch, in the order they were made. */
+    switchDrains: number[];
+    /** Faults seen so far. */
+    faults: number;
+
+    constructor() {
+      super();
+      this.drain = 0;
+      this.switchDrains = [];
+      this.faults = 0;
+    }
+
+    onHostActionCall(actionId: number, callSiteId: number, args: wendoo.Value[], result: wendoo.Value): void {
+      if (actionId === wendoo.CoreActionId.SwitchPage) {
+        this.switchDrains.push(this.drain);
+      }
+    }
+
+    onFiberFault(fiberId: number, fault: wendoo.VmFault): void {
+      this.faults++;
+    }
+  }
+
+  /** How many drains the timer checks run the flipper program for. */
+  const FLIPPER_DRAINS = 24;
+
+  /**
+   * The drains the flipper program switches pages in. Its first page is
+   * entered in drain 1, and each page's 100 ms timer runs out five drains
+   * after the drain its page is entered in; a switch is served at the start
+   * of the next drain.
+   */
+  const FLIPPER_SWITCH_DRAINS = [6, 12, 18, 24];
+
+  /** Whether `actual` holds the numbers `expected` holds, in the same order. */
+  function sameNumbers(actual: number[], expected: number[]): boolean {
+    if (actual.length !== expected.length) {
+      return false;
+    }
+    for (let i = 0; i < actual.length; i++) {
+      if (actual[i] !== expected[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * A program whose two pages each switch to the other once a timer runs out
+   * ping-pongs between them without a fault: each page's timer runs out a
+   * timer's length after the page is entered, and runs that length again
+   * every time the page is entered again -- the first page's timer, which ran
+   * out before the program left the page, does not run out the moment the
+   * program comes back.
+   */
+  function checkTimerPagePingPong(): void {
+    const timeline = new SwitchTimeline();
+    const host = new wendoo.ProgramHost(timeline);
+    const actor = new SelftestActor();
+    host.attach(actor, wendooBrains.p_flipperFlipperFl);
+    let time = 0;
+    for (let drain = 1; drain <= FLIPPER_DRAINS; drain++) {
+      timeline.drain = drain;
+      time += DRAIN_INTERVAL_MS;
+      host.drain(time);
+    }
+    const drains = timeline.switchDrains;
+    check(
+      "timer-switches-each-page-in-turn",
+      timeline.faults === 0 &&
+        programOf(host, actor) === FLIPPER_ID &&
+        drains.length >= 2 &&
+        drains[0] === FLIPPER_SWITCH_DRAINS[0] &&
+        drains[1] === FLIPPER_SWITCH_DRAINS[1]
+    );
+    check(
+      "timer-restarts-when-its-page-is-entered-again",
+      timeline.faults === 0 && sameNumbers(drains, FLIPPER_SWITCH_DRAINS)
+    );
+  }
+
+  /** How many thinks the timer argument check reads each of its call sites over. */
+  const TIMER_READ_TICKS = 15;
+
+  /** Milliseconds of scheduled time between the thinks of the timer argument check. */
+  const TIMER_READ_INTERVAL_MS = 100;
+
+  /**
+   * The ticks, from 1 to {@link TIMER_READ_TICKS}, on which the timer sensor
+   * `timeout` fires at the call site `callSiteId` of `ctx`, reading `delay`
+   * on every one; empty when `timeout` is not registered.
+   */
+  function timerFirings(
+    timeout: wendoo.HostActionBinding,
+    ctx: wendoo.ExecutionContext,
+    callSiteId: number,
+    delay: wendoo.Value
+  ): number[] {
+    const fired: number[] = [];
+    if (!timeout) {
+      return fired;
+    }
+    ctx.currentCallSiteId = callSiteId;
+    for (let tick = 1; tick <= TIMER_READ_TICKS; tick++) {
+      ctx.currentTick = tick;
+      ctx.time = tick * TIMER_READ_INTERVAL_MS;
+      const result = timeout.execSync(ctx, [delay]);
+      if (result.t === wendoo.ValueTag.Boolean && result.b) {
+        fired.push(tick);
+      }
+    }
+    return fired;
+  }
+
+  /**
+   * The timer sensor read with no seconds runs for its default one second,
+   * while one read with a not-a-number or a value that is no number never
+   * fires, however long it runs.
+   */
+  function checkTimerArguments(actions: wendoo.HostActionRegistry): void {
+    const timeout = actions.getById(wendoo.CoreActionId.Timeout);
+    const ctx = newContext();
+    const defaulted = timerFirings(timeout, ctx, 0, wendoo.NIL_VALUE);
+    const notANumber = timerFirings(timeout, ctx, 1, wendoo.mkNumber(0 / 0));
+    const text = timerFirings(timeout, ctx, 2, wendoo.mkString("1"));
+    check(
+      "timer-defaults-to-one-second-and-refuses-what-is-no-number",
+      timeout !== undefined && sameNumbers(defaulted, [11]) && notANumber.length === 0 && text.length === 0
+    );
+  }
+
+  /** How many times the random-number check reads the sensor. */
+  const RANDOM_READS = 100;
+
+  /**
+   * The random-number sensor reads a number from 0 up to but not including
+   * 1 every time, and not the same number every time.
+   */
+  function checkRandomReads(actions: wendoo.HostActionRegistry): void {
+    const random = actions.getById(wendoo.CoreActionId.Random);
+    const ctx = newContext();
+    let inRange = random !== undefined;
+    let varied = false;
+    let first = -1;
+    for (let i = 0; inRange && i < RANDOM_READS; i++) {
+      const read = random.execSync(ctx, []);
+      inRange = read.t === wendoo.ValueTag.Number && read.num >= 0 && read.num < 1;
+      if (i === 0) {
+        first = read.num;
+      } else if (read.num !== first) {
+        varied = true;
+      }
+    }
+    check("random-reads-numbers-from-zero-up-to-one", inRange && varied);
+  }
+
+  /** A random-number stream drawing a fixed list of numbers, in order. */
+  class QueuedRng extends wendoo.RngServices {
+    private numbers: number[];
+    private drawn: number;
+
+    /** @param numbers - The numbers to draw, in order; each from 0 up to but not including 1. */
+    constructor(numbers: number[]) {
+      super();
+      this.numbers = numbers;
+      this.drawn = 0;
+    }
+
+    next(): number {
+      const drawn = this.numbers[this.drawn];
+      this.drawn++;
+      return drawn;
+    }
+  }
+
+  /** The numbers the random-number stream check hands the sensor, in order. */
+  const QUEUED_RANDOM_NUMBERS = [0.5, 0, 0.75, 0.125];
+
+  /**
+   * The random-number sensor of core host actions registered with a
+   * random-number stream reads that stream's numbers, in order.
+   */
+  function checkRandomReadsItsStream(): void {
+    const actions = new wendoo.HostActionRegistry();
+    wendoo.registerCoreHostActions(actions, new wendoo.F64Numerics(), new QueuedRng(QUEUED_RANDOM_NUMBERS));
+    const random = actions.getById(wendoo.CoreActionId.Random);
+    const ctx = newContext();
+    const read: number[] = [];
+    for (let i = 0; random && i < QUEUED_RANDOM_NUMBERS.length; i++) {
+      read.push(random.execSync(ctx, []).num);
+    }
+    check("random-reads-the-stream-it-is-registered-with", sameNumbers(read, QUEUED_RANDOM_NUMBERS));
   }
 
   /** Hands each trace line to the console under the `TRACE ` prefix. */
@@ -984,6 +1382,14 @@ namespace registrationSelftest {
     checkCompiledBrains();
     checkLoader();
     checkProgramHost();
+    checkFaultEvents();
+    checkThrowingTile();
+    checkThrowingPageHook();
+    checkThrowingPageSwitch();
+    checkTimerPagePingPong();
+    checkTimerArguments(actions);
+    checkRandomReads(actions);
+    checkRandomReadsItsStream();
     traceRinger();
 
     const recorded = wendoo.registrationDiagnostics();

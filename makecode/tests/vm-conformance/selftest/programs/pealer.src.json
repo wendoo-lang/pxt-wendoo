@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "id": "pealerPealerPeal",
+  "name": "Pealer",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "pealerFirstPage1",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "pealerChimePage1",
+      "label": "Chime Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 2,
+      "valueLabel": "2",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "pealerFirstPage1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": ["tile.actuator->switch-page", "tile.literal->number:<number>->2"],
+          "children": [],
+          "ruleId": "pealerSwitchRule"
+        }
+      ]
+    },
+    {
+      "version": 2,
+      "pageId": "pealerChimePage1",
+      "name": "Chime Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": ["tile.actuator->actuator.chime.ring"],
+          "children": [],
+          "ruleId": "pealerRingRule01"
+        }
+      ]
+    }
+  ]
+}

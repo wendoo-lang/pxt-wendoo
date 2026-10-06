@@ -202,6 +202,15 @@ namespace wendoo {
   }
 
   /**
+   * Whether `n` is a finite number: neither an infinity nor not-a-number.
+   *
+   * @param n - The number to test.
+   */
+  export function isFiniteNumber(n: number): boolean {
+    return n - n === 0;
+  }
+
+  /**
    * Whether `v` passes a truthiness gate. Unknown, void, nil, `false`,
    * numeric zero, the empty string and the empty list are falsy; every other
    * value is truthy.

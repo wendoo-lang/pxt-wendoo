@@ -21,6 +21,7 @@
         "registration.ts",
         "catalog.ts",
         "numerics.ts",
+        "rng.ts",
         "core-host.ts",
         "vm.ts",
         "runtime.ts",

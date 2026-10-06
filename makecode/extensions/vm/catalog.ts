@@ -152,7 +152,7 @@ namespace wendoo {
 
   /** JSON number literal of `x`: its shortest decimal form, or `null` when `x` is not finite. */
   function jsonNumber(x: number): string {
-    return x - x === 0 ? `${x}` : "null";
+    return isFiniteNumber(x) ? `${x}` : "null";
   }
 
   /**

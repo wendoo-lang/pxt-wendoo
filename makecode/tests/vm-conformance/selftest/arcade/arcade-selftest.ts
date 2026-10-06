@@ -37,6 +37,9 @@
  * - `wendoo WENDOO_BRAIN_UNRESOLVED <id>` -- one per brain document id no
  *   compiled brain holds when a sprite's brain was first set to it, as the
  *   arcade base pack logs it.
+ * - `wendoo program-faulted <code> <id>` -- one per fault code a running
+ *   program raised, the first time it raised it, as its scene's host logs it;
+ *   a run whose programs all run without a fault logs none.
  * - `DEBUG ON` -- the run turned the Wendoo extensions' debug logging on;
  *   none of the `wendoo` lines above precede it.
  * - `SIMCAP PASS <case>` -- the run reached its end.
@@ -494,7 +497,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "program-update-swaps-a-bump-rule-live",
-      runtimeIn(host, fleeing) !== fleeRuntime && movesAt(fleeing, 100, 0) && faultsInScene() === 0
+      runtimeIn(host, fleeing) !== fleeRuntime && movesAt(fleeing, 100, 0)
     );
     game.popScene();
   }
@@ -623,7 +626,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "program-update-turns-pursuit-to-flight-live",
-      pursuing && runtimeIn(host, pursuer) !== pursuitRuntime && flees(pursuer, subject, 100) && faultsInScene() === 0
+      pursuing && runtimeIn(host, pursuer) !== pursuitRuntime && flees(pursuer, subject, 100)
     );
     game.popScene();
   }
@@ -850,11 +853,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "program-update-swaps-in-range-to-out-of-range-live",
-      movedInRange &&
-        restsInRange &&
-        movesAt(swappedLeft, 100, 0) &&
-        movesAt(swappedRight, 100, 0) &&
-        faultsInScene() === 0
+      movedInRange && restsInRange && movesAt(swappedLeft, 100, 0) && movesAt(swappedRight, 100, 0)
     );
     game.popScene();
   }
@@ -1276,7 +1275,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "filtered-range-rules-read-the-nearest-sprite-wearing-the-image",
-      restsWithoutHero && upNearHero && movesAt(runner, 0, 100) && faultsInScene() === 0
+      restsWithoutHero && upNearHero && movesAt(runner, 0, 100)
     );
     game.popScene();
   }
@@ -1427,8 +1426,7 @@ namespace arcadeSelftest {
       "own-brain-range-rules-read-other-runners-and-never-their-own-sprite",
       loneRests &&
         pairMovesAt(wendooBrains.p_kinBrainFilter01, 30, 0, -100) &&
-        pairMovesAt(wendooBrains.p_kinBrainFilter01, 100, 0, 100) &&
-        faultsInScene() === 0
+        pairMovesAt(wendooBrains.p_kinBrainFilter01, 100, 0, 100)
     );
     game.popScene();
   }
@@ -1608,8 +1606,7 @@ namespace arcadeSelftest {
         readsNothing(readField(world, doomed, "brain")) &&
         writeField(world, doomed, "position", wendoo.vector2Value(new wendoo.DirectionVector(5, 5))) &&
         writeField(world, doomed, "brain", brainLiteral(TWIN_IDS[0])) &&
-        doomed.x === x &&
-        faultsInScene() === 0
+        doomed.x === x
     );
     pause(FRAMES_MS);
     game.popScene();
@@ -1647,9 +1644,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "in-range-given-its-own-sprites-brain-closes-on-another-runner-past-a-plain-sprite",
-      pursues(flockA, flockB, DEFAULT_MOVE_SPEED) &&
-        pursues(flockB, flockA, DEFAULT_MOVE_SPEED) &&
-        faultsInScene() === 0
+      pursues(flockA, flockB, DEFAULT_MOVE_SPEED) && pursues(flockB, flockA, DEFAULT_MOVE_SPEED)
     );
     plain.destroy();
     flockA.destroy();
@@ -1662,7 +1657,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "move-toward-the-bumped-sprites-position-lands-on-the-center-it-read",
-      near(distanceBetween(pursuer, goal), 0, 0.5) && faultsInScene() === 0
+      near(distanceBetween(pursuer, goal), 0, 0.5)
     );
     pursuer.destroy();
     goal.destroy();
@@ -1674,7 +1669,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "a-position-assignment-puts-its-sprite-on-the-bumped-sprites-center",
-      jumper.x === landing.x && jumper.y === landing.y && faultsInScene() === 0
+      jumper.x === landing.x && jumper.y === landing.y
     );
     jumper.destroy();
     landing.destroy();
@@ -1688,7 +1683,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "a-brain-assignment-to-its-own-sprite-swaps-the-program-after-its-think",
-      programOf(convert) === TICKER_ID && programOf(lone) === "convertOnBump001" && faultsInScene() === 0
+      programOf(convert) === TICKER_ID && programOf(lone) === "convertOnBump001"
     );
     convert.destroy();
     bumped.destroy();
@@ -1704,10 +1699,7 @@ namespace arcadeSelftest {
     riser.setPosition(80, 80);
     const below = solidSprite(8, 80, 110);
     pause(FRAMES_MS);
-    check(
-      "comparing-y-accessors-moves-up-toward-a-sprite-above-and-not-below",
-      rose && movesAt(riser, 0, 0) && faultsInScene() === 0
-    );
+    check("comparing-y-accessors-moves-up-toward-a-sprite-above-and-not-below", rose && movesAt(riser, 0, 0));
     riser.destroy();
     below.destroy();
     pause(FRAMES_MS);
@@ -1815,7 +1807,7 @@ namespace arcadeSelftest {
     const bumper = heroSprite(46, 60);
     wendoo.runBrain(dressed, wendooBrains.p_lookerBumpLook01);
     pause(FRAMES_MS);
-    check("bump-rule-dresses-in-the-bumped-sprite", dressed.image === bumper.image && faultsInScene() === 0);
+    check("bump-rule-dresses-in-the-bumped-sprite", dressed.image === bumper.image);
     dressed.destroy();
     bumper.destroy();
     pause(FRAMES_MS);
@@ -1826,7 +1818,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "bump-rule-wears-the-image-asset-it-is-given",
-      wearer.image.equals(heroPicture()) && !touched.image.equals(heroPicture()) && faultsInScene() === 0
+      wearer.image.equals(heroPicture()) && !touched.image.equals(heroPicture())
     );
     wearer.destroy();
     touched.destroy();
@@ -1840,10 +1832,7 @@ namespace arcadeSelftest {
     const untouched = kin.image === kinImage;
     visitor.setPosition(46, 60);
     pause(FRAMES_MS);
-    check(
-      "child-rule-reads-its-parents-range-output",
-      untouched && kin.image === visitor.image && faultsInScene() === 0
-    );
+    check("child-rule-reads-its-parents-range-output", untouched && kin.image === visitor.image);
     game.popScene();
   }
 
@@ -1946,10 +1935,7 @@ namespace arcadeSelftest {
     climber.setPosition(80, 60);
     const overhead = solidSprite(8, 80, 30);
     pause(FRAMES_MS);
-    check(
-      "range-rule-given-above-pursues-only-a-sprite-above",
-      ignoresBelow && pursues(climber, overhead, 100) && faultsInScene() === 0
-    );
+    check("range-rule-given-above-pursues-only-a-sprite-above", ignoresBelow && pursues(climber, overhead, 100));
     beneath.destroy();
     overhead.destroy();
     game.popScene();
@@ -2286,7 +2272,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "move-toward-quickly-given-the-sprite-in-range-pursues-it",
-      pursues(pouncer, prey, 200) && pursues(pouncerFlipped, prey, 200) && faultsInScene() === 0
+      pursues(pouncer, prey, 200) && pursues(pouncerFlipped, prey, 200)
     );
     pouncer.destroy();
     pouncerFlipped.destroy();
@@ -2306,11 +2292,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "a-child-moves-toward-or-away-from-its-parents-sprite-in-range-over-its-dpad",
-      quietWithoutDpad &&
-        firstHeading &&
-        pursues(heeding, prey, 100) &&
-        flees(spurning, prey, 100) &&
-        faultsInScene() === 0
+      quietWithoutDpad && firstHeading && pursues(heeding, prey, 100) && flees(spurning, prey, 100)
     );
     controller.right.setPressed(false);
     game.popScene();
@@ -2630,7 +2612,7 @@ namespace arcadeSelftest {
     wendoo.runBrain(ambler, wendooBrains.p_ambleSlowWander1);
     wendoo.runBrain(darter, wendooBrains.p_dartQuickWander1);
     pause(FRAMES_MS);
-    check("a-bare-wander-heads-for-an-on-screen-destination", headsForItsLeg(roamer, 100) && faultsInScene() === 0);
+    check("a-bare-wander-heads-for-an-on-screen-destination", headsForItsLeg(roamer, 100));
     check("wander-composes-with-slowly-and-quickly", headsForItsLeg(ambler, 50) && headsForItsLeg(darter, 200));
     roamer.destroy();
     ambler.destroy();
@@ -2670,10 +2652,7 @@ namespace arcadeSelftest {
       blendX += share * toward.x;
       blendY += share * toward.y;
     }
-    check(
-      "two-wander-rules-on-one-sprite-keep-two-destinations",
-      twoLegs && movesAt(doubled, blendX, blendY) && faultsInScene() === 0
-    );
+    check("two-wander-rules-on-one-sprite-keep-two-destinations", twoLegs && movesAt(doubled, blendX, blendY));
     game.popScene();
   }
 
@@ -2913,6 +2892,85 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** Positive infinity: what a program dividing a number by zero computes. */
+  const INFINITE = 1 / 0;
+
+  /** The number that is not a number: what a program dividing zero by zero computes. */
+  const NOT_A_NUMBER = 0 / 0;
+
+  /**
+   * In a scene of its own, its frames stopped, check that no infinite or
+   * not-a-number component reaches a sprite: a `Vector2` holding one reads
+   * as no point, so a move toward or away from it moves as a move given no
+   * target, and a write of it to a sprite's position moves nothing; and the
+   * direct applicator sets a sprite given a verdict holding one still, as it
+   * sets a released sprite, zeroing the velocity the sprite's program last
+   * set, which the next verdict eases from afresh.
+   */
+  function checkNonFiniteMotion(): void {
+    game.pushScene();
+    stopFrames();
+    check(
+      "a-vector2-holding-an-infinity-or-a-nan-reads-as-no-point",
+      wendoo.vector2Of(pointValue(INFINITE, 20)) === undefined &&
+        wendoo.vector2Of(pointValue(20, -INFINITE)) === undefined &&
+        wendoo.vector2Of(pointValue(NOT_A_NUMBER, 20)) === undefined &&
+        holdsPoint(pointValue(20, 30), 20, 30)
+    );
+
+    const mover = solidSprite(8, 40, 60);
+    const ctx = contextOn(mover);
+    const headed = moveBuffer();
+    headed[MOVE_TOWARD] = PRESENT;
+    headed[MOVE_TARGET_POINT] = pointValue(INFINITE, 20);
+    moveNow(ctx, headed);
+    const towardFallsBack = movesAt(mover, 100, 0);
+    headed[MOVE_UP] = PRESENT;
+    moveNow(ctx, headed);
+    const towardBends = movesAt(mover, 0, -100);
+    const shunned = moveBuffer();
+    shunned[MOVE_AWAY] = PRESENT;
+    shunned[MOVE_AWAY_TARGET_POINT] = pointValue(NOT_A_NUMBER, NOT_A_NUMBER);
+    moveNow(ctx, shunned);
+    check(
+      "a-move-toward-or-away-from-a-non-finite-point-moves-as-a-move-given-no-target",
+      towardFallsBack && towardBends && movesAt(mover, 100, 0)
+    );
+
+    const walker = solidSprite(8, 80, 90);
+    const world = new wendoo.SpriteWorld(walker);
+    const keptInfinite = writeField(world, walker, "position", pointValue(INFINITE, 20));
+    const keptNan = writeField(world, walker, "position", pointValue(20, NOT_A_NUMBER));
+    check(
+      "position-write-of-a-non-finite-point-moves-nothing",
+      keptInfinite && keptNan && walker.x === 80 && walker.y === 90
+    );
+
+    const applicator = new wendoo.DirectMotionApplicator();
+    const applied = new wendoo.AppliedMotion();
+    applied.vx = 250;
+    mover.vx = 250;
+    applicator.apply(new wendoo.MotionVerdict(mover, NOT_A_NUMBER, 40, applied), STEP_MS);
+    const notANumberStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(mover, INFINITE, 0, applied), STEP_MS);
+    const infinityStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
+    wendoo.moveSmoothing = SMOOTHING_TIME_CONSTANTS[0];
+    applied.vx = 250;
+    applicator.apply(new wendoo.MotionVerdict(mover, 0, -INFINITE, applied), STEP_MS);
+    const smoothedStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(mover, 100, 0, applied), STEP_MS);
+    const easesAfresh = motionIs(applied, 100 * easedShare(STEP_MS, SMOOTHING_TIME_CONSTANTS[0]), 0);
+    wendoo.moveSmoothing = 0;
+    check(
+      "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
+      notANumberStops && infinityStops && smoothedStops && easesAfresh
+    );
+    mover.destroy();
+    walker.destroy();
+    resumeFrames();
+    game.popScene();
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -3027,16 +3085,6 @@ namespace arcadeSelftest {
     return undefined;
   }
 
-  /** How many faults the programs running in the current scene have raised. */
-  function faultsInScene(): number {
-    let faults = 0;
-    const hosted = wendoo.sceneProgramHost(game.currentScene()).hostedPrograms();
-    for (let i = 0; i < hosted.length; i++) {
-      faults += hosted[i].runtime.faults().length;
-    }
-    return faults;
-  }
-
   /**
    * Update programs while the game runs, as the Wendoo simulator extension
    * does when a program is saved, and check the running game takes them: a
@@ -3094,10 +3142,7 @@ namespace arcadeSelftest {
         oldStillHosted = true;
       }
     }
-    check(
-      "update-ends-the-old-instances-cleanly",
-      !oldStillHosted && hosted.length === hostedCount && faultsInScene() === 0
-    );
+    check("update-ends-the-old-instances-cleanly", !oldStillHosted && hosted.length === hostedCount);
     check(
       "update-leaves-other-programs-running",
       runtimeIn(host, bystander) === bystanderRuntime && ticksOf(bystander) > bystanderTicks
@@ -3162,8 +3207,7 @@ namespace arcadeSelftest {
       runtimeIn(host, swapped) !== newRuntime &&
         drift.bytecode.equals(wendooBrains.none.bytecode) &&
         movesAt(swapped, 0, 0) &&
-        movesAt(spawned, 0, 0) &&
-        faultsInScene() === 0
+        movesAt(spawned, 0, 0)
     );
     controller.right.setPressed(false);
   }
@@ -3233,12 +3277,10 @@ namespace arcadeSelftest {
 
     ticker.destroy();
     pause(FRAMES_MS);
-    let faults = 0;
-    const hosted = wendoo.sceneProgramHost(game.currentScene()).hostedPrograms();
-    for (let i = 0; i < hosted.length; i++) {
-      faults += hosted[i].runtime.faults().length;
-    }
-    check("destroyed-sprite-program-ends", programOf(ticker) === NOT_RUNNING && hosted.length === 3 && faults === 0);
+    check(
+      "destroyed-sprite-program-ends",
+      programOf(ticker) === NOT_RUNNING && wendoo.sceneProgramHost(game.currentScene()).hostedPrograms().length === 3
+    );
 
     const pausedTicks = ticksOf(twinA);
     game.pushScene();
@@ -3269,6 +3311,7 @@ namespace arcadeSelftest {
     checkWander();
     checkSpeedLimit();
     checkMoveSmoothing();
+    checkNonFiniteMotion();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

@@ -33,10 +33,12 @@ Developers: the source lives in the
 [pxt-wendoo](https://github.com/wendoo-lang/pxt-wendoo) repository. The
 VM is a conforming Wendoo VM, held to the reference implementation's
 observable semantics; see the repository README for how the project fits
-together. To see the extensions' diagnostic lines -- programs refused or
-updated, messages refused, assets a brain names that the project lacks --
-in the console, add `wendoo.debug = true` to your program; they are off
-otherwise.
+together. To see the extensions' diagnostic lines -- programs refused,
+updated or faulting, messages refused, assets a brain names that the
+project lacks -- in the console, add `wendoo.debug = true` to your
+program; they are off otherwise. A faulting program logs
+`wendoo program-faulted <code> <id>` once per fault code, however often
+it raises it.
 
 #### Metadata (used for search, rendering)
 

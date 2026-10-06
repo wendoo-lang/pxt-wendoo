@@ -77,6 +77,8 @@ const SELFTEST_SOURCES = [
   "chaser.src.json",
   "unnamed.src.json",
   "ringer.src.json",
+  "pealer.src.json",
+  "flipper.src.json",
 ];
 
 /** The catalog the registration selftest's packs serialize, which the selftest pins byte for byte. */

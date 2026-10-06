@@ -2,8 +2,9 @@
  * The stack-based bytecode dispatch loop and the fiber state it runs over.
  *
  * The VM trusts the bytecode it receives: the compiler is the sole guarantor of
- * validity. A malformed or not-yet-implemented instruction surfaces as a fault
- * on the offending fiber, never as a throw escaping {@link VM.runFiber}.
+ * validity. A malformed or not-yet-implemented instruction, and a throw out of
+ * a host body an instruction calls, surface as a fault on the offending fiber,
+ * never as a throw escaping {@link VM.runFiber}.
  */
 namespace wendoo {
   /** Lifecycle state of one fiber. */
@@ -156,18 +157,19 @@ namespace wendoo {
   }
 
   /**
-   * One fault the VM raised, with the instruction site that raised it. The
-   * `code` is the contractual, wire-stable classifier a `fault` trace line
-   * renders; `message` is diagnostic text that never reaches a trace.
+   * One fault, with the instruction site that raised it: the payload
+   * {@link VmObserver.onFiberFault} carries. The `code` is the contractual,
+   * wire-stable classifier a `fault` trace line renders; `message` is
+   * diagnostic text that never reaches a trace.
    */
   export class VmFault {
     /** Wire-stable fault classifier. */
     code: number;
     /** Diagnostic text. */
     message: string;
-    /** Function id the raising instruction sits in. */
+    /** Function id the raising instruction sits in, or -1 for a fault raised outside every instruction. */
     funcId: number;
-    /** Program counter of the raising instruction. */
+    /** Program counter of the raising instruction, or -1 for a fault raised outside every instruction. */
     pc: number;
 
     constructor(code: number, message: string, funcId: number, pc: number) {
@@ -176,6 +178,22 @@ namespace wendoo {
       this.funcId = funcId;
       this.pc = pc;
     }
+  }
+
+  /** Fiber id no fiber carries: the id a fault raised outside every fiber is reported under. */
+  export const NO_FIBER = 0;
+
+  /**
+   * The `ScriptError` fault a throw out of host code raises: its message
+   * names the thrown value.
+   *
+   * @param thrown - The value thrown.
+   * @param funcId - Function id of the instruction the throw came out of, or -1 outside every instruction.
+   * @param pc - Program counter of that instruction, or -1 outside every instruction.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+  export function thrownFault(thrown: any, funcId: number, pc: number): VmFault {
+    return new VmFault(ErrorCode.ScriptError, `internal error: ${thrown}`, funcId, pc);
   }
 
   /**
@@ -254,8 +272,6 @@ namespace wendoo {
     private caps: VmCaps;
     private faultCode: number = NO_FAULT;
     private faultMessage: string = "";
-    /** Every fault this VM raised, in the order it raised them. */
-    faults: VmFault[] = [];
     /** Pending async operations this VM's fibers dispatched. */
     handles: HandleTable;
 
@@ -310,12 +326,25 @@ namespace wendoo {
     /**
      * Run one budgeted slice of `fiber`, up to its remaining
      * `instrBudget`. Returns how the slice ended; a fault has already
-     * transitioned the fiber and notified the observer.
+     * transitioned the fiber and notified the observer. A throw out of an
+     * instruction -- out of a host body it calls -- faults the fiber
+     * `ScriptError` at that instruction.
      *
      * @param fiber - A runnable fiber with a positive budget.
      * @param spawner - Scheduler seam a `SPAWN_RULE` in this slice spawns through.
      */
     runFiber(fiber: Fiber, spawner: ChildRuleSpawner): VmStatus {
+      let status = VmStatus.Yielded;
+      try {
+        status = this.dispatchSlice(fiber, spawner);
+      } catch (e) {
+        status = this.faultThrown(fiber, e);
+      }
+      return status;
+    }
+
+    /** Run the instructions of one slice of `fiber`, as {@link VM.runFiber} describes, letting a throw out of an instruction leave. */
+    private dispatchSlice(fiber: Fiber, spawner: ChildRuleSpawner): VmStatus {
       this.syncContextFromTopFrame(fiber);
 
       while (fiber.instrBudget > 0) {
@@ -416,13 +445,32 @@ namespace wendoo {
       this.transitionState(fiber, FiberState.Cancelled);
     }
 
+    /** Fault `fiber` with the fault raised at `frame`'s instruction, clearing it. */
     private consumeFault(fiber: Fiber, frame: Frame): VmStatus {
-      const code = this.faultCode;
-      this.faults.push(new VmFault(code, this.faultMessage, frame.funcId, frame.pc));
+      const fault = new VmFault(this.faultCode, this.faultMessage, frame.funcId, frame.pc);
       this.faultCode = NO_FAULT;
       this.faultMessage = "";
+      return this.faultFiber(fiber, fault);
+    }
+
+    /**
+     * Fault `fiber` `ScriptError` at its current instruction for `thrown`,
+     * thrown out of that instruction, discarding any fault raised before the
+     * throw.
+     */
+    // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
+    private faultThrown(fiber: Fiber, thrown: any): VmStatus {
+      fiber.ctx.clearFault();
+      this.faultCode = NO_FAULT;
+      this.faultMessage = "";
+      const frame = fiber.frames[fiber.frames.length - 1];
+      return this.faultFiber(fiber, thrownFault(thrown, frame.funcId, frame.pc));
+    }
+
+    /** Move `fiber` to {@link FiberState.Fault} and report `fault` to the observer. */
+    private faultFiber(fiber: Fiber, fault: VmFault): VmStatus {
       this.transitionState(fiber, FiberState.Fault);
-      this.observer.onFiberFault(fiber.id, code);
+      this.observer.onFiberFault(fiber.id, fault);
       return VmStatus.Fault;
     }
 
@@ -717,7 +765,8 @@ namespace wendoo {
      * hands the function an owned argument snapshot and that handle, and leaves
      * the handle on the operand stack in place of the arguments. With the handle
      * table full the fiber yields at this same instruction, having consumed
-     * nothing, and retries next round.
+     * nothing, and retries next round. A throw out of the function frees the
+     * handle before it leaves.
      */
     private execHostCallAsync(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const fn = this.hostFunctions.getById(ins.a);
@@ -742,7 +791,12 @@ namespace wendoo {
       this.bindContext(fiber, frame, ins.c);
       const args = this.readArgs(fiber, argc);
       const handleId = this.handles.createPending(true);
-      fn.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      try {
+        fn.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      } catch (e) {
+        this.handles.deleteHandle(handleId);
+        throw e;
+      }
       if (fiber.ctx.hasFault()) {
         this.handles.deleteHandle(handleId);
         this.raise(fiber.ctx.faultCode, fiber.ctx.faultMessage);
@@ -802,6 +856,7 @@ namespace wendoo {
      * the handle table full the fiber yields at this same instruction, having
      * consumed nothing, and retries next round; an action declaring
      * `uncappedHandles` skips the capacity check and allocates outside the cap.
+     * A throw out of the action frees the handle before it leaves.
      */
     private execHostActionCallAsync(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const action = this.hostActions.getById(ins.a);
@@ -828,7 +883,12 @@ namespace wendoo {
       this.bindContext(fiber, frame, callSiteId);
       const args = this.readArgs(fiber, argc);
       const handleId = this.handles.createPending(capped);
-      action.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      try {
+        action.execAsync(fiber.ctx, args, new AsyncHandle(this.handles, handleId));
+      } catch (e) {
+        this.handles.deleteHandle(handleId);
+        throw e;
+      }
       if (fiber.ctx.hasFault()) {
         this.handles.deleteHandle(handleId);
         this.raise(fiber.ctx.faultCode, fiber.ctx.faultMessage);

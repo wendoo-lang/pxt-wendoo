@@ -344,11 +344,6 @@ namespace wendoo {
       this.ctx = new ExecutionContext(services, variables, world);
     }
 
-    /** Every fault the VM raised during this run, in the order it raised them. */
-    faults(): VmFault[] {
-      return this.vm.faults;
-    }
-
     /** How many thinks have run a page since construction: the tick count the program's context carries. */
     tickCount(): number {
       return this.ctx.currentTick;

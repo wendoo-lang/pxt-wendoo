@@ -988,11 +988,11 @@ namespace wendoo {
     onHostActionCallAsync(actionId: number, callSiteId: number, args: Value[]): void {}
 
     /**
-     * One fiber fault.
+     * One fault, reported once as it is raised; nothing retains it.
      *
-     * @param fiberId - Id of the faulted fiber.
-     * @param code - Numeric wire-stable fault classifier.
+     * @param fiberId - Id of the faulted fiber, or {@link NO_FIBER} for a fault raised outside every fiber.
+     * @param fault - The fault: its wire-stable code, its diagnostic message, and the instruction that raised it.
      */
-    onFiberFault(fiberId: number, code: number): void {}
+    onFiberFault(fiberId: number, fault: VmFault): void {}
   }
 }

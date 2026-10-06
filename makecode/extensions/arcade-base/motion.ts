@@ -100,7 +100,8 @@ namespace wendoo {
    * velocity -- held to {@link ENGINE_MAX_SPEED} in the verdict's own
    * direction when it is faster, and eased toward while
    * {@link moveSmoothing} is on and the verdict asks for at least the speed
-   * the sprite's program last set -- and a released sprite's velocity to
+   * the sprite's program last set -- and a released sprite's velocity, and
+   * that of a sprite whose verdict holds an infinity or a not-a-number, to
    * zero. A sprite's velocity is the program's on every frame that carries a
    * verdict for it, and the game code's on every other frame.
    */
@@ -115,7 +116,9 @@ namespace wendoo {
      * motion. While {@link moveSmoothing} is above 0 and `dtMs` is above 0, a
      * velocity at least as fast as the applied motion is eased toward
      * instead: the sprite is set to the applied motion moved
-     * `1 - e^(-dtMs / moveSmoothing)` of the way to it.
+     * `1 - e^(-dtMs / moveSmoothing)` of the way to it. A velocity so
+     * computed that holds an infinity or a not-a-number releases the sprite
+     * instead, as {@link DirectMotionApplicator.release} does.
      *
      * @param verdict - One sprite's blended motion for this frame.
      * @param dtMs - Duration of the frame, in milliseconds.
@@ -138,6 +141,10 @@ namespace wendoo {
           vy = applied.vy + (vy - applied.vy) * share;
         }
       }
+      if (!isFiniteNumber(vx) || !isFiniteNumber(vy)) {
+        this.release(verdict.sprite, applied);
+        return;
+      }
       applied.vx = vx;
       applied.vy = vy;
       verdict.sprite.vx = vx;
@@ -146,7 +153,8 @@ namespace wendoo {
 
     /**
      * Stop `sprite`: its verdicts stopped this frame, after a frame that
-     * carried one.
+     * carried one, or its verdict this frame comes to an infinite or
+     * not-a-number velocity.
      *
      * @param sprite - The sprite no program moves any more.
      * @param applied - The velocity the sprite's program last set, set to zero.

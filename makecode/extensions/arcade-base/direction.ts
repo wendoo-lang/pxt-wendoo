@@ -63,9 +63,10 @@ namespace wendoo {
 
   /**
    * The `x` and `y` `value` carries when it is a `Vector2` whose fields both
-   * hold numbers, the zero vector included -- a direction, or a point on the
-   * screen in the coordinates sprite positions use; `undefined` for any
-   * other value, nil included.
+   * hold finite numbers, the zero vector included -- a direction, or a point
+   * on the screen in the coordinates sprite positions use; `undefined` for
+   * any other value, nil and a `Vector2` holding an infinity or a
+   * not-a-number included.
    *
    * @param value - Any value a program produced.
    */
@@ -79,13 +80,16 @@ namespace wendoo {
     if (!x || !y || x.t !== ValueTag.Number || y.t !== ValueTag.Number) {
       return undefined;
     }
+    if (!isFiniteNumber(x.num) || !isFiniteNumber(y.num)) {
+      return undefined;
+    }
     return new DirectionVector(x.num, y.num);
   }
 
   /**
    * The direction `value` carries: its `x` and `y` when it is a `Vector2`
-   * whose fields both hold numbers and whose direction is not the zero
-   * vector; `undefined` for any other value, nil included.
+   * whose fields both hold finite numbers and whose direction is not the
+   * zero vector; `undefined` for any other value, nil included.
    *
    * @param value - Any value a program produced.
    */

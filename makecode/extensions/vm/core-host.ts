@@ -159,8 +159,12 @@ namespace wendoo {
     SwitchPage = 0,
     /** The page-restart actuator. */
     RestartPage = 1,
+    /** The random-number sensor. */
+    Random = 3,
     /** The page-activation edge sensor. */
     OnPageEntered = 4,
+    /** The timer sensor. */
+    Timeout = 5,
     /** The active page's identity sensor. */
     CurrentPage = 6,
     /** The most recently deactivated page's identity sensor. */
@@ -532,6 +536,102 @@ namespace wendoo {
     }
   }
 
+  /**
+   * `random number`: the next number of the random-number stream, from 0 up
+   * to but not including 1, rounded through the numerics.
+   */
+  class RandomSensor extends HostActionBinding {
+    private numerics: F64Numerics;
+    private rng: RngServices;
+
+    constructor(numerics: F64Numerics, rng: RngServices) {
+      super(false);
+      this.numerics = numerics;
+      this.rng = rng;
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return mkNumber(this.numerics.round(this.rng.next()));
+    }
+  }
+
+  /** Seconds a timer runs when its delay slot is empty. */
+  const TIMEOUT_DEFAULT_DELAY_SECONDS = 1;
+
+  /** Argument slot of the timer's optional anonymous delay, in seconds. */
+  const TIMEOUT_DELAY_SLOT = 0;
+
+  /** Field of a timer's call-site state holding the scheduled time it fires at, in milliseconds. */
+  const TIMEOUT_FIRE_TIME_FIELD = 0;
+
+  /** Field of a timer's call-site state holding the tick it was last read on. */
+  const TIMEOUT_LAST_TICK_FIELD = 1;
+
+  /**
+   * Last-read tick of a timer not yet read: no tick follows it, so the first
+   * read arms the timer and does not fire it.
+   */
+  const TIMEOUT_UNREAD_TICK = -2;
+
+  /** The call-site state of a timer not yet read: a list of its fire time and its last-read tick. */
+  function unreadTimeoutState(): Value {
+    return mkList("", [mkNumber(0), mkNumber(TIMEOUT_UNREAD_TICK)]);
+  }
+
+  /**
+   * `timeout`: a timer, one per call site, reading true once its delay -- an
+   * optional anonymous number of seconds, one when the slot is empty -- has
+   * passed, then running the delay again from that read.
+   *
+   * A read arms the timer to fire the delay after the read's time, and reads
+   * false, when the call site was not read on the tick before: on its first
+   * read, after its page is entered again, and after any tick its rule did
+   * not run. Entering the site's page also returns it to unread. A delay
+   * slot holding a not-a-number or a value that is no number reads false and
+   * leaves the timer as it was.
+   */
+  class TimeoutSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    onPageEntered(ctx: ExecutionContext): void {
+      ctx.services.callsite.setHostState(ctx.currentCallSiteId, unreadTimeoutState());
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      let delay = TIMEOUT_DEFAULT_DELAY_SECONDS;
+      const delayArg = argAt(args, TIMEOUT_DELAY_SLOT);
+      if (delayArg.t !== ValueTag.Nil) {
+        if (delayArg.t !== ValueTag.Number || isNotANumber(delayArg.num)) {
+          return FALSE_VALUE;
+        }
+        delay = delayArg.num;
+      }
+
+      const callsite = ctx.services.callsite;
+      let state = callsite.getHostState(ctx.currentCallSiteId);
+      if (!state) {
+        state = unreadTimeoutState();
+        callsite.setHostState(ctx.currentCallSiteId, state);
+      }
+
+      let fireTime = state.fields[TIMEOUT_FIRE_TIME_FIELD].num;
+      const lastTick = state.fields[TIMEOUT_LAST_TICK_FIELD].num;
+      let fired = false;
+      if (ctx.currentTick !== lastTick + 1) {
+        fireTime = ctx.time + delay * 1000;
+      }
+      if (ctx.time >= fireTime) {
+        fired = true;
+        fireTime = ctx.time + delay * 1000;
+      }
+      state.fields[TIMEOUT_FIRE_TIME_FIELD] = mkNumber(fireTime);
+      state.fields[TIMEOUT_LAST_TICK_FIELD] = mkNumber(ctx.currentTick);
+      return fired ? TRUE_VALUE : FALSE_VALUE;
+    }
+  }
+
   /** `current page`: the stable page id of the active page. */
   class CurrentPageSensor extends HostActionBinding {
     constructor() {
@@ -720,11 +820,17 @@ namespace wendoo {
    *
    * @param registry - Host-action registry the program's `HOST_ACTION_CALL`
    *   operands resolve against.
+   * @param numerics - Numeric semantics the random-number sensor rounds its
+   *   readings through; pass the instance the core host functions compute
+   *   through.
+   * @param rng - Random-number stream the random-number sensor draws from.
    */
-  export function registerCoreHostActions(registry: HostActionRegistry): void {
+  export function registerCoreHostActions(registry: HostActionRegistry, numerics: F64Numerics, rng: RngServices): void {
     registry.register(CoreActionId.SwitchPage, "switch-page", new SwitchPageActuator());
     registry.register(CoreActionId.RestartPage, "restart-page", new RestartPageActuator());
+    registry.register(CoreActionId.Random, "random", new RandomSensor(numerics, rng));
     registry.register(CoreActionId.OnPageEntered, "on-page-entered", new OnPageEnteredSensor());
+    registry.register(CoreActionId.Timeout, "sensor.timeout", new TimeoutSensor());
     registry.register(CoreActionId.CurrentPage, "current-page", new CurrentPageSensor());
     registry.register(CoreActionId.PreviousPage, "previous-page", new PreviousPageSensor());
     registry.register(CoreActionId.Otherwise, "otherwise", new OtherwiseTrigger());
