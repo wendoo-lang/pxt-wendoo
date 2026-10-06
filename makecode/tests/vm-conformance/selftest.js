@@ -345,6 +345,9 @@ const EXPECTED_ARCADE_CHECKS = [
   "bump-rule-dresses-in-the-bumped-sprite",
   "bump-rule-wears-the-image-asset-it-is-given",
   "child-rule-reads-its-parents-range-output",
+  "a-brain-assignment-through-the-bumped-sprite-output-starts-the-brain-on-the-sprite-it-touches",
+  "an-image-assignment-through-the-in-range-output-dresses-the-sprite-in-range",
+  "two-programs-writing-one-output-read-sprites-image-in-a-frame-leave-the-later-thinkers-value",
   "bump-given-above-reads-the-nearest-sprite-above",
   "bump-given-below-reads-the-nearest-sprite-below",
   "bump-given-left-reads-the-nearest-sprite-to-the-left",
@@ -524,10 +527,12 @@ const ARCADE_HOST_REJECTIONS = [
  * pushes to check paused programs, paused program updates, the bump sensor,
  * the move's toward and away modifiers, the in-range and out-of-range
  * sensors, the proximity sensors' filters, their brain filter, the
- * `Sprite` type's fields, the myself sensor, their outputs, their positional modifiers, the
+ * `Sprite` type's fields, the myself sensor, their outputs, the field
+ * writes made through their outputs, their positional modifiers, the
  * targets the move's toward and away carry, and the move's wander.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,

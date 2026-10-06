@@ -331,7 +331,8 @@ the current slice alone.
       field, the accessor read-only exactly when the field is; a sensor may
       be declared inline -- reading as a value inside an expression -- and
       writable-result -- a live reference a brain may write a field
-      through; asset types included: `defineAssetType` declares a
+      through -- and a tile's declared output writable-result the same way,
+      the catalog carrying the flag on the output; asset types included: `defineAssetType` declares a
       struct type whose values name a project asset of a pack-given kind
       by its id, in one read-only `asset` field, the catalog carrying the
       kind -- the mechanism only, every asset kind declared by a target's
@@ -442,7 +443,9 @@ the current slice alone.
       output of its own on every run -- `bumped`, `inRange`,
       `outOfRange` -- which the output's tile reads in the sensor's rule
       and the rules below it, while the rule's WHEN result keeps carrying
-      the same sprite; each of the range pair reads the nearest
+      the same sprite; each output is declared writable-result, so a rule
+      may write a field of the sprite it holds through its tile, as in
+      setting the bumped sprite's brain; each of the range pair reads the nearest
       admitted sprite against its range -- an optional anonymous number of
       pixels, else the shared default -- so at equal ranges and filters
       exactly one of the pair fires whenever an admitted sprite exists, and

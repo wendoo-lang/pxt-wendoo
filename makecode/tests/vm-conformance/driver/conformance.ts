@@ -74,6 +74,14 @@
  *   argument slot is a repeated value slot: compiled brain code gathers the
  *   tiles filling it, in source order, into one list value and passes the
  *   list in the dispatch's argument position.
+ * - `not a number()` -- synchronous sensor returning the number
+ *   not-a-number.
+ * - `point outputs()` -- synchronous sensor returning `true`, which on every
+ *   run first writes two fresh `Point` structs to its two declared `Point`
+ *   outputs: `{x: 5.5, y: -1.5}` to `open`, whose value a brain may write a
+ *   field through, and `{x: 6.25, y: 0.75}` to `sealed`, whose value is
+ *   read-only. Each output's tile reads the struct in the sensor's rule and
+ *   the rules below it.
  *
  * The profile also registers its three struct types -- `Point` (closed),
  * `Anchor`, and `Target` -- so every corpus program's TYPS atom entries
@@ -137,6 +145,7 @@ namespace wendoo {
     EmitAll = 1038,
     DestroyAnchor = 1039,
     NotANumber = 1040,
+    PointOutputs = 1041,
   }
 
   /**
@@ -794,6 +803,50 @@ namespace wendoo {
     }
   }
 
+  /** Name of the `point outputs` sensor's `Point` output whose value a brain may write a field through. */
+  const POINT_OPEN_OUTPUT = "open";
+
+  /** Name of the `point outputs` sensor's read-only `Point` output. */
+  const POINT_SEALED_OUTPUT = "sealed";
+
+  /** `x` of the `Point` `point outputs` writes to `open`; exactly representable at f32. */
+  const CONFORMANCE_POINT_OPEN_X = 5.5;
+
+  /** `y` of the `Point` `point outputs` writes to `open`; exactly representable at f32. */
+  const CONFORMANCE_POINT_OPEN_Y = -1.5;
+
+  /** `x` of the `Point` `point outputs` writes to `sealed`; exactly representable at f32. */
+  const CONFORMANCE_POINT_SEALED_X = 6.25;
+
+  /** `y` of the `Point` `point outputs` writes to `sealed`; exactly representable at f32. */
+  const CONFORMANCE_POINT_SEALED_Y = 0.75;
+
+  /** `point outputs()`: writes a fresh `Point` to each of its two outputs, then returns true. */
+  class PointOutputsSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      setActionOutput(
+        ctx,
+        CONFORMANCE_POINT_TYPE_ID,
+        POINT_OPEN_OUTPUT,
+        mkStruct(CONFORMANCE_POINT_TYPE_ID, [mkNumber(CONFORMANCE_POINT_OPEN_X), mkNumber(CONFORMANCE_POINT_OPEN_Y)])
+      );
+      setActionOutput(
+        ctx,
+        CONFORMANCE_POINT_TYPE_ID,
+        POINT_SEALED_OUTPUT,
+        mkStruct(CONFORMANCE_POINT_TYPE_ID, [
+          mkNumber(CONFORMANCE_POINT_SEALED_X),
+          mkNumber(CONFORMANCE_POINT_SEALED_Y),
+        ])
+      );
+      return TRUE_VALUE;
+    }
+  }
+
   /** `defer target()`: resolves its handle to a fresh resolver-backed `Target` value one tick after its dispatch. */
   class DeferTargetSensor extends HostActionBinding {
     constructor() {
@@ -1147,6 +1200,16 @@ namespace wendoo {
     ConformanceActionId.NotANumber,
     new NotANumberSensor(),
     sensorSpec([], TYPE_NUMBER, "not a number")
+  );
+  const pointOutputsSpec = sensorSpec([], TYPE_BOOLEAN, "point outputs");
+  const pointOpenOutput = output(POINT_OPEN_OUTPUT, POINT_TYPE_NAME);
+  pointOpenOutput.writableResult = true;
+  pointOutputsSpec.outputs = [pointOpenOutput, output(POINT_SEALED_OUTPUT, POINT_TYPE_NAME)];
+  bindConformanceAction(
+    "sensor.conformance.point-outputs",
+    ConformanceActionId.PointOutputs,
+    new PointOutputsSensor(),
+    pointOutputsSpec
   );
 
   bindConformanceOperator(

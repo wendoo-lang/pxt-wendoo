@@ -1836,6 +1836,71 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /**
+   * The sprite `target` wears after one frame in which the sprites `first`
+   * and `second`, both touching it and not each other, run the brand program
+   * -- a bump rule setting the bumped sprite's image to its own sprite's --
+   * `first` attached before `second`, so `first`'s program thinks first.
+   */
+  function brandedBoth(first: Sprite, second: Sprite, target: Sprite): Image {
+    wendoo.runBrain(first, wendooBrains.p_brandOnBump00001);
+    wendoo.runBrain(second, wendooBrains.p_brandOnBump00001);
+    pause(FRAMES_MS);
+    return target.image;
+  }
+
+  /**
+   * In a scene of its own, check compiled programs writing a field of the
+   * sprite a proximity sensor's output holds: a bump rule setting the bumped
+   * sprite's brain starts that brain on the sprite it touches, which ran
+   * none; an in-range rule setting the sprite in range's image to its own
+   * sprite's dresses that sprite in it; and two programs writing one such
+   * sprite's image in the same frame leave it the value of the program that
+   * thinks later, in either attach order.
+   */
+  function checkOutputWrites(): void {
+    game.pushScene();
+    const activator = solidSprite(8, 40, 60);
+    const dormant = solidSprite(8, 46, 60);
+    const wasDormant = programOf(dormant) === NOT_RUNNING;
+    wendoo.runBrain(activator, wendooBrains.p_activateOnBump01);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-assignment-through-the-bumped-sprite-output-starts-the-brain-on-the-sprite-it-touches",
+      wasDormant && programOf(dormant) === TICKER_ID && programOf(activator) === "activateOnBump01"
+    );
+    activator.destroy();
+    dormant.destroy();
+    pause(FRAMES_MS);
+
+    const painter = solidSprite(8, 40, 60);
+    const canvas = heroSprite(60, 60);
+    const canvasImage = canvas.image;
+    wendoo.runBrain(painter, wendooBrains.p_paintInRange0001);
+    pause(FRAMES_MS);
+    check(
+      "an-image-assignment-through-the-in-range-output-dresses-the-sprite-in-range",
+      canvas.image === painter.image && canvas.image !== canvasImage
+    );
+    painter.destroy();
+    canvas.destroy();
+    pause(FRAMES_MS);
+
+    const leftFirst = solidSprite(8, 54, 40);
+    const rightSecond = solidSprite(8, 66, 40);
+    const upper = solidSprite(8, 60, 40);
+    const leftSecond = solidSprite(8, 54, 90);
+    const rightFirst = solidSprite(8, 66, 90);
+    const lower = solidSprite(8, 60, 90);
+    const upperWears = brandedBoth(leftFirst, rightSecond, upper);
+    const lowerWears = brandedBoth(rightFirst, leftSecond, lower);
+    check(
+      "two-programs-writing-one-output-read-sprites-image-in-a-frame-leave-the-later-thinkers-value",
+      upperWears === rightSecond.image && lowerWears === leftSecond.image
+    );
+    game.popScene();
+  }
+
   /** Value a present modifier slot carries: its one occurrence. */
   const PRESENT = wendoo.mkNumber(1);
 
@@ -3306,6 +3371,7 @@ namespace arcadeSelftest {
     checkSpriteFields();
     checkMyself();
     checkSensorOutputs();
+    checkOutputWrites();
     checkPositionalModifiers();
     checkMoveTargets();
     checkWander();

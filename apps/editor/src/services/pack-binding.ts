@@ -428,6 +428,7 @@ class PackBinder {
       ...(output.label === undefined ? {} : { label: output.label }),
       ...(output.docs === undefined ? {} : { docsMarkdown: output.docs }),
       ...(output.iconUrl === undefined ? {} : { iconUrl: output.iconUrl }),
+      ...(output.writableResult ? { writableResult: true } : {}),
     }));
     const consumesWhenResult = tile.consumesWhenResult === undefined ? undefined : this.typeOf(tile.consumesWhenResult);
     const metadata: ITileMetadata = {

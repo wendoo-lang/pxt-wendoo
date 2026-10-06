@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "paintInRange0001",
+  "name": "Paint",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0paintInRange",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0paintInRange",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range"
+          ],
+          "do": [
+            "tile.out->struct:<Sprite>.inRange",
+            "tile.accessor->struct:<Sprite>->image",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->image"
+          ],
+          "children": [],
+          "ruleId": "fRu0paintInRange"
+        }
+      ]
+    }
+  ]
+}

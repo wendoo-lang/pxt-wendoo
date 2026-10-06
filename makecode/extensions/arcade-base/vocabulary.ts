@@ -539,11 +539,16 @@ namespace wendoo {
     }
   }
 
-  /** The `Sprite` output named `name`, its tile labelled `label` and showing `icon`. */
+  /**
+   * The `Sprite` output named `name`, its tile labelled `label` and showing
+   * `icon`, declared writable-result: a brain may write a field of the sprite
+   * it holds through its tile.
+   */
   function spriteOutput(name: string, label: string, icon: Image): TileOutputSpec {
     const declared = output(name, TYPE_SPRITE);
     declared.label = label;
     declared.icon = icon;
+    declared.writableResult = true;
     return declared;
   }
 

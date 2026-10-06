@@ -213,6 +213,8 @@ export interface CatalogOutput {
   readonly docs?: string;
   /** Icon of the output's tile, as a data URI usable as an image source as it is; render it only as an image source, never as markup. */
   readonly iconUrl?: string;
+  /** `true` for an output whose value a brain may write a field through; absent otherwise. */
+  readonly writableResult?: true;
 }
 
 /** One tile of a pack. */
@@ -526,7 +528,14 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
       const value = stringField(output, key);
       if (value !== undefined) display[key] = value;
     }
-    return [{ name: output.name, type: output.type, ...display }];
+    return [
+      {
+        name: output.name,
+        type: output.type,
+        ...display,
+        ...(output.writableResult === true ? { writableResult: true as const } : {}),
+      },
+    ];
   });
   const returns = stringField(entry, "returns");
   const consumesWhenResult = stringField(entry, "consumesWhenResult");

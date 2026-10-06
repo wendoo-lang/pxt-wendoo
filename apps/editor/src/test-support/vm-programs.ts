@@ -219,6 +219,9 @@ const ARCADE_SOURCES = [
   "jump.src.json",
   "rise.src.json",
   "dresser.src.json",
+  "activate.src.json",
+  "paint.src.json",
+  "brand.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

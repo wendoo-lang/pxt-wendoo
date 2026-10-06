@@ -448,10 +448,34 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.deepEqual(codes, []);
   });
 
-  it("refuses an assignment through an output tile's field, and to a Vector2's x or y", () => {
+  const spriteOutOfRange = `${OUTPUT_ENTRY_PREFIX}outOfRange`;
+
+  for (const [sentence, when, act] of [
+    ["the bumped sprite's brain set to a brain", [bump], [bumped, brainOf, ASSIGN, BRAIN_LITERAL]],
+    ["the bumped sprite's brain set to myself's", [bump], [bumped, brainOf, ASSIGN, myself, brainOf]],
+    ["the bumped sprite's position set to myself's", [bump], [bumped, position, ASSIGN, myself, position]],
+    ["the sprite in range's image set to myself's", inRange, [spriteInRange, imageOf, ASSIGN, myself, imageOf]],
+    [
+      "the sprite out of range's image set to an image asset",
+      ["sensor.arcade.out-of-range"],
+      [spriteOutOfRange, imageOf, ASSIGN, IMAGE_LITERAL],
+    ],
+  ] as const) {
+    it(`compiles an assignment through a proximity sensor's output: ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("offers the assignment after a writable field of each proximity sensor's output", () => {
+    assert.ok(arcadeOffersLiteral(ASSIGN, [bump], [bumped, brainOf]));
+    assert.ok(arcadeOffersLiteral(ASSIGN, inRange, [spriteInRange, imageOf]));
+    assert.ok(arcadeOffersLiteral(ASSIGN, ["sensor.arcade.out-of-range"], [spriteOutOfRange, position]));
+  });
+
+  it("refuses an assignment to a Vector2's x or y, through an output tile as through myself", () => {
     assert.ok(
-      arcadeImageRuleDiagnosticCodes([bump], [bumped, brainOf, ASSIGN, BRAIN_LITERAL]).includes(
-        ParseDiagCode.ReadOnlyResultFieldAssignment
+      arcadeImageRuleDiagnosticCodes([bump], [bumped, position, yOf, ASSIGN, NUMBER_LITERAL]).includes(
+        ParseDiagCode.ReadOnlyFieldAssignment
       )
     );
     assert.ok(

@@ -38,6 +38,11 @@
             {
               "name": "position",
               "type": "Beacon"
+            },
+            {
+              "name": "anchor",
+              "type": "Beacon",
+              "writableResult": true
             }
           ],
           "label": "beacon reading",

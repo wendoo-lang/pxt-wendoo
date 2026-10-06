@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "activateOnBump01",
+  "name": "Activate",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0activateBump",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0activateBump",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->brain",
+            "tile.op->assign",
+            "tile.literal->struct:<Brain>->akBQz0nySKaYx37w"
+          ],
+          "children": [],
+          "ruleId": "fRu0activateBump"
+        }
+      ]
+    }
+  ]
+}

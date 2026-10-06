@@ -105,15 +105,19 @@ namespace beacon {
 
   pack.defineStruct("Beacon", [xField, yField], new BeaconTypeBinding(), beaconMeta);
 
+  /** The reading tile's writable-result output, beside its read-only one, which the catalog assertions pin. */
+  const anchorOutput = wendoo.output("anchor", "Beacon");
+  anchorOutput.writableResult = true;
+
   /**
-   * Declared shape of the reading tile, with a named output, sample metadata,
-   * sentence words included, and both sensor flags, the catalog assertions
-   * pin.
+   * Declared shape of the reading tile, with two named outputs, sample
+   * metadata, sentence words included, and both sensor flags, the catalog
+   * assertions pin.
    */
   const readingSpec = new wendoo.TileSpec(wendoo.TILE_KIND_SENSOR, [], wendoo.TYPE_STRING);
   readingSpec.inline = true;
   readingSpec.writableResult = true;
-  readingSpec.outputs = [wendoo.output("position", "Beacon")];
+  readingSpec.outputs = [wendoo.output("position", "Beacon"), anchorOutput];
   readingSpec.label = "beacon reading";
   readingSpec.group = "Beacons";
   readingSpec.docs = '# Beacon reading\n\nReads the name of the pack whose "reading" tile stands.';

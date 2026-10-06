@@ -360,6 +360,36 @@ describe("parseCatalog", () => {
     assert.equal(there !== undefined && "writableResult" in there, false);
   });
 
+  it("reads an output's writable-result flag when true, and none otherwise", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "lookout",
+          tiles: [
+            {
+              name: "sensor.lookout.here",
+              kind: "sensor",
+              returns: "boolean",
+              outputs: [
+                { name: "open", type: "number", writableResult: true },
+                { name: "shut", type: "number", writableResult: false },
+                { name: "odd", type: "number", writableResult: "yes" },
+                { name: "plain", type: "number" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const [open, shut, odd, plain] = parseCatalog(text).packs[0]?.tiles[0]?.outputs ?? [];
+
+    assert.equal(open?.writableResult, true);
+    for (const output of [shut, odd, plain]) {
+      assert.equal(output !== undefined && "writableResult" in output, false, output?.name);
+    }
+  });
+
   it("reads each pack's core tile icons in declaration order, dropping an entry missing its tile id or its icon, or no object", () => {
     const text = JSON.stringify({
       packs: [

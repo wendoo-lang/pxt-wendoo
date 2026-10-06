@@ -10,6 +10,7 @@ import {
   suggestTiles,
 } from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import type { BrainTileOutputDef } from "@wendoo/core/brain/tiles";
 import { mkOutputTileId, mkOutputVarKey } from "@wendoo/core/runtime";
 import { catalogTile } from "../test-support/asset-catalog.js";
 import type { AuthoringEnvironment } from "./authoring-environment.js";
@@ -33,8 +34,8 @@ const SAY = "actuator.lookout.say";
 /**
  * A catalog in the rendered form the simx publishes: two sensors declaring
  * one output under the same identity, the first with a label, docs and an
- * icon, the second with another label and a second, unlabeled output; and an
- * actuator taking a number.
+ * icon and a second output declared writable-result, the second with another
+ * label and a second, unlabeled output; and an actuator taking a number.
  */
 const OUTPUT_CATALOG = JSON.stringify({
   packs: [
@@ -45,7 +46,10 @@ const OUTPUT_CATALOG = JSON.stringify({
           name: PEEK,
           kind: "sensor",
           returns: "boolean",
-          outputs: [{ name: "seen", type: "number", label: "what I saw", docs: "# Seen", iconUrl: SEEN_ICON }],
+          outputs: [
+            { name: "seen", type: "number", label: "what I saw", docs: "# Seen", iconUrl: SEEN_ICON },
+            { name: "spot", type: "number", writableResult: true },
+          ],
           label: "peek",
         },
         {
@@ -121,6 +125,16 @@ describe("pack tile outputs", () => {
     const built = environment();
 
     assert.equal(catalogTile(built.environment, outputTileId("seen")).metadata?.label, "what I saw");
+  });
+
+  it("binds an output declared writable-result as a writable-result output tile, and every other output as a read-only one", () => {
+    const built = environment();
+    const writable = (name: string) =>
+      (catalogTile(built.environment, outputTileId(name)) as BrainTileOutputDef).writableResult;
+
+    assert.equal(writable("spot"), true);
+    assert.equal(writable("seen"), false);
+    assert.equal(writable("count"), false);
   });
 
   it("shows an unlabeled output by its name", () => {

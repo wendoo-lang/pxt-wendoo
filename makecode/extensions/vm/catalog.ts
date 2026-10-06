@@ -21,7 +21,8 @@
  *   as a value inside an expression), `writableResult` (a sensor whose result
  *   a brain may write a field through), its argument grammar as either
  *   `args` or `call`, `returns`, `outputs` (each with `name` and
- *   `type`, then the output tile's `label`, `docs` and `icon`),
+ *   `type`, then `writableResult` (an output whose value a brain may write
+ *   a field through), then the output tile's `label`, `docs` and `icon`),
  *   `consumesWhenResult` (the type name of the WHEN result the tile
  *   requires), the metadata fields, and `language`.
  * - A tile's argument grammar is a list of top-level items that match as the
@@ -595,6 +596,9 @@ namespace wendoo {
           for (let i = 0; i < spec.outputs.length; i++) {
             const declared = spec.outputs[i];
             let output = `{"name":${jsonQuote(declared.name)},"type":${jsonQuote(declared.type)}`;
+            if (declared.writableResult) {
+              output += ',"writableResult":true';
+            }
             if (declared.label.length > 0) {
               output += `,"label":${jsonQuote(declared.label)}`;
             }

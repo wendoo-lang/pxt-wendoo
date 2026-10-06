@@ -1033,6 +1033,12 @@ namespace wendoo {
     /** Icon of the output's tile, in the form the host target's catalog icon encoder renders; `undefined` when undeclared. */
     // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
     icon: any = undefined;
+    /**
+     * Whether the output's value is a live reference a brain may write a
+     * field through, as in assigning to an accessor tile placed after the
+     * output's tile.
+     */
+    writableResult: boolean = false;
 
     constructor(name: string, type: string) {
       this.name = name;
