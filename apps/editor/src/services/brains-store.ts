@@ -156,6 +156,8 @@ export interface BrainsViewState {
   readonly brainLiterals: ReadonlyMap<string, BrainLiteral>;
   /** The environment's type icons, keyed by type id, as {@link AuthoringEnvironment.typeIcons} holds them. */
   readonly typeIcons: ReadonlyMap<TypeId, string>;
+  /** The environment's page icon, as {@link AuthoringEnvironment.pageIcon} holds it. */
+  readonly pageIcon: string | undefined;
   /**
    * The unresolved brain literals each brain references, keyed by document
    * id, for each brain referencing any, each carrying its stable code. Such
@@ -891,6 +893,7 @@ export class BrainsStore {
       unresolvedAssets: this.unresolvedAssets(),
       brainLiterals: this._environment.brainLiterals.view,
       typeIcons: this._environment.typeIcons,
+      pageIcon: this._environment.pageIcon,
       unresolvedBrains: this.unresolvedBrains(),
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,

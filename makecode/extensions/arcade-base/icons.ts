@@ -110,6 +110,27 @@ namespace wendoo {
     . . . . . . . . . . . . . . . .
   `;
 
+  /** Icon of the myself sensor: a smiling hero in a teal starred helmet and an orange tunic. */
+  //% hidden
+  export const MYSELF_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . f f f f f f . . . . .
+    . . . f f 6 6 6 6 6 6 f f . . .
+    . . f 6 6 6 6 5 5 6 6 9 9 f . .
+    . . f 6 6 6 5 5 5 5 6 6 9 f . .
+    . f 6 6 6 6 6 5 5 6 6 6 6 6 f .
+    . f 6 6 f f f f f f f f 6 6 f .
+    . f 6 f d d d d d d d d f 6 f .
+    . f 6 f d d f d d f d d f 6 f .
+    . f 6 f d d f d d f d d f 6 f .
+    . f 6 f 3 d d d d d d 3 f 6 f .
+    . . f f d d f d d f d d f f . .
+    . . . f f d d f f d d f f . . .
+    . . f 4 4 f 4 5 5 4 f 4 4 f . .
+    . . f d f 4 4 4 4 4 4 f d f . .
+    . . . f c c c f f c c c f . . .
+  `;
+
   /** Icon of the `up` direction modifier: an arrow pointing up. */
   //% hidden
   export const UP_ICON = img`
@@ -482,6 +503,27 @@ namespace wendoo {
     . . . c 1 6 6 6 6 6 6 1 c . . .
     . . . c 1 1 6 6 1 1 1 1 c . . .
     . . . c 1 1 1 6 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c c c c c c c c c c . . .
+    . . . . . . . . . . . . . . . .
+  `;
+
+  /** Icon of the core page tiles, one naming each of the program's pages: a plain page. */
+  //% hidden
+  export const CORE_PAGE_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . c c c c c c c . . . . . .
+    . . . c 1 1 1 1 1 c c . . . . .
+    . . . c 1 1 1 1 1 c 1 c . . . .
+    . . . c 1 1 1 1 1 c c c c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
+    . . . c 1 1 1 1 1 1 1 1 c . . .
     . . . c 1 1 1 1 1 1 1 1 c . . .
     . . . c 1 1 1 1 1 1 1 1 c . . .
     . . . c c c c c c c c c c . . .
@@ -1244,24 +1286,24 @@ namespace wendoo {
     . . . . . . . . . . . . . . . .
   `;
 
-  /** Icon of the `image` accessor of a `Sprite`: a framed picture of a hill under the sun. */
+  /** Icon of the `image` accessor of a `Sprite`: a framed portrait of a hero in a teal starred helmet, head and shoulders against the sky. */
   //% hidden
   export const IMAGE_ACCESSOR_ICON = img`
-    . . . . . . . . . . . . . . . .
-    . . . . . . . . . . . . . . . .
-    . f f f f f f f f f f f f f f .
-    . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
-    . f 9 9 9 9 9 9 9 9 5 5 9 9 f .
-    . f 9 9 9 9 9 9 9 9 5 5 9 9 f .
-    . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
-    . f 9 9 9 9 7 9 9 9 9 9 9 9 f .
-    . f 9 9 9 7 7 7 9 9 9 9 9 9 f .
-    . f 9 9 7 7 7 7 7 9 9 7 9 9 f .
-    . f 9 7 7 7 7 7 7 7 7 7 7 9 f .
-    . f 7 7 7 7 7 7 7 7 7 7 7 7 f .
-    . f 7 7 7 7 7 7 7 7 7 7 7 7 f .
-    . f f f f f f f f f f f f f f .
-    . . . . . . . . . . . . . . . .
-    . . . . . . . . . . . . . . . .
+    f f f f f f f f f f f f f f f f
+    f 9 9 9 9 9 9 9 9 9 9 9 9 9 9 f
+    f 9 9 9 9 f f f f f f 9 9 9 9 f
+    f 9 9 9 f 6 6 5 5 6 9 f 9 9 9 f
+    f 9 9 f 6 6 5 5 5 5 6 6 f 9 9 f
+    f 9 f 6 6 6 6 5 5 6 6 6 6 f 9 f
+    f 9 f 6 f f f f f f f f 6 f 9 f
+    f 9 f 6 f d d d d d d f 6 f 9 f
+    f 9 f 6 f d f d d f d f 6 f 9 f
+    f 9 f 6 f d f d d f d f 6 f 9 f
+    f 9 f 6 f 3 d d d d 3 f 6 f 9 f
+    f 9 9 f f d f d d f d f f 9 9 f
+    f 9 9 9 f f d f f d f f 9 9 9 f
+    f 9 9 f 4 4 f 5 5 f 4 4 f 9 9 f
+    f 9 f 4 4 4 4 4 4 4 4 4 4 f 9 f
+    f f f f f f f f f f f f f f f f
   `;
 }

@@ -29,7 +29,7 @@ import {
   suggestTiles,
 } from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { BrainTileLiteralDef, type BrainTileSensorDef } from "@wendoo/core/brain/tiles";
+import { BrainTileLiteralDef, BrainTilePageDef, type BrainTileSensorDef } from "@wendoo/core/brain/tiles";
 import type { StructValue } from "@wendoo/core/runtime";
 import {
   BrainRuntime,
@@ -51,7 +51,7 @@ import { compileBrainSource, readBrainSource, serializeBrainSource } from "../se
 import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
 import { allocateIds } from "../services/id-allocation.js";
-import { CORE_TYPE_IDS } from "../services/pack-binding.js";
+import { CORE_TYPE_IDS, PAGE_FAMILY_TILE_ID } from "../services/pack-binding.js";
 import { type ProjectedSentence, projectedSentence } from "./sentence-projection.js";
 
 /** The repository root, as an absolute path ending in a separator. */
@@ -1036,15 +1036,15 @@ const ARCADE_PALETTE = [
 
 /** One icon the rendered arcade catalog carries, and what the editor makes of it. */
 export interface RenderedIcon {
-  /** Id of the tile the icon belongs to: a sensor, an actuator, a modifier slot's tile, or a core tile. */
+  /** Id of the tile the icon belongs to: a sensor, an actuator, a modifier slot's tile, or a core tile; or the page family id. */
   readonly tileId: string;
   /** Whether the icon is one a pack gives a core tile. */
   readonly core: boolean;
   /** The icon's data URI, as the rendered catalog carries it. */
   readonly carried: string;
-  /** The icon the bound tile's display metadata holds, or `undefined` when it holds none. */
+  /** The icon the bound tile's display metadata holds, or the page icon for the page family; `undefined` when none is held. */
   readonly bound: string | undefined;
-  /** The icon the visual provider resolves the bound tile to, or `undefined` when it resolves none. */
+  /** The icon the visual provider resolves the bound tile, or a page's own tile, to; `undefined` when it resolves none. */
   readonly resolved: string | undefined;
 }
 
@@ -1054,8 +1054,9 @@ export interface RenderedIcon {
  * the Arcade default palette, first declaration of a shared slot tile or of a
  * core tile winning, each beside what
  * the environment binding the rendered catalog under the arcade selftest's
- * allocation holds and resolves for its tile; and the lines the simx's
- * rendering logged as errors.
+ * allocation holds and resolves for its tile -- for the page family id, the
+ * environment's page icon and what a page's own tile resolves to; and the
+ * lines the simx's rendering logged as errors.
  */
 export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[] } {
   const errors: string[] = [];
@@ -1088,8 +1089,17 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
     }
   }
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
-  const resolve = createTileVisualProvider(built.assetLiterals.view);
+  const resolve = createTileVisualProvider(built.assetLiterals.view, built.pageIcon);
   const icons = [...carried].map(([tileId, url]) => {
+    if (tileId === PAGE_FAMILY_TILE_ID) {
+      return {
+        tileId,
+        core: true,
+        carried: url,
+        bound: built.pageIcon,
+        resolved: resolve(new BrainTilePageDef("page-start", "start"))?.iconUrl,
+      };
+    }
     const tile = built.environment
       .tileCatalogs()
       .map((catalog) => catalog.get(tileId))

@@ -412,7 +412,8 @@ the current slice alone.
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
       `Sprite` and `Brain` types, the icons it gives the core tiles (the page tiles,
-      the timer, AND, OR, NOT, the six comparisons, the arithmetic
+      every page's own tile through the page family id, the timer, AND, OR,
+      NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and
       the variable and tile factories), and the icons it gives the core
       number, text and switch types (`number`, `string` and `boolean`), the controller read (one module owning every
@@ -533,7 +534,9 @@ the current slice alone.
     fields name are bound -- and puts
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold
-    ignored, and binds each catalog type's icon to the bound type, which
+    ignored -- except one given the page family id `tile.page`, which every
+    page's own tile wears, the first given standing -- and binds each
+    catalog type's icon to the bound type, which
     each literal of a brain type wears, and each icon packs give a core
     type to that core type, the first icon given standing and an icon
     given a name that is no core type reported; every type icon bound is

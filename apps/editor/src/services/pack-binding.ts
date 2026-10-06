@@ -115,6 +115,13 @@ export const CORE_TYPE_IDS: ReadonlyMap<string, TypeId> = new Map([
   [CoreTypeNames.Buffer, CoreTypeIds.Buffer],
 ]);
 
+/**
+ * The page family id: the id under which a core tile icon is the icon of
+ * every page's own tile -- the tile naming one page of a brain, one per page.
+ * No tile holds this id.
+ */
+export const PAGE_FAMILY_TILE_ID = "tile.page";
+
 /** The value tags a slot default's tagged value may carry. */
 const VALUE_TAGS: ReadonlySet<unknown> = new Set([...Object.values(NativeType), "handle"]);
 
@@ -546,6 +553,15 @@ function inertAsync(result: Value): HostAsyncFn {
       handle.resolve(result);
     },
   };
+}
+
+/**
+ * The icon `packs` give the page family under {@link PAGE_FAMILY_TILE_ID},
+ * the first given, in catalog order, standing; `undefined` when none gives
+ * one.
+ */
+export function pageFamilyIcon(packs: readonly CatalogPack[]): string | undefined {
+  return packs.flatMap((pack) => pack.coreTileIcons).find((icon) => icon.tileId === PAGE_FAMILY_TILE_ID)?.iconUrl;
 }
 
 /**

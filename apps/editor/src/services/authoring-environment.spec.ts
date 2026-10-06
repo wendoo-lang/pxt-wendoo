@@ -251,6 +251,30 @@ const CORE_ICON_CATALOG = JSON.stringify({
   ],
 });
 
+/** Icons the page icon catalog's packs give the page family, each a distinct data URI. */
+const PAGE_ICONS = {
+  beacon: "data:image/svg+xml;base64,YmVhY29uLXBhZ2U=",
+  beaconAgain: "data:image/svg+xml;base64,YmVhY29uLXBhZ2UtYWdhaW4=",
+  chime: "data:image/svg+xml;base64,Y2hpbWUtcGFnZQ==",
+};
+
+/**
+ * A catalog in the rendered form the simx publishes whose packs give the
+ * page family id an icon: twice in the first pack and once in the second.
+ */
+const PAGE_ICON_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "beacon",
+      coreTileIcons: [
+        { tileId: "tile.page", iconUrl: PAGE_ICONS.beacon },
+        { tileId: "tile.page", iconUrl: PAGE_ICONS.beaconAgain },
+      ],
+    },
+    { name: "chime", coreTileIcons: [{ tileId: "tile.page", iconUrl: PAGE_ICONS.chime }] },
+  ],
+});
+
 /** Icons the type icon catalog's types carry, each a distinct data URI. */
 const TYPE_ICONS = {
   bell: "data:image/svg+xml;base64,YmVsbA==",
@@ -509,6 +533,19 @@ describe("buildAuthoringEnvironment", () => {
 
     assert.equal(tile(iconed.environment, mkOperatorTileId(CoreOpId.And)).metadata?.iconUrl, CORE_ICONS.beaconAnd);
     assert.equal(tile(plain.environment, mkOperatorTileId(CoreOpId.And)).metadata?.iconUrl, undefined);
+  });
+
+  it("binds the icon a pack gives the page family id as the page icon, the first given standing across packs, minting no tile and diagnosing nothing", () => {
+    const built = buildAuthoringEnvironment(PAGE_ICON_CATALOG, emptyIdManifest());
+
+    assert.equal(built.pageIcon, PAGE_ICONS.beacon);
+    assert.equal(hasTile(built.environment, "tile.page"), false);
+    assert.deepEqual(built.diagnostics, []);
+  });
+
+  it("binds no page icon while no pack gives the page family one, or while no allocation is held", () => {
+    assert.equal(buildAuthoringEnvironment(CORE_ICON_CATALOG, emptyIdManifest()).pageIcon, undefined);
+    assert.equal(buildAuthoringEnvironment(PAGE_ICON_CATALOG, undefined).pageIcon, undefined);
   });
 
   it("binds each bound type's icon to the type, the first declaration of a name standing, an unbound type's icon to nothing", () => {

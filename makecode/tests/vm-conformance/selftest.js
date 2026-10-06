@@ -460,13 +460,14 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.position.right",
 ];
 
-/** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id. */
+/** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id, and every page's own tile by the page family id `tile.page`. */
 const ARCADE_ICONED_CORE_TILES = [
   "tile.sensor->on-page-entered",
   "tile.actuator->switch-page",
   "tile.actuator->restart-page",
   "tile.sensor->current-page",
   "tile.sensor->previous-page",
+  "tile.page",
   "tile.sensor->sensor.timeout",
   "tile.op->and",
   "tile.op->or",

@@ -51,14 +51,14 @@ interface BrainEditorProps {
  * document as the store holds it when the editor mounts, and applies each
  * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
  * dialog's config follows the store's environment, its asset and brain
- * literals and its type icons, rebuilt each time any of them changes. Mount it keyed by `brainId` to edit another brain.
+ * literals, its type icons and its page icon, rebuilt each time any of them changes. Mount it keyed by `brainId` to edit another brain.
  */
 export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
   const store = useBrains();
-  const { environment, assetLiterals, brainLiterals, typeIcons } = useBrainsState();
+  const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
   const config = useMemo(
-    () => buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons),
-    [environment, assetLiterals, brainLiterals, typeIcons]
+    () => buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon),
+    [environment, assetLiterals, brainLiterals, typeIcons, pageIcon]
   );
   const [editing] = useState(() => openBrainEditing(store, brainId));
   const [isOpen, setIsOpen] = useState(true);

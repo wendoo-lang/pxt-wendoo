@@ -7,7 +7,7 @@ import { ASSET_FIELD, AssetLiterals, type AssetType } from "./asset-literals";
 import { BRAIN_FIELD, BrainLiterals, type BrainType } from "./brain-literals";
 import { type CATALOG_UNREADABLE, type CatalogPack, type CatalogProblem, parseCatalog } from "./catalog";
 import { allocateIds } from "./id-allocation";
-import { CORE_TYPE_IDS, PackBindingCode, type PackBindingProblem, packModule } from "./pack-binding";
+import { CORE_TYPE_IDS, PackBindingCode, type PackBindingProblem, packModule, pageFamilyIcon } from "./pack-binding";
 
 export { PackBindingCode } from "./pack-binding";
 
@@ -68,6 +68,12 @@ export interface AuthoringEnvironment {
    * while no id allocation is held.
    */
   readonly typeIcons: ReadonlyMap<TypeId, string>;
+  /**
+   * The icon every page's own tile wears: the one packs give the page family
+   * id, the first given standing. `undefined` while no pack gives one or no
+   * id allocation is held.
+   */
+  readonly pageIcon: string | undefined;
 }
 
 /**
@@ -168,9 +174,10 @@ function boundBrainTypes(
  * as a brain type, each brain literal wearing its type's icon; its type
  * icons hold every bound type's icon and every core type's icon a pack gives,
  * an icon given a name that is no core type reported under
- * {@link PackBindingCode.CORE_TYPE_UNKNOWN}. Apply the session's asset snapshot and
- * the held brains to them, and bind each brain source to both before reading
- * or compiling it.
+ * {@link PackBindingCode.CORE_TYPE_UNKNOWN}; and its page icon is the icon a
+ * pack gives the page family. Apply the session's asset snapshot and the
+ * held brains to the literals, and bind each brain source to both before
+ * reading or compiling it.
  *
  * @param catalogText - The session catalog's serialized text, or `undefined` while none has arrived.
  * @param ids - The project's id allocation the editor holds; omit it while the editor holds none.
@@ -214,11 +221,13 @@ export function buildAuthoringEnvironment(
       ])
     : new Map<TypeId, string>();
   const brainTypes = bound ? boundBrainTypes(environment, catalog.packs, typeIcons) : [];
+  const pageIcon = bound ? pageFamilyIcon(catalog.packs) : undefined;
   return {
     environment,
     diagnostics,
     assetLiterals: new AssetLiterals(environment.brainServices, assetTypes),
     brainLiterals: new BrainLiterals(environment.brainServices, brainTypes),
     typeIcons,
+    pageIcon,
   };
 }

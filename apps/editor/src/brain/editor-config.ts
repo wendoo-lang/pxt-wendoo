@@ -40,21 +40,23 @@ function localizerView(base: Localizer): Localizer {
  * included -- each registered type named by its registry name, tiles shown
  * through the visual provider over `assetLiterals`, a display-only literal
  * type per asset type those literals hold and per brain type `brainLiterals`
- * hold, each type's data-type icon as `typeIcons` holds it, and brain files
- * saved and loaded relative to {@link BRAIN_SOURCE_NAMESPACE}. Build a new
- * config whenever the environment is rebuilt or the asset or brain literals
- * change.
+ * hold, each type's data-type icon as `typeIcons` holds it, every page's own
+ * tile wearing `pageIcon`, and brain files saved and loaded relative to
+ * {@link BRAIN_SOURCE_NAMESPACE}. Build a new config whenever the environment
+ * is rebuilt or the asset or brain literals change.
  *
  * @param environment - The brains store's current environment.
  * @param assetLiterals - The environment's asset literals, as the brains store reports them.
  * @param brainLiterals - The environment's brain literals, as the brains store reports them.
  * @param typeIcons - The environment's type icons, keyed by type id, as the brains store reports them.
+ * @param pageIcon - The environment's page icon, as the brains store reports it; omit it while none is bound.
  */
 export function buildBrainEditorConfig(
   environment: WendooEnvironment,
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
   brainLiterals: ReadonlyMap<string, BrainLiteral>,
-  typeIcons: ReadonlyMap<TypeId, string>
+  typeIcons: ReadonlyMap<TypeId, string>,
+  pageIcon?: string
 ): BrainEditorConfig {
   return {
     dataTypeIcons: typeIcons,
@@ -63,7 +65,7 @@ export function buildBrainEditorConfig(
       ...createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
       ...createBrainLiteralTypes(environment.brainServices.runtime.types, brainLiterals),
     ],
-    resolveTileVisual: createTileVisualProvider(assetLiterals),
+    resolveTileVisual: createTileVisualProvider(assetLiterals, pageIcon),
     brainServices: environment.brainServices,
     localizer: localizerView(environment.appServices.localizer),
     projectNamespace: BRAIN_SOURCE_NAMESPACE,

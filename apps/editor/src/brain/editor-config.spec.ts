@@ -3,12 +3,13 @@ import { describe, it } from "node:test";
 import { CoreTypeIds, mkLiteralTileId } from "@wendoo/core/app";
 import { projectRuleSentence } from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import type { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
+import { type BrainTileLiteralDef, BrainTilePageDef } from "@wendoo/core/brain/tiles";
 import type { Localizer } from "@wendoo/core/localization";
 import { createDefaultLocalizer } from "@wendoo/core/localization";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { BRAIN_SOURCE_NAMESPACE, readBrainSource } from "../services/brain-source.js";
+import { emptyIdManifest } from "../services/id-allocation.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,
@@ -81,6 +82,25 @@ describe("buildBrainEditorConfig", () => {
 
     const literal = catalogTile(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
     assert.equal(config.resolveTileVisual?.(literal)?.iconUrl, "data:,hero");
+  });
+
+  it("resolves every page tile through the visual provider to the page icon the environment binds", () => {
+    const pageIcon = "data:image/svg+xml;base64,cGFnZQ==";
+    const built = buildAuthoringEnvironment(
+      JSON.stringify({ packs: [{ name: "pages", coreTileIcons: [{ tileId: "tile.page", iconUrl: pageIcon }] }] }),
+      emptyIdManifest()
+    );
+
+    const config = buildBrainEditorConfig(
+      built.environment,
+      built.assetLiterals.view,
+      built.brainLiterals.view,
+      built.typeIcons,
+      built.pageIcon
+    );
+
+    assert.equal(config.resolveTileVisual?.(new BrainTilePageDef("page-start", "start"))?.iconUrl, pageIcon);
+    assert.equal(config.resolveTileVisual?.(new BrainTilePageDef("page-chase", "chase"))?.iconUrl, pageIcon);
   });
 
   it("re-reads a rule's sentence after an asset rename, the brain left uncompiled", () => {

@@ -720,7 +720,7 @@ namespace wendoo {
 
   const myselfSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_SPRITE);
   myselfSpec.label = "myself";
-  myselfSpec.icon = SPRITE_TYPE_ICON;
+  myselfSpec.icon = MYSELF_ICON;
   myselfSpec.inline = true;
   myselfSpec.writableResult = true;
   arcadePack.bind(MYSELF_TILE, new MyselfSensor(), myselfSpec);
@@ -730,6 +730,7 @@ namespace wendoo {
   arcadePack.defineCoreTileIcon("tile.actuator->restart-page", CORE_RESTART_PAGE_ICON);
   arcadePack.defineCoreTileIcon("tile.sensor->current-page", CORE_CURRENT_PAGE_ICON);
   arcadePack.defineCoreTileIcon("tile.sensor->previous-page", CORE_PREVIOUS_PAGE_ICON);
+  arcadePack.defineCoreTileIcon("tile.page", CORE_PAGE_ICON);
   arcadePack.defineCoreTileIcon("tile.sensor->sensor.timeout", CORE_TIMER_ICON);
   arcadePack.defineCoreTileIcon("tile.op->and", CORE_AND_ICON);
   arcadePack.defineCoreTileIcon("tile.op->or", CORE_OR_ICON);
