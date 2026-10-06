@@ -126,6 +126,12 @@
           "kind": "sensor",
           "returns": "number",
           "label": "chime loudness"
+        },
+        {
+          "name": "actuator.chime.toll",
+          "kind": "actuator",
+          "async": true,
+          "label": "toll the chime"
         }
       ],
       "coreTileIcons": [

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "tollerTollerToll",
+  "name": "Toller",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "tollerOnlyPage01",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "tollerOnlyPage01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": ["tile.actuator->actuator.chime.ring"],
+          "children": [],
+          "ruleId": "tollerRingRule01"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": ["tile.actuator->actuator.chime.toll"],
+          "children": [],
+          "ruleId": "tollerTollRule01"
+        }
+      ]
+    }
+  ]
+}

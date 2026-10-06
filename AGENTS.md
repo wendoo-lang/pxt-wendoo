@@ -369,7 +369,9 @@ the current slice alone.
       observer as they are raised, retained nowhere, and are logged once
       per fault code through `debugLog`; a throw out of a program's start
       or think faults that program, which stays on its actor, and the
-      drain goes on), and the
+      drain goes on; a throw out of a page-activation hook faults the
+      program and the page's activation goes on, every later hook running
+      and every rule spawning), and the
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
       NO block definitions -- the compiled-brain type's
@@ -476,7 +478,9 @@ the current slice alone.
       wander toward its destination, nothing else adding a direction --
       goes no farther than the goal in one frame, its speed held to the
       remaining distance over the frame's duration, and a toward or wander
-      at its goal holds the sprite still rather than falling back), and
+      at its goal holds the sprite still rather than falling back; move's
+      anonymous speed argument reads a not-a-number or a number below 0 as
+      0 and a positive infinity as the physics engine's top speed), and
       move arbitration with its motion applicator (the direct applicator
       sets sprite velocity, held in its own direction to the physics
       engine's top speed, and -- while `wendoo.moveSmoothing`, a time

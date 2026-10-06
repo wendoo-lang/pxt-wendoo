@@ -37,8 +37,10 @@
  * program host runs them on actors: pairing each actor with the program it
  * was given, thinking every running program once per drain, ending an
  * actor's program when the actor ends, and reporting each fault a program
- * raises -- a throw out of its tile or its page-activation hook among them --
- * to the host's observer while every drain runs on. One of the programs
+ * raises -- a throw out of its tile, its asynchronous tile or its
+ * page-activation hook among them -- to the host's observer while every
+ * drain runs on, a page whose hook throws activated still and an
+ * asynchronous tile's throw freeing the handle it took. One of the programs
  * places a pack tile; the selftest runs it on a program host of its own,
  * tracing what it does, for the node-side runner to hold to the trace the
  * reference VM renders of the same program.
@@ -709,6 +711,9 @@ namespace registrationSelftest {
   /** Document id of the program whose two pages each switch to the other once their timer runs out. */
   const FLIPPER_ID = "flipperFlipperFl";
 
+  /** Document id of the program whose one page places the chime pack's ring tile in one rule, then its toll tile in another. */
+  const TOLLER_ID = "tollerTollerToll";
+
   /** Document id of the program compiled for a foreign device profile. */
   const WRONG_PROFILE_ID = "wrongProfile0001";
 
@@ -726,6 +731,7 @@ namespace registrationSelftest {
     PEALER_ID,
     RINGER_ID,
     WRONG_FORMAT_ID,
+    TOLLER_ID,
     WRONG_PROFILE_ID,
   ];
 
@@ -1043,12 +1049,23 @@ namespace registrationSelftest {
     );
   }
 
+  /** Whether `recorder`'s latest fault was raised outside every fiber and every instruction. */
+  function lastFaultOffSite(recorder: EffectRecorder): boolean {
+    return (
+      recorder.lastFiberId === wendoo.NO_FIBER &&
+      recorder.lastFault !== undefined &&
+      recorder.lastFault.funcId === -1 &&
+      recorder.lastFault.pc === -1
+    );
+  }
+
   /**
    * A program whose tile's page-activation hook throws as the program starts
    * faults `ScriptError` outside every fiber, reported to its host's
-   * observer, while every drain runs on: the other program thinks at every
-   * drain, and the throwing program stays on its actor and thinks at every
-   * drain.
+   * observer, and its page is activated still, while every drain runs on:
+   * the other program thinks at every drain, and the throwing program stays
+   * on its actor and thinks at every drain, its page's rule running the tile
+   * at every think.
    */
   function checkThrowingPageHook(): void {
     const recorder = new EffectRecorder();
@@ -1058,6 +1075,7 @@ namespace registrationSelftest {
     host.attach(ringing, wendooBrains.p_ringerRingerRing);
     host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
     chime.ringFailure = chime.RING_HOOK_THROWS;
+    const rings = chime.ringActuator.rings;
     let time = 0;
     let survived = true;
     for (let i = 0; i < FAILING_DRAINS; i++) {
@@ -1070,11 +1088,12 @@ namespace registrationSelftest {
       "a-throwing-page-hook-faults-its-program-and-every-drain-runs-on",
       survived &&
         recorder.faults === 1 &&
-        recorder.lastFiberId === wendoo.NO_FIBER &&
+        lastFaultOffSite(recorder) &&
         recorder.lastFaultIs(wendoo.ErrorCode.ScriptError) &&
         recorder.switches === FAILING_DRAINS &&
         hosted !== undefined &&
-        hosted.runtime.tickCount() === FAILING_DRAINS
+        hosted.runtime.tickCount() === FAILING_DRAINS &&
+        chime.ringActuator.rings === rings + FAILING_DRAINS
     );
   }
 
@@ -1082,9 +1101,11 @@ namespace registrationSelftest {
    * A program whose second page's tile has a page-activation hook that
    * throws, as the program's first think switches to that page, faults
    * `ScriptError` outside every fiber in the think that activates the page,
-   * reported to its host's observer, while every drain runs on: the other
-   * program thinks at every drain, and the throwing program stays on its
-   * actor and thinks again at the next drain.
+   * reported to its host's observer, and the page is activated still, while
+   * every drain runs on: the other program thinks at every drain, and the
+   * throwing program stays on its actor and thinks at every drain, the
+   * second page's rule running the tile at every think from the one that
+   * activates it.
    */
   function checkThrowingPageSwitch(): void {
     const recorder = new EffectRecorder();
@@ -1094,6 +1115,7 @@ namespace registrationSelftest {
     host.attach(pealing, wendooBrains.p_pealerPealerPeal);
     host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
     chime.ringFailure = chime.RING_HOOK_THROWS;
+    const rings = chime.ringActuator.rings;
     let time = 0;
     let survived = true;
     for (let i = 0; i < FAILING_DRAINS; i++) {
@@ -1106,12 +1128,150 @@ namespace registrationSelftest {
       "a-page-hook-throwing-on-a-page-switch-faults-its-program-and-every-drain-runs-on",
       survived &&
         recorder.faults === 1 &&
-        recorder.lastFiberId === wendoo.NO_FIBER &&
+        lastFaultOffSite(recorder) &&
         recorder.lastFaultIs(wendoo.ErrorCode.ScriptError) &&
         recorder.switches === FAILING_DRAINS + 1 &&
         hosted !== undefined &&
         hosted.loaded.registration.id === PEALER_ID &&
-        hosted.runtime.tickCount() === FAILING_DRAINS - 1
+        hosted.runtime.tickCount() === FAILING_DRAINS &&
+        chime.ringActuator.rings === rings + FAILING_DRAINS - 1
+    );
+  }
+
+  /**
+   * A program whose page's first page-activation hook throws as the program
+   * starts faults `ScriptError` once, outside every fiber, reported to its
+   * host's observer, and the page is activated still: the page's later hook
+   * runs, and both of its rules run their tiles at every think, while every
+   * drain runs on and the other program thinks at every drain.
+   */
+  function checkFirstPageHookThrowing(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const tolling = new SelftestActor();
+    const ticking = new SelftestActor();
+    host.attach(tolling, wendooBrains.p_tollerTollerToll);
+    host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    chime.ringFailure = chime.RING_HOOK_THROWS;
+    const rings = chime.ringActuator.rings;
+    const tolls = chime.tollActuator.tolls;
+    const pageEntries = chime.tollActuator.pageEntries;
+    let time = 0;
+    let survived = true;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      survived = drainSurvives(host, time) && survived;
+    }
+    chime.ringFailure = chime.RING_RINGS;
+    check(
+      "a-page-whose-first-hook-throws-runs-its-later-hooks-and-its-rules",
+      survived &&
+        recorder.faults === 1 &&
+        lastFaultOffSite(recorder) &&
+        recorder.lastFaultIs(wendoo.ErrorCode.ScriptError) &&
+        recorder.switches === FAILING_DRAINS &&
+        programOf(host, tolling) === TOLLER_ID &&
+        chime.tollActuator.pageEntries === pageEntries + 1 &&
+        chime.ringActuator.rings === rings + FAILING_DRAINS &&
+        chime.tollActuator.tolls === tolls + FAILING_DRAINS
+    );
+  }
+
+  /**
+   * A program whose asynchronous tile throws as it starts, at every think,
+   * faults the fiber running the tile `ScriptError` at each throw, reported
+   * to its host's observer, while every drain runs on: the other program
+   * thinks at every drain, the throwing program's other rule runs its tile
+   * at every think, and the throwing program stays on its actor and tolls
+   * without a fault once its tile no longer throws.
+   */
+  function checkThrowingAsyncTile(): void {
+    const recorder = new EffectRecorder();
+    const host = new wendoo.ProgramHost(recorder);
+    const tolling = new SelftestActor();
+    const ticking = new SelftestActor();
+    host.attach(tolling, wendooBrains.p_tollerTollerToll);
+    host.attach(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    chime.tollFailure = chime.TOLL_THROWS;
+    const rings = chime.ringActuator.rings;
+    const tolls = chime.tollActuator.tolls;
+    let time = 0;
+    let survived = true;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      survived = drainSurvives(host, time) && survived;
+    }
+    chime.tollFailure = chime.TOLL_TOLLS;
+    const faultsWhileThrowing = recorder.faults;
+    const faultedScriptError = recorder.lastFaultIs(wendoo.ErrorCode.ScriptError);
+    const faultedOnAFiber = recorder.lastFiberId !== wendoo.NO_FIBER && recorder.lastFault.funcId >= 0;
+    const tollsWhileThrowing = chime.tollActuator.tolls;
+    time += DRAIN_INTERVAL_MS;
+    survived = drainSurvives(host, time) && survived;
+    check(
+      "a-throwing-async-tile-faults-its-fiber-and-every-drain-runs-on",
+      survived &&
+        faultsWhileThrowing === FAILING_DRAINS &&
+        faultedScriptError &&
+        faultedOnAFiber &&
+        tollsWhileThrowing === tolls &&
+        recorder.faults === FAILING_DRAINS &&
+        recorder.switches === FAILING_DRAINS + 1 &&
+        programOf(host, tolling) === TOLLER_ID &&
+        chime.ringActuator.rings === rings + FAILING_DRAINS + 1 &&
+        chime.tollActuator.tolls === tolls + 1
+    );
+  }
+
+  /** Instructions each fiber slice of the one-handle runtime is granted. */
+  const ONE_HANDLE_BUDGET = 1000;
+
+  /** Values one fiber's operand stack holds at most in the one-handle runtime. */
+  const ONE_HANDLE_STACK_SIZE = 4096;
+
+  /**
+   * The toller program, run on a runtime of its own that holds at most one
+   * pending async handle, starts its asynchronous tile at every think while
+   * the tile throws -- each throw faulting the tile's fiber `ScriptError` and
+   * freeing the handle its start took -- and, once the tile no longer
+   * throws, tolls at the next think.
+   */
+  function checkThrowingAsyncTileFreesItsHandle(): void {
+    const registries = wendoo.hostRegistries();
+    const loaded = wendoo.loadCompiledProgram(wendooBrains.p_tollerTollerToll, registries.types);
+    const recorder = new EffectRecorder();
+    const runtime = new wendoo.BrainRuntime(
+      loaded.program,
+      registries.functions,
+      registries.actions,
+      registries.types,
+      recorder,
+      new wendoo.VmCaps(ONE_HANDLE_BUDGET, ONE_HANDLE_STACK_SIZE, 1),
+      new SelftestActor()
+    );
+    runtime.startup();
+    chime.tollFailure = chime.TOLL_THROWS;
+    const starts = chime.tollActuator.starts;
+    const tolls = chime.tollActuator.tolls;
+    let time = 0;
+    for (let i = 0; i < FAILING_DRAINS; i++) {
+      time += DRAIN_INTERVAL_MS;
+      runtime.think(time);
+    }
+    chime.tollFailure = chime.TOLL_TOLLS;
+    const startsWhileThrowing = chime.tollActuator.starts;
+    const faultsWhileThrowing = recorder.faults;
+    const faultedScriptError = recorder.lastFaultIs(wendoo.ErrorCode.ScriptError);
+    time += DRAIN_INTERVAL_MS;
+    runtime.think(time);
+    check(
+      "a-throwing-async-tile-frees-its-handle",
+      loaded.errorCode === "" &&
+        startsWhileThrowing === starts + FAILING_DRAINS &&
+        faultsWhileThrowing === FAILING_DRAINS &&
+        faultedScriptError &&
+        recorder.faults === FAILING_DRAINS &&
+        chime.tollActuator.tolls === tolls + 1
     );
   }
 
@@ -1386,6 +1546,9 @@ namespace registrationSelftest {
     checkThrowingTile();
     checkThrowingPageHook();
     checkThrowingPageSwitch();
+    checkFirstPageHookThrowing();
+    checkThrowingAsyncTile();
+    checkThrowingAsyncTileFreesItsHandle();
     checkTimerPagePingPong();
     checkTimerArguments(actions);
     checkRandomReads(actions);

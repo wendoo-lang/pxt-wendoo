@@ -6,10 +6,10 @@
 
 /**
  * The second of the two packs the registration selftest composes: a chime
- * that can be rung.
+ * that can be rung, and tolled asynchronously.
  *
  * Every registration is made from this file's top-level code, which pxt runs
- * at program start, before the selftest constructs anything. Two of the four
+ * at program start, before the selftest constructs anything. Two of its tile
  * registrations cannot be honoured: one claims the tile name the other pack
  * claims, and one claims a name the project's mapping records no id for. The
  * pack also declares an asset type, the tunes a chime can play, and gives
@@ -28,7 +28,7 @@ namespace chime {
   /** {@link ringFailure}: the ring tile's body raises a `HostError` fault, then throws, and does not ring. */
   export const RING_THROWS = 2;
 
-  /** {@link ringFailure}: the ring tile's page-activation hook throws; its body rings. */
+  /** {@link ringFailure}: the ring tile's page-activation hook raises a `HostError` fault, then throws; its body rings. */
   export const RING_HOOK_THROWS = 3;
 
   /**
@@ -66,6 +66,7 @@ namespace chime {
 
     onPageEntered(ctx: wendoo.ExecutionContext): void {
       if (ringFailure === RING_HOOK_THROWS) {
+        ctx.raise(wendoo.ErrorCode.HostError, CRACKED_MESSAGE);
         throw "the chime is missing";
       }
     }
@@ -73,6 +74,54 @@ namespace chime {
 
   /** The ring tile's body, whose rings a check counts. */
   export const ringActuator = new RingActuator();
+
+  /** {@link tollFailure}: the toll tile settles its handle at once and tolls. */
+  export const TOLL_TOLLS = 0;
+
+  /** {@link tollFailure}: the toll tile's asynchronous body throws before it settles its handle, and does not toll. */
+  export const TOLL_THROWS = 1;
+
+  /**
+   * How the toll tile fails: one of the `TOLL_*` modes, read every time its
+   * asynchronous body starts; {@link TOLL_TOLLS} until a check sets another.
+   */
+  // biome-ignore lint/style/useConst: the selftest assigns it.
+  export let tollFailure = TOLL_TOLLS;
+
+  /**
+   * `actuator.chime.toll`: tolls the chime asynchronously, settling its
+   * handle at once and counting the tolls, or fails as {@link tollFailure}
+   * says; counts every start of its asynchronous body and every run of its
+   * page-activation hook.
+   */
+  class TollActuator extends wendoo.HostActionBinding {
+    /** How many times the chime has been tolled. */
+    tolls: number = 0;
+    /** How many times the asynchronous body has started, whether or not it tolled. */
+    starts: number = 0;
+    /** How many times the page-activation hook has run. */
+    pageEntries: number = 0;
+
+    constructor() {
+      super(true);
+    }
+
+    execAsync(ctx: wendoo.ExecutionContext, args: wendoo.Value[], handle: wendoo.AsyncHandle): void {
+      this.starts++;
+      if (tollFailure === TOLL_THROWS) {
+        throw "the bell rope snapped";
+      }
+      this.tolls++;
+      handle.resolve(wendoo.VOID_VALUE);
+    }
+
+    onPageEntered(ctx: wendoo.ExecutionContext): void {
+      this.pageEntries++;
+    }
+  }
+
+  /** The toll tile's body, whose tolls, starts and page entries a check counts. */
+  export const tollActuator = new TollActuator();
 
   /** `sensor.beacon.reading`: the name of the pack whose registration of this tile stands. */
   class ReadingSensor extends wendoo.HostActionBinding {
@@ -152,6 +201,11 @@ namespace chime {
   loudnessSpec.label = "chime loudness";
   loudnessSpec.icon = "unencodable";
   pack.bind("sensor.chime.unmapped", new LoudnessSensor(), loudnessSpec);
+
+  /** Declared shape of the toll tile: no argument. */
+  const tollSpec = new wendoo.TileSpec(wendoo.TILE_KIND_ACTUATOR, [], "");
+  tollSpec.label = "toll the chime";
+  pack.bind("actuator.chime.toll", tollActuator, tollSpec);
 
   pack.defineCoreTileIcon("tile.op->and", "chime-and");
   pack.defineCoreTileIcon("tile.op->or", "unencodable");

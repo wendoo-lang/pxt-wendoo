@@ -97,6 +97,9 @@ const EXPECTED_CHECKS = [
   "a-throwing-tile-faults-its-fiber-and-every-drain-runs-on",
   "a-throwing-page-hook-faults-its-program-and-every-drain-runs-on",
   "a-page-hook-throwing-on-a-page-switch-faults-its-program-and-every-drain-runs-on",
+  "a-page-whose-first-hook-throws-runs-its-later-hooks-and-its-rules",
+  "a-throwing-async-tile-faults-its-fiber-and-every-drain-runs-on",
+  "a-throwing-async-tile-frees-its-handle",
   "timer-switches-each-page-in-turn",
   "timer-restarts-when-its-page-is-entered-again",
   "timer-defaults-to-one-second-and-refuses-what-is-no-number",
@@ -137,10 +140,12 @@ const HOST_REJECTIONS = [
 
 /**
  * Every refusal the selftest is expected to log, in order: its program host
- * check's host, the hosts of its four fault checks, the host of its timer
- * check, then the host the pack-tile program is traced on.
+ * check's host, the hosts of its six hosted fault checks, the host of its
+ * timer check, then the host the pack-tile program is traced on.
  */
 const EXPECTED_REJECTIONS = [
+  ...HOST_REJECTIONS,
+  ...HOST_REJECTIONS,
   ...HOST_REJECTIONS,
   ...HOST_REJECTIONS,
   ...HOST_REJECTIONS,
@@ -156,14 +161,18 @@ const EXPECTED_REJECTIONS = [
  * however many times the program raises it -- the pack-tile program whose
  * tile faults `HostError` (3) at every think, then the one whose tile
  * throws at every think, the one whose page-activation hook throws as it
- * starts, and the two-page program whose second page's hook throws as it
- * switches to that page, each faulting `ScriptError` (4).
+ * starts, the two-page program whose second page's hook throws as it
+ * switches to that page, the ring-and-toll program whose first
+ * page-activation hook throws as it starts, and the same program whose
+ * asynchronous tile throws at every think, each faulting `ScriptError` (4).
  */
 const EXPECTED_FAULT_LINES = [
   "program-faulted 3 ringerRingerRing",
   "program-faulted 4 ringerRingerRing",
   "program-faulted 4 ringerRingerRing",
   "program-faulted 4 pealerPealerPeal",
+  "program-faulted 4 tollerTollerToll",
+  "program-faulted 4 tollerTollerToll",
 ];
 
 /** The prefix of the line the VM extension logs for a fault code a running program raises. */
@@ -406,6 +415,8 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-move-toward-or-away-from-a-non-finite-point-moves-as-a-move-given-no-target",
   "position-write-of-a-non-finite-point-moves-nothing",
   "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
+  "an-infinite-speed-moves-at-the-top-speed-as-a-speed-past-it-does",
+  "a-not-a-number-or-negative-speed-reads-as-zero-and-stops-the-sprite",
   "equality-overloads-take-their-ids-from-the-manifest",
   "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
   "an-image-standing-for-no-image-equals-nothing-not-even-another",

@@ -300,6 +300,7 @@ namespace wendoo {
   export class BrainRuntime {
     private program: Program;
     private hostActions: HostActionRegistry;
+    private observer: VmObserver;
     private vm: VM;
     private scheduler: FiberScheduler;
     private ctx: ExecutionContext;
@@ -332,6 +333,7 @@ namespace wendoo {
     ) {
       this.program = program;
       this.hostActions = hostActions;
+      this.observer = observer;
       const variables = new VariableStore();
       variables.install(program);
       this.vm = new VM(program, hostFunctions, hostActions, types, observer, caps);
@@ -486,7 +488,9 @@ namespace wendoo {
     /**
      * Activate `pageIndex`: run the page-activation hook of every host-bound
      * call site on it, in the page's call-site order, then spawn a fiber for
-     * each of its root rules.
+     * each of its root rules. A hook that throws faults the program
+     * `ScriptError` on no fiber, and the activation goes on: every later
+     * hook runs and every root rule spawns.
      */
     private activatePage(pageIndex: number): void {
       const page = this.program.pages[pageIndex];
@@ -513,14 +517,22 @@ namespace wendoo {
 
     /**
      * Run `action`'s page-activation hook bound to `callSiteId`, restoring the
-     * context's call-site and rule binding afterwards.
+     * context's call-site and rule binding afterwards. A throw out of the
+     * hook discards any fault the hook raised before it and is reported to
+     * the observer as a `ScriptError` fault naming the thrown value, raised
+     * on no fiber and at no instruction.
      */
     private runActivationHook(callSiteId: number, action: HostActionBinding): void {
       const previousCallSiteId = this.ctx.currentCallSiteId;
       const previousRuleFuncId = this.ctx.currentRuleFuncId;
       this.ctx.currentCallSiteId = callSiteId;
       this.ctx.currentRuleFuncId = NO_RULE;
-      action.onPageEntered(this.ctx);
+      try {
+        action.onPageEntered(this.ctx);
+      } catch (e) {
+        this.ctx.clearFault();
+        this.observer.onFiberFault(NO_FIBER, thrownFault(e, -1, -1));
+      }
       this.ctx.currentCallSiteId = previousCallSiteId;
       this.ctx.currentRuleFuncId = previousRuleFuncId;
     }

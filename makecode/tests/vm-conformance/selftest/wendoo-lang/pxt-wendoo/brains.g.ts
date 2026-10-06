@@ -78,6 +78,14 @@ namespace wendooBrains {
         00000200010001000002000101000000
     `);
 
+    // source-hash e9f914bb
+    //% fixedInstance block="Toller"
+    export const p_tollerTollerToll = wendoo.registerCompiledBrain("tollerTollerToll", "Toller", hex`
+        894d425004d10f07010010746f6c6c65724f6e6c795061676530310000010102
+        0000000748000000002c810802004900001f00000006482d8708000132490000
+        1f000002000100010000020001020000810800018708
+    `);
+
     // source-hash d98799e6
     //% fixedInstance block="Wrong profile"
     export const p_wrongProfile0001 = wendoo.registerCompiledBrain("wrongProfile0001", "Wrong profile", hex`

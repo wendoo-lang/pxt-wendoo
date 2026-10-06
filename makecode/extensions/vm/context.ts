@@ -736,8 +736,9 @@ namespace wendoo {
      * Prepare one call site of this action for the page that is being
      * activated. The brain runtime runs it once per call site of the page, in
      * the page's call-site order, before the page's root rules spawn, with
-     * `ctx.currentCallSiteId` bound to that site. The base implementation does
-     * nothing.
+     * `ctx.currentCallSiteId` bound to that site. A throw out of it faults
+     * the program `ScriptError` on no fiber, and the page's activation goes
+     * on. The base implementation does nothing.
      *
      * @param ctx - Execution context, bound to the call site being activated.
      */

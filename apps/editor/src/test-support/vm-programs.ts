@@ -79,6 +79,7 @@ const SELFTEST_SOURCES = [
   "ringer.src.json",
   "pealer.src.json",
   "flipper.src.json",
+  "toller.src.json",
 ];
 
 /** The catalog the registration selftest's packs serialize, which the selftest pins byte for byte. */
@@ -117,6 +118,13 @@ const SELFTEST_PRIOR_IDS: MakeCodeIdManifest = {
 
 /** The chime pack's tile the allocation predates, which the selftest's drain finds unmapped. */
 const UNALLOCATED_TILE = "sensor.chime.unmapped";
+
+/**
+ * The tiles the selftest project allocated after every other name its
+ * catalog declares, in a later allocation: each holds an id above every
+ * other tile's, wherever its pack declares it.
+ */
+const LATER_ALLOCATED_TILES = ["actuator.chime.toll"];
 
 /** Source the selftest's refused programs are compiled from. */
 const REFUSED_PROGRAMS_SOURCE = "ticker.src.json";
@@ -333,19 +341,19 @@ function selftestCatalog(): string {
 
 /**
  * The editor's allocation for the selftest's catalog: the prior allocation
- * with every name the catalog declares appended, but for the one tile that
- * arrived after it was made.
+ * with every name the catalog declares appended, except
+ * {@link UNALLOCATED_TILE}, the tiles in {@link LATER_ALLOCATED_TILES}
+ * appended by a second allocation after every other name.
  */
 function selftestIds(): MakeCodeIdManifest {
   const catalog = parseCatalog(selftestCatalog());
-  const allocated = {
+  const keeping = (keep: (name: string) => boolean) => ({
     ...catalog,
-    packs: catalog.packs.map((pack) => ({
-      ...pack,
-      tiles: pack.tiles.filter((tile) => tile.name !== UNALLOCATED_TILE),
-    })),
-  };
-  return allocateIds(SELFTEST_PRIOR_IDS, allocated);
+    packs: catalog.packs.map((pack) => ({ ...pack, tiles: pack.tiles.filter((tile) => keep(tile.name)) })),
+  });
+  const first = keeping((name) => name !== UNALLOCATED_TILE && !LATER_ALLOCATED_TILES.includes(name));
+  const allocated = keeping((name) => name !== UNALLOCATED_TILE);
+  return allocateIds(allocateIds(SELFTEST_PRIOR_IDS, first), allocated);
 }
 
 /** The program the compile path makes of `source` in the core environment. Throws when the source does not compile clean. */

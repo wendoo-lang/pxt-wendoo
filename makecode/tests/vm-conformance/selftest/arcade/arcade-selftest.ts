@@ -3036,6 +3036,64 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** A speed past the engine's top speed, in pixels per second, that a move's speed argument may carry. */
+  const OVER_SPEED = 10000;
+
+  /**
+   * In a scene of its own, its frames stopped, check the speeds a move's
+   * speed argument may carry that no finite speed of 0 or more names: an
+   * infinite speed moves the sprite at the engine's top speed in the
+   * direction asked, exactly as a finite speed past it does, on a straight
+   * line as on a diagonal; and a not-a-number speed, a negative speed and a
+   * negative infinite speed each read as 0, stopping the sprite.
+   */
+  function checkNonFiniteSpeed(): void {
+    game.pushScene();
+    stopFrames();
+    const racer = solidSprite(8, 80, 60);
+    const ctx = contextOn(racer);
+    const dash = moveBuffer();
+    dash[MOVE_RIGHT] = PRESENT;
+    let likeOverSpeed = true;
+    for (let pass = 0; pass < 2; pass++) {
+      if (pass === 1) {
+        dash[MOVE_UP] = PRESENT;
+      }
+      dash[MOVE_SPEED] = wendoo.mkNumber(OVER_SPEED);
+      moveNow(ctx, dash);
+      const overX = racer.vx;
+      const overY = racer.vy;
+      dash[MOVE_SPEED] = wendoo.mkNumber(INFINITE);
+      moveNow(ctx, dash);
+      likeOverSpeed = likeOverSpeed && movesAt(racer, overX, overY);
+    }
+    check(
+      "an-infinite-speed-moves-at-the-top-speed-as-a-speed-past-it-does",
+      wendoo.moveSpeed(wendoo.NIL_VALUE, wendoo.NIL_VALUE, wendoo.mkNumber(INFINITE)) === ENGINE_TOP_SPEED &&
+        likeOverSpeed &&
+        movesAlong(racer, 1, -1, ENGINE_TOP_SPEED)
+    );
+
+    const unreadable = [NOT_A_NUMBER, -50, -INFINITE];
+    let stops = true;
+    for (let i = 0; i < unreadable.length; i++) {
+      dash[MOVE_SPEED] = wendoo.mkNumber(100);
+      moveNow(ctx, dash);
+      const moving = movesAlong(racer, 1, -1, 100);
+      dash[MOVE_SPEED] = wendoo.mkNumber(unreadable[i]);
+      moveNow(ctx, dash);
+      stops =
+        stops &&
+        moving &&
+        wendoo.moveSpeed(wendoo.NIL_VALUE, wendoo.NIL_VALUE, wendoo.mkNumber(unreadable[i])) === 0 &&
+        movesAt(racer, 0, 0);
+    }
+    check("a-not-a-number-or-negative-speed-reads-as-zero-and-stops-the-sprite", stops);
+    racer.destroy();
+    resumeFrames();
+    game.popScene();
+  }
+
   /**
    * The body of the overload the arcade base pack adds to the core operator
    * `operatorId` over two operands of the type `type`, bound under the id the
@@ -3568,6 +3626,7 @@ namespace arcadeSelftest {
     checkSpeedLimit();
     checkMoveSmoothing();
     checkNonFiniteMotion();
+    checkNonFiniteSpeed();
     checkEqualityOperators();
     checkIconEncoder();
 

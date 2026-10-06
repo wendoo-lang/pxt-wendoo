@@ -295,10 +295,12 @@ namespace wendoo {
   }
 
   /**
-   * The speed a move goes at, in pixels per second: the speed argument held
-   * at 0 or above when it carries a number; else {@link MOVE_DEFAULT_SPEED}
-   * doubled per `quickly` when there is one; else halved per `slowly`. At
-   * most {@link MOVE_SPEED_STEPS_MAX} modifiers are counted.
+   * The speed a move goes at, in pixels per second: the speed argument when
+   * it carries a number -- {@link ENGINE_MAX_SPEED} for a positive infinity,
+   * and 0 for a not-a-number or a number below 0, a negative infinity
+   * included; else {@link MOVE_DEFAULT_SPEED} doubled per `quickly` when
+   * there is one; else halved per `slowly`. At most
+   * {@link MOVE_SPEED_STEPS_MAX} modifiers are counted.
    *
    * @param slowly - The `slowly` modifier slot: its count, or nil.
    * @param quickly - The `quickly` modifier slot: its count, or nil.
@@ -307,6 +309,9 @@ namespace wendoo {
   //% hidden
   export function moveSpeed(slowly: Value, quickly: Value, speed: Value): number {
     if (speed !== undefined && speed.t === ValueTag.Number) {
+      if (speed.num > 0 && !isFiniteNumber(speed.num)) {
+        return ENGINE_MAX_SPEED;
+      }
       return speed.num > 0 ? speed.num : 0;
     }
     const quick = Math.min(modifierCount(quickly), MOVE_SPEED_STEPS_MAX);
