@@ -1,7 +1,7 @@
 /**
  * The arcade base pack's vocabulary: the `Vector2` type, its `x` and `y`
- * read-only accessors, the `Sprite` type, its `image`, `position` and
- * `brain` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
+ * read-only accessors, the `Sprite` type, its `image`, `position`,
+ * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
  * `bump`, `in range`, `out of range` and `myself` sensors, the `move`
  * actuator, and the core equality and inequality operators' overloads over
  * two images, two sprites and two brains, each tile and accessor with its
@@ -84,11 +84,15 @@
  *   equality does not.
  * - The accessors read a value's fields: a sprite's `position`, a fresh
  *   `Vector2` of its center at every read; its `image`, the image it wears;
- *   its `brain`, the brain it runs, or nil while it runs none; and a
- *   `Vector2`'s `x` and `y`, which a brain only reads. Writing a sprite's
- *   `position` puts its center there at once, its `image` dresses it, and
- *   its `brain` runs that brain from the next frame, nil ending the one it
- *   runs.
+ *   its `brain`, the brain it runs, or nil while it runs none; its
+ *   `move smoothing`, the seconds its moves ease over, 0 while they do not;
+ *   and a `Vector2`'s `x` and `y`, which a brain only reads. Writing a
+ *   sprite's `position` puts its center there at once, its `image` dresses
+ *   it, its `brain` runs that brain from the next frame, nil ending the one
+ *   it runs, and its `move smoothing` gives it smoothing of its own, in
+ *   place of the project's: `DO [myself][move smoothing] [=] 0.15` eases
+ *   its own sprite's moves, and `DO [bumped sprite][move smoothing] [=] 0`
+ *   turns smoothing off for the sprite it bumps.
  */
 namespace wendoo {
   /** Name the arcade base pack's registrations are reported under. */

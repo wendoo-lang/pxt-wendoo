@@ -38,7 +38,9 @@ function localizerView(base: Localizer): Localizer {
  * brain services, its localizer under a fresh identity per config -- so a new
  * config re-reads every rule sentence, words of literals relabelled in place
  * included -- each registered type named by its registry name, tiles shown
- * through the visual provider over `assetLiterals`, a display-only literal
+ * through the visual provider over the environment's tile catalogs and
+ * `assetLiterals` -- so a brain read in an earlier environment shows each tile
+ * as this one binds it -- a display-only literal
  * type per asset type those literals hold and per brain type `brainLiterals`
  * hold, each type's data-type icon as `typeIcons` holds it, every page's own
  * tile wearing `pageIcon`, and brain files saved and loaded relative to
@@ -58,6 +60,7 @@ export function buildBrainEditorConfig(
   typeIcons: ReadonlyMap<TypeId, string>,
   pageIcon?: string
 ): BrainEditorConfig {
+  const tileCatalogs = environment.tileCatalogs();
   return {
     dataTypeIcons: typeIcons,
     dataTypeNames: registeredTypeNames(environment),
@@ -65,10 +68,10 @@ export function buildBrainEditorConfig(
       ...createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
       ...createBrainLiteralTypes(environment.brainServices.runtime.types, brainLiterals),
     ],
-    resolveTileVisual: createTileVisualProvider(assetLiterals, pageIcon),
+    resolveTileVisual: createTileVisualProvider(tileCatalogs, assetLiterals, pageIcon),
     brainServices: environment.brainServices,
     localizer: localizerView(environment.appServices.localizer),
     projectNamespace: BRAIN_SOURCE_NAMESPACE,
-    tileCatalogs: environment.tileCatalogs(),
+    tileCatalogs,
   };
 }

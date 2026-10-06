@@ -929,22 +929,22 @@ namespace wendoo {
     . . . . . . . . . . . . . . . .
   `;
 
-  /** Icon of the core gets operator: an arrow going into a box. */
+  /** Icon of the core gets operator: a left-facing arrow. */
   //% hidden
   export const CORE_ASSIGN_ICON = img`
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
-    . c c c c c c . . . . . . . . .
-    . c 1 1 1 1 c . . . . . . . . .
-    . c 1 1 1 1 c . . . 8 . . . . .
-    . c 1 1 1 1 c . . 8 8 . . . . .
-    . c 1 1 1 1 c . 8 8 8 8 8 8 8 8
-    . c 1 1 1 1 c . 8 8 8 8 8 8 8 8
-    . c 1 1 1 1 c . . 8 8 . . . . .
-    . c 1 1 1 1 c . . . 8 . . . . .
-    . c 1 1 1 1 c . . . . . . . . .
-    . c c c c c c . . . . . . . . .
+    . . . . . . 8 8 . . . . . . . .
+    . . . . . 8 8 . . . . . . . . .
+    . . . . 8 8 . . . . . . . . . .
+    . . . 8 8 . . . . . . . . . . .
+    . . 8 8 8 8 8 8 8 8 8 8 8 8 . .
+    . . 8 8 8 8 8 8 8 8 8 8 8 8 . .
+    . . . 8 8 . . . . . . . . . . .
+    . . . . 8 8 . . . . . . . . . .
+    . . . . . 8 8 . . . . . . . . .
+    . . . . . . 8 8 . . . . . . . .
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
     . . . . . . . . . . . . . . . .
@@ -1305,5 +1305,26 @@ namespace wendoo {
     f 9 9 f 4 4 f 5 5 f 4 4 f 9 9 f
     f 9 f 4 4 4 4 4 4 4 4 4 4 f 9 f
     f f f f f f f f f f f f f f f f
+  `;
+
+  /** Icon of the `moveSmoothing` accessor of a `Sprite`: a green curve rising steeply from the lower left and leveling off toward the upper right, a sprite at its end -- a move easing up to full speed. */
+  //% hidden
+  export const MOVE_SMOOTHING_ACCESSOR_ICON = img`
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . 2 2 .
+    . . . . . . . . . 7 7 7 7 2 2 .
+    . . . . . . . 7 7 7 7 7 7 7 . .
+    . . . . . . 7 7 7 . . . . . . .
+    . . . . . 7 7 . . . . . . . . .
+    . . . . 7 7 . . . . . . . . . .
+    . . . . 7 7 . . . . . . . . . .
+    . . . 7 7 . . . . . . . . . . .
+    . . . 7 7 . . . . . . . . . . .
+    . . 7 7 . . . . . . . . . . . .
+    . . 7 7 . . . . . . . . . . . .
+    . 7 7 . . . . . . . . . . . . .
+    . 7 7 . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . .
   `;
 }

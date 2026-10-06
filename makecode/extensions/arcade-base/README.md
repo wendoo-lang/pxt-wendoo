@@ -61,6 +61,11 @@ looks.
   bumped sprite position** jumps it onto what it bumps, and **DO myself
   brain =** another brain switches to that brain from the next frame --
   set it to nothing to stop.
+- **move smoothing** -- put it after a sprite to read how gradually that
+  sprite speeds up, in seconds (0 while it starts at full speed), and add
+  **=** to change it: **DO myself move smoothing = 0.15** gives your sprite
+  smooth starts of its own, and **WHEN bump DO bumped sprite move smoothing
+  = 0** makes whatever it bumps start crisply. See "Smooth starts" below.
 - **x** and **y** -- put one after a position to read just one number of
   it: **x** grows to the right and **y** grows downward, the same way
   **up** and **down** point on **move**. Compare them with **<** and **>**:
@@ -130,6 +135,26 @@ also softens every move a brain makes, the dpad's included -- at 100 a
 dpad-steered sprite takes about a quarter of a second to reach full speed
 -- so a game built on quick reactions, like a shooter or a maze chase, is
 better off without it. Set it back to 0 to turn it off.
+
+That number is the project's default, and any sprite can have its own
+instead. Give one sprite its own smoothing, in milliseconds, and it wins
+over the default for that sprite alone -- 0 turns smoothing off for it even
+while the rest of the game is smoothed:
+
+```typescript
+wendoo.moveSmoothing = 100
+wendoo.setMoveSmoothing(platform, 60)
+wendoo.setMoveSmoothing(arrow, 0)
+```
+
+Here a moving platform gets a subtle ease, an arrow flies off at full speed
+the moment it is fired, and every other sprite eases with the default of
+100. A sprite keeps its own smoothing whichever brain it runs, so give it
+before or after the brain. Give it a negative number, like
+`wendoo.setMoveSmoothing(platform, -1)`, to have it follow the default
+again. A brain can set it too, in seconds, with **move smoothing** --
+**DO myself move smoothing = 0.06** gives its sprite the platform's 60
+milliseconds.
 
 > **Heads up:** this extension is under development and not ready to use in
 > your projects yet.

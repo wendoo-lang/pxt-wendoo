@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "calmBumpedSmooth",
+  "name": "Calm",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0calmBumped01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0,
+      "valueLabel": "0",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0calmBumped01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->moveSmoothing",
+            "tile.op->assign",
+            "tile.literal->number:<number>->0"
+          ],
+          "children": [],
+          "ruleId": "fRu0calmBumped01"
+        }
+      ]
+    }
+  ]
+}

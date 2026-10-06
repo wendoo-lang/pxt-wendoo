@@ -11,7 +11,7 @@ namespace wendoo {
     sprite: Sprite;
     /** The destinations the program's wandering moves head for, one per call site, and the random source picking them. */
     wander: WanderState;
-    /** The velocity the program's moves last set the sprite moving at; while {@link moveSmoothing} is on, a move at least that fast eases from it. */
+    /** The velocity the program's moves last set the sprite moving at; while the sprite's smoothing, as {@link moveSmoothingOf} reads it, is on, a move at least that fast eases from it. */
     motion: AppliedMotion;
 
     /**

@@ -1,5 +1,6 @@
 import type { IBrainTileDef } from "@wendoo/core/app";
 import { getCatalogFallbackLabel, mkLiteralTileId } from "@wendoo/core/app";
+import type { ITileCatalog } from "@wendoo/core/brain";
 import type { StructTypeDef, StructValue, TypeId } from "@wendoo/core/runtime";
 import { getClosedStructFieldByName, NativeType } from "@wendoo/core/runtime";
 import type { CustomLiteralType, TileVisual } from "@wendoo/ui";
@@ -14,33 +15,51 @@ export interface AssetTypeRegistry {
 }
 
 /**
+ * The display metadata `tileCatalogs` bind under `tileDef`'s tile id, the first
+ * catalog holding the id standing, or `tileDef`'s own metadata when none holds
+ * it.
+ */
+function boundMetadata(tileCatalogs: readonly ITileCatalog[], tileDef: IBrainTileDef): TileVisual | undefined {
+  for (const catalog of tileCatalogs) {
+    const bound = catalog.get(tileDef.tileId);
+    if (bound !== undefined) return bound.metadata as TileVisual | undefined;
+  }
+  return tileDef.metadata as TileVisual | undefined;
+}
+
+/**
  * The editor's one tile visual provider: resolves any tile to how it shows.
  * An asset literal shows its asset's name as its label and its asset's
  * preview as its face while the snapshot lists the asset, and its label
  * alone, with no face, while it is unresolved. A page's own tile shows its
  * metadata with `pageIcon` as its face, and its metadata alone while no page
  * icon is given. Every other tile shows the display metadata the environment
- * bound for it, the icon its catalog entry carries included. Icons are data
- * URIs for an image source; render them only as one.
+ * binds under its tile id, the icon its catalog entry carries included --
+ * whichever environment the tile was read in -- and its own metadata when the
+ * environment binds no tile under its id. Icons are data URIs for an image
+ * source; render them only as one.
  *
- * Build a new provider whenever the asset literals or the page icon change.
+ * Build a new provider whenever the environment is rebuilt or the asset
+ * literals or the page icon change.
  *
+ * @param tileCatalogs - The environment's tile catalogs.
  * @param assetLiterals - The environment's asset literals, keyed by tile id.
  * @param pageIcon - The icon every page's own tile wears; omit it while none is bound.
  */
 export function createTileVisualProvider(
+  tileCatalogs: readonly ITileCatalog[],
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
   pageIcon?: string
 ): (tileDef: IBrainTileDef) => TileVisual | undefined {
   return (tileDef) => {
-    const intrinsic = tileDef.metadata as TileVisual | undefined;
+    const metadata = boundMetadata(tileCatalogs, tileDef);
     if (tileDef.kind === "page" && pageIcon !== undefined) {
-      return { ...(intrinsic ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: pageIcon };
+      return { ...(metadata ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: pageIcon };
     }
     const literal = assetLiterals.get(tileDef.tileId);
-    if (literal === undefined) return intrinsic;
+    if (literal === undefined) return metadata;
     return {
-      ...intrinsic,
+      ...metadata,
       label: literal.label,
       ...(literal.previewUrl === undefined ? {} : { iconUrl: literal.previewUrl }),
     };

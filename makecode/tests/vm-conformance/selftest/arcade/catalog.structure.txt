@@ -1,0 +1,158 @@
+pack arcade
+  type Vector2 icon
+    field x number readOnly accessor accessor-icon
+    field y number readOnly accessor accessor-icon
+  type Sprite native icon
+    field image Image accessor accessor-icon
+    field position Vector2 accessor accessor-icon
+    field brain Brain accessor accessor-icon
+    field moveSmoothing number accessor accessor-icon
+  type Image asset=image
+    field asset string readOnly
+  type Brain brain icon
+    field id string readOnly
+  tile sensor sensor.arcade.dpad returns=Vector2 icon
+    args
+      arg modifier.direction.up optional modifier icon
+      arg modifier.direction.down optional modifier icon
+      arg modifier.direction.left optional modifier icon
+      arg modifier.direction.right optional modifier icon
+  tile actuator actuator.arcade.move icon
+    call
+      conditional condition=toward
+        then
+          optional
+            choice
+              arg anon.Vector2 type=Vector2 anonymous derived
+              arg anon.Sprite type=Sprite anonymous derived
+        else
+          conditional condition=away
+            then
+              optional
+                choice
+                  arg anon.Vector2 type=Vector2 anonymous derived
+                  arg anon.Sprite type=Sprite anonymous derived
+      optional
+        arg anon.Vector2 type=Vector2 anonymous derived
+      optional
+        choice
+          repeat min=1 max=3
+            arg modifier.slowly modifier icon
+          repeat min=1 max=3
+            arg modifier.quickly modifier icon
+          arg parameter.speed type=number range={"min":0,"onExceed":"clamp"}
+      optional
+        arg modifier.direction.up modifier icon
+      optional
+        arg modifier.direction.down modifier icon
+      optional
+        arg modifier.direction.left modifier icon
+      optional
+        arg modifier.direction.right modifier icon
+      optional
+        arg modifier.movement.toward name=toward modifier icon
+      optional
+        arg modifier.movement.away name=away modifier icon
+      optional
+        arg modifier.movement.wander modifier icon
+  tile sensor sensor.arcade.bump returns=Sprite icon
+    output bumped Sprite writableResult icon
+    call
+      optional
+        choice
+          arg anon.Image type=Image anonymous
+          arg anon.Sprite type=Sprite anonymous
+          arg anon.Brain type=Brain anonymous
+      optional
+        choice
+          arg modifier.position.above modifier icon
+          arg modifier.position.below modifier icon
+      optional
+        choice
+          arg modifier.position.left modifier icon
+          arg modifier.position.right modifier icon
+  tile sensor sensor.arcade.in-range returns=Sprite icon
+    output inRange Sprite writableResult icon
+    call
+      optional
+        choice
+          bag
+            optional
+              choice
+                arg anon.Image type=Image anonymous
+                arg anon.Sprite type=Sprite anonymous
+                arg anon.Brain type=Brain anonymous
+            optional
+              arg anon.number type=number anonymous range={"min":0,"onExceed":"clamp"}
+            optional
+              choice
+                arg modifier.position.above modifier icon
+                arg modifier.position.below modifier icon
+            optional
+              choice
+                arg modifier.position.left modifier icon
+                arg modifier.position.right modifier icon
+  tile sensor sensor.arcade.out-of-range returns=Sprite icon
+    output outOfRange Sprite writableResult icon
+    call
+      optional
+        choice
+          bag
+            optional
+              choice
+                arg anon.Image type=Image anonymous
+                arg anon.Sprite type=Sprite anonymous
+                arg anon.Brain type=Brain anonymous
+            optional
+              arg anon.number type=number anonymous range={"min":0,"onExceed":"clamp"}
+            optional
+              choice
+                arg modifier.position.above modifier icon
+                arg modifier.position.below modifier icon
+            optional
+              choice
+                arg modifier.position.left modifier icon
+                arg modifier.position.right modifier icon
+  tile sensor sensor.arcade.myself returns=Sprite inline writableResult icon
+  overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
+  overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
+  overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean
+  overload ne(Sprite,Sprite) operator=ne operands=Sprite,Sprite returns=boolean
+  overload eq(Brain,Brain) operator=eq operands=Brain,Brain returns=boolean
+  overload ne(Brain,Brain) operator=ne operands=Brain,Brain returns=boolean
+  core-tile-icon tile.sensor->on-page-entered icon
+  core-tile-icon tile.actuator->switch-page icon
+  core-tile-icon tile.actuator->restart-page icon
+  core-tile-icon tile.sensor->current-page icon
+  core-tile-icon tile.sensor->previous-page icon
+  core-tile-icon tile.page icon
+  core-tile-icon tile.sensor->sensor.timeout icon
+  core-tile-icon tile.op->and icon
+  core-tile-icon tile.op->or icon
+  core-tile-icon tile.op->not icon
+  core-tile-icon tile.op->eq icon
+  core-tile-icon tile.op->ne icon
+  core-tile-icon tile.op->lt icon
+  core-tile-icon tile.op->le icon
+  core-tile-icon tile.op->gt icon
+  core-tile-icon tile.op->ge icon
+  core-tile-icon tile.op->add icon
+  core-tile-icon tile.op->sub icon
+  core-tile-icon tile.op->mul icon
+  core-tile-icon tile.op->div icon
+  core-tile-icon tile.op->neg icon
+  core-tile-icon tile.op->assign icon
+  core-tile-icon tile.cf->open-paren icon
+  core-tile-icon tile.cf->close-paren icon
+  core-tile-icon tile.sensor->random icon
+  core-tile-icon tile.literal->boolean:<boolean>->true icon
+  core-tile-icon tile.literal->boolean:<boolean>->false icon
+  core-tile-icon tile.literal->nil:<nil>->nil icon
+  core-tile-icon tile.var.factory->boolean icon
+  core-tile-icon tile.var.factory->number icon
+  core-tile-icon tile.var.factory->string icon
+  core-tile-icon tile.lit.factory->number icon
+  core-tile-icon tile.lit.factory->string icon
+  core-type-icon number icon
+  core-type-icon string icon
+  core-type-icon boolean icon

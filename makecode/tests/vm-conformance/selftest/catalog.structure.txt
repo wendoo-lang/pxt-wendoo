@@ -1,0 +1,93 @@
+pack beacon
+  type Beacon native icon
+    field x number accessor accessor-icon
+    field y number accessor
+  tile sensor sensor.beacon.reading returns=string inline writableResult icon
+    output position Beacon
+    output anchor Beacon writableResult
+  operator beacon.combine operands=number,number returns=number
+  core-tile-icon tile.op->and icon
+  core-type-icon number icon
+pack chime
+  type Tune asset=tune
+    field asset string readOnly
+  tile actuator actuator.chime.ring icon
+    args
+      arg times type=number optional
+      arg loudly optional modifier icon
+  tile sensor sensor.chime.unmapped returns=number
+  tile actuator actuator.chime.toll async
+  core-tile-icon tile.op->and icon
+  core-tile-icon tile.op->or
+  core-type-icon number icon
+  core-type-icon boolean
+pack grammar
+  tile sensor sensor.grammar.pad returns=number
+    args
+      arg up optional modifier
+      arg down optional modifier
+      arg left optional modifier
+      arg right optional modifier
+  tile actuator actuator.grammar.move consumesWhenResult=number
+    call
+      optional
+        arg direction type=number anonymous derived
+      optional
+        choice
+          repeat min=1 max=3
+            arg slowly modifier
+          repeat min=1 max=3
+            arg quickly modifier
+          arg speed type=number default={"t":3,"v":100} range={"min":0,"onExceed":"clamp"}
+  tile actuator actuator.grammar.chant
+    call
+      seq name=words
+        arg text type=string required
+        optional
+          arg pitch type=number range={"max":12,"min":-12,"onExceed":"wrap"}
+      optional
+        choice name=volume
+          arg loudly modifier
+          arg softly modifier
+      conditional condition=volume
+        then
+          arg echo type=boolean required=false default={"t":2,"v":true}
+        else
+          repeat
+            arg again modifier
+      optional
+        arg label type=string range={"max":3,"onExceed":"drop"}
+  tile sensor sensor.grammar.defaults returns=string
+    args
+      arg ratio type=number optional default={"t":3,"v":0.25} range={"max":1.5,"min":0,"onExceed":"clamp"}
+      arg greeting type=string optional default={"t":4,"v":"caf\u00e9"}
+      arg flag type=boolean optional default={"t":2,"v":false}
+      arg nothing type=nil optional default={"t":1}
+      arg mood type=Mood optional default={"t":5,"typeId":"enum:<Mood>","v":"happy"}
+      arg spot type=Beacon optional default={"t":8,"typeId":"struct:<Beacon>","v":[{"t":3,"v":1},{"t":3,"v":2}]}
+      arg steps type=any optional default={"t":6,"typeId":"list:<number>","v":[{"t":3,"v":1},{"t":3,"v":2}]}
+      arg pending type=any optional default={"id":7,"t":"handle"}
+  tile actuator actuator.grammar.travel
+    call
+      seq
+        arg parameter.grammar.place name=from type=number
+        arg parameter.grammar.place name=to type=number
+diagnostic registration-arg-default-and-derived name=actuator.grammar.default-and-derived pack=grammar spec=amount
+diagnostic registration-arg-required-with-empty-meaning name=actuator.grammar.required-with-default pack=grammar spec=amount
+diagnostic registration-arg-required-with-empty-meaning name=actuator.grammar.required-with-derived pack=grammar spec=amount
+diagnostic registration-arg-range-unbounded name=actuator.grammar.range-unbounded pack=grammar spec=amount
+diagnostic registration-arg-range-inverted name=actuator.grammar.range-inverted pack=grammar spec=amount
+diagnostic registration-arg-range-non-numeric name=actuator.grammar.range-non-numeric pack=grammar spec=amount
+diagnostic registration-call-spec-duplicate-name name=actuator.grammar.duplicate-name pack=grammar spec=amount
+diagnostic registration-call-spec-duplicate-name name=actuator.grammar.names-checked-first pack=grammar spec=amount
+diagnostic registration-field-writes-unbound name=Beacon pack=beacon
+diagnostic registration-duplicate-name name=sensor.beacon.reading pack=chime otherPack=beacon
+diagnostic registration-unmapped-name name=sensor.chime.unmapped pack=chime
+diagnostic registration-after-snapshot name=actuator.chime.late pack=selftest
+diagnostic registration-after-snapshot name=tile.op->not pack=selftest
+diagnostic registration-after-snapshot name=string pack=selftest
+diagnostic catalog-icon-unencodable name=Beacon pack=beacon spec=y
+diagnostic catalog-icon-unencodable name=actuator.chime.ring pack=chime spec=times
+diagnostic catalog-icon-unencodable name=sensor.chime.unmapped pack=chime
+diagnostic catalog-icon-unencodable name=tile.op->or pack=chime
+diagnostic catalog-icon-unencodable name=boolean pack=chime

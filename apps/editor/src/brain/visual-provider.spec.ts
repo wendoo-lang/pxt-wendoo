@@ -36,7 +36,7 @@ function bound(assets?: Parameters<ReturnType<typeof buildAuthoringEnvironment>[
 describe("createTileVisualProvider", () => {
   it("resolves a vocabulary tile to the icon its catalog entry carries", () => {
     const { environment, assetLiterals } = bound();
-    const resolve = createTileVisualProvider(assetLiterals.view);
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view);
 
     assert.equal(resolve(catalogTile(environment, mkSensorTileId(SPOT)))?.iconUrl, SPOT_ICON);
     assert.equal(resolve(catalogTile(environment, mkActuatorTileId(SHOW)))?.iconUrl, SHOW_ICON);
@@ -44,9 +44,21 @@ describe("createTileVisualProvider", () => {
     assert.equal(resolve(catalogTile(environment, mkSensorTileId(SPOT)))?.label, "spot");
   });
 
+  it("resolves a tile read in another environment to the icon this environment binds under its id", () => {
+    const repaintedIcon = "data:image/svg+xml;base64,cmVwYWludGVk";
+    const earlier = bound();
+    const repainted = ASSET_CATALOG.replace(SPOT_ICON, repaintedIcon);
+    assert.notEqual(repainted, ASSET_CATALOG);
+    const current = buildAuthoringEnvironment(repainted, assetCatalogIds());
+    const resolve = createTileVisualProvider(current.environment.tileCatalogs(), current.assetLiterals.view);
+
+    assert.equal(resolve(catalogTile(earlier.environment, mkSensorTileId(SPOT)))?.iconUrl, repaintedIcon);
+    assert.equal(resolve(catalogTile(earlier.environment, mkActuatorTileId(SHOW)))?.iconUrl, SHOW_ICON);
+  });
+
   it("resolves a tile carrying no icon to no icon", () => {
     const { environment, assetLiterals } = bound();
-    const resolve = createTileVisualProvider(assetLiterals.view);
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view);
 
     assert.equal(
       resolve(catalogTile(environment, mkSensorTileId(CoreHostActions.OnPageEntered.key)))?.iconUrl,
@@ -56,7 +68,7 @@ describe("createTileVisualProvider", () => {
 
   it("resolves an asset literal to its asset's preview as its face and its name as its label", () => {
     const { environment, assetLiterals } = bound([picture("img1", "hero", "data:image/svg+xml;base64,aGVybw==")]);
-    const resolve = createTileVisualProvider(assetLiterals.view);
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view);
 
     const visual = resolve(catalogTile(environment, mkLiteralTileId(PICTURE_TYPE, "img1")));
 
@@ -67,7 +79,7 @@ describe("createTileVisualProvider", () => {
   it("resolves an unresolved asset literal to its label alone, with no face", () => {
     const { environment, assetLiterals } = bound([picture("img1", "hero")]);
     assetLiterals.applySnapshot([]);
-    const resolve = createTileVisualProvider(assetLiterals.view);
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view);
 
     const visual = resolve(catalogTile(environment, mkLiteralTileId(PICTURE_TYPE, "img1")));
 
@@ -77,15 +89,19 @@ describe("createTileVisualProvider", () => {
 
   it("resolves every page tile to the page icon the environment binds, keeping each page's name as its label", () => {
     const built = buildAuthoringEnvironment(PAGE_ICON_CATALOG, emptyIdManifest());
-    const resolve = createTileVisualProvider(built.assetLiterals.view, built.pageIcon);
+    const resolve = createTileVisualProvider(
+      built.environment.tileCatalogs(),
+      built.assetLiterals.view,
+      built.pageIcon
+    );
 
     assert.deepEqual(resolve(new BrainTilePageDef("page-start", "start")), { label: "start", iconUrl: PAGE_ICON });
     assert.deepEqual(resolve(new BrainTilePageDef("page-chase", "chase")), { label: "chase", iconUrl: PAGE_ICON });
   });
 
   it("leaves a page tile as its own metadata reads while the environment binds no page icon", () => {
-    const { assetLiterals, pageIcon } = bound();
-    const resolve = createTileVisualProvider(assetLiterals.view, pageIcon);
+    const { environment, assetLiterals, pageIcon } = bound();
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view, pageIcon);
     const page = new BrainTilePageDef("page-start", "start");
 
     assert.equal(pageIcon, undefined);

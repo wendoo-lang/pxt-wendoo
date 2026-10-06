@@ -82,7 +82,7 @@ const SELFTEST_SOURCES = [
   "toller.src.json",
 ];
 
-/** The catalog the registration selftest's packs serialize, which the selftest pins byte for byte. */
+/** The catalog the registration selftest's packs serialize, whose registration structure the selftest pins. */
 const SELFTEST_CATALOG = "makecode/tests/vm-conformance/selftest/catalog.json";
 
 /** The editor's id allocation for the selftest's catalog, relative to the repository root. */
@@ -149,7 +149,7 @@ const PROFILE_ID_OFFSET = 5;
 
 /**
  * The catalog the arcade selftest's game serializes -- the arcade base
- * pack's vocabulary -- which the arcade selftest pins byte for byte.
+ * pack's vocabulary -- whose registration structure the arcade selftest pins.
  */
 const ARCADE_CATALOG = "makecode/tests/vm-conformance/selftest/arcade/catalog.json";
 
@@ -234,6 +234,9 @@ const ARCADE_SOURCES = [
   "unlike.src.json",
   "kindred.src.json",
   "loyal.src.json",
+  "glide.src.json",
+  "skim.src.json",
+  "calm.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -761,6 +764,9 @@ export const IMAGE_LITERAL = "<image literal>";
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding the number 40. */
 export const NUMBER_LITERAL = "<number literal>";
 
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the core nil literal tile. */
+export const NIL_LITERAL = "<nil literal>";
+
 /**
  * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
  * standing for the output tile of the `Sprite` output named by the rest of
@@ -804,6 +810,7 @@ function entryTileId(entry: string, bareTileId: (name: string) => string, litera
   if (entry.startsWith(OPERATOR_ENTRY_PREFIX)) return mkOperatorTileId(entry.slice(OPERATOR_ENTRY_PREFIX.length));
   if (entry === IMAGE_LITERAL) return literalId;
   if (entry === BRAIN_LITERAL) return brainLiteralId;
+  if (entry === NIL_LITERAL) return mkLiteralTileId(CoreTypeIds.Nil, "nil");
   if (entry.startsWith(MODIFIER_ENTRY_PREFIX)) return mkModifierTileId(entry);
   if (entry.startsWith(OUTPUT_ENTRY_PREFIX)) {
     return mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length));
@@ -841,7 +848,7 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
  * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
  * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
- * catalog, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
+ * catalog, {@link NIL_LITERAL} for the core nil literal, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
  * output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
  * shared modifier tile it declares, an entry starting
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
@@ -894,8 +901,8 @@ function arcadeImageRule(when: string[], act: string[]) {
 
 /**
  * Whether the candidate strip offers the tile `literal` -- {@link IMAGE_LITERAL},
- * {@link BRAIN_LITERAL}, or an output, modifier, accessor, sensor or
- * operator entry -- at the end of the WHEN
+ * {@link BRAIN_LITERAL}, {@link NIL_LITERAL}, or an output, modifier,
+ * accessor, sensor or operator entry -- at the end of the WHEN
  * side holding the tiles `when` names or, given `act`, at the end of the DO
  * side holding the tiles `act` names, each as
  * {@link arcadeImageRuleDiagnosticCodes} names them, given the side's
@@ -934,7 +941,8 @@ export function arcadeOffersLiteral(literal: string, when: string[], act?: strin
  * for the image whose id is {@link IMAGE_LITERAL_ASSET_ID},
  * {@link BRAIN_LITERAL} for the literal tile of the brain
  * {@link BRAIN_LITERAL_ID}, {@link NUMBER_LITERAL} for a literal tile
- * holding the number 40, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
+ * holding the number 40, {@link NIL_LITERAL} for the core nil literal tile,
+ * an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
  * `Sprite` output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX}
  * for the shared modifier tile it names, an entry starting
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
@@ -1101,7 +1109,7 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
     }
   }
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
-  const resolve = createTileVisualProvider(built.assetLiterals.view, built.pageIcon);
+  const resolve = createTileVisualProvider(built.environment.tileCatalogs(), built.assetLiterals.view, built.pageIcon);
   const icons = [...carried].map(([tileId, url]) => {
     if (tileId === PAGE_FAMILY_TILE_ID) {
       return {

@@ -18,7 +18,7 @@ namespace wendooIds {
     wendoo.mapOperatorId("eq(Brain,Brain)", 1028);
     wendoo.mapOperatorId("ne(Brain,Brain)", 1029);
     wendoo.mapTypeIds("Vector2", 1024, ["x", "y"]);
-    wendoo.mapTypeIds("Sprite", 1025, ["image", "position", "brain"]);
+    wendoo.mapTypeIds("Sprite", 1025, ["image", "position", "brain", "moveSmoothing"]);
     wendoo.mapTypeIds("Image", 1026, ["asset"]);
     wendoo.mapTypeIds("Brain", 1027, ["id"]);
 }

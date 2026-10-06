@@ -1442,7 +1442,7 @@ namespace arcadeSelftest {
   const SPRITE_TYPE = "Sprite";
 
   /** The `Sprite` type's fields, in the order the arcade base pack declares them and the manifest allocates them. */
-  const SPRITE_FIELDS = ["image", "position", "brain"];
+  const SPRITE_FIELDS = ["image", "position", "brain", "moveSmoothing"];
 
   /** The field id the project's ids module allocates the `Sprite` field `field`. */
   function spriteFieldId(field: string): number {
@@ -3094,6 +3094,249 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** The velocity `sprite` reaches when the direct applicator eases it from rest toward 100 pixels per second rightward over one frame of {@link STEP_MS}. */
+  function firstEasedStep(sprite: Sprite): number {
+    const fromRest = new wendoo.AppliedMotion();
+    new wendoo.DirectMotionApplicator().apply(new wendoo.MotionVerdict(sprite, 100, 0, fromRest), STEP_MS);
+    return fromRest.vx;
+  }
+
+  /** Whether `sprite` eases from rest as a sprite smoothed with the time constant `smoothingMs` does, or, at 0, sets its velocity at once. */
+  function easesWith(sprite: Sprite, smoothingMs: number): boolean {
+    const expected = smoothingMs > 0 ? 100 * easedShare(STEP_MS, smoothingMs) : 100;
+    return near(firstEasedStep(sprite), expected, NUMBER_TOLERANCE);
+  }
+
+  /**
+   * In a scene of its own, its frames stopped, check the smoothing a sprite
+   * is given of its own, at each of {@link SMOOTHING_TIME_CONSTANTS}: a
+   * sprite given its own eases with it while every other sprite eases with
+   * the project's; its own 0 sets its moves at once while the project's is
+   * on; a sprite given none follows the project's as it changes, while one
+   * given its own keeps it; and given a negative or non-finite number the
+   * sprite follows the project's again, and given no sprite nothing happens.
+   */
+  function checkSpriteMoveSmoothing(): void {
+    game.pushScene();
+    stopFrames();
+    const light = SMOOTHING_TIME_CONSTANTS[0];
+    const heavy = SMOOTHING_TIME_CONSTANTS[1];
+    const own = solidSprite(8, 20, 40);
+    const plain = solidSprite(8, 20, 80);
+
+    wendoo.moveSmoothing = light;
+    wendoo.setMoveSmoothing(own, heavy);
+    check(
+      "a-sprites-own-smoothing-eases-its-moves-in-place-of-the-projects",
+      wendoo.moveSmoothingOf(own) === heavy && easesWith(own, heavy) && easesWith(plain, light)
+    );
+
+    wendoo.setMoveSmoothing(own, 0);
+    check(
+      "a-sprites-own-smoothing-of-0-sets-its-moves-at-once-while-the-projects-is-on",
+      wendoo.moveSmoothingOf(own) === 0 && easesWith(own, 0) && easesWith(plain, light)
+    );
+
+    wendoo.setMoveSmoothing(own, heavy);
+    const whileLight = easesWith(plain, light) && easesWith(own, heavy);
+    wendoo.moveSmoothing = 0;
+    const whileOff = easesWith(plain, 0) && easesWith(own, heavy);
+    wendoo.moveSmoothing = heavy;
+    check(
+      "a-sprite-without-smoothing-of-its-own-follows-the-projects-as-it-changes-and-one-with-its-own-keeps-it",
+      whileLight && whileOff && easesWith(plain, heavy) && easesWith(own, heavy)
+    );
+
+    wendoo.moveSmoothing = light;
+    const unusable = [-1, NOT_A_NUMBER, INFINITE, -INFINITE];
+    let followsAgain = true;
+    for (let i = 0; i < unusable.length; i++) {
+      wendoo.setMoveSmoothing(own, heavy);
+      wendoo.setMoveSmoothing(own, unusable[i]);
+      followsAgain = followsAgain && wendoo.moveSmoothingOf(own) === light && easesWith(own, light);
+    }
+    wendoo.setMoveSmoothing(undefined, heavy);
+    wendoo.moveSmoothing = 0;
+    check(
+      "set-move-smoothing-given-a-negative-or-non-finite-number-follows-the-projects-again-and-given-no-sprite-does-nothing",
+      followsAgain && wendoo.moveSmoothingOf(own) === 0
+    );
+    own.destroy();
+    plain.destroy();
+    resumeFrames();
+    game.popScene();
+  }
+
+  /** Whether `value` is the number `n`, exactly. */
+  function readsNumber(value: wendoo.Value, n: number): boolean {
+    return value.t === wendoo.ValueTag.Number && value.num === n;
+  }
+
+  /**
+   * In a scene of its own, check the `Sprite` type's `moveSmoothing` field
+   * through the type's field hooks, and compiled programs writing it: a read
+   * is the time constant the sprite eases with, in seconds -- its own, else
+   * the project's -- and 0 while that is off; a write of a number of seconds
+   * reads back the same and gives the sprite that smoothing, and a negative
+   * number gives it 0, off; a write of an infinity reads back an infinity and
+   * holds the sprite at the speed it has, no velocity it sets turning
+   * non-finite; a write of not-a-number or of no number changes nothing; a
+   * destroyed sprite reads nil and ignores writes. A program setting its own
+   * sprite's smoothing eases that sprite while a sprite running a bare move
+   * follows the project's; two programs setting different smoothing ease
+   * their sprites differently in one scene; a bump rule setting the bumped
+   * sprite's smoothing to 0 turns it off for the sprite touched, leaving its
+   * own sprite's alone; and smoothing given before a sprite's brain starts
+   * holds through the brain changing.
+   */
+  function checkMoveSmoothingField(): void {
+    game.pushScene();
+    const heavy = SMOOTHING_TIME_CONSTANTS[1];
+    const reader = solidSprite(8, 20, 20);
+    const world = hostedWorld(reader);
+    const smoothed = solidSprite(8, 40, 20);
+
+    wendoo.moveSmoothing = 100;
+    const readsProjects = readsNumber(readField(world, smoothed, "moveSmoothing"), 0.1);
+    wendoo.setMoveSmoothing(smoothed, heavy);
+    const readsOwn = readsNumber(readField(world, smoothed, "moveSmoothing"), 0.15);
+    wendoo.setMoveSmoothing(smoothed, -1);
+    wendoo.moveSmoothing = 0;
+    const readsOff = readsNumber(readField(world, smoothed, "moveSmoothing"), 0);
+    wendoo.moveSmoothing = -50;
+    check(
+      "move-smoothing-reads-in-seconds-the-smoothing-its-sprite-eases-with",
+      readsProjects && readsOwn && readsOff && readsNumber(readField(world, smoothed, "moveSmoothing"), 0)
+    );
+
+    wendoo.moveSmoothing = 0;
+    const wrote = writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(0.15));
+    const roundTrips =
+      wrote &&
+      readsNumber(readField(world, smoothed, "moveSmoothing"), 0.15) &&
+      wendoo.moveSmoothingOf(smoothed) === heavy &&
+      easesWith(smoothed, heavy);
+    wendoo.moveSmoothing = 100;
+    writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(-2));
+    check(
+      "move-smoothing-write-round-trips-its-seconds-and-a-negative-number-turns-smoothing-off",
+      roundTrips &&
+        readsNumber(readField(world, smoothed, "moveSmoothing"), 0) &&
+        wendoo.moveSmoothingOf(smoothed) === 0 &&
+        easesWith(smoothed, 0)
+    );
+
+    writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(INFINITE));
+    const applicator = new wendoo.DirectMotionApplicator();
+    const motion = new wendoo.AppliedMotion();
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0, motion), STEP_MS);
+    const heldAtRest = motion.vx === 0 && motion.vy === 0 && movesAt(smoothed, 0, 0);
+    motion.vx = 80;
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0, motion), STEP_MS);
+    const heldAtSpeed = motion.vx === 80 && motion.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 40, 0, motion), STEP_MS);
+    check(
+      "move-smoothing-write-of-an-infinity-holds-its-sprite-at-the-speed-it-has-and-sets-a-slow-down-at-once",
+      readsNumber(readField(world, smoothed, "moveSmoothing"), INFINITE) &&
+        heldAtRest &&
+        heldAtSpeed &&
+        motion.vx === 40 &&
+        movesAt(smoothed, 40, 0)
+    );
+    smoothed.vx = 0;
+
+    wendoo.setMoveSmoothing(smoothed, heavy);
+    const unusable = [
+      wendoo.mkNumber(NOT_A_NUMBER),
+      wendoo.NIL_VALUE,
+      wendoo.mkString("fast"),
+      brainLiteral(TICKER_ID),
+    ];
+    let unchanged = true;
+    for (let i = 0; i < unusable.length; i++) {
+      unchanged =
+        writeField(world, smoothed, "moveSmoothing", unusable[i]) &&
+        unchanged &&
+        wendoo.moveSmoothingOf(smoothed) === heavy;
+    }
+    check("move-smoothing-write-of-not-a-number-or-of-no-number-changes-nothing", unchanged);
+
+    const doomed = solidSprite(8, 60, 20);
+    wendoo.setMoveSmoothing(doomed, heavy);
+    doomed.destroy();
+    check(
+      "move-smoothing-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
+      readsNothing(readField(world, doomed, "moveSmoothing")) &&
+        writeField(world, doomed, "moveSmoothing", wendoo.mkNumber(0)) &&
+        wendoo.moveSmoothingOf(doomed) === heavy
+    );
+    smoothed.destroy();
+    wendoo.moveSmoothing = 0;
+    pause(FRAMES_MS);
+
+    const glider = solidSprite(8, 20, 50);
+    const skimmer = solidSprite(8, 20, 80);
+    const climber = solidSprite(8, 20, 110);
+    wendoo.runBrain(glider, wendooBrains.p_glideSmoothing15);
+    wendoo.runBrain(skimmer, wendooBrains.p_skimSmoothing005);
+    wendoo.runBrain(climber, wendooBrains.p_climbMoveUp00001);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-setting-its-own-sprites-move-smoothing-eases-that-sprite-while-others-follow-the-projects",
+      wendoo.moveSmoothingOf(glider) === heavy &&
+        glider.vx > 0 &&
+        glider.vx < 99 &&
+        wendoo.moveSmoothingOf(climber) === 0 &&
+        movesAt(climber, 0, -100)
+    );
+    check(
+      "two-brains-setting-different-move-smoothing-ease-their-sprites-differently-in-one-scene",
+      wendoo.moveSmoothingOf(skimmer) === 50 && skimmer.vx > glider.vx && skimmer.vx < 100
+    );
+    glider.destroy();
+    skimmer.destroy();
+    climber.destroy();
+    pause(FRAMES_MS);
+
+    const calmer = solidSprite(8, 40, 60);
+    const touched = solidSprite(8, 46, 60);
+    wendoo.setMoveSmoothing(touched, heavy);
+    wendoo.runBrain(calmer, wendooBrains.p_calmBumpedSmooth);
+    pause(FRAMES_MS);
+    check(
+      "a-move-smoothing-assignment-through-the-bumped-sprite-output-gives-the-sprite-it-touches-that-smoothing",
+      wendoo.moveSmoothingOf(touched) === 0 &&
+        readsNumber(readField(world, touched, "moveSmoothing"), 0) &&
+        wendoo.moveSmoothingOf(calmer) === wendoo.moveSmoothing &&
+        programOf(calmer) === "calmBumpedSmooth"
+    );
+    calmer.destroy();
+    touched.destroy();
+    pause(FRAMES_MS);
+
+    const keeper = solidSprite(8, 20, 60);
+    wendoo.setMoveSmoothing(keeper, heavy);
+    wendoo.runBrain(keeper, wendooBrains.p_climbMoveUp00001);
+    pause(FRAMES_MS);
+    const easedFromTheStart = keeper.vy < 0 && keeper.vy > -99;
+    wendoo.runBrain(keeper, wendooBrains.none);
+    pause(FRAMES_MS);
+    wendoo.runBrain(keeper, wendooBrains.p_climbMoveUp00001);
+    pause(FRAMES_MS);
+    check(
+      "a-sprites-own-move-smoothing-holds-from-before-its-brain-starts-and-through-a-brain-change",
+      easedFromTheStart &&
+        programOf(keeper) === "climbMoveUp00001" &&
+        wendoo.moveSmoothingOf(keeper) === heavy &&
+        readsNumber(readField(world, keeper, "moveSmoothing"), 0.15) &&
+        keeper.vy > -99
+    );
+    keeper.destroy();
+    reader.destroy();
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
   /**
    * The body of the overload the arcade base pack adds to the core operator
    * `operatorId` over two operands of the type `type`, bound under the id the
@@ -3627,6 +3870,8 @@ namespace arcadeSelftest {
     checkMoveSmoothing();
     checkNonFiniteMotion();
     checkNonFiniteSpeed();
+    checkSpriteMoveSmoothing();
+    checkMoveSmoothingField();
     checkEqualityOperators();
     checkIconEncoder();
 

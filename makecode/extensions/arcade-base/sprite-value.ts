@@ -2,8 +2,9 @@
  * Sprites as Wendoo values: the `Sprite` type an Arcade sprite crosses into
  * a program as, the sprite a value stands for, and whether it is destroyed.
  * A `Sprite` value is backed by the sprite it stands for: its fields --
- * `image`, `position` and `brain` -- hold nothing of their own, and are read
- * from and written to that sprite when a program uses them.
+ * `image`, `position`, `brain` and `moveSmoothing` -- hold nothing of their
+ * own, and are read from and written to that sprite when a program uses
+ * them.
  */
 namespace wendoo {
   /** Wendoo type name of a sprite value: a value standing for one Arcade sprite. */
@@ -19,10 +20,26 @@ namespace wendoo {
   /** Position of the `brain` field among the `Sprite` type's declared fields, which indexes its binding's field ids. */
   const SPRITE_FIELD_BRAIN = 2;
 
+  /** Position of the `moveSmoothing` field among the `Sprite` type's declared fields, which indexes its binding's field ids. */
+  const SPRITE_FIELD_MOVE_SMOOTHING = 3;
+
+  /**
+   * Log code: a program wrote a sprite's `moveSmoothing` a value that is no
+   * number, or is not-a-number, which changed nothing. Logged as
+   * `wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE`, once per program run, while
+   * {@link debug} is on.
+   */
+  //% hidden
+  export const MOVE_SMOOTHING_UNUSABLE = "WENDOO_MOVE_SMOOTHING_UNUSABLE";
+
+  /** Milliseconds in a second: the `moveSmoothing` field reads and writes seconds, and sprites keep their smoothing in milliseconds. */
+  const MS_PER_SECOND = 1000;
+
   /**
    * The `Sprite` type's declared fields, at their `SPRITE_FIELD_*`
    * positions, each writable and each with an accessor tile: `image`, an
-   * `Image`; `position`, a `Vector2`; and `brain`, a `Brain`.
+   * `Image`; `position`, a `Vector2`; `brain`, a `Brain`; and
+   * `moveSmoothing`, a number.
    */
   //% hidden
   export function spriteFields(): StructFieldSpec[] {
@@ -30,6 +47,7 @@ namespace wendoo {
       withAccessor(field("image", TYPE_IMAGE), "image", IMAGE_ACCESSOR_ICON),
       withAccessor(field("position", TYPE_VECTOR2), "position", POSITION_ACCESSOR_ICON),
       withAccessor(field("brain", TYPE_BRAIN), "brain", BRAIN_TYPE_ICON),
+      withAccessor(field("moveSmoothing", TYPE_NUMBER), "move smoothing", MOVE_SMOOTHING_ACCESSOR_ICON),
     ];
   }
 
@@ -45,11 +63,21 @@ namespace wendoo {
    * point written, leaving the sprite's velocity alone; a value naming no
    * point moves nothing. `brain` reads the brain the sprite runs, as
    * {@link brainRunningOn} finds it, and a write asks for a brain as
-   * {@link requestBrain} does. A destroyed sprite reads nil from every field
-   * and ignores every write. No write is ever refused.
+   * {@link requestBrain} does. `moveSmoothing` reads, in seconds, the
+   * time constant the sprite's moves ease with, as {@link moveSmoothingOf}
+   * reads it -- its own smoothing, else the project's -- and 0 while that is
+   * off; a write of a number of seconds gives the sprite that smoothing of
+   * its own, as {@link keepMoveSmoothing} does, a negative number giving it
+   * 0, off; a write of anything else, not-a-number included, changes
+   * nothing and is logged as {@link MOVE_SMOOTHING_UNUSABLE}. A destroyed
+   * sprite reads nil from every field and ignores every write. No write is
+   * ever refused.
    */
   //% hidden
   export class SpriteBinding extends StructTypeBinding {
+    /** Whether an unusable `moveSmoothing` write has been logged in this program run. */
+    private smoothingUnusableLogged = false;
+
     constructor() {
       super();
       this.hasFieldGetter = true;
@@ -69,6 +97,10 @@ namespace wendoo {
       }
       if (fieldId === this.fieldIds[SPRITE_FIELD_BRAIN]) {
         return brainRunningOn(ctx, sprite);
+      }
+      if (fieldId === this.fieldIds[SPRITE_FIELD_MOVE_SMOOTHING]) {
+        const ms = moveSmoothingOf(sprite);
+        return mkNumber(ms > 0 ? ms / MS_PER_SECOND : 0);
       }
       return undefined;
     }
@@ -90,8 +122,22 @@ namespace wendoo {
         }
       } else if (fieldId === this.fieldIds[SPRITE_FIELD_BRAIN]) {
         requestBrain(ctx, sprite, value);
+      } else if (fieldId === this.fieldIds[SPRITE_FIELD_MOVE_SMOOTHING]) {
+        this.writeMoveSmoothing(sprite, value);
       }
       return true;
+    }
+
+    /** Give `sprite` the smoothing of the number of seconds `value` holds, held at 0 or above; log a value holding no usable number, the first time, and change nothing. */
+    private writeMoveSmoothing(sprite: Sprite, value: Value): void {
+      if (!value || value.t !== ValueTag.Number || isNotANumber(value.num)) {
+        if (!this.smoothingUnusableLogged) {
+          this.smoothingUnusableLogged = true;
+          debugLog(`wendoo ${MOVE_SMOOTHING_UNUSABLE}`);
+        }
+        return;
+      }
+      keepMoveSmoothing(sprite, value.num > 0 ? value.num * MS_PER_SECOND : 0);
     }
   }
 

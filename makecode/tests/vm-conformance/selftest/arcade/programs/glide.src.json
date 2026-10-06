@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "glideSmoothing15",
+  "name": "Glide",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0glideSmooth1",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0.15,
+      "valueLabel": "0.15",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0glideSmooth1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->moveSmoothing",
+            "tile.op->assign",
+            "tile.literal->number:<number>->0.15"
+          ],
+          "children": [],
+          "ruleId": "fRu0glideSmooth1"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu1glideSmooth1"
+        }
+      ]
+    }
+  ]
+}

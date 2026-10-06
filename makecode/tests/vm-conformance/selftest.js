@@ -20,8 +20,9 @@
  *   `EXPECTED_ASSET_LINES`, in that order, and no other;
  * - one `wendoo program-faulted <code> <id>` line per entry in
  *   `EXPECTED_FAULT_LINES`, in that order, and no other;
- * - one `CATALOG <payload>` line whose payload is `EXPECTED_CATALOG`'s
- *   bytes, and, across the runs of one target, byte-identical payloads;
+ * - one `CATALOG <payload>` line whose payload is printable-ASCII JSON whose
+ *   structural listing is `EXPECTED_CATALOG_STRUCTURE`, and, across the runs
+ *   of one target, byte-identical payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
  *   only reaches by surviving every diagnostic.
  *
@@ -32,12 +33,19 @@
  * `EXPECTED_ARCADE_UPDATE_LINES` in that order and no other, the
  * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
  * no other, the unresolved-brain lines in `EXPECTED_ARCADE_BRAIN_LINES` in
- * that order and no other, no program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
+ * that order and no other, the unusable move-smoothing lines in
+ * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, no
+ * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
- * catalog whose payload is `EXPECTED_ARCADE_CATALOG`'s bytes, its types,
- * accessors, tiles, modifier slots, core tile icon entries and core type
- * icon entries carrying 16 by 16 icons.
+ * catalog whose payload is printable-ASCII JSON whose structural listing is
+ * `EXPECTED_ARCADE_CATALOG_STRUCTURE`, its types, accessors, tiles, modifier
+ * slots, core tile icon entries and core type icon entries carrying icons,
+ * and every icon it carries a 16 by 16 image with at least one pixel drawn.
+ *
+ * Before any target runs, each catalog fixture -- the full catalog the
+ * editor's golden-program tooling reads as a session catalog -- must have its
+ * catalog's structural listing.
  *
  * Usage: node selftest.js [--runs 2] [--skip-build]
  */
@@ -417,6 +425,19 @@ const EXPECTED_ARCADE_CHECKS = [
   "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
   "an-infinite-speed-moves-at-the-top-speed-as-a-speed-past-it-does",
   "a-not-a-number-or-negative-speed-reads-as-zero-and-stops-the-sprite",
+  "a-sprites-own-smoothing-eases-its-moves-in-place-of-the-projects",
+  "a-sprites-own-smoothing-of-0-sets-its-moves-at-once-while-the-projects-is-on",
+  "a-sprite-without-smoothing-of-its-own-follows-the-projects-as-it-changes-and-one-with-its-own-keeps-it",
+  "set-move-smoothing-given-a-negative-or-non-finite-number-follows-the-projects-again-and-given-no-sprite-does-nothing",
+  "move-smoothing-reads-in-seconds-the-smoothing-its-sprite-eases-with",
+  "move-smoothing-write-round-trips-its-seconds-and-a-negative-number-turns-smoothing-off",
+  "move-smoothing-write-of-an-infinity-holds-its-sprite-at-the-speed-it-has-and-sets-a-slow-down-at-once",
+  "move-smoothing-write-of-not-a-number-or-of-no-number-changes-nothing",
+  "move-smoothing-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
+  "a-brain-setting-its-own-sprites-move-smoothing-eases-that-sprite-while-others-follow-the-projects",
+  "two-brains-setting-different-move-smoothing-ease-their-sprites-differently-in-one-scene",
+  "a-move-smoothing-assignment-through-the-bumped-sprite-output-gives-the-sprite-it-touches-that-smoothing",
+  "a-sprites-own-move-smoothing-holds-from-before-its-brain-starts-and-through-a-brain-change",
   "equality-overloads-take-their-ids-from-the-manifest",
   "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
   "an-image-standing-for-no-image-equals-nothing-not-even-another",
@@ -452,6 +473,16 @@ const EXPECTED_ARCADE_BRAIN_LINES = ["WENDOO_BRAIN_UNRESOLVED nobodyRunsThis01"]
 
 /** The prefix of the line the VM extension logs for a brain document id no registration holds. */
 const BRAIN_LINE_PREFIX = "wendoo WENDOO_BRAIN_UNRESOLVED ";
+
+/**
+ * Every unusable move-smoothing line the arcade selftest is expected to
+ * log, in order, each without its `wendoo ` prefix: one for the whole run,
+ * however many writes of a sprite's move smoothing hold no usable number.
+ */
+const EXPECTED_ARCADE_SMOOTHING_LINES = ["WENDOO_MOVE_SMOOTHING_UNUSABLE"];
+
+/** The line the arcade base pack logs for a write of a sprite's move smoothing holding no usable number. */
+const SMOOTHING_LINE = "wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE";
 
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
 const ARCADE_ICONED_TILES = [
@@ -524,7 +555,14 @@ const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
 const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain"];
 
 /** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
-const ARCADE_ICONED_ACCESSORS = ["Vector2.x", "Vector2.y", "Sprite.image", "Sprite.position", "Sprite.brain"];
+const ARCADE_ICONED_ACCESSORS = [
+  "Vector2.x",
+  "Vector2.y",
+  "Sprite.image",
+  "Sprite.position",
+  "Sprite.brain",
+  "Sprite.moveSmoothing",
+];
 
 /** Width and height, in pixels, of every arcade base pack icon. */
 const ARCADE_ICON_SIZE = 16;
@@ -550,10 +588,11 @@ const ARCADE_HOST_REJECTIONS = [
  * sensors, the proximity sensors' filters, their brain filter, the
  * `Sprite` type's fields, the myself sensor, their outputs, the field
  * writes made through their outputs, their positional modifiers, the
- * targets the move's toward and away carry, the move's wander, and the
- * equality operators' overloads.
+ * targets the move's toward and away carry, the move's wander, the
+ * `Sprite` type's move smoothing, and the equality operators' overloads.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -624,29 +663,35 @@ function debugLoggingFailures(log) {
 /** The kinds of the frames the arcade selftest must post on the simulator extension's channel, in order. */
 const EXPECTED_ARCADE_FRAME_KINDS = ["ping", "catalog"];
 
+/** The arcade selftest's catalog fixture: the editor's golden-program tooling reads it as the session catalog its allocation and programs are made from. */
+const ARCADE_CATALOG_FIXTURE = path.join(__dirname, "selftest", "arcade", "catalog.json");
+
 /**
- * The catalog payload the arcade selftest game is expected to post, byte for
- * byte: the arcade base pack's vocabulary. The editor's golden-program
- * tooling reads the same file as the session catalog the arcade selftest's
- * allocation and programs are made from.
+ * The structural listing of the catalog the arcade selftest game is expected
+ * to post -- the arcade base pack's vocabulary -- as `catalog.structuralListing`
+ * renders it.
  */
-const EXPECTED_ARCADE_CATALOG = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "selftest", "arcade", "catalog.json"), "utf8")
+const EXPECTED_ARCADE_CATALOG_STRUCTURE = fs.readFileSync(
+  path.join(__dirname, "selftest", "arcade", "catalog.structure.txt"),
+  "utf8"
 );
 
 /** The simulator extension's channel, which every message the Wendoo extensions post rides. */
 const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
 
+/** The registration selftest's catalog fixture: the editor's golden-program tooling reads it as the session catalog its allocation and programs are made from. */
+const CATALOG_FIXTURE = path.join(__dirname, "selftest", "catalog.json");
+
 /**
- * The catalog payload the selftest run is expected to print, byte for byte:
- * the three packs' registered vocabulary under first-wins resolution, the
- * sample metadata and argument grammars the packs declare, and every
- * diagnostic the run provokes. Key order in every object is the payload's
- * own key order; {@link asciiJson} renders it to the expected bytes. The
- * editor's golden-program tooling reads the same file as the session catalog
- * its allocation and programs are made from.
+ * The structural listing of the catalog the selftest run is expected to
+ * print -- the three packs' registered vocabulary under first-wins
+ * resolution, the argument grammars the packs declare, and every diagnostic
+ * the run provokes -- as `catalog.structuralListing` renders it.
  */
-const EXPECTED_CATALOG = JSON.parse(fs.readFileSync(path.join(__dirname, "selftest", "catalog.json"), "utf8"));
+const EXPECTED_CATALOG_STRUCTURE = fs.readFileSync(path.join(__dirname, "selftest", "catalog.structure.txt"), "utf8");
+
+/** Matches a string whose every code unit is printable ASCII, 0x20 through 0x7e. */
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
 const CHECK_PREFIX = "CHECK ";
 const TRACE_PREFIX = "TRACE ";
@@ -741,15 +786,25 @@ function reportedBrainLines(log) {
     .map((line) => line.slice("wendoo ".length));
 }
 
+/** Every unusable move-smoothing line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedSmoothingLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(SMOOTHING_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
 /**
- * The bits per pixel, width and height an icon's catalog text declares, and
- * whether its byte count is the one they imply: the text is lowercase hex of
- * a MakeCode image buffer -- 0x87, the bits per pixel (1 or 4), the width and
- * the height each a little-endian 16-bit integer, two zero bytes, then each
- * column, 1 bit per pixel padded to whole bytes or 4 bits per pixel padded to
- * a multiple of 4 bytes. `null` when the text is not hex or not such a buffer.
+ * The image an icon's catalog text spells: its bits per pixel, width and
+ * height, whether its byte count is the one they imply, and -- when it is --
+ * how many of its pixels are drawn, a pixel at palette index 0 being
+ * transparent. The text is lowercase hex of a MakeCode image buffer -- 0x87,
+ * the bits per pixel (1 or 4), the width and the height each a little-endian
+ * 16-bit integer, two zero bytes, then each column from the left, its pixels
+ * from the top, the topmost in a byte's lowest bits, 1 bit per pixel padded
+ * to whole bytes or 4 bits per pixel padded to a multiple of 4 bytes. `null`
+ * when the text is not hex or not such a buffer.
  */
-function iconShape(text) {
+function decodedIcon(text) {
   if (typeof text !== "string" || !/^([0-9a-f]{2})+$/.test(text)) return null;
   const bytes = [];
   for (let i = 0; i < text.length; i += 2) bytes.push(Number.parseInt(text.slice(i, i + 2), 16));
@@ -758,17 +813,54 @@ function iconShape(text) {
   const width = bytes[2] | (bytes[3] << 8);
   const height = bytes[4] | (bytes[5] << 8);
   const column = bpp === 1 ? (height + 7) >> 3 : ((height * 4 + 31) >> 5) << 2;
-  return { bpp, width, height, sized: bytes.length === 8 + width * column };
+  const sized = bytes.length === 8 + width * column;
+  let drawn = 0;
+  if (sized) {
+    const perByte = 8 / bpp;
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const byte = bytes[8 + x * column + Math.floor(y / perByte)];
+        if (((byte >> ((y % perByte) * bpp)) & ((1 << bpp) - 1)) !== 0) drawn++;
+      }
+    }
+  }
+  return { bpp, width, height, sized, drawn };
 }
 
-/** The ways the icon text `text` misses a 16 by 16 icon's shape, each naming `what`. */
-function iconProblems(what, text) {
-  if (text === undefined) return [`${what} carries no icon`];
-  const shape = iconShape(text);
-  if (shape === null || shape.width !== ARCADE_ICON_SIZE || shape.height !== ARCADE_ICON_SIZE || !shape.sized) {
-    return [`${what} carries an icon of shape ${JSON.stringify(shape)}`];
-  }
-  return [];
+/**
+ * Every icon the parsed catalog payload `value` carries, at any depth, each
+ * as `{ where, text }`: `where` names the entries holding it, by `/`, an
+ * entry named by its `name`, else its `tileId`, else its `type`.
+ */
+function carriedIcons(value, where = "") {
+  if (Array.isArray(value)) return value.flatMap((item) => carriedIcons(item, where));
+  if (typeof value !== "object" || value === null) return [];
+  const name = [value.name, value.tileId, value.type].find((candidate) => typeof candidate === "string");
+  const here = name === undefined ? where : where === "" ? name : `${where}/${name}`;
+  return Object.entries(value).flatMap(([key, field]) =>
+    key === "icon" ? [{ where: here, text: field }] : carriedIcons(field, here)
+  );
+}
+
+/**
+ * The ways the icons the parsed arcade catalog payload `payload` carries
+ * miss a usable icon: each must decode as an image buffer of 16 by 16
+ * pixels with at least one pixel drawn.
+ */
+function arcadeIconValidityFailures(payload) {
+  return carriedIcons(payload).flatMap(({ where, text }) => {
+    const icon = decodedIcon(text);
+    if (icon === null || !icon.sized) return [`icon of ${where} is not an image buffer`];
+    if (icon.width !== ARCADE_ICON_SIZE || icon.height !== ARCADE_ICON_SIZE) {
+      return [`icon of ${where} is ${icon.width} by ${icon.height}`];
+    }
+    return icon.drawn === 0 ? [`icon of ${where} draws no pixel`] : [];
+  });
+}
+
+/** `["<what> carries no icon"]` when `text` is absent, else nothing. */
+function iconPresence(what, text) {
+  return text === undefined ? [`${what} carries no icon`] : [];
 }
 
 /** Every slot entry in the grammar nodes `nodes`, flat `args` entries included, in declaration order. */
@@ -782,34 +874,34 @@ function grammarSlots(nodes) {
 }
 
 /**
- * The ways the arcade catalog payload `payload` misses its icons: each type
- * in `ARCADE_ICONED_TYPES`, each accessor in `ARCADE_ICONED_ACCESSORS`, each
- * tile in `ARCADE_ICONED_TILES`, each slot of
+ * The ways the parsed arcade catalog payload `payload` misses its icons:
+ * each type in `ARCADE_ICONED_TYPES`, each accessor in
+ * `ARCADE_ICONED_ACCESSORS`, each tile in `ARCADE_ICONED_TILES`, each slot of
  * any tile a modifier in `ARCADE_ICONED_MODIFIERS` fills, exactly one core
  * tile icon entry for each core tile in `ARCADE_ICONED_CORE_TILES`, and exactly
  * one core type icon entry for each core type in `ARCADE_ICONED_CORE_TYPES`,
- * carries an icon of 16 by 16 pixels.
+ * carries an icon.
  */
 function arcadeIconFailures(payload) {
-  const pack = JSON.parse(payload).packs.find((entry) => entry.name === "arcade");
+  const pack = (payload.packs || []).find((entry) => entry.name === "arcade");
   const tiles = pack ? pack.tiles : [];
   const types = pack ? pack.types : [];
   const failures = [];
   for (const name of ARCADE_ICONED_TYPES) {
     const type = types.find((entry) => entry.name === name);
-    failures.push(...(type ? iconProblems(`type ${name}`, type.icon) : [`no type ${name}`]));
+    failures.push(...(type ? iconPresence(`type ${name}`, type.icon) : [`no type ${name}`]));
   }
   for (const name of ARCADE_ICONED_ACCESSORS) {
     const [typeName, fieldName] = name.split(".");
     const type = types.find((entry) => entry.name === typeName);
     const declared = type ? (type.fields || []).find((entry) => entry.name === fieldName) : undefined;
     failures.push(
-      ...(declared?.accessor ? iconProblems(`accessor ${name}`, declared.accessor.icon) : [`no accessor ${name}`])
+      ...(declared?.accessor ? iconPresence(`accessor ${name}`, declared.accessor.icon) : [`no accessor ${name}`])
     );
   }
   for (const name of ARCADE_ICONED_TILES) {
     const tile = tiles.find((entry) => entry.name === name);
-    failures.push(...(tile ? iconProblems(`tile ${name}`, tile.icon) : [`no tile ${name}`]));
+    failures.push(...(tile ? iconPresence(`tile ${name}`, tile.icon) : [`no tile ${name}`]));
   }
   for (const tileId of ARCADE_ICONED_MODIFIERS) {
     const slots = tiles.flatMap((tile) =>
@@ -817,19 +909,19 @@ function arcadeIconFailures(payload) {
     );
     const filling = slots.filter((entry) => entry.slot.tileId === tileId);
     if (filling.length === 0) failures.push(`no slot ${tileId}`);
-    for (const entry of filling) failures.push(...iconProblems(`slot ${tileId} of ${entry.tile}`, entry.slot.icon));
+    for (const entry of filling) failures.push(...iconPresence(`slot ${tileId} of ${entry.tile}`, entry.slot.icon));
   }
   const coreIcons = pack ? pack.coreTileIcons || [] : [];
   for (const tileId of ARCADE_ICONED_CORE_TILES) {
     const entries = coreIcons.filter((entry) => entry.tileId === tileId);
     if (entries.length !== 1) failures.push(`${entries.length} core tile icons for ${tileId}`);
-    for (const entry of entries) failures.push(...iconProblems(`core tile ${tileId}`, entry.icon));
+    for (const entry of entries) failures.push(...iconPresence(`core tile ${tileId}`, entry.icon));
   }
   const coreTypeIcons = pack ? pack.coreTypeIcons || [] : [];
   for (const typeName of ARCADE_ICONED_CORE_TYPES) {
     const entries = coreTypeIcons.filter((entry) => entry.type === typeName);
     if (entries.length !== 1) failures.push(`${entries.length} core type icons for ${typeName}`);
-    for (const entry of entries) failures.push(...iconProblems(`core type ${typeName}`, entry.icon));
+    for (const entry of entries) failures.push(...iconPresence(`core type ${typeName}`, entry.icon));
   }
   return failures;
 }
@@ -848,26 +940,72 @@ function sameEntries(actual, expected) {
 }
 
 /**
- * JSON text of `value` as the catalog serializer writes it: keys in
- * insertion order, no whitespace, and every code unit outside printable
- * ASCII escaped to a lowercase `\uXXXX`.
+ * The ways the structural listing `actual` of the catalog `what` names
+ * misses the listing `expected`: the first line where the two part, then
+ * `actual` in full. Empty when they match.
  */
-function asciiJson(value) {
-  return JSON.stringify(value).replace(
-    /[\u007f-\uffff]/g,
-    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`
-  );
+function listingFailures(what, actual, expected) {
+  if (actual === expected) return [];
+  const actualLines = actual.split("\n");
+  const expectedLines = expected.split("\n");
+  let line = 0;
+  while (line < actualLines.length && actualLines[line] === expectedLines[line]) line++;
+  const listed = actual
+    .trimEnd()
+    .split("\n")
+    .map((entry) => `      ${entry}`)
+    .join("\n");
+  return [
+    `${what} structure parts from the expected at line ${line + 1}: ` +
+      `${JSON.stringify(actualLines[line] ?? "")}, expected ${JSON.stringify(expectedLines[line] ?? "")}`,
+    `${what} structure is:\n${listed}`,
+  ];
 }
 
-/** The ways the capture's catalog payload misses `EXPECTED_CATALOG`; empty when it matches byte for byte. */
+/**
+ * Reads the catalog payload text `payload`, which `what` names, and holds
+ * it to the structural listing `expected`: the payload must be printable
+ * ASCII and JSON, and its structural listing must be `expected`.
+ *
+ * @returns `parsed`, the parsed payload or `null` when it does not parse, and
+ *   `failures`, the ways the payload missed; empty when it held.
+ */
+function payloadStructure(what, payload, expected) {
+  if (!PRINTABLE_ASCII.test(payload)) return { parsed: null, failures: [`${what} holds text outside printable ASCII`] };
+  let parsed;
+  try {
+    parsed = JSON.parse(payload);
+  } catch (error) {
+    return { parsed: null, failures: [`${what} is not JSON: ${error.message}`] };
+  }
+  return { parsed, failures: listingFailures(what, catalog.structuralListing(parsed), expected) };
+}
+
+/** The ways the capture's catalog payload misses `EXPECTED_CATALOG_STRUCTURE`; empty when it holds. */
 function catalogFailures(log) {
   const payload = catalog.payloadOf(log);
   if (payload === null) return ["no single CATALOG line"];
-  const expected = asciiJson(EXPECTED_CATALOG);
-  if (payload !== expected) {
-    return [`catalog payload is ${payload}`, `expected payload is ${expected}`];
-  }
-  return [];
+  return payloadStructure("catalog payload", payload, EXPECTED_CATALOG_STRUCTURE).failures;
+}
+
+/**
+ * The ways the catalog fixtures miss the structural listings the selftest
+ * captures are held to: each fixture must parse as JSON and have its
+ * catalog's listing.
+ */
+function fixtureFailures() {
+  return [
+    ["registration catalog fixture", CATALOG_FIXTURE, EXPECTED_CATALOG_STRUCTURE],
+    ["arcade catalog fixture", ARCADE_CATALOG_FIXTURE, EXPECTED_ARCADE_CATALOG_STRUCTURE],
+  ].flatMap(([what, file, expected]) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      return [`${what} is not JSON: ${error.message}`];
+    }
+    return listingFailures(what, catalog.structuralListing(parsed), expected);
+  });
 }
 
 /**
@@ -941,6 +1079,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (brainLines.join("\n") !== EXPECTED_ARCADE_BRAIN_LINES.join("\n")) {
     failures.push(`unresolved brains logged: ${brainLines.join(" | ")}`);
   }
+  const smoothingLines = reportedSmoothingLines(log);
+  if (smoothingLines.join("\n") !== EXPECTED_ARCADE_SMOOTHING_LINES.join("\n")) {
+    failures.push(`unusable move smoothing logged: ${smoothingLines.join(" | ")}`);
+  }
   const faultLines = reportedFaultLines(log);
   if (faultLines.length > 0) {
     failures.push(`program faults logged: ${faultLines.join(" | ")}`);
@@ -954,11 +1096,11 @@ function arcadeContractFailures(exitCode, log, simxLog) {
     failures.push(`posted [${kinds.join(", ")}] on the simulator extension's channel`);
   }
   const posted = frames.find((frame) => frame?.kind === "catalog");
-  const expected = asciiJson(EXPECTED_ARCADE_CATALOG);
-  if (posted && posted.payload !== expected) {
-    failures.push(`posted catalog ${posted.payload}`, `expected catalog ${expected}`);
+  if (posted) {
+    const read = payloadStructure("posted catalog", posted.payload, EXPECTED_ARCADE_CATALOG_STRUCTURE);
+    failures.push(...read.failures);
+    if (read.parsed) failures.push(...arcadeIconFailures(read.parsed), ...arcadeIconValidityFailures(read.parsed));
   }
-  if (posted) failures.push(...arcadeIconFailures(posted.payload));
   failures.push(...debugLoggingFailures(log));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
   return failures;
@@ -1008,7 +1150,12 @@ function main() {
     process.exit(3);
   }
 
-  let failures = 0;
+  const fixtureReasons = fixtureFailures();
+  process.stdout.write(`catalog fixtures: ${fixtureReasons.length ? "FAILED" : "PASS"}\n`);
+  for (const reason of fixtureReasons) {
+    process.stdout.write(`    reason: ${reason}\n`);
+  }
+  let failures = fixtureReasons.length ? 1 : 0;
   for (const targetDir of targets) {
     const targetName = path.basename(targetDir);
     const project = gen.generate(targetDir);

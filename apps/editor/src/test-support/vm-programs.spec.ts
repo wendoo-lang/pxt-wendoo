@@ -32,6 +32,7 @@ import {
   IMAGE_LITERAL,
   IMAGE_LITERAL_ASSET_ID,
   MODIFIER_ENTRY_PREFIX,
+  NIL_LITERAL,
   NUMBER_LITERAL,
   OPERATOR_ENTRY_PREFIX,
   OUTPUT_ENTRY_PREFIX,
@@ -419,8 +420,10 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.ok(arcadeOffersLiteral(myself, [], []));
   });
 
+  const smoothingOf = `${ACCESSOR_ENTRY_PREFIX}Sprite.moveSmoothing`;
+
   it("offers each Sprite accessor after myself, and the assignment after a writable one", () => {
-    for (const accessor of [position, brainOf, imageOf]) {
+    for (const accessor of [position, brainOf, imageOf, smoothingOf]) {
       assert.ok(arcadeOffersLiteral(accessor, [], [myself]), accessor);
     }
     assert.ok(arcadeOffersLiteral(ASSIGN, [], [myself, imageOf]));
@@ -465,6 +468,31 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
     });
   }
+
+  it("offers move smoothing after myself and after the bumped sprite, and the assignment after either", () => {
+    assert.ok(arcadeOffersLiteral(smoothingOf, [bump], [bumped]));
+    assert.ok(arcadeOffersLiteral(ASSIGN, [], [myself, smoothingOf]));
+    assert.ok(arcadeOffersLiteral(ASSIGN, [bump], [bumped, smoothingOf]));
+  });
+
+  for (const [sentence, when, act] of [
+    ["myself's move smoothing set to a number", [], [myself, smoothingOf, ASSIGN, NUMBER_LITERAL]],
+    ["the bumped sprite's move smoothing set to a number", [bump], [bumped, smoothingOf, ASSIGN, NUMBER_LITERAL]],
+    ["myself's move smoothing set to the bumped sprite's", [bump], [myself, smoothingOf, ASSIGN, bumped, smoothingOf]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("neither offers nil for move smoothing nor takes it without a type mismatch", () => {
+    assert.equal(arcadeOffersLiteral(NIL_LITERAL, [], [myself, smoothingOf, ASSIGN]), false);
+    assert.ok(
+      arcadeImageRuleDiagnosticCodes([], [myself, smoothingOf, ASSIGN, NIL_LITERAL]).includes(
+        TypeDiagCode.DataTypeMismatch
+      )
+    );
+  });
 
   it("offers the assignment after a writable field of each proximity sensor's output", () => {
     assert.ok(arcadeOffersLiteral(ASSIGN, [bump], [bumped, brainOf]));

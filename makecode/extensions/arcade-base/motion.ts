@@ -16,7 +16,8 @@
 namespace wendoo {
   /**
    * The velocity a sprite's program last set it moving at, in pixels per
-   * second; while {@link moveSmoothing} is on, a move at least that fast
+   * second; while the sprite's smoothing, as {@link moveSmoothingOf} reads
+   * it, is on, a move at least that fast
    * eases from it. Kept in the sprite's
    * {@link SpriteWorld}; zero while the program has not moved the sprite, or
    * since its moves stopped.
@@ -90,16 +91,73 @@ namespace wendoo {
    * a move asking for less, and a stop, take effect at once. At 0 or below
    * every move sets the velocity it asks for at once. 0 -- off -- until
    * game code sets it, as `wendoo.moveSmoothing = 100`; read on every frame.
+   * The project's default: a sprite given smoothing of its own, by
+   * {@link setMoveSmoothing} or by a program, eases with that instead.
    */
   //% hidden
   // biome-ignore lint/style/useConst: game code outside this file assigns it.
   export let moveSmoothing = 0;
 
+  /** Key a sprite's own move smoothing is kept under in the sprite's data, absent while the sprite has none. */
+  const SPRITE_SMOOTHING_KEY = "wendoo.moveSmoothing";
+
+  /**
+   * The time constant, in milliseconds, the moves of `sprite` ease with:
+   * the smoothing it was given of its own, else {@link moveSmoothing}. Read
+   * on every frame, so a change to either takes effect on the next.
+   *
+   * @param sprite - Any sprite.
+   */
+  //% hidden
+  export function moveSmoothingOf(sprite: Sprite): number {
+    const own = sprite.data[SPRITE_SMOOTHING_KEY];
+    return own === undefined ? moveSmoothing : (own as number);
+  }
+
+  /**
+   * Give `sprite` move smoothing of its own, `ms` milliseconds, which its
+   * moves ease with in place of {@link moveSmoothing} -- 0 turns smoothing
+   * off for it alone; or, given `undefined`, take its own away, so it eases
+   * with {@link moveSmoothing} again. Kept on the sprite itself, whichever
+   * program it runs or runs next.
+   *
+   * @param sprite - The sprite to give smoothing to.
+   * @param ms - The time constant, in milliseconds, at 0 or above; `undefined` to inherit.
+   */
+  //% hidden
+  export function keepMoveSmoothing(sprite: Sprite, ms: number): void {
+    sprite.data[SPRITE_SMOOTHING_KEY] = ms;
+  }
+
+  /**
+   * Give `sprite` move smoothing of its own, `ms` milliseconds, in place of
+   * {@link moveSmoothing} for this sprite alone: its moves ease as every
+   * sprite's do while {@link moveSmoothing} is that number, and 0 turns
+   * smoothing off for it even while every other sprite's is on. A negative
+   * or non-finite number takes its own smoothing away again, so it follows
+   * {@link moveSmoothing}; given no sprite, nothing happens. The sprite keeps
+   * its smoothing whichever program it runs, so it may be given before or
+   * after the program, as
+   * `wendoo.setMoveSmoothing(platform, 60)` or
+   * `wendoo.setMoveSmoothing(arrow, 0)`.
+   *
+   * @param sprite - The sprite to smooth.
+   * @param ms - The time constant, in milliseconds; negative to follow {@link moveSmoothing} again.
+   */
+  //% hidden
+  export function setMoveSmoothing(sprite: Sprite, ms: number): void {
+    if (!sprite) {
+      return;
+    }
+    keepMoveSmoothing(sprite, ms >= 0 && isFiniteNumber(ms) ? ms : undefined);
+  }
+
   /**
    * The direct motion applicator: sets a verdict's sprite to the verdict's
    * velocity -- held to {@link ENGINE_MAX_SPEED} in the verdict's own
-   * direction when it is faster, and eased toward while
-   * {@link moveSmoothing} is on and the verdict asks for at least the speed
+   * direction when it is faster, and eased toward while the sprite's
+   * smoothing, as {@link moveSmoothingOf} reads it, is on and the verdict
+   * asks for at least the speed
    * the sprite's program last set -- and a released sprite's velocity, and
    * that of a sprite whose verdict holds an infinity or a not-a-number, to
    * zero. A sprite's velocity is the program's on every frame that carries a
@@ -113,10 +171,11 @@ namespace wendoo {
      * Set the verdict's sprite moving at the verdict's velocity, or, when
      * that is faster than {@link ENGINE_MAX_SPEED}, at that speed in the
      * verdict's direction; and record what it set as the verdict's applied
-     * motion. While {@link moveSmoothing} is above 0 and `dtMs` is above 0, a
+     * motion. While the sprite's smoothing, as {@link moveSmoothingOf} reads
+     * it, is above 0 and `dtMs` is above 0, a
      * velocity at least as fast as the applied motion is eased toward
      * instead: the sprite is set to the applied motion moved
-     * `1 - e^(-dtMs / moveSmoothing)` of the way to it. A velocity so
+     * `1 - e^(-dtMs / smoothing)` of the way to it. A velocity so
      * computed that holds an infinity or a not-a-number releases the sprite
      * instead, as {@link DirectMotionApplicator.release} does.
      *
@@ -132,11 +191,12 @@ namespace wendoo {
         vy = (vy * ENGINE_MAX_SPEED) / speed;
       }
       const applied = verdict.applied;
-      if (moveSmoothing > 0 && dtMs > 0) {
+      const smoothing = moveSmoothingOf(verdict.sprite);
+      if (smoothing > 0 && dtMs > 0) {
         const asked = Math.sqrt(vx * vx + vy * vy);
         const current = Math.sqrt(applied.vx * applied.vx + applied.vy * applied.vy);
         if (asked >= current) {
-          const share = 1 - Math.exp(-dtMs / moveSmoothing);
+          const share = 1 - Math.exp(-dtMs / smoothing);
           vx = applied.vx + (vx - applied.vx) * share;
           vy = applied.vy + (vy - applied.vy) * share;
         }

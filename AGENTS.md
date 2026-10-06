@@ -408,7 +408,12 @@ the current slice alone.
       actor world's program host, nil while none runs, and a write only
       records an attach request the drain applies -- idempotent for the
       brain already running, nil running the empty program, a document id
-      no compiled brain holds a logged no-op; a destroyed sprite reads nil
+      no compiled brain holds a logged no-op; `moveSmoothing` reads, in
+      seconds, the smoothing time constant the sprite's moves ease with --
+      its own, else the global -- 0 while off, and a write of a number of
+      seconds gives the sprite smoothing of its own, a negative number
+      giving it 0 and a write holding no usable number a no-op logged once
+      per run; a destroyed sprite reads nil
       and ignores writes, and no write is ever refused), the `Image` asset
       type (a plain struct holding the pxt asset id of one of the project's
       images, resolved through pxt's image factories when a tile uses it,
@@ -483,11 +488,15 @@ the current slice alone.
       0 and a positive infinity as the physics engine's top speed), and
       move arbitration with its motion applicator (the direct applicator
       sets sprite velocity, held in its own direction to the physics
-      engine's top speed, and -- while `wendoo.moveSmoothing`, a time
-      constant in milliseconds, 0 and off by default, is set -- eases
+      engine's top speed, and -- while the sprite's smoothing, a time
+      constant in milliseconds, is set -- eases
       toward a velocity at least as fast as the one the sprite's program
       last set, exponentially in the frame's duration, and sets a slower
       one at once, the last-set velocity kept in the sprite's world; a
+      sprite's smoothing is its own, kept on the sprite itself across the
+      brains it runs and given by `wendoo.setMoveSmoothing` (milliseconds,
+      a negative or non-finite number taking it away) or its `moveSmoothing`
+      field, else the global `wendoo.moveSmoothing`, 0 and off by default; a
       verdict coming to an infinite or not-a-number velocity stops the
       sprite as a release does; a motion model such as physics replaces
       the applicator and consumes the same verdicts).
