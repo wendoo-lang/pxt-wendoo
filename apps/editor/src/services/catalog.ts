@@ -256,6 +256,23 @@ export interface CatalogOperator {
   readonly returns?: string;
 }
 
+/**
+ * One overload a pack adds to an operator the editor's core vocabulary
+ * holds: the operator's own tile stands for it, and no tile of the pack's.
+ */
+export interface CatalogOverload {
+  /** The name the project's id manifest allocates the overload's host-function id under, such as `eq(Image,Image)`. */
+  readonly name: string;
+  /** Id of the operator the overload extends, such as `eq`. */
+  readonly operator: string;
+  /** Whether the overload's host function is asynchronous. */
+  readonly async: boolean;
+  /** Type names of the operand slots, in operand order. */
+  readonly operands: readonly string[];
+  /** Type name of the value the overload evaluates to, or absent when the registration declared none. */
+  readonly returns?: string;
+}
+
 /** One icon a pack gives a core tile: a tile the editor's own core vocabulary holds. */
 export interface CatalogCoreTileIcon {
   /** Id of the core tile, as the editor's environment holds it, for example `tile.op->and`. */
@@ -282,6 +299,8 @@ export interface CatalogPack {
   readonly tiles: readonly CatalogTile[];
   /** The pack's operators, in registration order. */
   readonly operators: readonly CatalogOperator[];
+  /** The overloads the pack adds to core operators, in registration order. */
+  readonly overloads: readonly CatalogOverload[];
   /** The icons the pack gives core tiles, in declaration order. */
   readonly coreTileIcons: readonly CatalogCoreTileIcon[];
   /** The icons the pack gives core types, in declaration order. */
@@ -596,19 +615,46 @@ function coreTypeIconOf(value: unknown): CatalogCoreTypeIcon[] {
   return typeName === undefined || iconUrl === undefined ? [] : [{ typeName, iconUrl }];
 }
 
+/** The operand type names `entry` declares, in operand order. */
+function operandsOf(entry: JsonObject): string[] {
+  return arrayField(entry, "operands").flatMap((operand) => (typeof operand === "string" ? [operand] : []));
+}
+
 /** The operator `entry` declares. */
 function operatorOf(entry: JsonObject & { name: string }): CatalogOperator {
-  const operands = arrayField(entry, "operands").flatMap((operand) => (typeof operand === "string" ? [operand] : []));
   const returns = stringField(entry, "returns");
-  return { name: entry.name, async: entry.async === true, operands, ...(returns === undefined ? {} : { returns }) };
+  return {
+    name: entry.name,
+    async: entry.async === true,
+    operands: operandsOf(entry),
+    ...(returns === undefined ? {} : { returns }),
+  };
+}
+
+/** The overload `value` declares, or none when it lacks its name or the operator it extends. */
+function overloadOf(value: unknown): CatalogOverload[] {
+  if (!isNamed(value)) return [];
+  const operator = stringField(value, "operator");
+  if (operator === undefined) return [];
+  const returns = stringField(value, "returns");
+  return [
+    {
+      name: value.name,
+      operator,
+      async: value.async === true,
+      operands: operandsOf(value),
+      ...(returns === undefined ? {} : { returns }),
+    },
+  ];
 }
 
 /**
  * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
  * extension's catalog serializer writes as the simx renders it for the
  * editor -- each icon carried as an `iconUrl` data URI -- into its packs,
- * each with its types, tiles, operators, core tile icons and core type icons.
- * A core tile icon entry carrying no tile id or no icon, and a core type icon
+ * each with its types, tiles, operators, overloads of core operators, core
+ * tile icons and core type icons. An overload entry carrying no operator, a
+ * core tile icon entry carrying no tile id or no icon, and a core type icon
  * entry carrying no type name or no icon, is dropped. A token the grammar does not have -- a tile kind, a
  * grammar construct, a range's overflow behavior, a sentence frame -- is
  * never dropped silently: the entry carrying it is recorded in the result's
@@ -637,6 +683,7 @@ export function parseCatalog(text: string): ParsedCatalog {
           .filter(isNamed)
           .map((tile) => tileOf(pack.name, tile, problems)),
         operators: arrayField(pack, "operators").filter(isNamed).map(operatorOf),
+        overloads: arrayField(pack, "overloads").flatMap(overloadOf),
         coreTileIcons: arrayField(pack, "coreTileIcons").flatMap(coreTileIconOf),
         coreTypeIcons: arrayField(pack, "coreTypeIcons").flatMap(coreTypeIconOf),
       });

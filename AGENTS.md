@@ -350,7 +350,14 @@ the current slice alone.
       `defineCoreTypeIcon` gives a core type -- one of the language's own
       types, addressed by its catalog name, such as `number` -- an icon the
       catalog carries the same way, the mechanism only, the names and icons
-      supplied by a target's pack), the
+      supplied by a target's pack; and core operator overloads:
+      `overloadOperator` adds an overload to a core operator -- addressed by
+      its id, such as `eq` -- over the operand types a pack declares, the
+      operator's own tile standing for it and no tile minted, the catalog
+      carrying it under the giving pack, its host-function id mapped under
+      the name the operator id and operand types derive, as
+      `eq(Image,Image)` -- again the mechanism only, the overloads supplied
+      by a target's pack), the
       language-level tiles, the compiled-brain
       registry, the project id manifest's reader (the calls the generated
       `ids.g.ts` makes), the program loader, the target-blind program host
@@ -407,7 +414,14 @@ the current slice alone.
       nothing, logged once per id, and the game runs on; a value read from
       a sprite's image instead wraps that image object itself, its asset id
       reading empty), the `Brain` type (the vm's brain type, naming one of
-      the project's brains by document id), the arcade icon encoder (each tile icon, an img literal,
+      the project's brains by document id), the core equality and
+      inequality operators' overloads over two images (equal when they have
+      the same pixels, whichever image objects they are; an image no
+      factory holds, or a value naming no image, equals nothing), two
+      sprites (equal when they are the same sprite, not destroyed) and two
+      brains (equal when they name the same document id, whether or not the
+      project holds that brain), inequality holding exactly when equality
+      does not, the arcade icon encoder (each tile icon, an img literal,
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
@@ -531,7 +545,8 @@ the current slice alone.
     authoring environment through the language model's own builders, under
     the ids it allocates and keeps in the project's id manifest -- each
     declared accessor as an accessor tile, each type once the types its
-    fields name are bound -- and puts
+    fields name are bound, each overload a pack adds to a core operator
+    onto that operator, minting no tile -- and puts
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold
     ignored -- except one given the page family id `tile.page`, which every

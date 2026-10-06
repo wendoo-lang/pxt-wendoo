@@ -7,9 +7,9 @@
  * - The root object holds `packs`, always present, and `diagnostics` when
  *   any registration problem is on record.
  * - `packs` holds one object per pack, in registration order: the pack's
- *   `name` plus its `types`, `tiles` and `operators` entry arrays, each in
- *   registration order, then its `coreTileIcons` and `coreTypeIcons` entry
- *   arrays, each in the order the icons were given.
+ *   `name` plus its `types`, `tiles`, `operators` and `overloads` entry
+ *   arrays, each in registration order, then its `coreTileIcons` and
+ *   `coreTypeIcons` entry arrays, each in the order the icons were given.
  * - A type entry carries `name`, `native` (backed by host objects through
  *   registered hooks), `asset` (on an asset type, the kind of the project
  *   assets its values name), `brain` (on a brain type, whose values each name
@@ -59,6 +59,12 @@
  *   enum symbol; `typeId` and a `v` array of tagged values for a list or a
  *   struct; and `{"t":"handle","id":n}` for a handle.
  * - An operator entry carries `name`, `async`, `operands` and `returns`.
+ * - An overload entry -- an overload a pack adds to a core operator, which
+ *   the operator's own tile stands for -- carries `name` (the name the
+ *   project's mapping records its host-function id under: the operator id
+ *   and the operand types, as `eq(Image,Image)`), `operator` (the id of the
+ *   core operator it extends, such as `eq`), `async`, `operands` and
+ *   `returns`.
  * - A core tile icon entry carries `tileId` (the id of the core tile the
  *   pack gives the icon, as the Wendoo editor holds it) and `icon`.
  * - A core type icon entry carries `type` (the name of the core type the
@@ -403,6 +409,18 @@ namespace wendoo {
     return `,"args":${jsonArray(rendered)}`;
   }
 
+  /**
+   * The `"operands"` and `"returns"` fields of the operator shape `spec`,
+   * each prefixed by its separating comma.
+   */
+  function operatorShapeText(spec: OperatorSpec): string {
+    const rendered: string[] = [];
+    for (let i = 0; i < spec.operands.length; i++) {
+      rendered.push(jsonQuote(spec.operands[i]));
+    }
+    return `,"operands":${jsonArray(rendered)},"returns":${jsonQuote(spec.returns)}`;
+  }
+
   /** JSON object text of one recorded diagnostic. */
   function diagnosticText(diagnostic: RegistrationDiagnostic): string {
     let out = `{"code":${jsonQuote(diagnostic.code)},"name":${jsonQuote(diagnostic.name)},"pack":${jsonQuote(diagnostic.pack)}`;
@@ -418,10 +436,11 @@ namespace wendoo {
   /**
    * Collects catalog entries by pack and renders the payload. Registration
    * entries write themselves through {@link CatalogWriter.struct},
-   * {@link CatalogWriter.tile} and {@link CatalogWriter.operator}, core
-   * tile icons through {@link CatalogWriter.coreTileIcon}, and core type
-   * icons through {@link CatalogWriter.coreTypeIcon};
-   * {@link CatalogWriter.render} then assembles the document.
+   * {@link CatalogWriter.tile}, {@link CatalogWriter.operator} and
+   * {@link CatalogWriter.overload}, core tile icons through
+   * {@link CatalogWriter.coreTileIcon}, and core type icons through
+   * {@link CatalogWriter.coreTypeIcon}; {@link CatalogWriter.render} then
+   * assembles the document.
    */
   export class CatalogWriter {
     private icons: CatalogIconEncoder;
@@ -429,6 +448,7 @@ namespace wendoo {
     private typeEntries: string[][] = [];
     private tileEntries: string[][] = [];
     private operatorEntries: string[][] = [];
+    private overloadEntries: string[][] = [];
     private coreTileIconEntries: string[][] = [];
     private coreTypeIconEntries: string[][] = [];
     private problems: RegistrationDiagnostic[] = [];
@@ -451,6 +471,7 @@ namespace wendoo {
       this.typeEntries.push([]);
       this.tileEntries.push([]);
       this.operatorEntries.push([]);
+      this.overloadEntries.push([]);
       this.coreTileIconEntries.push([]);
       this.coreTypeIconEntries.push([]);
       return this.packNames.length - 1;
@@ -633,13 +654,28 @@ namespace wendoo {
         entry += ',"async":true';
       }
       if (spec) {
-        const rendered: string[] = [];
-        for (let i = 0; i < spec.operands.length; i++) {
-          rendered.push(jsonQuote(spec.operands[i]));
-        }
-        entry += `,"operands":${jsonArray(rendered)},"returns":${jsonQuote(spec.returns)}`;
+        entry += operatorShapeText(spec);
       }
       this.operatorEntries[this.packIndex(pack)].push(`${entry}}`);
+    }
+
+    /**
+     * Write the catalog entry of the overload `name` that `pack` adds to the
+     * core operator `operatorId`.
+     *
+     * @param pack - Pack the overload is registered under.
+     * @param name - Name the overload is registered under, as {@link operatorOverloadName} derives it.
+     * @param operatorId - Id of the core operator the overload extends.
+     * @param isAsync - Whether the overload's host function is asynchronous, settling a handle for its result.
+     * @param spec - Declared shape of the overload.
+     */
+    overload(pack: string, name: string, operatorId: string, isAsync: boolean, spec: OperatorSpec): void {
+      let entry = `{"name":${jsonQuote(name)},"operator":${jsonQuote(operatorId)}`;
+      if (isAsync) {
+        entry += ',"async":true';
+      }
+      entry += operatorShapeText(spec);
+      this.overloadEntries[this.packIndex(pack)].push(`${entry}}`);
     }
 
     /**
@@ -691,6 +727,9 @@ namespace wendoo {
         }
         if (this.operatorEntries[i].length > 0) {
           entry += `,"operators":${jsonArray(this.operatorEntries[i])}`;
+        }
+        if (this.overloadEntries[i].length > 0) {
+          entry += `,"overloads":${jsonArray(this.overloadEntries[i])}`;
         }
         if (this.coreTileIconEntries[i].length > 0) {
           entry += `,"coreTileIcons":${jsonArray(this.coreTileIconEntries[i])}`;

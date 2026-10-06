@@ -227,6 +227,9 @@ const EXPECTED_CATALOG_ENTRIES = {
   operators: {
     "conformance.point-add": { name: "conformance.point-add", operands: ["Point", "Point"], returns: "Point" },
   },
+  overloads: {
+    "eq(Point,Point)": { name: "eq(Point,Point)", operator: "eq", operands: ["Point", "Point"], returns: "boolean" },
+  },
 };
 
 /** The ways `payload` misses the expected conformance catalog; empty when it carries every entry. */

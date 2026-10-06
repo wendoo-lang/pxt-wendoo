@@ -49,6 +49,11 @@
  * - `lhs point plus rhs` -- synchronous infix operator over two `Point`
  *   operands, evaluating to a fresh `Point` carrying the fieldwise sums. An
  *   operand carrying no `Point` reading evaluates nil.
+ * - `lhs == rhs` over two `Point` operands -- a synchronous overload the
+ *   profile adds to the core `eq` operator. True exactly when both operands
+ *   carry `Point` readings whose `x` fields are equal numbers and whose `y`
+ *   fields are equal numbers; an operand carrying no `Point` reading, nil
+ *   included, compares false.
  * - `defer point()` -- asynchronous sensor whose handle resolves to a fresh
  *   `Point` struct reading `{x: 1.5, y: 2.25}` exactly one tick after its
  *   dispatch. The struct is constructed at settle time, immediately before
@@ -156,6 +161,7 @@ namespace wendoo {
   export enum ConformanceFuncId {
     DeferAdd = 1033,
     PointAdd = 1041,
+    PointEqual = 1044,
   }
 
   /**
@@ -944,6 +950,29 @@ namespace wendoo {
   }
 
   /**
+   * `lhs == rhs` over two `Point` operands: true exactly when both carry
+   * `Point` readings with equal fields; false when an operand carries none.
+   */
+  class PointEqualOperator extends HostFunction {
+    constructor() {
+      super();
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const lhs = args.length > 0 ? args[0] : NIL_VALUE;
+      const rhs = args.length > 1 ? args[1] : NIL_VALUE;
+      const lhsX = pointFieldNumber(lhs, CONFORMANCE_POINT_FIELD_X);
+      const lhsY = pointFieldNumber(lhs, CONFORMANCE_POINT_FIELD_Y);
+      const rhsX = pointFieldNumber(rhs, CONFORMANCE_POINT_FIELD_X);
+      const rhsY = pointFieldNumber(rhs, CONFORMANCE_POINT_FIELD_Y);
+      if (!lhsX || !lhsY || !rhsX || !rhsY) {
+        return FALSE_VALUE;
+      }
+      return mkBoolean(lhsX.num === rhsX.num && lhsY.num === rhsY.num);
+    }
+  }
+
+  /**
    * The pack handle the conformance profile registers its vocabulary through,
    * and the name every registration diagnostic about the profile reports.
    */
@@ -1223,6 +1252,13 @@ namespace wendoo {
     ConformanceFuncId.PointAdd,
     new PointAddOperator(),
     new OperatorSpec([POINT_TYPE_NAME, POINT_TYPE_NAME], POINT_TYPE_NAME)
+  );
+
+  const pointEqualSpec = new OperatorSpec([POINT_TYPE_NAME, POINT_TYPE_NAME], TYPE_BOOLEAN);
+  conformancePack.overloadOperator(OPERATOR_EQUAL_TO, new PointEqualOperator(), pointEqualSpec);
+  conformanceIds.addOperator(
+    operatorOverloadName(OPERATOR_EQUAL_TO, pointEqualSpec.operands),
+    ConformanceFuncId.PointEqual
   );
 
   /** Line that closes the trace body of a replayed case. */

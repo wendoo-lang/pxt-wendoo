@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "loyalSpriteEq001",
+  "name": "Loyal",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0loyalSprEq00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0loyalSprEq00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.sensor->sensor.arcade.in-range"
+              ],
+              "do": [],
+              "children": [
+                {
+                  "version": 1,
+                  "when": [
+                    "tile.out->struct:<Sprite>.inRange",
+                    "tile.op->eq",
+                    "tile.out->struct:<Sprite>.bumped"
+                  ],
+                  "do": [
+                    "tile.actuator->actuator.arcade.move"
+                  ],
+                  "children": [],
+                  "ruleId": "fRu2loyalSprEq00"
+                }
+              ],
+              "ruleId": "fRu1loyalSprEq00"
+            }
+          ],
+          "ruleId": "fRu0loyalSprEq00"
+        }
+      ]
+    }
+  ]
+}

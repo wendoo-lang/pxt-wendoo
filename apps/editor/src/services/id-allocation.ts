@@ -61,7 +61,9 @@ function appendEntries(
  * when it already allocates every one, and otherwise `manifest` with each new
  * name appended, in catalog order, taking the next free id of its space --
  * each struct type its type atom, each tile its host-action id, each
- * operator its host-function id -- and each field a type declares that its
+ * operator its host-function id, and each overload a pack adds to a core
+ * operator its host-function id under the overload's name, after its pack's
+ * operators -- and each field a type declares that its
  * entry lacks appended to the type's field list, its position there being
  * its id. Nothing allocated is ever renumbered or dropped, so a name the
  * catalog no longer declares keeps its id, and no id is handed out twice:
@@ -73,7 +75,10 @@ function appendEntries(
  */
 export function allocateIds(manifest: MakeCodeIdManifest, catalog: ParsedCatalog): MakeCodeIdManifest {
   const tiles = catalog.packs.flatMap((pack) => pack.tiles.map((tile) => tile.name));
-  const operators = catalog.packs.flatMap((pack) => pack.operators.map((operator) => operator.name));
+  const operators = catalog.packs.flatMap((pack) => [
+    ...pack.operators.map((operator) => operator.name),
+    ...pack.overloads.map((overload) => overload.name),
+  ]);
   const declaredTypes = catalog.packs.flatMap((pack) => pack.types);
 
   const actions = appendEntries(manifest.actions, tiles, manifest.next.action, ID_SPACE_BASES.action);

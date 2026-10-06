@@ -1,3 +1,4 @@
+import type { OperatorOverloadDefinition } from "@wendoo/core";
 import type { BrainActionCallSpec, ITileMetadata, WendooModule, WendooModuleApi } from "@wendoo/core/app";
 import {
   bag,
@@ -50,6 +51,7 @@ import type {
   CatalogArgSlot,
   CatalogLanguage,
   CatalogOperator,
+  CatalogOverload,
   CatalogPack,
   CatalogTile,
   CatalogType,
@@ -67,7 +69,7 @@ export const PackBindingCode = {
   DEFAULT_UNREADABLE: "CATALOG_DEFAULT_UNREADABLE",
   /** A shared slot tile is declared with another type than its first declaration; the token is the slot's tile identity. */
   SHARED_TILE_CONFLICT: "CATALOG_SHARED_TILE_CONFLICT",
-  /** An operator takes other than one or two operands, or declares no result type. */
+  /** An operator, or an overload of a core operator, takes other than one or two operands, or declares no result type. */
   OPERATOR_SHAPE_UNSUPPORTED: "CATALOG_OPERATOR_SHAPE_UNSUPPORTED",
   /** The entry could not be bound: the language model refused it, or the allocation holds no id for it. */
   TILE_REJECTED: "CATALOG_TILE_REJECTED",
@@ -181,8 +183,8 @@ function defaultValueOf(json: unknown): Value {
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type -- with the accessor tile
  * of each field declaring one -- each tile -- with the parameter and modifier
- * tiles its grammar's slots need -- and each operator, under the ids `ids`
- * allocates. Each tile's, slot tile's and accessor tile's display metadata
+ * tiles its grammar's slots need -- each operator, and each overload a pack
+ * adds to a core operator, under the ids `ids` allocates. Each tile's, slot tile's and accessor tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
  * each output a tile declares is bound as its output tile, carrying the
  * output's label, docs and icon. Each icon a pack gives a core tile is put in
@@ -202,7 +204,8 @@ class PackBinder {
   /**
    * Binds every entry of `packs`: every pack's core tile icons first, while
    * the environment holds only core tiles, then every pack's types, so any
-   * pack's entry may refer to them, then each pack's tiles and operators.
+   * pack's entry may refer to them, then each pack's tiles, operators and
+   * overloads of core operators.
    * Types bind in catalog order, except that a type whose field is of a
    * declared type not yet registered waits until that type is; a type still
    * waiting once no other can bind is bound as it stands, and its refusal
@@ -234,6 +237,11 @@ class PackBinder {
       for (const operator of pack.operators) {
         this.attempt(pack.name, operator.name, () => {
           this.bindOperator(operator);
+        });
+      }
+      for (const overload of pack.overloads) {
+        this.attempt(pack.name, overload.name, () => {
+          this.bindOverload(overload);
         });
       }
     }
@@ -516,20 +524,34 @@ class PackBinder {
     }
   }
 
-  /** Registers `operator` as an operator of its own under its allocated host-function id, with its operator tile. */
-  private bindOperator(operator: CatalogOperator): void {
-    const fnId = this.ids.operators.find((entry) => entry.name === operator.name)?.id;
+  /**
+   * The overload `entry` declares, its host function inert, under the
+   * host-function id the allocation gives the name `entry` declares. Throws
+   * an {@link EntryProblem} when the allocation holds no id for it or the
+   * shape is one an operator cannot take.
+   */
+  private inertOverload(entry: CatalogOperator | CatalogOverload): OperatorOverloadDefinition {
+    const fnId = this.ids.operators.find((allocated) => allocated.name === entry.name)?.id;
     if (fnId === undefined) throw new EntryProblem(PackBindingCode.TILE_REJECTED);
-    const arity = operator.operands.length;
-    if ((arity !== 1 && arity !== 2) || operator.returns === undefined) {
+    const arity = entry.operands.length;
+    if ((arity !== 1 && arity !== 2) || entry.returns === undefined) {
       throw new EntryProblem(PackBindingCode.OPERATOR_SHAPE_UNSUPPORTED);
     }
-    const argTypes = operator.operands.map((operand) => this.typeOf(operand));
-    const resultType = this.typeOf(operator.returns);
-    const fn = operator.async ? inertAsync(NIL_VALUE) : inertSync(NIL_VALUE);
+    return {
+      argTypes: entry.operands.map((operand) => this.typeOf(operand)),
+      resultType: this.typeOf(entry.returns),
+      fnId,
+      fn: entry.async ? inertAsync(NIL_VALUE) : inertSync(NIL_VALUE),
+      isAsync: entry.async,
+    };
+  }
+
+  /** Registers `operator` as an operator of its own under its allocated host-function id, with its operator tile. */
+  private bindOperator(operator: CatalogOperator): void {
+    const overload = this.inertOverload(operator);
     this.api.registerOperator({
-      spec: { id: operator.name, parse: arity === 1 ? PREFIX_OPERATOR_PARSE : INFIX_OPERATOR_PARSE },
-      overloads: [{ argTypes, resultType, fnId, fn, isAsync: operator.async }],
+      spec: { id: operator.name, parse: overload.argTypes.length === 1 ? PREFIX_OPERATOR_PARSE : INFIX_OPERATOR_PARSE },
+      overloads: [overload],
     });
     this.api.registerTile(
       new BrainTileOperatorDef(
@@ -538,6 +560,20 @@ class PackBinder {
         this.api.brainServices
       )
     );
+  }
+
+  /**
+   * Adds `overload` to the core operator it extends, under its allocated
+   * host-function id, minting no tile: the operator's own tile offers it.
+   */
+  private bindOverload(overload: CatalogOverload): void {
+    const { argTypes, resultType, fnId, fn, isAsync = false } = this.inertOverload(overload);
+    const overloads = this.api.brainServices.edit.operatorOverloads;
+    if (argTypes.length === 1) {
+      overloads.unary(overload.operator, argTypes[0], resultType, fnId, fn, isAsync);
+    } else {
+      overloads.binary(overload.operator, argTypes[0], argTypes[1], resultType, fnId, fn, isAsync);
+    }
   }
 }
 
@@ -566,8 +602,8 @@ export function pageFamilyIcon(packs: readonly CatalogPack[]): string | undefine
 
 /**
  * The module binding `packs` -- every struct type with its accessor tiles,
- * tile and operator a session catalog's packs declare, and every icon they
- * give a core tile --
+ * tile, operator and overload of a core operator a session catalog's packs
+ * declare, and every icon they give a core tile --
  * into an environment, under the ids
  * `ids` allocates; `ids` must allocate every name the packs declare. Pack
  * actions run nothing in the editor: a sensor reads nil and an actuator does

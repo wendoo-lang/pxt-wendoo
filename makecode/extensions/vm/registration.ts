@@ -15,9 +15,10 @@
  * kind, argument grammar (each slot with its tile's display label and icon,
  * and each modifier slot with its tile's sentence words), returns, outputs,
  * consumed WHEN result, a sensor's inline and writable-result flags, label,
- * group, docs, icon, sentence words. A pack may also give core tiles icons. The
- * drain installs behavior only and ignores all of it; the catalog serializer
- * reads it through {@link writeCatalogEntries}.
+ * group, docs, icon, sentence words. A pack may also give core tiles icons,
+ * and add overloads to core operators. The drain installs behavior only and
+ * ignores all of it; the catalog serializer reads it through
+ * {@link writeCatalogEntries}.
  *
  * Nothing in registration is fatal. A registration that cannot be honoured is
  * ignored and recorded in {@link registrationDiagnostics}, and the program
@@ -311,6 +312,81 @@ namespace wendoo {
 
   /** TypeId of the buffer type. */
   export const TYPE_ID_BUFFER = "buffer:<buffer>";
+
+  /*
+   * The core operators' ids, the reference VM's core operator ids, id for id:
+   * what {@link Pack.overloadOperator} is given to add an overload to one of
+   * them, and what the catalog carries as the operator an overload extends.
+   */
+
+  /** Id of the core logical AND operator. */
+  export const OPERATOR_AND = "and";
+
+  /** Id of the core logical OR operator. */
+  export const OPERATOR_OR = "or";
+
+  /** Id of the core logical NOT operator. */
+  export const OPERATOR_NOT = "not";
+
+  /** Id of the core addition operator. */
+  export const OPERATOR_ADD = "add";
+
+  /** Id of the core subtraction operator. */
+  export const OPERATOR_SUBTRACT = "sub";
+
+  /** Id of the core multiplication operator. */
+  export const OPERATOR_MULTIPLY = "mul";
+
+  /** Id of the core division operator. */
+  export const OPERATOR_DIVIDE = "div";
+
+  /** Id of the core remainder operator. */
+  export const OPERATOR_MODULO = "mod";
+
+  /** Id of the core negation operator. */
+  export const OPERATOR_NEGATE = "neg";
+
+  /** Id of the core equality operator. */
+  export const OPERATOR_EQUAL_TO = "eq";
+
+  /** Id of the core inequality operator. */
+  export const OPERATOR_NOT_EQUAL_TO = "ne";
+
+  /** Id of the core less-than operator. */
+  export const OPERATOR_LESS_THAN = "lt";
+
+  /** Id of the core less-than-or-equal operator. */
+  export const OPERATOR_LESS_THAN_OR_EQUAL_TO = "le";
+
+  /** Id of the core greater-than operator. */
+  export const OPERATOR_GREATER_THAN = "gt";
+
+  /** Id of the core greater-than-or-equal operator. */
+  export const OPERATOR_GREATER_THAN_OR_EQUAL_TO = "ge";
+
+  /** Id of the core power operator. */
+  export const OPERATOR_POWER = "pow";
+
+  /** Id of the core bitwise AND operator. */
+  export const OPERATOR_BITWISE_AND = "bitand";
+
+  /** Id of the core bitwise OR operator. */
+  export const OPERATOR_BITWISE_OR = "bitor";
+
+  /** Id of the core bitwise XOR operator. */
+  export const OPERATOR_BITWISE_XOR = "bitxor";
+
+  /** Id of the core bitwise NOT operator. */
+  export const OPERATOR_BITWISE_NOT = "bitnot";
+
+  /** Id of the core left shift operator. */
+  export const OPERATOR_LEFT_SHIFT = "shl";
+
+  /** Id of the core right shift operator. */
+  export const OPERATOR_RIGHT_SHIFT = "shr";
+
+  /** Id of the core assignment operator. */
+  export const OPERATOR_ASSIGN = "assign";
 
   /**
    * Catalog metadata of one registration: what the Wendoo editor shows for
@@ -1118,6 +1194,21 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The name an overload {@link Pack.overloadOperator} adds to the operator
+   * `operatorId` over operands of the types `operands` claims, and the name
+   * the project's mapping records its host-function id under: the operator
+   * id, then the operand type names in operand order, comma-separated in
+   * parentheses, as in `eq(Image,Image)`. The name identifies the overload
+   * uniquely: an operator holds at most one overload per operand type list.
+   *
+   * @param operatorId - Id of the operator the overload extends, one of the `OPERATOR_*` ids.
+   * @param operands - Type names of the overload's operands, in operand order.
+   */
+  export function operatorOverloadName(operatorId: string, operands: string[]): string {
+    return `${operatorId}(${operands.join(",")})`;
+  }
+
   /** The registries one drain populates, and the mapping it resolves ids through. */
   class DrainTarget {
     ids: RegistrationIdMap;
@@ -1312,6 +1403,35 @@ namespace wendoo {
     }
   }
 
+  /**
+   * An overload a pack adds to an operator the Wendoo editor's core
+   * vocabulary holds, its implementing host function waiting for its funcId.
+   */
+  class PendingOperatorOverload extends PendingRegistration {
+    private operatorId: string;
+    private fn: HostFunction;
+    private spec: OperatorSpec;
+
+    constructor(pack: string, operatorId: string, fn: HostFunction, spec: OperatorSpec) {
+      super(operatorOverloadName(operatorId, spec.operands), pack);
+      this.operatorId = operatorId;
+      this.fn = fn;
+      this.spec = spec;
+    }
+
+    idIn(ids: RegistrationIdMap): number {
+      return ids.operatorId(this.name);
+    }
+
+    install(id: number, target: DrainTarget): void {
+      target.functions.register(id, this.fn);
+    }
+
+    writeCatalog(catalog: CatalogWriter): void {
+      catalog.overload(this.pack, this.name, this.operatorId, this.fn.isAsync, this.spec);
+    }
+  }
+
   /** One icon a pack gives a core tile: a tile the Wendoo editor's own core vocabulary holds. */
   class CoreTileIcon {
     /** Id of the core tile, as the Wendoo editor holds it. */
@@ -1470,6 +1590,22 @@ namespace wendoo {
      */
     bindOperator(name: string, fn: HostFunction, spec?: OperatorSpec): void {
       appendPending(new PendingHostFunction(name, this.name, fn, spec));
+    }
+
+    /**
+     * Add an overload to the core operator `operatorId`, over operands of
+     * the types `spec` declares: a brain applies the operator's own tile to
+     * operands of those types, and no tile of the pack's stands for it. The
+     * overload claims the name {@link operatorOverloadName} derives from the
+     * operator and the operand types; the drain resolves its funcId from the
+     * mapping under that name and gives `fn` the id.
+     *
+     * @param operatorId - Id of the operator the overload extends: one of the `OPERATOR_*` ids.
+     * @param fn - Host function computing the operator over operands of the declared types.
+     * @param spec - Declared shape of the overload: its operand types, which name it, and its result type.
+     */
+    overloadOperator(operatorId: string, fn: HostFunction, spec: OperatorSpec): void {
+      appendPending(new PendingOperatorOverload(this.name, operatorId, fn, spec));
     }
 
     /**

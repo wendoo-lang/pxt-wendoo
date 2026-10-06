@@ -675,6 +675,44 @@
           "icon": "870410001000000000000000000000000000f0ffff0f000000f06f6666f6f00f006f66f6ffff4ffd006f66dfddd34fcff06666dfddddfdc4f06665dffffd4dc4f05655dfdddd5ff4f05655dfdddd5ff4f06665dffffd4dc4f06666dfddddfdc4009f66dfddd34fcf009f69f6ffff4ffd00f06f6666f6f00f0000f0ffff0f00000000000000000000"
         }
       ],
+      "overloads": [
+        {
+          "name": "eq(Image,Image)",
+          "operator": "eq",
+          "operands": ["Image", "Image"],
+          "returns": "boolean"
+        },
+        {
+          "name": "ne(Image,Image)",
+          "operator": "ne",
+          "operands": ["Image", "Image"],
+          "returns": "boolean"
+        },
+        {
+          "name": "eq(Sprite,Sprite)",
+          "operator": "eq",
+          "operands": ["Sprite", "Sprite"],
+          "returns": "boolean"
+        },
+        {
+          "name": "ne(Sprite,Sprite)",
+          "operator": "ne",
+          "operands": ["Sprite", "Sprite"],
+          "returns": "boolean"
+        },
+        {
+          "name": "eq(Brain,Brain)",
+          "operator": "eq",
+          "operands": ["Brain", "Brain"],
+          "returns": "boolean"
+        },
+        {
+          "name": "ne(Brain,Brain)",
+          "operator": "ne",
+          "operands": ["Brain", "Brain"],
+          "returns": "boolean"
+        }
+      ],
       "coreTileIcons": [
         {
           "tileId": "tile.sensor->on-page-entered",

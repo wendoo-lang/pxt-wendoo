@@ -2,8 +2,10 @@
  * The arcade base pack's vocabulary: the `Vector2` type, its `x` and `y`
  * read-only accessors, the `Sprite` type, its `image`, `position` and
  * `brain` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
- * `bump`, `in range`, `out of range` and `myself` sensors, and the `move`
- * actuator, each tile and accessor with its icon, registered from this
+ * `bump`, `in range`, `out of range` and `myself` sensors, the `move`
+ * actuator, and the core equality and inequality operators' overloads over
+ * two images, two sprites and two brains, each tile and accessor with its
+ * icon, registered from this
  * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
  * each with its icon; the icons it gives the core tiles -- the page
  * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
@@ -70,6 +72,16 @@
  *   inside an expression that accessors may follow and whose fields a
  *   brain may write: `DO [myself][image] [=] [bumped sprite][image]`
  *   dresses the sprite in the image the sprite it bumps wears.
+ * - The core equality operator compares two images, two sprites or two
+ *   brains, through the core `=` tile: two images are equal when they have
+ *   the same pixels, as {@link sameImage} reads them, whichever image objects
+ *   they are, so `WHEN [myself][image] [=] [<an image>]` holds while the
+ *   sprite wears an image that looks like it, and an image no factory holds
+ *   equals nothing; two sprites when they are the same sprite, not
+ *   destroyed, as {@link sameSprite} reads them; and two brains when they
+ *   name the same brain, as {@link sameBrain} reads them, whether or not the
+ *   project still holds it. The core inequality operator holds exactly when
+ *   equality does not.
  * - The accessors read a value's fields: a sprite's `position`, a fresh
  *   `Vector2` of its center at every read; its `image`, the image it wears;
  *   its `brain`, the brain it runs, or nil while it runs none; and a
@@ -475,6 +487,45 @@ namespace wendoo {
     }
   }
 
+  /**
+   * An overload of the core equality or inequality operator over two values
+   * of one type: equality answers whether `same` holds of its two operands,
+   * inequality the opposite.
+   */
+  class EqualityOverload extends HostFunction {
+    /** Whether the operands are the same value of the overload's type. */
+    private same: (a: Value, b: Value) => boolean;
+    /** `true` for the equality operator's overload, `false` for the inequality operator's. */
+    private equality: boolean;
+
+    /**
+     * @param same - Whether two operands are the same value of the overload's type.
+     * @param equality - `true` for the equality operator's overload, `false` for the inequality operator's.
+     */
+    constructor(same: (a: Value, b: Value) => boolean, equality: boolean) {
+      super();
+      this.same = same;
+      this.equality = equality;
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const lhs = args.length > 0 ? args[0] : NIL_VALUE;
+      const rhs = args.length > 1 ? args[1] : NIL_VALUE;
+      return mkBoolean(this.same(lhs, rhs) === this.equality);
+    }
+  }
+
+  /**
+   * Add the core equality and inequality operators' overloads over two
+   * values of the type `type` to the pack `target`, `same` telling whether
+   * two operands are the same value of it.
+   */
+  function defineEquality(target: Pack, type: string, same: (a: Value, b: Value) => boolean): void {
+    const spec = new OperatorSpec([type, type], TYPE_BOOLEAN);
+    target.overloadOperator(OPERATOR_EQUAL_TO, new EqualityOverload(same, true), spec);
+    target.overloadOperator(OPERATOR_NOT_EQUAL_TO, new EqualityOverload(same, false), spec);
+  }
+
   /** A direction that points nowhere: the move of a sprite holding still at its goal. */
   const HOLD_STILL = new DirectionVector(0, 0);
 
@@ -724,6 +775,10 @@ namespace wendoo {
   myselfSpec.inline = true;
   myselfSpec.writableResult = true;
   arcadePack.bind(MYSELF_TILE, new MyselfSensor(), myselfSpec);
+
+  defineEquality(arcadePack, TYPE_IMAGE, sameImage);
+  defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
+  defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
 
   arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", CORE_ON_PAGE_ENTERED_ICON);
   arcadePack.defineCoreTileIcon("tile.actuator->switch-page", CORE_SWITCH_PAGE_ICON);

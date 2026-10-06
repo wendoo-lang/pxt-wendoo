@@ -3036,6 +3036,196 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /**
+   * The body of the overload the arcade base pack adds to the core operator
+   * `operatorId` over two operands of the type `type`, bound under the id the
+   * project's ids module allocates its name; `undefined` when none is bound.
+   */
+  function overloadBody(operatorId: string, type: string): wendoo.HostFunction {
+    const name = wendoo.operatorOverloadName(operatorId, [type, type]);
+    return wendoo.hostRegistries().functions.getById(wendoo.projectIds().operatorId(name));
+  }
+
+  /**
+   * Whether the overload the arcade base pack adds to the core operator
+   * `operatorId` over two operands of the type `type` answers `expected`
+   * given `lhs` and `rhs`, called on `sprite`'s behalf.
+   */
+  function compares(
+    operatorId: string,
+    type: string,
+    sprite: Sprite,
+    lhs: wendoo.Value,
+    rhs: wendoo.Value,
+    expected: boolean
+  ): boolean {
+    const body = overloadBody(operatorId, type);
+    if (!body) {
+      return false;
+    }
+    const result = body.exec(contextOn(sprite), [lhs, rhs]);
+    return result.t === wendoo.ValueTag.Boolean && result.b === expected;
+  }
+
+  /** Whether the equality overload over `type` answers `same` and the inequality overload its opposite, given `lhs` and `rhs`. */
+  function comparesBoth(type: string, sprite: Sprite, lhs: wendoo.Value, rhs: wendoo.Value, same: boolean): boolean {
+    return (
+      compares(wendoo.OPERATOR_EQUAL_TO, type, sprite, lhs, rhs, same) &&
+      compares(wendoo.OPERATOR_NOT_EQUAL_TO, type, sprite, lhs, rhs, !same)
+    );
+  }
+
+  /**
+   * In a scene of its own, check the overloads the arcade base pack adds to
+   * the core equality and inequality operators: each is bound under the id
+   * the project's ids module allocates its name; two images are equal when
+   * they have the same pixels, an image a sprite wears or one an asset names,
+   * and an image standing for no image equals nothing; two sprites when they
+   * are one sprite, not destroyed; two brains when they name one document id,
+   * whether or not a compiled brain holds it; inequality answers the
+   * opposite. Then check compiled programs placing the core `=` and `!=`
+   * tiles on those values: an image comparison fires while its sprite wears
+   * a look-alike of the image asset and an inequality while it wears another;
+   * a sprite comparison fires while the sprite in range is the bumped sprite;
+   * and a brain comparison through the brain accessor fires while the bumped
+   * sprite runs its own sprite's brain.
+   */
+  function checkEqualityOperators(): void {
+    game.pushScene();
+    const types = [IMAGE_TYPE, "Sprite", BRAIN_TYPE];
+    let bound = true;
+    for (let i = 0; i < types.length; i++) {
+      if (!overloadBody(wendoo.OPERATOR_EQUAL_TO, types[i]) || !overloadBody(wendoo.OPERATOR_NOT_EQUAL_TO, types[i])) {
+        bound = false;
+      }
+    }
+    check("equality-overloads-take-their-ids-from-the-manifest", bound);
+
+    const nil = wendoo.NIL_VALUE;
+    const hero = heroSprite(30, 30);
+    const twin = heroSprite(60, 30);
+    const plain = solidSprite(8, 90, 30);
+    const world = hostedWorld(plain);
+    const worn = (sprite: Sprite) => readField(world, sprite, "image");
+    check(
+      "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
+      comparesBoth(IMAGE_TYPE, plain, worn(hero), imageLiteral(HERO_ASSET_ID), true) &&
+        comparesBoth(IMAGE_TYPE, plain, imageLiteral(HERO_ASSET_ID), imageLiteral(HERO_DISPLAY_NAME), true) &&
+        comparesBoth(IMAGE_TYPE, plain, worn(hero), worn(twin), true) &&
+        comparesBoth(IMAGE_TYPE, plain, worn(hero), worn(plain), false) &&
+        comparesBoth(IMAGE_TYPE, plain, imageLiteral(HERO_ASSET_ID), worn(plain), false)
+    );
+    check(
+      "an-image-standing-for-no-image-equals-nothing-not-even-another",
+      comparesBoth(IMAGE_TYPE, plain, imageLiteral(DELETED_ASSET_ID), imageLiteral(DELETED_ASSET_ID), false) &&
+        comparesBoth(IMAGE_TYPE, plain, imageLiteral(DELETED_ASSET_ID), worn(hero), false) &&
+        comparesBoth(IMAGE_TYPE, plain, nil, nil, false) &&
+        comparesBoth(IMAGE_TYPE, plain, worn(hero), nil, false)
+    );
+
+    const doomed = solidSprite(8, 120, 30);
+    const doomedValue = wendoo.spriteValue(doomed);
+    const liveSame = comparesBoth("Sprite", plain, wendoo.spriteValue(hero), wendoo.spriteValue(hero), true);
+    const liveOther = comparesBoth("Sprite", plain, wendoo.spriteValue(hero), wendoo.spriteValue(twin), false);
+    doomed.destroy();
+    check(
+      "sprite-equality-is-identity-and-a-destroyed-or-missing-sprite-equals-nothing",
+      liveSame &&
+        liveOther &&
+        comparesBoth("Sprite", plain, doomedValue, doomedValue, false) &&
+        comparesBoth("Sprite", plain, nil, nil, false) &&
+        comparesBoth("Sprite", plain, wendoo.spriteValue(hero), nil, false)
+    );
+    check(
+      "brain-equality-compares-document-ids-whether-or-not-a-brain-holds-them",
+      comparesBoth(BRAIN_TYPE, plain, brainLiteral(TICKER_ID), brainLiteral(TICKER_ID), true) &&
+        comparesBoth(BRAIN_TYPE, plain, brainLiteral(UNKNOWN_BRAIN_ID), brainLiteral(UNKNOWN_BRAIN_ID), true) &&
+        comparesBoth(BRAIN_TYPE, plain, brainLiteral(TICKER_ID), brainLiteral(TWIN_IDS[0]), false) &&
+        comparesBoth(BRAIN_TYPE, plain, nil, nil, false) &&
+        comparesBoth(BRAIN_TYPE, plain, brainLiteral(TICKER_ID), nil, false)
+    );
+    hero.destroy();
+    twin.destroy();
+    plain.destroy();
+    pause(FRAMES_MS);
+
+    const lookAlike = heroSprite(30, 60);
+    const unlike = solidSprite(8, 90, 60);
+    const lookAlikeUnlike = heroSprite(30, 100);
+    const unlikeUnlike = solidSprite(8, 90, 100);
+    wendoo.runBrain(lookAlike, wendooBrains.p_mirrorImageEq001);
+    wendoo.runBrain(unlike, wendooBrains.p_mirrorImageEq001);
+    wendoo.runBrain(lookAlikeUnlike, wendooBrains.p_unlikeImageNe001);
+    wendoo.runBrain(unlikeUnlike, wendooBrains.p_unlikeImageNe001);
+    pause(FRAMES_MS);
+    check(
+      "an-image-comparison-rule-fires-while-its-sprite-wears-a-look-alike-of-the-asset",
+      movesAt(lookAlike, 100, 0) && movesAt(unlike, 0, 0)
+    );
+    check(
+      "an-image-inequality-rule-fires-while-its-sprite-wears-another-image",
+      movesAt(lookAlikeUnlike, 0, 0) && movesAt(unlikeUnlike, 100, 0)
+    );
+    lookAlike.destroy();
+    unlike.destroy();
+    lookAlikeUnlike.destroy();
+    unlikeUnlike.destroy();
+    pause(FRAMES_MS);
+
+    const loyal = solidSprite(8, 40, 60);
+    solidSprite(8, 46, 60);
+    wendoo.runBrain(loyal, wendooBrains.p_loyalSpriteEq001);
+    pause(FRAMES_MS);
+    const firesOnOne = movesAt(loyal, 100, 0);
+    clearScene();
+    const torn = solidSprite(8, 40, 100);
+    solidSprite(8, 46, 100);
+    solidSprite(2, 40, 95);
+    wendoo.runBrain(torn, wendooBrains.p_loyalSpriteEq001);
+    pause(FRAMES_MS);
+    check(
+      "a-sprite-comparison-rule-fires-while-the-sprite-in-range-is-the-bumped-sprite",
+      firesOnOne && movesAt(torn, 0, 0)
+    );
+    clearScene();
+
+    const kindred = solidSprite(8, 40, 60);
+    const kin = solidSprite(8, 46, 60);
+    wendoo.runBrain(kindred, wendooBrains.p_kindredBrainEq01);
+    wendoo.runBrain(kin, wendooBrains.p_kindredBrainEq01);
+    pause(FRAMES_MS);
+    const firesOnKin = movesAt(kindred, 100, 0) && movesAt(kin, 100, 0);
+    clearScene();
+    const stranger = solidSprite(8, 40, 100);
+    const ticking = solidSprite(8, 46, 100);
+    wendoo.runBrain(stranger, wendooBrains.p_kindredBrainEq01);
+    wendoo.runBrain(ticking, wendooBrains.p_akBQz0nySKaYx37w);
+    const loner = solidSprite(8, 120, 100);
+    solidSprite(8, 126, 100);
+    wendoo.runBrain(loner, wendooBrains.p_kindredBrainEq01);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-comparison-rule-fires-while-the-bumped-sprite-runs-its-own-sprites-brain",
+      firesOnKin && movesAt(stranger, 0, 0) && movesAt(loner, 0, 0)
+    );
+    game.popScene();
+  }
+
+  /** Destroy every sprite in the current scene, and let the game run until the scene's programs have ended. */
+  function clearScene(): void {
+    const placed = game.currentScene().allSprites;
+    const doomed: Sprite[] = [];
+    for (let i = 0; i < placed.length; i++) {
+      if (placed[i] instanceof Sprite) {
+        doomed.push(placed[i] as Sprite);
+      }
+    }
+    for (let i = 0; i < doomed.length; i++) {
+      doomed[i].destroy();
+    }
+    pause(FRAMES_MS);
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -3378,6 +3568,7 @@ namespace arcadeSelftest {
     checkSpeedLimit();
     checkMoveSmoothing();
     checkNonFiniteMotion();
+    checkEqualityOperators();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

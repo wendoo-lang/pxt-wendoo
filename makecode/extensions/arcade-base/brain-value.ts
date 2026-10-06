@@ -42,6 +42,20 @@ namespace wendoo {
     return runners;
   }
 
+  /**
+   * Whether `a` and `b` name the same brain: both `Brain` values holding one
+   * document id, whether or not the project holds a compiled brain under
+   * it. `false` when either names no brain, nil included.
+   *
+   * @param a - Any value a program produced.
+   * @param b - Any value a program produced.
+   */
+  //% hidden
+  export function sameBrain(a: Value, b: Value): boolean {
+    const documentId = brainBinding.documentIdOf(a);
+    return documentId.length > 0 && documentId === brainBinding.documentIdOf(b);
+  }
+
   /** The program host of the world `ctx` runs in, or `undefined` when that world is no actor's or no host runs it. */
   function hostOf(ctx: ExecutionContext): ProgramHost {
     return ctx.data instanceof ActorWorld ? (ctx.data as ActorWorld).host : undefined;

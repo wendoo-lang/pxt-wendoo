@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "unlikeImageNe001",
+  "name": "Unlike",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0unlikeImgNe0",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0unlikeImgNe0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->image",
+            "tile.op->ne",
+            "tile.literal->struct:<Image>->image3"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0unlikeImgNe0"
+        }
+      ]
+    }
+  ]
+}

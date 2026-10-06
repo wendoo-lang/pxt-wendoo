@@ -485,6 +485,41 @@ describe("the MakeCode VM extension's compiled programs", () => {
     );
   });
 
+  const equalTo = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.EqualTo}`;
+  const notEqualTo = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.NotEqualTo}`;
+
+  it("offers equality and inequality after myself's image", () => {
+    assert.ok(arcadeOffersLiteral(equalTo, [myself, imageOf]));
+    assert.ok(arcadeOffersLiteral(notEqualTo, [myself, imageOf]));
+  });
+
+  it("offers equality and inequality after a sprite and after a brain", () => {
+    for (const when of [[myself], [myself, brainOf]]) {
+      assert.ok(arcadeOffersLiteral(equalTo, when));
+      assert.ok(arcadeOffersLiteral(notEqualTo, when));
+    }
+  });
+
+  for (const [sentence, when] of [
+    ["myself's image equal to an image asset", [myself, imageOf, equalTo, IMAGE_LITERAL]],
+    ["myself's image unequal to an image asset", [myself, imageOf, notEqualTo, IMAGE_LITERAL]],
+    ["myself's brain equal to a brain", [myself, brainOf, equalTo, BRAIN_LITERAL]],
+    ["myself equal to myself", [myself, equalTo, myself]],
+  ] as const) {
+    it(`compiles a WHEN comparing ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [move]), []);
+    });
+  }
+
+  it("compiles a child comparing the bumped sprite's brain with its own sprite's", () => {
+    const { codes } = arcadeChainCompile([bump], [], {
+      when: [bumped, brainOf, equalTo, myself, brainOf],
+      act: [move],
+    });
+
+    assert.deepEqual(codes, []);
+  });
+
   it("refuses a dpad given one direction modifier twice", (t) => {
     const warn = t.mock.method(console, "warn", () => {});
     const codes = arcadeCompileDiagnosticCodes(ARCADE_REFUSED_SOURCE);

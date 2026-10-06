@@ -406,6 +406,15 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-move-toward-or-away-from-a-non-finite-point-moves-as-a-move-given-no-target",
   "position-write-of-a-non-finite-point-moves-nothing",
   "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
+  "equality-overloads-take-their-ids-from-the-manifest",
+  "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
+  "an-image-standing-for-no-image-equals-nothing-not-even-another",
+  "sprite-equality-is-identity-and-a-destroyed-or-missing-sprite-equals-nothing",
+  "brain-equality-compares-document-ids-whether-or-not-a-brain-holds-them",
+  "an-image-comparison-rule-fires-while-its-sprite-wears-a-look-alike-of-the-asset",
+  "an-image-inequality-rule-fires-while-its-sprite-wears-another-image",
+  "a-sprite-comparison-rule-fires-while-the-sprite-in-range-is-the-bumped-sprite",
+  "a-brain-comparison-rule-fires-while-the-bumped-sprite-runs-its-own-sprites-brain",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -530,9 +539,11 @@ const ARCADE_HOST_REJECTIONS = [
  * sensors, the proximity sensors' filters, their brain filter, the
  * `Sprite` type's fields, the myself sensor, their outputs, the field
  * writes made through their outputs, their positional modifiers, the
- * targets the move's toward and away carry, and the move's wander.
+ * targets the move's toward and away carry, the move's wander, and the
+ * equality operators' overloads.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,

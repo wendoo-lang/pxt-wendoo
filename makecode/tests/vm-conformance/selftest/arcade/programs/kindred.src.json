@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "kindredBrainEq01",
+  "name": "Kindred",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0kindredBrnEq",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0kindredBrnEq",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.out->struct:<Sprite>.bumped",
+                "tile.accessor->struct:<Sprite>->brain",
+                "tile.op->eq",
+                "tile.sensor->sensor.arcade.myself",
+                "tile.accessor->struct:<Sprite>->brain"
+              ],
+              "do": [
+                "tile.actuator->actuator.arcade.move"
+              ],
+              "children": [],
+              "ruleId": "fRu1kindredBrnEq"
+            }
+          ],
+          "ruleId": "fRu0kindredBrnEq"
+        }
+      ]
+    }
+  ]
+}

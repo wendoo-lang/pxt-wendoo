@@ -17,7 +17,7 @@ import {
 } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { StructTypeDef } from "@wendoo/core/runtime";
-import { mkPrivateArgId, mkTypeId, NativeType, Op } from "@wendoo/core/runtime";
+import { CoreFuncId, mkPrivateArgId, mkTypeId, NativeType, Op } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import {
   ASSET_CATALOG,
@@ -646,6 +646,90 @@ describe("buildAuthoringEnvironment", () => {
 
     assert.ok(hasTile(environment, mkOperatorTileId("beacon.combine")));
     assert.ok(environment.brainServices.runtime.functions.getSyncById(1040) !== undefined);
+  });
+
+  describe("overloads of core operators", () => {
+    const beaconType = { name: "Beacon", fields: [{ name: "x", type: "number" }] };
+    const beaconEqual = {
+      name: "eq(Beacon,Beacon)",
+      operator: CoreOpId.EqualTo,
+      operands: ["Beacon", "Beacon"],
+      returns: "boolean",
+    };
+    const catalogText = (overloads: object[]) =>
+      JSON.stringify({ packs: [{ name: "beacon", types: [beaconType], overloads }] });
+    const operatorTileIds = (environment: WendooEnvironment) => {
+      const ids: string[] = [];
+      for (const catalog of environment.tileCatalogs()) {
+        catalog.getAll().forEach((entry) => {
+          if (entry.kind === "operator") ids.push(entry.tileId);
+        });
+      }
+      return ids.sort();
+    };
+
+    it("adds each overload to its core operator under the allocation's host-function id, minting no tile", () => {
+      const text = catalogText([beaconEqual]);
+      const ids = allocateIds(emptyIdManifest(), parseCatalog(text));
+      const fnId = ids.operators.find((entry) => entry.name === beaconEqual.name)?.id;
+      const beacon = mkTypeId(NativeType.Struct, "Beacon");
+
+      const built = buildAuthoringEnvironment(text, ids);
+      const plain = buildAuthoringEnvironment(catalogText([]), ids);
+
+      assert.deepEqual(built.diagnostics, []);
+      assert.notEqual(fnId, undefined);
+      const resolved = built.environment.brainServices.edit.operatorOverloads.resolve(CoreOpId.EqualTo, [
+        beacon,
+        beacon,
+      ]);
+      assert.equal(resolved?.overload.fnEntry?.id, fnId);
+      assert.equal(resolved?.overload.resultType, CoreTypeIds.Boolean);
+      assert.deepEqual(operatorTileIds(built.environment), operatorTileIds(plain.environment));
+    });
+
+    it("diagnoses an overload duplicating a core overload, or naming an operator the environment lacks, as refused", () => {
+      const duplicate = {
+        name: "eq(number,number)",
+        operator: CoreOpId.EqualTo,
+        operands: ["number", "number"],
+        returns: "boolean",
+      };
+      const unknown = {
+        name: "same(Beacon,Beacon)",
+        operator: "same",
+        operands: ["Beacon", "Beacon"],
+        returns: "boolean",
+      };
+      const text = catalogText([duplicate, unknown, beaconEqual]);
+
+      const built = buildAuthoringEnvironment(text, emptyIdManifest());
+
+      assert.deepEqual(built.diagnostics, [
+        { code: PackBindingCode.TILE_REJECTED, pack: "beacon", name: duplicate.name },
+        { code: PackBindingCode.TILE_REJECTED, pack: "beacon", name: unknown.name },
+      ]);
+      const number = built.environment.brainServices.edit.operatorOverloads.resolve(CoreOpId.EqualTo, [
+        CoreTypeIds.Number,
+        CoreTypeIds.Number,
+      ]);
+      assert.equal(number?.overload.fnEntry?.id, CoreFuncId.OpEqualToNumber);
+    });
+
+    it("diagnoses an overload taking other than one or two operands, or declaring no result type", () => {
+      const ternary = {
+        name: "eq(Beacon,Beacon,Beacon)",
+        operator: CoreOpId.EqualTo,
+        operands: ["Beacon", "Beacon", "Beacon"],
+        returns: "boolean",
+      };
+      const untyped = { name: "ne(Beacon,Beacon)", operator: CoreOpId.NotEqualTo, operands: ["Beacon", "Beacon"] };
+
+      assert.deepEqual(buildAuthoringEnvironment(catalogText([ternary, untyped]), emptyIdManifest()).diagnostics, [
+        { code: PackBindingCode.OPERATOR_SHAPE_UNSUPPORTED, pack: "beacon", name: ternary.name },
+        { code: PackBindingCode.OPERATOR_SHAPE_UNSUPPORTED, pack: "beacon", name: untyped.name },
+      ]);
+    });
   });
 
   it("compiles a brain placing a pack tile to a dispatch of the tile's allocated action id", () => {

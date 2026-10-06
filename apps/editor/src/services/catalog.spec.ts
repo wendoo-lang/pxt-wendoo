@@ -289,6 +289,7 @@ describe("parseCatalog", () => {
         },
       ],
       operators: [{ name: "beacon.combine", async: false, operands: ["number", "number"], returns: "number" }],
+      overloads: [],
       coreTileIcons: [],
       coreTypeIcons: [],
     });
@@ -444,6 +445,39 @@ describe("parseCatalog", () => {
       { typeName: "number", iconUrl: "data:image/svg+xml;base64,YWdhaW4=" },
     ]);
     assert.deepEqual(packs[1].coreTypeIcons, []);
+  });
+
+  it("reads each pack's overloads of core operators in registration order, dropping an entry missing its name or its operator", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "beacon",
+          overloads: [
+            { name: "eq(Beacon,Beacon)", operator: "eq", operands: ["Beacon", "Beacon"], returns: "boolean" },
+            null,
+            { operator: "eq", operands: ["Beacon", "Beacon"], returns: "boolean" },
+            { name: "ne(Beacon,Beacon)", operands: ["Beacon", "Beacon"], returns: "boolean" },
+            { name: "not(Beacon)", operator: "not", async: true, operands: ["Beacon", 7] },
+          ],
+        },
+        { name: "chime" },
+      ],
+    });
+
+    const { packs, problems } = parseCatalog(text);
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(packs[0].overloads, [
+      {
+        name: "eq(Beacon,Beacon)",
+        operator: "eq",
+        async: false,
+        operands: ["Beacon", "Beacon"],
+        returns: "boolean",
+      },
+      { name: "not(Beacon)", operator: "not", async: true, operands: ["Beacon"] },
+    ]);
+    assert.deepEqual(packs[1].overloads, []);
   });
 
   it("reads flat args as slots, wrapping an optional entry in an optional and a repeated one in a repeat", () => {

@@ -135,4 +135,21 @@ namespace wendoo {
   export function isDestroyed(sprite: Sprite): boolean {
     return (sprite.flags & sprites.Flag.Destroyed) !== 0;
   }
+
+  /**
+   * Whether `a` and `b` stand for one and the same sprite, and it is not
+   * destroyed. `false` when either stands for no sprite or for a destroyed
+   * one, so two values standing for one destroyed sprite are not the same.
+   *
+   * @param a - Any value a program produced.
+   * @param b - Any value a program produced.
+   */
+  //% hidden
+  export function sameSprite(a: Value, b: Value): boolean {
+    const sprite = spriteOf(a);
+    if (!sprite || isDestroyed(sprite)) {
+      return false;
+    }
+    return sprite === spriteOf(b);
+  }
 }

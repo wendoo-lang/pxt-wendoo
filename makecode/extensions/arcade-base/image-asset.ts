@@ -69,4 +69,24 @@ namespace wendoo {
     }
     return found;
   }
+
+  /**
+   * Whether `a` and `b` stand for images with the same pixels, each image
+   * found as {@link imageOf} finds it -- the image object a value wraps, or
+   * the image its asset id names -- whichever image objects they are.
+   * `false` when either stands for no image, so a value standing for no
+   * image equals nothing, another such value included.
+   *
+   * @param a - Any value a program produced.
+   * @param b - Any value a program produced.
+   */
+  //% hidden
+  export function sameImage(a: Value, b: Value): boolean {
+    const first = imageOf(a);
+    const second = imageOf(b);
+    if (!first || !second) {
+      return false;
+    }
+    return first.equals(second);
+  }
 }

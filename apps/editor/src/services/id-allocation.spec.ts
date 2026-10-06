@@ -50,6 +50,35 @@ describe("id allocation", () => {
     });
   });
 
+  it("allocates each overload of a core operator a host-function id under its name, after its pack's operators", () => {
+    const allocated = allocateIds(emptyIdManifest(), TWO_PACKS);
+    const extended = catalog([
+      {
+        name: "beacon",
+        operators: [{ name: "beacon.combine", operands: ["number", "number"], returns: "number" }],
+        overloads: [
+          { name: "eq(Beacon,Beacon)", operator: "eq", operands: ["Beacon", "Beacon"], returns: "boolean" },
+          { name: "ne(Beacon,Beacon)", operator: "ne", operands: ["Beacon", "Beacon"], returns: "boolean" },
+        ],
+      },
+      {
+        name: "chime",
+        operators: [{ name: "chime.blend", operands: ["number", "number"], returns: "number" }],
+      },
+    ]);
+
+    const next = allocateIds(allocated, extended);
+
+    assert.deepEqual(next.operators, [
+      { name: "beacon.combine", id: 1024 },
+      { name: "eq(Beacon,Beacon)", id: 1025 },
+      { name: "ne(Beacon,Beacon)", id: 1026 },
+      { name: "chime.blend", id: 1027 },
+    ]);
+    assert.equal(next.next.operator, 1028);
+    assert.equal(allocateIds(next, extended), next);
+  });
+
   it("returns the manifest itself when the catalog names nothing new", () => {
     const allocated = allocateIds(emptyIdManifest(), TWO_PACKS);
 
