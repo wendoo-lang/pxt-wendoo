@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CoreOpId } from "@wendoo/core/app";
+import { CoreOpId, CoreTypeIds } from "@wendoo/core/app";
 import { CompilationDiagCode, ParseDiagCode, TypeDiagCode } from "@wendoo/core/brain/compiler";
+import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import {
   ACCESSOR_ENTRY_PREFIX,
   ARCADE_REFUSED_SOURCE,
@@ -20,6 +21,7 @@ import {
   arcadeLoneSensorSentence,
   arcadeModifierLabel,
   arcadeOffersLiteral,
+  arcadeOperatorResultType,
   arcadeReadOfTileReference,
   arcadeRenderedIcons,
   arcadeRenderedTypeIcons,
@@ -28,12 +30,14 @@ import {
   arcadeSpriteOutputLabels,
   arcadeStructTextConstants,
   BRAIN_LITERAL,
+  CLOSE_PAREN,
   checkedInText,
   IMAGE_LITERAL,
   IMAGE_LITERAL_ASSET_ID,
   MODIFIER_ENTRY_PREFIX,
   NIL_LITERAL,
   NUMBER_LITERAL,
+  OPEN_PAREN,
   OPERATOR_ENTRY_PREFIX,
   OUTPUT_ENTRY_PREFIX,
   type RenderedFile,
@@ -546,6 +550,60 @@ describe("the MakeCode VM extension's compiled programs", () => {
     });
 
     assert.deepEqual(codes, []);
+  });
+
+  const add = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.Add}`;
+  const subtract = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.Subtract}`;
+  const multiply = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.Multiply}`;
+
+  it("offers addition, subtraction, multiplication, equality and inequality after a position", () => {
+    for (const operator of [add, subtract, multiply, equalTo, notEqualTo]) {
+      assert.ok(arcadeOffersLiteral(operator, [myself, position]), operator);
+    }
+  });
+
+  it("binds multiply over a position and a number on its right alone, and no division over a position", () => {
+    const vector2 = mkTypeId(NativeType.Struct, "Vector2");
+    assert.equal(arcadeOperatorResultType(CoreOpId.Multiply, [vector2, CoreTypeIds.Number]), vector2);
+    assert.equal(arcadeOperatorResultType(CoreOpId.Multiply, [CoreTypeIds.Number, vector2]), undefined);
+    assert.equal(arcadeOperatorResultType(CoreOpId.Multiply, [vector2, vector2]), undefined);
+    assert.equal(arcadeOperatorResultType(CoreOpId.Divide, [vector2, CoreTypeIds.Number]), undefined);
+  });
+
+  it("compiles the bumped sprite's position set to itself plus its distance from myself's", () => {
+    const shove = [bumped, position, ASSIGN, bumped, position, add, OPEN_PAREN, bumped, position, subtract];
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([bump], [...shove, myself, position, CLOSE_PAREN]), []);
+  });
+
+  for (const [sentence, act] of [
+    [
+      "myself's position set to itself times a number",
+      [myself, position, ASSIGN, myself, position, multiply, NUMBER_LITERAL],
+    ],
+    [
+      "a move toward the bumped sprite's position minus myself's",
+      [move, toward, bumped, position, subtract, myself, position],
+    ],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([bump], [...act]), []);
+    });
+  }
+
+  it("compiles a child comparing myself's position with the bumped sprite's", () => {
+    const { codes } = arcadeChainCompile([bump], [], {
+      when: [myself, position, equalTo, bumped, position],
+      act: [myself, imageOf, ASSIGN, IMAGE_LITERAL],
+    });
+
+    assert.deepEqual(codes, []);
+  });
+
+  it("refuses a number times a position: no multiplication overload takes a number first", () => {
+    assert.deepEqual(
+      arcadeImageRuleDiagnosticCodes([], [myself, position, ASSIGN, NUMBER_LITERAL, multiply, myself, position]),
+      [TypeDiagCode.NoOverloadForBinaryOp]
+    );
   });
 
   it("refuses a dpad given one direction modifier twice", (t) => {

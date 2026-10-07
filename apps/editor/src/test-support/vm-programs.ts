@@ -15,8 +15,10 @@ import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conforma
 import { List, stream } from "@wendoo/core";
 import {
   BrainDef,
+  CoreControlFlowId,
   CoreOpId,
   CoreTypeIds,
+  mkControlFlowTileId,
   mkLiteralTileId,
   mkModifierTileId,
   mkOperatorTileId,
@@ -237,6 +239,8 @@ const ARCADE_SOURCES = [
   "glide.src.json",
   "skim.src.json",
   "calm.src.json",
+  "shove.src.json",
+  "match.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -767,6 +771,12 @@ export const NUMBER_LITERAL = "<number literal>";
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the core nil literal tile. */
 export const NIL_LITERAL = "<nil literal>";
 
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the core opening parenthesis tile. */
+export const OPEN_PAREN = "<open paren>";
+
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the core closing parenthesis tile. */
+export const CLOSE_PAREN = "<close paren>";
+
 /**
  * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
  * standing for the output tile of the `Sprite` output named by the rest of
@@ -811,6 +821,8 @@ function entryTileId(entry: string, bareTileId: (name: string) => string, litera
   if (entry === IMAGE_LITERAL) return literalId;
   if (entry === BRAIN_LITERAL) return brainLiteralId;
   if (entry === NIL_LITERAL) return mkLiteralTileId(CoreTypeIds.Nil, "nil");
+  if (entry === OPEN_PAREN) return mkControlFlowTileId(CoreControlFlowId.OpenParen);
+  if (entry === CLOSE_PAREN) return mkControlFlowTileId(CoreControlFlowId.CloseParen);
   if (entry.startsWith(MODIFIER_ENTRY_PREFIX)) return mkModifierTileId(entry);
   if (entry.startsWith(OUTPUT_ENTRY_PREFIX)) {
     return mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length));
@@ -848,7 +860,8 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
  * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
  * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
- * catalog, {@link NIL_LITERAL} for the core nil literal, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
+ * catalog, {@link NIL_LITERAL} for the core nil literal, {@link OPEN_PAREN} and
+ * {@link CLOSE_PAREN} for the parenthesis tiles, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
  * output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
  * shared modifier tile it declares, an entry starting
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
@@ -933,6 +946,20 @@ export function arcadeOffersLiteral(literal: string, when: string[], act?: strin
 }
 
 /**
+ * The type id of what the core operator `operatorId` evaluates to over
+ * operands of the types `operandTypeIds`, in the environment binding the
+ * arcade selftest's catalog under its allocation; `undefined` when the
+ * operator holds no overload over those operand types.
+ *
+ * @param operatorId - The core operator's id, such as `CoreOpId.Multiply`.
+ * @param operandTypeIds - The operands' type ids, in operand order.
+ */
+export function arcadeOperatorResultType(operatorId: string, operandTypeIds: string[]): string | undefined {
+  const overloads = arcadeEnvironment().brainServices.edit.operatorOverloads;
+  return overloads.resolve(operatorId, operandTypeIds)?.overload.resultType;
+}
+
+/**
  * The stable codes of the diagnostics compiling a one-rule program in the
  * environment binding the arcade selftest's catalog, in the order reported:
  * its WHEN side the tiles `when` names, its DO side the tiles `act` names,
@@ -942,6 +969,7 @@ export function arcadeOffersLiteral(literal: string, when: string[], act?: strin
  * {@link BRAIN_LITERAL} for the literal tile of the brain
  * {@link BRAIN_LITERAL_ID}, {@link NUMBER_LITERAL} for a literal tile
  * holding the number 40, {@link NIL_LITERAL} for the core nil literal tile,
+ * {@link OPEN_PAREN} and {@link CLOSE_PAREN} for the parenthesis tiles,
  * an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
  * `Sprite` output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX}
  * for the shared modifier tile it names, an entry starting

@@ -120,6 +120,11 @@ pack arcade
   overload ne(Sprite,Sprite) operator=ne operands=Sprite,Sprite returns=boolean
   overload eq(Brain,Brain) operator=eq operands=Brain,Brain returns=boolean
   overload ne(Brain,Brain) operator=ne operands=Brain,Brain returns=boolean
+  overload eq(Vector2,Vector2) operator=eq operands=Vector2,Vector2 returns=boolean
+  overload ne(Vector2,Vector2) operator=ne operands=Vector2,Vector2 returns=boolean
+  overload add(Vector2,Vector2) operator=add operands=Vector2,Vector2 returns=Vector2
+  overload sub(Vector2,Vector2) operator=sub operands=Vector2,Vector2 returns=Vector2
+  overload mul(Vector2,number) operator=mul operands=Vector2,number returns=Vector2
   core-tile-icon tile.sensor->on-page-entered icon
   core-tile-icon tile.actuator->switch-page icon
   core-tile-icon tile.actuator->restart-page icon

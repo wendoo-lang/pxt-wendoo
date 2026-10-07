@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "shoveBumpedAway1",
+  "name": "Shove",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0shoveBumped0",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0shoveBumped0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.op->add",
+            "tile.cf->open-paren",
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.op->sub",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.cf->close-paren"
+          ],
+          "children": [],
+          "ruleId": "fRu0shoveBumped0"
+        }
+      ]
+    }
+  ]
+}

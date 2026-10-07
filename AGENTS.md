@@ -425,10 +425,18 @@ the current slice alone.
       inequality operators' overloads over two images (equal when they have
       the same pixels, whichever image objects they are; an image no
       factory holds, or a value naming no image, equals nothing), two
-      sprites (equal when they are the same sprite, not destroyed) and two
+      sprites (equal when they are the same sprite, not destroyed), two
       brains (equal when they name the same document id, whether or not the
-      project holds that brain), inequality holding exactly when equality
-      does not, the arcade icon encoder (each tile icon, an img literal,
+      project holds that brain) and two `Vector2`s (equal when both
+      components are, a value holding no point equalling nothing),
+      inequality holding exactly when equality does not, the core addition
+      and subtraction operators' overloads over two `Vector2`s and the core
+      multiplication operator's over a `Vector2` and a number on its right
+      (component by component, each result a fresh `Vector2`, nil over a
+      value holding no point or no number, an overflowing result holding
+      its infinity for the pack to read as no point; no multiplication takes
+      a number on its left and no division takes a `Vector2`), the arcade
+      icon encoder (each tile icon, an img literal,
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,

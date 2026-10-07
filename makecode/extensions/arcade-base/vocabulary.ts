@@ -3,9 +3,11 @@
  * read-only accessors, the `Sprite` type, its `image`, `position`,
  * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
  * `bump`, `in range`, `out of range` and `myself` sensors, the `move`
- * actuator, and the core equality and inequality operators' overloads over
- * two images, two sprites and two brains, each tile and accessor with its
- * icon, registered from this
+ * actuator, the core equality and inequality operators' overloads over two
+ * images, two sprites, two brains and two `Vector2`s, and the core addition
+ * and subtraction operators' overloads over two `Vector2`s and the core
+ * multiplication operator's over a `Vector2` and a number, each tile and
+ * accessor with its icon, registered from this
  * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
  * each with its icon; the icons it gives the core tiles -- the page
  * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
@@ -82,6 +84,17 @@
  *   name the same brain, as {@link sameBrain} reads them, whether or not the
  *   project still holds it. The core inequality operator holds exactly when
  *   equality does not.
+ * - The core operators also compute with `Vector2`s, read as points: two are
+ *   equal when they hold the same point, as {@link sameVector2} reads them,
+ *   so two sprites' positions are equal while the sprites share a center;
+ *   `+` and `-` add and subtract two points component by component, and `*`
+ *   multiplies both components of a point by a number on its right. Each
+ *   result is a fresh `Vector2`, and a point holding an infinity or a
+ *   not-a-number takes part in none of them: it equals nothing, and a sum,
+ *   difference or product of it is nil. `DO [bumped sprite][position] [=]
+ *   [bumped sprite][position] [+] ( [bumped sprite][position] [-]
+ *   [myself][position] )` shoves the sprite the program's sprite bumps away
+ *   by the distance between their centers.
  * - The accessors read a value's fields: a sprite's `position`, a fresh
  *   `Vector2` of its center at every read; its `image`, the image it wears;
  *   its `brain`, the brain it runs, or nil while it runs none; its
@@ -535,6 +548,58 @@ namespace wendoo {
     target.overloadOperator(OPERATOR_NOT_EQUAL_TO, new EqualityOverload(same, false), spec);
   }
 
+  /**
+   * The core addition or subtraction operator's overload over two `Vector2`
+   * operands: a fresh `Vector2` holding the component-wise sum, or the
+   * component-wise difference of the left operand less the right. Nil when
+   * either operand holds no point, as {@link vector2Of} reads it.
+   */
+  class Vector2SumOverload extends HostFunction {
+    /** `true` for the subtraction operator's overload, `false` for the addition operator's. */
+    private subtract: boolean;
+
+    /**
+     * @param subtract - `true` for the subtraction operator's overload, `false` for the addition operator's.
+     */
+    constructor(subtract: boolean) {
+      super();
+      this.subtract = subtract;
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const lhs = vector2Of(args.length > 0 ? args[0] : NIL_VALUE);
+      const rhs = vector2Of(args.length > 1 ? args[1] : NIL_VALUE);
+      if (!lhs || !rhs) {
+        return NIL_VALUE;
+      }
+      return this.subtract
+        ? vector2Value(new DirectionVector(lhs.x - rhs.x, lhs.y - rhs.y))
+        : vector2Value(new DirectionVector(lhs.x + rhs.x, lhs.y + rhs.y));
+    }
+  }
+
+  /**
+   * The core multiplication operator's overload over a `Vector2` operand on
+   * the left and a number on the right: a fresh `Vector2` holding both of
+   * the point's components multiplied by the number. Nil when the left
+   * operand holds no point, as {@link vector2Of} reads it, or the right
+   * holds no number.
+   */
+  class Vector2ScaleOverload extends HostFunction {
+    constructor() {
+      super();
+    }
+
+    exec(ctx: ExecutionContext, args: Value[]): Value {
+      const point = vector2Of(args.length > 0 ? args[0] : NIL_VALUE);
+      const factor = args.length > 1 ? args[1] : NIL_VALUE;
+      if (!point || factor.t !== ValueTag.Number) {
+        return NIL_VALUE;
+      }
+      return vector2Value(new DirectionVector(point.x * factor.num, point.y * factor.num));
+    }
+  }
+
   /** A direction that points nowhere: the move of a sprite holding still at its goal. */
   const HOLD_STILL = new DirectionVector(0, 0);
 
@@ -788,6 +853,22 @@ namespace wendoo {
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
+  defineEquality(arcadePack, TYPE_VECTOR2, sameVector2);
+  arcadePack.overloadOperator(
+    OPERATOR_ADD,
+    new Vector2SumOverload(false),
+    new OperatorSpec([TYPE_VECTOR2, TYPE_VECTOR2], TYPE_VECTOR2)
+  );
+  arcadePack.overloadOperator(
+    OPERATOR_SUBTRACT,
+    new Vector2SumOverload(true),
+    new OperatorSpec([TYPE_VECTOR2, TYPE_VECTOR2], TYPE_VECTOR2)
+  );
+  arcadePack.overloadOperator(
+    OPERATOR_MULTIPLY,
+    new Vector2ScaleOverload(),
+    new OperatorSpec([TYPE_VECTOR2, TYPE_NUMBER], TYPE_VECTOR2)
+  );
 
   arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", CORE_ON_PAGE_ENTERED_ICON);
   arcadePack.defineCoreTileIcon("tile.actuator->switch-page", CORE_SWITCH_PAGE_ICON);

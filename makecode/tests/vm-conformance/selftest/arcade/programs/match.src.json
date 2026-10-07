@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "id": "matchPositionEq1",
+  "name": "Match",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0matchPosEq00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0matchPosEq00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.sensor->sensor.arcade.myself",
+                "tile.accessor->struct:<Sprite>->position",
+                "tile.op->eq",
+                "tile.out->struct:<Sprite>.bumped",
+                "tile.accessor->struct:<Sprite>->position"
+              ],
+              "do": [
+                "tile.sensor->sensor.arcade.myself",
+                "tile.accessor->struct:<Sprite>->image",
+                "tile.op->assign",
+                "tile.literal->struct:<Image>->image3"
+              ],
+              "children": [],
+              "ruleId": "fRu1matchPosEq00"
+            }
+          ],
+          "ruleId": "fRu0matchPosEq00"
+        }
+      ]
+    }
+  ]
+}

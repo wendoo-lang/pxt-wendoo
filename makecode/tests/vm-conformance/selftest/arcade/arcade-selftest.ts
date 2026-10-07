@@ -3543,11 +3543,12 @@ namespace arcadeSelftest {
 
   /**
    * The body of the overload the arcade base pack adds to the core operator
-   * `operatorId` over two operands of the type `type`, bound under the id the
-   * project's ids module allocates its name; `undefined` when none is bound.
+   * `operatorId` over operands of the types `operands`, in operand order,
+   * bound under the id the project's ids module allocates its name;
+   * `undefined` when none is bound.
    */
-  function overloadBody(operatorId: string, type: string): wendoo.HostFunction {
-    const name = wendoo.operatorOverloadName(operatorId, [type, type]);
+  function overloadBody(operatorId: string, operands: string[]): wendoo.HostFunction {
+    const name = wendoo.operatorOverloadName(operatorId, operands);
     return wendoo.hostRegistries().functions.getById(wendoo.projectIds().operatorId(name));
   }
 
@@ -3564,7 +3565,7 @@ namespace arcadeSelftest {
     rhs: wendoo.Value,
     expected: boolean
   ): boolean {
-    const body = overloadBody(operatorId, type);
+    const body = overloadBody(operatorId, [type, type]);
     if (!body) {
       return false;
     }
@@ -3600,7 +3601,8 @@ namespace arcadeSelftest {
     const types = [IMAGE_TYPE, "Sprite", BRAIN_TYPE];
     let bound = true;
     for (let i = 0; i < types.length; i++) {
-      if (!overloadBody(wendoo.OPERATOR_EQUAL_TO, types[i]) || !overloadBody(wendoo.OPERATOR_NOT_EQUAL_TO, types[i])) {
+      const operands = [types[i], types[i]];
+      if (!overloadBody(wendoo.OPERATOR_EQUAL_TO, operands) || !overloadBody(wendoo.OPERATOR_NOT_EQUAL_TO, operands)) {
         bound = false;
       }
     }
@@ -3712,6 +3714,184 @@ namespace arcadeSelftest {
     check(
       "a-brain-comparison-rule-fires-while-the-bumped-sprite-runs-its-own-sprites-brain",
       firesOnKin && movesAt(stranger, 0, 0) && movesAt(loner, 0, 0)
+    );
+    game.popScene();
+  }
+
+  /** Wendoo type name of the arcade base pack's point type. */
+  const VECTOR2_TYPE = "Vector2";
+
+  /** Wendoo type name of a number. */
+  const NUMBER_TYPE = "number";
+
+  /** The operand types of the overloads over two points. */
+  const TWO_POINTS = [VECTOR2_TYPE, VECTOR2_TYPE];
+
+  /** The operand types of the overload over a point and a number on its right. */
+  const POINT_AND_NUMBER = [VECTOR2_TYPE, NUMBER_TYPE];
+
+  /**
+   * What the overload the arcade base pack adds to the core operator
+   * `operatorId` over operands of the types `operands` evaluates to given
+   * `lhs` and `rhs`, called on `sprite`'s behalf; nil when none is bound.
+   */
+  function computes(
+    operatorId: string,
+    operands: string[],
+    sprite: Sprite,
+    lhs: wendoo.Value,
+    rhs: wendoo.Value
+  ): wendoo.Value {
+    const body = overloadBody(operatorId, operands);
+    return body ? body.exec(contextOn(sprite), [lhs, rhs]) : wendoo.NIL_VALUE;
+  }
+
+  /** The number the `Vector2` value `value` holds in its field `field`, read as stored, or `undefined` when it holds none. */
+  function pointComponent(value: wendoo.Value, field: string): number {
+    if (value.t !== wendoo.ValueTag.Struct || value.typeId !== wendoo.structTypeId(VECTOR2_TYPE)) {
+      return undefined;
+    }
+    const component = value.fields[wendoo.projectIds().fieldId(VECTOR2_TYPE, field)];
+    return component && component.t === wendoo.ValueTag.Number ? component.num : undefined;
+  }
+
+  /**
+   * In a scene of its own, check the overloads the arcade base pack adds to
+   * the core operators over `Vector2`s: each is bound under the id the
+   * project's ids module allocates its name, and multiplication takes no
+   * number on its left and division no point at all; two points are equal
+   * when both components are, and a value holding no point -- nil, or a
+   * `Vector2` holding an infinity or a not-a-number -- equals nothing;
+   * addition and subtraction work component by component and multiplication
+   * scales both components by the number on its right, each into a fresh
+   * value, leaving the operands as they were; arithmetic over no point or no
+   * number is nil; and arithmetic that overflows holds an infinity, which
+   * reads as no point to the pack, so equality over it answers false and a
+   * position write of it leaves the sprite where it is. Then check compiled programs placing the core `+`, `-` and `=` tiles
+   * on positions: a shove rule pushes the bumped sprite away by the distance
+   * between their centers, and a position comparison fires while its sprite
+   * shares the bumped sprite's center.
+   */
+  function checkVector2Operators(): void {
+    game.pushScene();
+    check(
+      "vector2-operator-overloads-take-their-ids-from-the-manifest",
+      !!overloadBody(wendoo.OPERATOR_EQUAL_TO, TWO_POINTS) &&
+        !!overloadBody(wendoo.OPERATOR_NOT_EQUAL_TO, TWO_POINTS) &&
+        !!overloadBody(wendoo.OPERATOR_ADD, TWO_POINTS) &&
+        !!overloadBody(wendoo.OPERATOR_SUBTRACT, TWO_POINTS) &&
+        !!overloadBody(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER)
+    );
+    check(
+      "multiplication-takes-no-number-before-a-point-nor-two-points-and-division-no-point",
+      !overloadBody(wendoo.OPERATOR_MULTIPLY, [NUMBER_TYPE, VECTOR2_TYPE]) &&
+        !overloadBody(wendoo.OPERATOR_MULTIPLY, TWO_POINTS) &&
+        !overloadBody(wendoo.OPERATOR_DIVIDE, POINT_AND_NUMBER)
+    );
+
+    const nil = wendoo.NIL_VALUE;
+    const plain = solidSprite(8, 90, 30);
+    const world = hostedWorld(plain);
+    const here = solidSprite(8, 30, 30);
+    const alsoHere = solidSprite(8, 30, 30);
+    const there = solidSprite(8, 30, 31);
+    const at = (sprite: Sprite) => readField(world, sprite, "position");
+    check(
+      "vector2-equality-holds-exactly-when-both-components-are-equal",
+      comparesBoth(VECTOR2_TYPE, plain, pointValue(20, 30), pointValue(20, 30), true) &&
+        comparesBoth(VECTOR2_TYPE, plain, pointValue(20, 30), pointValue(20, 31), false) &&
+        comparesBoth(VECTOR2_TYPE, plain, pointValue(20, 30), pointValue(21, 30), false) &&
+        comparesBoth(VECTOR2_TYPE, plain, at(here), at(alsoHere), true) &&
+        comparesBoth(VECTOR2_TYPE, plain, at(here), at(there), false)
+    );
+    const infinite = pointValue(INFINITE, 20);
+    const notANumber = pointValue(NOT_A_NUMBER, 20);
+    check(
+      "a-value-holding-no-point-equals-nothing-not-even-itself",
+      comparesBoth(VECTOR2_TYPE, plain, nil, nil, false) &&
+        comparesBoth(VECTOR2_TYPE, plain, pointValue(20, 30), nil, false) &&
+        comparesBoth(VECTOR2_TYPE, plain, infinite, infinite, false) &&
+        comparesBoth(VECTOR2_TYPE, plain, notANumber, notANumber, false)
+    );
+
+    const left = pointValue(1.5, -2);
+    const right = pointValue(3, 4.25);
+    const sum = computes(wendoo.OPERATOR_ADD, TWO_POINTS, plain, left, right);
+    const difference = computes(wendoo.OPERATOR_SUBTRACT, TWO_POINTS, plain, left, right);
+    check(
+      "vector2-sum-and-difference-work-component-by-component-into-fresh-values",
+      holdsPoint(sum, 4.5, 2.25) &&
+        holdsPoint(difference, -1.5, -6.25) &&
+        sum !== left &&
+        sum !== right &&
+        difference !== left &&
+        holdsPoint(left, 1.5, -2) &&
+        holdsPoint(right, 3, 4.25)
+    );
+    const scaled = pointValue(3, -4);
+    const product = computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, scaled, wendoo.mkNumber(2.5));
+    check(
+      "vector2-product-scales-both-components-by-the-number-on-its-right-into-a-fresh-value",
+      holdsPoint(product, 7.5, -10) &&
+        holdsPoint(computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, scaled, wendoo.mkNumber(-1)), -3, 4) &&
+        product !== scaled &&
+        holdsPoint(scaled, 3, -4)
+    );
+    check(
+      "vector2-arithmetic-over-no-point-or-no-number-is-nil",
+      readsNothing(computes(wendoo.OPERATOR_ADD, TWO_POINTS, plain, nil, right)) &&
+        readsNothing(computes(wendoo.OPERATOR_SUBTRACT, TWO_POINTS, plain, left, infinite)) &&
+        readsNothing(computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, notANumber, wendoo.mkNumber(2))) &&
+        readsNothing(computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, scaled, nil))
+    );
+
+    const huge = pointValue(1e308, 1);
+    const overflowed = computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, huge, wendoo.mkNumber(10));
+    const walker = solidSprite(8, 80, 90);
+    const kept = writeField(hostedWorld(walker), walker, "position", overflowed);
+    check(
+      "overflowing-vector2-arithmetic-holds-an-infinity-that-reads-as-no-point",
+      pointComponent(overflowed, "x") === INFINITE &&
+        pointComponent(overflowed, "y") === 10 &&
+        wendoo.vector2Of(overflowed) === undefined &&
+        comparesBoth(VECTOR2_TYPE, plain, overflowed, overflowed, false) &&
+        readsNothing(computes(wendoo.OPERATOR_ADD, TWO_POINTS, plain, overflowed, left)) &&
+        kept &&
+        walker.x === 80 &&
+        walker.y === 90
+    );
+    clearScene();
+
+    const shoverRight = solidSprite(8, 40, 60);
+    const shovedRight = solidSprite(8, 46, 62);
+    const shoverLeft = solidSprite(8, 100, 100);
+    const shovedLeft = solidSprite(8, 94, 100);
+    wendoo.runBrain(shoverRight, wendooBrains.p_shoveBumpedAway1);
+    wendoo.runBrain(shoverLeft, wendooBrains.p_shoveBumpedAway1);
+    pause(FRAMES_MS);
+    check(
+      "a-shove-rule-pushes-the-bumped-sprite-away-by-the-distance-between-their-centers",
+      shovedRight.x === 52 &&
+        shovedRight.y === 64 &&
+        shoverRight.x === 40 &&
+        shoverRight.y === 60 &&
+        shovedLeft.x === 88 &&
+        shovedLeft.y === 100 &&
+        shoverLeft.x === 100 &&
+        shoverLeft.y === 100
+    );
+    clearScene();
+
+    const matched = solidSprite(8, 40, 60);
+    solidSprite(8, 40, 60);
+    const offset = solidSprite(8, 40, 100);
+    solidSprite(8, 46, 100);
+    wendoo.runBrain(matched, wendooBrains.p_matchPositionEq1);
+    wendoo.runBrain(offset, wendooBrains.p_matchPositionEq1);
+    pause(FRAMES_MS);
+    check(
+      "a-position-comparison-rule-fires-while-its-sprite-shares-the-bumped-sprites-center",
+      matched.image.equals(heroPicture()) && !offset.image.equals(heroPicture())
     );
     game.popScene();
   }
@@ -4079,6 +4259,7 @@ namespace arcadeSelftest {
     checkEasingAcrossBrainChanges();
     checkEasingFromActualVelocity();
     checkEqualityOperators();
+    checkVector2Operators();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

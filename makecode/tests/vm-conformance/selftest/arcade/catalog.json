@@ -719,6 +719,36 @@
           "operator": "ne",
           "operands": ["Brain", "Brain"],
           "returns": "boolean"
+        },
+        {
+          "name": "eq(Vector2,Vector2)",
+          "operator": "eq",
+          "operands": ["Vector2", "Vector2"],
+          "returns": "boolean"
+        },
+        {
+          "name": "ne(Vector2,Vector2)",
+          "operator": "ne",
+          "operands": ["Vector2", "Vector2"],
+          "returns": "boolean"
+        },
+        {
+          "name": "add(Vector2,Vector2)",
+          "operator": "add",
+          "operands": ["Vector2", "Vector2"],
+          "returns": "Vector2"
+        },
+        {
+          "name": "sub(Vector2,Vector2)",
+          "operator": "sub",
+          "operands": ["Vector2", "Vector2"],
+          "returns": "Vector2"
+        },
+        {
+          "name": "mul(Vector2,number)",
+          "operator": "mul",
+          "operands": ["Vector2", "number"],
+          "returns": "Vector2"
         }
       ],
       "coreTileIcons": [

@@ -87,6 +87,26 @@ namespace wendoo {
   }
 
   /**
+   * Whether `a` and `b` hold the same point: `x` equal to `x` and `y` to
+   * `y`, as numbers, each read as {@link vector2Of} reads it. `false` when
+   * either holds no point -- nil, or a `Vector2` holding an infinity or a
+   * not-a-number -- so such a value equals nothing, another such value
+   * included.
+   *
+   * @param a - Any value a program produced.
+   * @param b - Any value a program produced.
+   */
+  //% hidden
+  export function sameVector2(a: Value, b: Value): boolean {
+    const first = vector2Of(a);
+    const second = vector2Of(b);
+    if (!first || !second) {
+      return false;
+    }
+    return first.x === second.x && first.y === second.y;
+  }
+
+  /**
    * The direction `value` carries: its `x` and `y` when it is a `Vector2`
    * whose fields both hold finite numbers and whose direction is not the
    * zero vector; `undefined` for any other value, nil included.

@@ -453,6 +453,16 @@ const EXPECTED_ARCADE_CHECKS = [
   "an-image-inequality-rule-fires-while-its-sprite-wears-another-image",
   "a-sprite-comparison-rule-fires-while-the-sprite-in-range-is-the-bumped-sprite",
   "a-brain-comparison-rule-fires-while-the-bumped-sprite-runs-its-own-sprites-brain",
+  "vector2-operator-overloads-take-their-ids-from-the-manifest",
+  "multiplication-takes-no-number-before-a-point-nor-two-points-and-division-no-point",
+  "vector2-equality-holds-exactly-when-both-components-are-equal",
+  "a-value-holding-no-point-equals-nothing-not-even-itself",
+  "vector2-sum-and-difference-work-component-by-component-into-fresh-values",
+  "vector2-product-scales-both-components-by-the-number-on-its-right-into-a-fresh-value",
+  "vector2-arithmetic-over-no-point-or-no-number-is-nil",
+  "overflowing-vector2-arithmetic-holds-an-infinity-that-reads-as-no-point",
+  "a-shove-rule-pushes-the-bumped-sprite-away-by-the-distance-between-their-centers",
+  "a-position-comparison-rule-fires-while-its-sprite-shares-the-bumped-sprites-center",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -596,10 +606,11 @@ const ARCADE_HOST_REJECTIONS = [
  * writes made through their outputs, their positional modifiers, the
  * targets the move's toward and away carry, the move's wander, the
  * `Sprite` type's move smoothing, move smoothing through brain changes,
- * move smoothing from the velocity a sprite has, and the equality operators'
- * overloads.
+ * move smoothing from the velocity a sprite has, the equality operators'
+ * overloads, and the overloads over `Vector2`s.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
