@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "filterUnsetVar01",
+  "name": "Filter unset",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0filterUnset0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "target",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0filterUnset0"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0filterUnset0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.in-range",
+            "tile.var->fVr0filterUnset0"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0filterUnset0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.out-of-range",
+            "tile.var->fVr0filterUnset0"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.down"
+          ],
+          "children": [],
+          "ruleId": "fRu0filterUnset1"
+        }
+      ]
+    }
+  ]
+}

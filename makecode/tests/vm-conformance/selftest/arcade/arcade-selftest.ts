@@ -3909,7 +3909,14 @@ namespace arcadeSelftest {
    * skipping a write through it, then holds the very sprite written to it --
    * a write through it reaching that sprite, a move toward it following it
    * where it goes -- until that sprite is destroyed, when its fields read nil
-   * again and its rule gates off, its program running on.
+   * again and its rule gates off, its program running on. Then a move toward a
+   * sprite variable with nothing gating its rule: never written, the variable
+   * is nil and gates the move off, so the sprite holds still; written a live
+   * sprite, the move pursues it; once that sprite is destroyed, the variable
+   * still holds a sprite value, standing for no sprite, and the move adds
+   * nothing for it, falling back to the default direction. And a range pair
+   * filtered on a sprite variable never written fires neither rule while
+   * another sprite is in range.
    */
   function checkVariables(): void {
     game.pushScene();
@@ -3957,6 +3964,40 @@ namespace arcadeSelftest {
     check(
       "a-sprite-variable-whose-sprite-is-destroyed-reads-nil-and-gates-its-rule-off",
       movesAt(mover, 0, 0) && programOf(mover) === "heldTargetBump01"
+    );
+    clearScene();
+
+    const seeker = solidSprite(8, 40, 60);
+    const quarry = solidSprite(8, 100, 60);
+    wendoo.runBrain(seeker, wendooBrains.p_towardHeldVar001);
+    pause(FRAMES_MS);
+    check(
+      "a-move-toward-a-sprite-variable-never-written-holds-still",
+      movesAt(seeker, 0, 0) && seeker.x === 40 && seeker.y === 60
+    );
+    quarry.setPosition(46, 60);
+    pause(FRAMES_MS);
+    quarry.setPosition(130, 60);
+    pause(FRAMES_MS);
+    check(
+      "a-move-toward-a-sprite-variable-written-a-live-sprite-pursues-it",
+      pursues(seeker, quarry, DEFAULT_MOVE_SPEED)
+    );
+    quarry.destroy();
+    pause(FRAMES_MS);
+    check(
+      "a-move-toward-a-sprite-variable-whose-sprite-is-destroyed-falls-back-to-the-default-direction",
+      movesAt(seeker, DEFAULT_MOVE_SPEED, 0) && programOf(seeker) === "towardHeldVar001"
+    );
+    clearScene();
+
+    const sifter = solidSprite(8, 40, 60);
+    solidSprite(8, 70, 60);
+    wendoo.runBrain(sifter, wendooBrains.p_filterUnsetVar01);
+    pause(FRAMES_MS);
+    check(
+      "a-range-pair-filtered-on-a-sprite-variable-never-written-fires-neither-rule",
+      movesAt(sifter, 0, 0) && sifter.x === 40 && sifter.y === 60
     );
     game.popScene();
   }

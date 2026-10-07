@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "towardHeldVar001",
+  "name": "Toward held",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0towardHeld00",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "target",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0towardHeld00"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0towardHeld00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.var->fVr0towardHeld00",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped"
+          ],
+          "children": [],
+          "ruleId": "fRu0towardHeld00"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0towardHeld00"
+          ],
+          "children": [],
+          "ruleId": "fRu0towardHeld01"
+        }
+      ]
+    }
+  ]
+}
