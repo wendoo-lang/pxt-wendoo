@@ -11,28 +11,12 @@
  * Application: each verdict crosses the motion applicator boundary, where a
  * {@link DirectMotionApplicator} sets the sprite's velocity. This boundary is
  * where a motion model, such as physics, replaces the applicator and consumes
- * the same verdicts.
+ * the same verdicts. A verdict carries only the sprite and the velocity its
+ * programs ask for; whatever state an applicator's motion needs, it keeps
+ * itself.
  */
 namespace wendoo {
-  /**
-   * The velocity a sprite's program last set it moving at, in pixels per
-   * second; while the sprite's smoothing, as {@link moveSmoothingOf} reads
-   * it, is on, a move at least that fast
-   * eases from it. Kept in the sprite's
-   * {@link SpriteWorld}; zero while the program has not moved the sprite, or
-   * since its moves stopped.
-   */
-  //% hidden
-  export class AppliedMotion {
-    /** Horizontal velocity; positive is rightward. */
-    vx = 0;
-    /** Vertical velocity; positive is downward. */
-    vy = 0;
-
-    constructor() {}
-  }
-
-  /** One move a program made during a frame: the sprite, the direction and speed it asked for, the intent's weight, and the velocity the sprite's program last set. */
+  /** One move a program made during a frame: the sprite, the direction and speed it asked for, and the intent's weight. */
   //% hidden
   export class MoveIntent {
     /** The sprite to move. */
@@ -43,19 +27,16 @@ namespace wendoo {
     speed: number;
     /** Weight of this intent in its sprite's blend. */
     weight: number;
-    /** The velocity the sprite's program last set it moving at: its world's. */
-    applied: AppliedMotion;
 
-    constructor(sprite: Sprite, direction: DirectionVector, speed: number, weight: number, applied: AppliedMotion) {
+    constructor(sprite: Sprite, direction: DirectionVector, speed: number, weight: number) {
       this.sprite = sprite;
       this.direction = direction;
       this.speed = speed;
       this.weight = weight;
-      this.applied = applied;
     }
   }
 
-  /** One sprite's blended motion for a frame: the velocity its intents agree on, in pixels per second, and the velocity its program last set. */
+  /** One sprite's blended motion for a frame: the velocity its intents agree on, in pixels per second. */
   //% hidden
   export class MotionVerdict {
     /** The sprite the verdict is for. */
@@ -64,14 +45,11 @@ namespace wendoo {
     vx: number;
     /** Vertical velocity; positive is downward. */
     vy: number;
-    /** The velocity the sprite's program last set it moving at, which applying the verdict updates. */
-    applied: AppliedMotion;
 
-    constructor(sprite: Sprite, vx: number, vy: number, applied: AppliedMotion) {
+    constructor(sprite: Sprite, vx: number, vy: number) {
       this.sprite = sprite;
       this.vx = vx;
       this.vy = vy;
-      this.applied = applied;
     }
   }
 
@@ -86,11 +64,12 @@ namespace wendoo {
   /**
    * How gradually programs speed their sprites up, as a time constant in
    * milliseconds. While it is above 0, a move asking for at least the speed
-   * its sprite's program last set closes `1 - e^(-dt / moveSmoothing)` of
-   * the gap to the velocity it asks for over a frame of `dt` milliseconds;
-   * a move asking for less, and a stop, take effect at once. At 0 or below
-   * every move sets the velocity it asks for at once. 0 -- off -- until
-   * game code sets it, as `wendoo.moveSmoothing = 100`; read on every frame.
+   * its sprite moves at closes `1 - e^(-dt / moveSmoothing)` of the gap
+   * between the velocity the sprite moves at and the one it asks for over a
+   * frame of `dt` milliseconds; a move asking for less, and a stop, take
+   * effect at once. At 0 or below every move sets the velocity it asks for
+   * at once. 0 -- off -- until game code sets it, as
+   * `wendoo.moveSmoothing = 100`; read on every frame.
    * The project's default: a sprite given smoothing of its own, by
    * {@link setMoveSmoothing} or by a program, eases with that instead.
    */
@@ -153,15 +132,55 @@ namespace wendoo {
   }
 
   /**
+   * The velocity the direct applicator last set a sprite moving at, in
+   * pixels per second, at full precision, and the velocity the sprite held
+   * once set to it: a sprite keeps its velocity in steps of 1/256 of a pixel
+   * per second, so the two may differ. Kept in the sprite's data and
+   * obtained with {@link appliedMotionOf}; all zero until the applicator
+   * first sets the sprite's velocity.
+   */
+  class AppliedMotion {
+    /** Horizontal velocity set; positive is rightward. */
+    vx = 0;
+    /** Vertical velocity set; positive is downward. */
+    vy = 0;
+    /** Horizontal velocity the sprite held once set to {@link AppliedMotion.vx}. */
+    heldVx = 0;
+    /** Vertical velocity the sprite held once set to {@link AppliedMotion.vy}. */
+    heldVy = 0;
+
+    constructor() {}
+  }
+
+  /** Key a sprite's {@link AppliedMotion} is kept under in the sprite's data, absent until {@link appliedMotionOf} is first called for the sprite. */
+  const SPRITE_APPLIED_MOTION_KEY = "wendoo.appliedMotion";
+
+  /**
+   * The velocity the direct applicator last set `sprite` moving at, and the
+   * velocity the sprite held once set to it; created all zero on first use.
+   *
+   * @param sprite - Any sprite.
+   */
+  function appliedMotionOf(sprite: Sprite): AppliedMotion {
+    let applied = sprite.data[SPRITE_APPLIED_MOTION_KEY] as AppliedMotion;
+    if (!applied) {
+      applied = new AppliedMotion();
+      sprite.data[SPRITE_APPLIED_MOTION_KEY] = applied;
+    }
+    return applied;
+  }
+
+  /**
    * The direct motion applicator: sets a verdict's sprite to the verdict's
    * velocity -- held to {@link ENGINE_MAX_SPEED} in the verdict's own
-   * direction when it is faster, and eased toward while the sprite's
-   * smoothing, as {@link moveSmoothingOf} reads it, is on and the verdict
-   * asks for at least the speed
-   * the sprite's program last set -- and a released sprite's velocity, and
-   * that of a sprite whose verdict holds an infinity or a not-a-number, to
-   * zero. A sprite's velocity is the program's on every frame that carries a
-   * verdict for it, and the game code's on every other frame.
+   * direction when it is faster, and eased toward from the velocity the
+   * sprite moves at while the sprite's smoothing, as {@link moveSmoothingOf}
+   * reads it, is on and the verdict asks for at least the speed the sprite
+   * moves at -- and a released sprite's velocity, and that of a sprite whose
+   * verdict holds an infinity or a not-a-number, to zero. A sprite's
+   * velocity is the program's on every frame that carries a verdict for it,
+   * and the game code's on every other frame; whichever set it, or a wall
+   * that stopped it, a smoothed move eases from it.
    */
   //% hidden
   export class DirectMotionApplicator {
@@ -170,19 +189,22 @@ namespace wendoo {
     /**
      * Set the verdict's sprite moving at the verdict's velocity, or, when
      * that is faster than {@link ENGINE_MAX_SPEED}, at that speed in the
-     * verdict's direction; and record what it set as the verdict's applied
-     * motion. While the sprite's smoothing, as {@link moveSmoothingOf} reads
-     * it, is above 0 and `dtMs` is above 0, a
-     * velocity at least as fast as the applied motion is eased toward
-     * instead: the sprite is set to the applied motion moved
-     * `1 - e^(-dtMs / smoothing)` of the way to it. A velocity so
-     * computed that holds an infinity or a not-a-number releases the sprite
-     * instead, as {@link DirectMotionApplicator.release} does.
+     * verdict's direction. While the sprite's smoothing, as
+     * {@link moveSmoothingOf} reads it, is above 0 and `dtMs` is above 0, a
+     * velocity at least as fast as the sprite moves at is eased toward
+     * instead: the sprite is set to the velocity it moves at moved
+     * `1 - e^(-dtMs / smoothing)` of the way to it. The velocity it moves at
+     * is the one this applicator last set it to, at full precision, while
+     * the sprite still holds what it held once set to that, and otherwise
+     * the sprite's own. A velocity so computed that holds an infinity or a
+     * not-a-number releases the sprite instead, as
+     * {@link DirectMotionApplicator.release} does.
      *
      * @param verdict - One sprite's blended motion for this frame.
      * @param dtMs - Duration of the frame, in milliseconds.
      */
     apply(verdict: MotionVerdict, dtMs: number): void {
+      const sprite = verdict.sprite;
       let vx = verdict.vx;
       let vy = verdict.vy;
       const speed = Math.sqrt(vx * vx + vy * vy);
@@ -190,25 +212,28 @@ namespace wendoo {
         vx = (vx * ENGINE_MAX_SPEED) / speed;
         vy = (vy * ENGINE_MAX_SPEED) / speed;
       }
-      const applied = verdict.applied;
-      const smoothing = moveSmoothingOf(verdict.sprite);
+      const smoothing = moveSmoothingOf(sprite);
       if (smoothing > 0 && dtMs > 0) {
+        const applied = appliedMotionOf(sprite);
+        let fromX = sprite.vx;
+        let fromY = sprite.vy;
+        if (fromX === applied.heldVx && fromY === applied.heldVy) {
+          fromX = applied.vx;
+          fromY = applied.vy;
+        }
         const asked = Math.sqrt(vx * vx + vy * vy);
-        const current = Math.sqrt(applied.vx * applied.vx + applied.vy * applied.vy);
+        const current = Math.sqrt(fromX * fromX + fromY * fromY);
         if (asked >= current) {
           const share = 1 - Math.exp(-dtMs / smoothing);
-          vx = applied.vx + (vx - applied.vx) * share;
-          vy = applied.vy + (vy - applied.vy) * share;
+          vx = fromX + (vx - fromX) * share;
+          vy = fromY + (vy - fromY) * share;
         }
       }
       if (!isFiniteNumber(vx) || !isFiniteNumber(vy)) {
-        this.release(verdict.sprite, applied);
+        this.release(sprite);
         return;
       }
-      applied.vx = vx;
-      applied.vy = vy;
-      verdict.sprite.vx = vx;
-      verdict.sprite.vy = vy;
+      setVelocity(sprite, vx, vy);
     }
 
     /**
@@ -217,14 +242,25 @@ namespace wendoo {
      * not-a-number velocity.
      *
      * @param sprite - The sprite no program moves any more.
-     * @param applied - The velocity the sprite's program last set, set to zero.
      */
-    release(sprite: Sprite, applied: AppliedMotion): void {
-      applied.vx = 0;
-      applied.vy = 0;
-      sprite.vx = 0;
-      sprite.vy = 0;
+    release(sprite: Sprite): void {
+      setVelocity(sprite, 0, 0);
     }
+  }
+
+  /**
+   * Set `sprite` moving at `vx`, `vy`, in pixels per second, and record in
+   * its {@link AppliedMotion} that velocity and the velocity the sprite holds
+   * once set to it.
+   */
+  function setVelocity(sprite: Sprite, vx: number, vy: number): void {
+    sprite.vx = vx;
+    sprite.vy = vy;
+    const applied = appliedMotionOf(sprite);
+    applied.vx = vx;
+    applied.vy = vy;
+    applied.heldVx = sprite.vx;
+    applied.heldVy = sprite.vy;
   }
 
   /**
@@ -237,7 +273,6 @@ namespace wendoo {
   export class MotionArbiter {
     private intents: MoveIntent[] = [];
     private moving: Sprite[] = [];
-    private movingApplied: AppliedMotion[] = [];
     private applicator: DirectMotionApplicator;
 
     /**
@@ -270,7 +305,6 @@ namespace wendoo {
      */
     resolve(dtMs: number): void {
       const sprites: Sprite[] = [];
-      const applied: AppliedMotion[] = [];
       const sumX: number[] = [];
       const sumY: number[] = [];
       const weights: number[] = [];
@@ -280,7 +314,6 @@ namespace wendoo {
         if (index < 0) {
           index = sprites.length;
           sprites.push(intent.sprite);
-          applied.push(intent.applied);
           sumX.push(0);
           sumY.push(0);
           weights.push(0);
@@ -290,18 +323,14 @@ namespace wendoo {
         weights[index] += intent.weight;
       }
       for (let i = 0; i < sprites.length; i++) {
-        this.applicator.apply(
-          new MotionVerdict(sprites[i], sumX[i] / weights[i], sumY[i] / weights[i], applied[i]),
-          dtMs
-        );
+        this.applicator.apply(new MotionVerdict(sprites[i], sumX[i] / weights[i], sumY[i] / weights[i]), dtMs);
       }
       for (let i = 0; i < this.moving.length; i++) {
         if (sprites.indexOf(this.moving[i]) < 0) {
-          this.applicator.release(this.moving[i], this.movingApplied[i]);
+          this.applicator.release(this.moving[i]);
         }
       }
       this.moving = sprites;
-      this.movingApplied = applied;
       this.intents = [];
     }
   }

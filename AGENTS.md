@@ -489,17 +489,24 @@ the current slice alone.
       move arbitration with its motion applicator (the direct applicator
       sets sprite velocity, held in its own direction to the physics
       engine's top speed, and -- while the sprite's smoothing, a time
-      constant in milliseconds, is set -- eases
-      toward a velocity at least as fast as the one the sprite's program
-      last set, exponentially in the frame's duration, and sets a slower
-      one at once, the last-set velocity kept in the sprite's world; a
+      constant in milliseconds, is set -- eases from the velocity the
+      sprite actually has toward a velocity at least as fast,
+      exponentially in the frame's duration, and sets a slower one at
+      once, so a brain change, a velocity game code set, and a wall's stop
+      all ease on from where the sprite is, the applicator reading back
+      the velocity it last set at full precision while the sprite still
+      holds it; a verdict carries only the sprite and the velocity its
+      programs ask for, each applicator keeping its own state; a
       sprite's smoothing is its own, kept on the sprite itself across the
       brains it runs and given by `wendoo.setMoveSmoothing` (milliseconds,
       a negative or non-finite number taking it away) or its `moveSmoothing`
       field, else the global `wendoo.moveSmoothing`, 0 and off by default; a
       verdict coming to an infinite or not-a-number velocity stops the
       sprite as a release does; a motion model such as physics replaces
-      the applicator and consumes the same verdicts).
+      the applicator, consumes the same verdicts, and owns its own
+      motion feel -- smoothing is the direct applicator's kinematic
+      concern, and a sprite a physics model controls never also takes
+      the global or per-sprite smoothing).
     - The game-facing arcade extension, `makecode/extensions/arcade`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
       depends on the VM extension, Arcade's `device` library, and the

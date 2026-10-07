@@ -4,15 +4,13 @@
  * the execution context's world is the sprite's {@link SpriteWorld}.
  */
 namespace wendoo {
-  /** The world of one sprite a program runs on: the sprite, as its program's actor, and the wander and motion state its moves keep. */
+  /** The world of one sprite a program runs on: the sprite, as its program's actor, and the wander state its moves keep. */
   //% hidden
   export class SpriteWorld extends ActorWorld {
     /** The sprite the program runs on. */
     sprite: Sprite;
     /** The destinations the program's wandering moves head for, one per call site, and the random source picking them. */
     wander: WanderState;
-    /** The velocity the program's moves last set the sprite moving at; while the sprite's smoothing, as {@link moveSmoothingOf} reads it, is on, a move at least that fast eases from it. */
-    motion: AppliedMotion;
 
     /**
      * @param sprite - The sprite the program runs on.
@@ -21,7 +19,6 @@ namespace wendoo {
       super();
       this.sprite = sprite;
       this.wander = new WanderState();
-      this.motion = new AppliedMotion();
     }
 
     /** Whether the sprite has been destroyed. */

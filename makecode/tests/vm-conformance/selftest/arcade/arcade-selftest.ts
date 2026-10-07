@@ -2751,11 +2751,11 @@ namespace arcadeSelftest {
     );
 
     const applicator = new wendoo.DirectMotionApplicator();
-    applicator.apply(new wendoo.MotionVerdict(racer, 480, -640, new wendoo.AppliedMotion()), 0);
+    applicator.apply(new wendoo.MotionVerdict(racer, 480, -640), 0);
     const held = movesAt(racer, 300, -400);
-    applicator.apply(new wendoo.MotionVerdict(racer, -300, 400, new wendoo.AppliedMotion()), 0);
+    applicator.apply(new wendoo.MotionVerdict(racer, -300, 400), 0);
     const atTop = movesAt(racer, -300, 400);
-    applicator.apply(new wendoo.MotionVerdict(racer, 120, 0, new wendoo.AppliedMotion()), 0);
+    applicator.apply(new wendoo.MotionVerdict(racer, 120, 0), 0);
     check(
       "the-direct-applicator-holds-a-velocity-to-the-top-speed-in-its-direction",
       held && atTop && movesAt(racer, 120, 0)
@@ -2771,11 +2771,6 @@ namespace arcadeSelftest {
   /** The fraction of the gap to its asked velocity a move smoothed with time constant `smoothingMs` closes over a frame of `stepMs` milliseconds. */
   function easedShare(stepMs: number, smoothingMs: number): number {
     return 1 - Math.exp(-stepMs / smoothingMs);
-  }
-
-  /** Whether `motion` is the velocity `vx`, `vy` to within {@link NUMBER_TOLERANCE}. */
-  function motionIs(motion: wendoo.AppliedMotion, vx: number, vy: number): boolean {
-    return near(motion.vx, vx, NUMBER_TOLERANCE) && near(motion.vy, vy, NUMBER_TOLERANCE);
   }
 
   /** How many frames of the durations `schedule` repeats make up `durationMs` milliseconds, rounded up. */
@@ -2813,7 +2808,7 @@ namespace arcadeSelftest {
    * frame without a move, and the runs at about 60 and 30 travel alike; and
    * a move toward a still sprite never passes it, and a move toward a point
    * its sprite already holds sets it still at once, whatever velocity it
-   * last set. Each check holds at every time constant.
+   * moves at. Each check holds at every time constant.
    */
   function checkMoveSmoothing(): void {
     game.pushScene();
@@ -2832,48 +2827,44 @@ namespace arcadeSelftest {
       const share = easedShare(STEP_MS, smoothingMs);
       wendoo.moveSmoothing = smoothingMs;
 
-      const rising = new wendoo.AppliedMotion();
-      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, rising), STEP_MS);
-      const firstEase = motionIs(rising, 100 * share, 0) && movesAt(glider, rising.vx, 0);
-      const afterFirst = rising.vx;
-      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, rising), 2 * STEP_MS);
+      placeAt(glider, 20, 60);
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0), STEP_MS);
+      const afterFirst = 100 * share;
+      const firstEase = movesAt(glider, afterFirst, 0);
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0), 2 * STEP_MS);
       easesSpeedUps =
         easesSpeedUps &&
         firstEase &&
-        motionIs(rising, afterFirst + (100 - afterFirst) * easedShare(2 * STEP_MS, smoothingMs), 0);
+        movesAt(glider, afterFirst + (100 - afterFirst) * easedShare(2 * STEP_MS, smoothingMs), 0);
 
-      const cruising = new wendoo.AppliedMotion();
-      cruising.vx = 100;
-      applicator.apply(new wendoo.MotionVerdict(glider, 40, 30, cruising), STEP_MS);
-      const slowsAtOnce = cruising.vx === 40 && cruising.vy === 30 && movesAt(glider, 40, 30);
-      applicator.apply(new wendoo.MotionVerdict(glider, -30, 40, cruising), STEP_MS);
-      const turnEases = motionIs(cruising, 40 - 70 * share, 30 + 10 * share);
-      applicator.release(glider, cruising);
-      snapsSlowing =
-        snapsSlowing && slowsAtOnce && turnEases && cruising.vx === 0 && cruising.vy === 0 && movesAt(glider, 0, 0);
+      glider.vx = 100;
+      applicator.apply(new wendoo.MotionVerdict(glider, 40, 30), STEP_MS);
+      const slowsAtOnce = glider.vx === 40 && glider.vy === 30;
+      applicator.apply(new wendoo.MotionVerdict(glider, -30, 40), STEP_MS);
+      const turnEases = movesAt(glider, 40 - 70 * share, 30 + 10 * share);
+      applicator.release(glider);
+      snapsSlowing = snapsSlowing && slowsAtOnce && turnEases && glider.vx === 0 && glider.vy === 0;
 
-      const live = new wendoo.AppliedMotion();
       wendoo.moveSmoothing = 0;
-      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, live), STEP_MS);
-      const offSetsAtOnce = live.vx === 100 && live.vy === 0 && movesAt(glider, 100, 0);
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0), STEP_MS);
+      const offSetsAtOnce = glider.vx === 100 && glider.vy === 0;
       wendoo.moveSmoothing = smoothingMs;
-      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0, live), STEP_MS);
-      const keptWhileOff = live.vx === 100;
-      applicator.apply(new wendoo.MotionVerdict(glider, 200, 0, live), STEP_MS);
-      const easesOnceOn = motionIs(live, 100 + 100 * share, 0);
-      applicator.apply(new wendoo.MotionVerdict(glider, 300, 0, live), 0);
-      const untimedSetsAtOnce = live.vx === 300;
+      applicator.apply(new wendoo.MotionVerdict(glider, 100, 0), STEP_MS);
+      const keptWhileOff = glider.vx === 100;
+      applicator.apply(new wendoo.MotionVerdict(glider, 200, 0), STEP_MS);
+      const easesOnceOn = movesAt(glider, 100 + 100 * share, 0);
+      applicator.apply(new wendoo.MotionVerdict(glider, 300, 0), 0);
+      const untimedSetsAtOnce = glider.vx === 300;
       wendoo.moveSmoothing = 0;
-      applicator.apply(new wendoo.MotionVerdict(glider, 400, -100, live), STEP_MS);
+      applicator.apply(new wendoo.MotionVerdict(glider, 400, -100), STEP_MS);
       readsLive =
         readsLive &&
         offSetsAtOnce &&
         keptWhileOff &&
         easesOnceOn &&
         untimedSetsAtOnce &&
-        live.vx === 400 &&
-        live.vy === -100 &&
-        movesAt(glider, 400, -100);
+        glider.vx === 400 &&
+        glider.vy === -100;
 
       wendoo.moveSmoothing = smoothingMs;
       const rightward = moveBuffer();
@@ -2881,8 +2872,7 @@ namespace arcadeSelftest {
       const marks: number[][] = [];
       for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
         placeAt(glider, 20, 60);
-        const world = new wendoo.SpriteWorld(glider);
-        const ctx = contextIn(world);
+        const ctx = contextOn(glider);
         const positions: number[] = [];
         let rise = -1;
         stepMove(
@@ -2908,8 +2898,7 @@ namespace arcadeSelftest {
           rise >= SMOOTHED_RISE_LEAST * smoothingMs &&
           rise <= SMOOTHED_RISE_MOST * smoothingMs &&
           glider.vx === 0 &&
-          glider.vy === 0 &&
-          world.motion.vx === 0;
+          glider.vy === 0;
       }
       const last = marks.length - 1;
       travelsAlike =
@@ -2933,16 +2922,15 @@ namespace arcadeSelftest {
         keepsGoals =
           keepsGoals && farthest <= 113 + 0.5 && distanceBetween(glider, quarry) < 0.5 && Math.abs(glider.vx) < 1;
       }
-      const holder = new wendoo.SpriteWorld(glider);
-      holder.motion.vx = 250;
-      const holdCtx = contextIn(holder);
+      const holdCtx = contextOn(glider);
       holdCtx.dt = STEP_MS;
       const holding = moveBuffer();
       holding[MOVE_TOWARD] = PRESENT;
       holding[MOVE_TARGET_POINT] = pointValue(60, 60);
       placeAt(glider, 60, 60);
+      glider.vx = 250;
       moveNow(holdCtx, holding);
-      keepsGoals = keepsGoals && glider.vx === 0 && glider.vy === 0 && holder.motion.vx === 0;
+      keepsGoals = keepsGoals && glider.vx === 0 && glider.vy === 0;
     }
     wendoo.moveSmoothing = 0;
     check("smoothing-eases-a-speed-up-by-the-exponential-of-the-frame-time", easesSpeedUps);
@@ -2969,8 +2957,7 @@ namespace arcadeSelftest {
    * as no point, so a move toward or away from it moves as a move given no
    * target, and a write of it to a sprite's position moves nothing; and the
    * direct applicator sets a sprite given a verdict holding one still, as it
-   * sets a released sprite, zeroing the velocity the sprite's program last
-   * set, which the next verdict eases from afresh.
+   * sets a released sprite, and the next verdict eases from the stop.
    */
   function checkNonFiniteMotion(): void {
     game.pushScene();
@@ -3012,19 +2999,18 @@ namespace arcadeSelftest {
     );
 
     const applicator = new wendoo.DirectMotionApplicator();
-    const applied = new wendoo.AppliedMotion();
-    applied.vx = 250;
     mover.vx = 250;
-    applicator.apply(new wendoo.MotionVerdict(mover, NOT_A_NUMBER, 40, applied), STEP_MS);
-    const notANumberStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
-    applicator.apply(new wendoo.MotionVerdict(mover, INFINITE, 0, applied), STEP_MS);
-    const infinityStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(mover, NOT_A_NUMBER, 40), STEP_MS);
+    const notANumberStops = mover.vx === 0 && mover.vy === 0;
+    mover.vx = 250;
+    applicator.apply(new wendoo.MotionVerdict(mover, INFINITE, 0), STEP_MS);
+    const infinityStops = mover.vx === 0 && mover.vy === 0;
     wendoo.moveSmoothing = SMOOTHING_TIME_CONSTANTS[0];
-    applied.vx = 250;
-    applicator.apply(new wendoo.MotionVerdict(mover, 0, -INFINITE, applied), STEP_MS);
-    const smoothedStops = movesAt(mover, 0, 0) && applied.vx === 0 && applied.vy === 0;
-    applicator.apply(new wendoo.MotionVerdict(mover, 100, 0, applied), STEP_MS);
-    const easesAfresh = motionIs(applied, 100 * easedShare(STEP_MS, SMOOTHING_TIME_CONSTANTS[0]), 0);
+    mover.vx = 250;
+    applicator.apply(new wendoo.MotionVerdict(mover, 0, -INFINITE), STEP_MS);
+    const smoothedStops = mover.vx === 0 && mover.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(mover, 100, 0), STEP_MS);
+    const easesAfresh = movesAt(mover, 100 * easedShare(STEP_MS, SMOOTHING_TIME_CONSTANTS[0]), 0);
     wendoo.moveSmoothing = 0;
     check(
       "the-direct-applicator-sets-a-non-finite-verdict-still-and-forgets-the-last-velocity",
@@ -3094,17 +3080,18 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
-  /** The velocity `sprite` reaches when the direct applicator eases it from rest toward 100 pixels per second rightward over one frame of {@link STEP_MS}. */
+  /** The velocity `sprite`, set at rest, reaches when the direct applicator eases it toward 100 pixels per second rightward over one frame of {@link STEP_MS}. */
   function firstEasedStep(sprite: Sprite): number {
-    const fromRest = new wendoo.AppliedMotion();
-    new wendoo.DirectMotionApplicator().apply(new wendoo.MotionVerdict(sprite, 100, 0, fromRest), STEP_MS);
-    return fromRest.vx;
+    sprite.vx = 0;
+    sprite.vy = 0;
+    new wendoo.DirectMotionApplicator().apply(new wendoo.MotionVerdict(sprite, 100, 0), STEP_MS);
+    return sprite.vx;
   }
 
   /** Whether `sprite` eases from rest as a sprite smoothed with the time constant `smoothingMs` does, or, at 0, sets its velocity at once. */
   function easesWith(sprite: Sprite, smoothingMs: number): boolean {
     const expected = smoothingMs > 0 ? 100 * easedShare(STEP_MS, smoothingMs) : 100;
-    return near(firstEasedStep(sprite), expected, NUMBER_TOLERANCE);
+    return near(firstEasedStep(sprite), expected, VELOCITY_TOLERANCE);
   }
 
   /**
@@ -3228,20 +3215,20 @@ namespace arcadeSelftest {
 
     writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(INFINITE));
     const applicator = new wendoo.DirectMotionApplicator();
-    const motion = new wendoo.AppliedMotion();
-    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0, motion), STEP_MS);
-    const heldAtRest = motion.vx === 0 && motion.vy === 0 && movesAt(smoothed, 0, 0);
-    motion.vx = 80;
-    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0, motion), STEP_MS);
-    const heldAtSpeed = motion.vx === 80 && motion.vy === 0;
-    applicator.apply(new wendoo.MotionVerdict(smoothed, 40, 0, motion), STEP_MS);
+    smoothed.vx = 0;
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0), STEP_MS);
+    const heldAtRest = smoothed.vx === 0 && smoothed.vy === 0;
+    smoothed.vx = 80;
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0), STEP_MS);
+    const heldAtSpeed = smoothed.vx === 80 && smoothed.vy === 0;
+    applicator.apply(new wendoo.MotionVerdict(smoothed, 40, 0), STEP_MS);
     check(
       "move-smoothing-write-of-an-infinity-holds-its-sprite-at-the-speed-it-has-and-sets-a-slow-down-at-once",
       readsNumber(readField(world, smoothed, "moveSmoothing"), INFINITE) &&
         heldAtRest &&
         heldAtSpeed &&
-        motion.vx === 40 &&
-        movesAt(smoothed, 40, 0)
+        smoothed.vx === 40 &&
+        smoothed.vy === 0
     );
     smoothed.vx = 0;
 
@@ -3334,6 +3321,223 @@ namespace arcadeSelftest {
     keeper.destroy();
     reader.destroy();
     pause(FRAMES_MS);
+    game.popScene();
+  }
+
+  /** Document id of the program moving its sprite right. */
+  const ADVANCE_ID = "advanceMoveRight";
+
+  /** Document id of the program whose move, its WHEN reading a number, moves its sprite in the default direction: right. */
+  const COUNTED_ID = "countedWhenMove1";
+
+  /** How many frames of {@link STEP_MS} the brain-change easing checks let a smoothed sprite ease before its brain changes. */
+  const CRUISE_FRAMES = 30;
+
+  /**
+   * The velocity, in pixels per second, a sprite smoothed with the time
+   * constant `smoothingMs` reaches after `frames` frames of {@link STEP_MS}
+   * eased without a break from rest toward 100 pixels per second.
+   */
+  function easedFromRest(frames: number, smoothingMs: number): number {
+    return 100 * easedShare(frames * STEP_MS, smoothingMs);
+  }
+
+  /**
+   * Run frame `frame` of the current scene, its frames stopped, the way its
+   * frame loop runs one of {@link STEP_MS}: drain its program host at the
+   * frame's time, then resolve its move arbitration.
+   */
+  function stepFrame(frame: number): void {
+    wendoo.sceneProgramHost(game.currentScene()).drain(frame * STEP_MS);
+    wendoo.sceneMotionArbiter(game.currentScene()).resolve(STEP_MS);
+  }
+
+  /**
+   * In a scene of its own, its frames stopped and stepped by hand, check
+   * that a smoothed sprite eases from the velocity it has whichever brain
+   * moves it: cruising under one brain and given another moving it alike --
+   * by the block, then through its `brain` field -- it moves on each frame
+   * at the velocity its ease would have reached had its brain not changed,
+   * while a sprite given its first brain on the same frame eases from rest;
+   * given no brain, it stops on the next frame, as a released sprite does,
+   * and a brain given after that eases from rest; and given no brain and a
+   * new brain on one frame, it eases on from the velocity it has.
+   */
+  function checkEasingAcrossBrainChanges(): void {
+    game.pushScene();
+    stopFrames();
+    const heavy = SMOOTHING_TIME_CONSTANTS[1];
+    const world = hostedWorld(solidSprite(8, 20, 20));
+    const cruiser = solidSprite(8, 20, 60);
+    const starter = solidSprite(8, 20, 100);
+    wendoo.setMoveSmoothing(cruiser, heavy);
+    wendoo.setMoveSmoothing(starter, heavy);
+    let frame = 0;
+
+    wendoo.runBrain(cruiser, wendooBrains.p_advanceMoveRight);
+    while (frame < CRUISE_FRAMES) {
+      stepFrame(++frame);
+    }
+    const cruising = movesAt(cruiser, easedFromRest(CRUISE_FRAMES, heavy), 0);
+    wendoo.runBrain(cruiser, wendooBrains.p_countedWhenMove1);
+    wendoo.runBrain(starter, wendooBrains.p_countedWhenMove1);
+    stepFrame(++frame);
+    const byBlock =
+      programOf(cruiser) === COUNTED_ID &&
+      movesAt(cruiser, easedFromRest(CRUISE_FRAMES + 1, heavy), 0) &&
+      movesAt(starter, easedFromRest(1, heavy), 0);
+    writeField(world, cruiser, "brain", brainLiteral(ADVANCE_ID));
+    stepFrame(++frame);
+    check(
+      "a-smoothed-sprite-eases-on-from-the-velocity-it-has-through-a-brain-change",
+      cruising &&
+        byBlock &&
+        programOf(cruiser) === ADVANCE_ID &&
+        movesAt(cruiser, easedFromRest(CRUISE_FRAMES + 2, heavy), 0) &&
+        movesAt(starter, easedFromRest(2, heavy), 0)
+    );
+
+    wendoo.runBrain(cruiser, wendooBrains.none);
+    stepFrame(++frame);
+    const released = programOf(cruiser) === wendooBrains.none.id && movesAt(cruiser, 0, 0);
+    wendoo.runBrain(cruiser, wendooBrains.p_advanceMoveRight);
+    stepFrame(++frame);
+    check(
+      "a-smoothed-sprite-given-no-brain-stops-and-eases-its-next-brain-from-rest",
+      released && movesAt(cruiser, easedFromRest(1, heavy), 0)
+    );
+
+    for (let i = 1; i < CRUISE_FRAMES; i++) {
+      stepFrame(++frame);
+    }
+    const recruising = movesAt(cruiser, easedFromRest(CRUISE_FRAMES, heavy), 0);
+    writeField(world, cruiser, "brain", wendoo.NIL_VALUE);
+    writeField(world, cruiser, "brain", brainLiteral(COUNTED_ID));
+    stepFrame(++frame);
+    check(
+      "a-smoothed-sprite-given-no-brain-and-a-new-one-on-one-frame-eases-on-from-the-velocity-it-has",
+      recruising && programOf(cruiser) === COUNTED_ID && movesAt(cruiser, easedFromRest(CRUISE_FRAMES + 1, heavy), 0)
+    );
+
+    cruiser.destroy();
+    starter.destroy();
+    world.sprite.destroy();
+    resumeFrames();
+    game.popScene();
+  }
+
+  /** Width, in tiles of 16 pixels, of the tilemap the wall-stop check builds. */
+  const WALLED_MAP_COLUMNS = 10;
+
+  /** Height, in tiles of 16 pixels, of the tilemap the wall-stop check builds. */
+  const WALLED_MAP_ROWS = 8;
+
+  /** The tilemap column, its left edge at x 80, the wall-stop check walls off and opens again. */
+  const WALL_COLUMN = 5;
+
+  /** Wall `column` of the current scene's tilemap off, every row of it, or open it again. */
+  function wallColumn(column: number, on: boolean): void {
+    for (let row = 0; row < WALLED_MAP_ROWS; row++) {
+      game.currentScene().tileMap.setWallAt(column, row, on);
+    }
+  }
+
+  /**
+   * Run frame `frame` of the current scene, its frames stopped, the way its
+   * frame loop runs one of {@link STEP_MS}, physics included: the scene's
+   * physics moves its sprites over the frame, then its program host drains
+   * at the frame's time and its move arbitration resolves.
+   */
+  function stepFrameMoving(frame: number): void {
+    game.currentScene().physicsEngine.move(STEP_MS / 1000);
+    stepFrame(frame);
+  }
+
+  /** A smoothing time constant, in milliseconds, so long that a slow move's ease over one frame falls below the 1/256 step of a sprite's velocity well before the move closes on its speed. */
+  const GLACIAL_SMOOTHING_MS = 3000;
+
+  /** The speed, in pixels per second, of the slow move the glacial smoothing check eases. */
+  const DRIFT_SPEED = 10;
+
+  /** How many frames of {@link STEP_MS} the glacial smoothing check eases for: five of its time constants. */
+  const DRIFT_FRAMES = (5 * GLACIAL_SMOOTHING_MS) / STEP_MS;
+
+  /**
+   * In a scene of its own, its frames stopped and stepped by hand, check
+   * that a smoothed sprite eases from the velocity it actually has: given
+   * its first brain while moving at a velocity game code set, it eases on
+   * from that velocity, and set at once to a slower one its brain asks for;
+   * cruising under a brain into a tilemap wall, which stops it, it eases
+   * back up from the stop, frame on frame, once the way opens; and a slow
+   * move eased with smoothing so long that its later frames' eases are finer
+   * than the step a sprite's velocity takes still closes on its speed.
+   */
+  function checkEasingFromActualVelocity(): void {
+    game.pushScene();
+    stopFrames();
+    const heavy = SMOOTHING_TIME_CONSTANTS[1];
+    const share = easedShare(STEP_MS, heavy);
+    const coaster = solidSprite(8, 20, 20);
+    const racer = solidSprite(8, 20, 40);
+    const cruiser = solidSprite(8, 20, 72);
+    wendoo.setMoveSmoothing(coaster, heavy);
+    wendoo.setMoveSmoothing(racer, heavy);
+    wendoo.setMoveSmoothing(cruiser, heavy);
+    const layout = control.createBuffer(4 + WALLED_MAP_COLUMNS * WALLED_MAP_ROWS);
+    layout.setNumber(NumberFormat.UInt16LE, 0, WALLED_MAP_COLUMNS);
+    layout.setNumber(NumberFormat.UInt16LE, 2, WALLED_MAP_ROWS);
+    tiles.setCurrentTilemap(
+      tiles.createTilemap(
+        layout,
+        image.create(WALLED_MAP_COLUMNS, WALLED_MAP_ROWS),
+        [image.create(16, 16)],
+        TileScale.Sixteen
+      )
+    );
+    let frame = 0;
+
+    coaster.vx = 80;
+    racer.vx = 160;
+    wendoo.runBrain(coaster, wendooBrains.p_advanceMoveRight);
+    wendoo.runBrain(racer, wendooBrains.p_advanceMoveRight);
+    stepFrame(++frame);
+    check(
+      "a-smoothed-sprite-given-its-first-brain-eases-on-from-the-velocity-game-code-set",
+      programOf(coaster) === ADVANCE_ID && movesAt(coaster, 80 + 20 * share, 0) && movesAt(racer, 100, 0)
+    );
+
+    wendoo.runBrain(cruiser, wendooBrains.p_advanceMoveRight);
+    for (let i = 0; i < CRUISE_FRAMES; i++) {
+      stepFrame(++frame);
+    }
+    const cruising = movesAt(cruiser, easedFromRest(CRUISE_FRAMES, heavy), 0);
+    wallColumn(WALL_COLUMN, true);
+    cruiser.setPosition(74, 72);
+    stepFrameMoving(++frame);
+    const easesFromTheStop = cruiser.right <= 80 && movesAt(cruiser, easedFromRest(1, heavy), 0);
+    wallColumn(WALL_COLUMN, false);
+    stepFrameMoving(++frame);
+    check(
+      "a-smoothed-sprite-a-wall-stops-eases-back-up-from-the-stop",
+      cruising && easesFromTheStop && movesAt(cruiser, easedFromRest(2, heavy), 0)
+    );
+
+    const drifter = solidSprite(8, 20, 100);
+    wendoo.setMoveSmoothing(drifter, GLACIAL_SMOOTHING_MS);
+    const applicator = new wendoo.DirectMotionApplicator();
+    for (let i = 0; i < DRIFT_FRAMES; i++) {
+      applicator.apply(new wendoo.MotionVerdict(drifter, DRIFT_SPEED, 0), STEP_MS);
+    }
+    check(
+      "a-slow-move-smoothed-finer-than-a-velocity-step-still-closes-on-its-speed",
+      movesAt(drifter, DRIFT_SPEED * easedShare(DRIFT_FRAMES * STEP_MS, GLACIAL_SMOOTHING_MS), 0)
+    );
+
+    coaster.destroy();
+    racer.destroy();
+    cruiser.destroy();
+    drifter.destroy();
+    resumeFrames();
     game.popScene();
   }
 
@@ -3872,6 +4076,8 @@ namespace arcadeSelftest {
     checkNonFiniteSpeed();
     checkSpriteMoveSmoothing();
     checkMoveSmoothingField();
+    checkEasingAcrossBrainChanges();
+    checkEasingFromActualVelocity();
     checkEqualityOperators();
     checkIconEncoder();
 

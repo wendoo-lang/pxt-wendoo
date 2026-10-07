@@ -438,6 +438,12 @@ const EXPECTED_ARCADE_CHECKS = [
   "two-brains-setting-different-move-smoothing-ease-their-sprites-differently-in-one-scene",
   "a-move-smoothing-assignment-through-the-bumped-sprite-output-gives-the-sprite-it-touches-that-smoothing",
   "a-sprites-own-move-smoothing-holds-from-before-its-brain-starts-and-through-a-brain-change",
+  "a-smoothed-sprite-eases-on-from-the-velocity-it-has-through-a-brain-change",
+  "a-smoothed-sprite-given-no-brain-stops-and-eases-its-next-brain-from-rest",
+  "a-smoothed-sprite-given-no-brain-and-a-new-one-on-one-frame-eases-on-from-the-velocity-it-has",
+  "a-smoothed-sprite-given-its-first-brain-eases-on-from-the-velocity-game-code-set",
+  "a-smoothed-sprite-a-wall-stops-eases-back-up-from-the-stop",
+  "a-slow-move-smoothed-finer-than-a-velocity-step-still-closes-on-its-speed",
   "equality-overloads-take-their-ids-from-the-manifest",
   "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
   "an-image-standing-for-no-image-equals-nothing-not-even-another",
@@ -589,9 +595,13 @@ const ARCADE_HOST_REJECTIONS = [
  * `Sprite` type's fields, the myself sensor, their outputs, the field
  * writes made through their outputs, their positional modifiers, the
  * targets the move's toward and away carry, the move's wander, the
- * `Sprite` type's move smoothing, and the equality operators' overloads.
+ * `Sprite` type's move smoothing, move smoothing through brain changes,
+ * move smoothing from the velocity a sprite has, and the equality operators'
+ * overloads.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,

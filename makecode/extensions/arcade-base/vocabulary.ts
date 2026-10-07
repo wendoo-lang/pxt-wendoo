@@ -594,7 +594,7 @@ namespace wendoo {
           speed = speedWithinReach(speed, Math.sqrt(dx * dx + dy * dy), ctx.dt);
         }
       }
-      sceneMotionArbiter(game.currentScene()).addIntent(new MoveIntent(sprite, direction, speed, 1, world.motion));
+      sceneMotionArbiter(game.currentScene()).addIntent(new MoveIntent(sprite, direction, speed, 1));
       return VOID_VALUE;
     }
   }

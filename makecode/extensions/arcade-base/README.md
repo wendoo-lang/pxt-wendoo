@@ -129,12 +129,16 @@ wendoo.moveSmoothing = 100
 The number is how gradual, in milliseconds. At 100 a sprite starting from
 rest reaches nine tenths of its speed in about a quarter of a second; at
 150, in about a third. Slowing down and stopping still happen at once, so a
-sprite heading for a spot still stops right on it. Smoothing suits flocks
-and followers, where it turns stop-and-go hopping into flowing motion. It
-also softens every move a brain makes, the dpad's included -- at 100 a
-dpad-steered sprite takes about a quarter of a second to reach full speed
--- so a game built on quick reactions, like a shooter or a maze chase, is
-better off without it. Set it back to 0 to turn it off.
+sprite heading for a spot still stops right on it. Smoothing eases from
+the speed a sprite actually has, whatever gave it that speed: a sprite
+that changes brains while moving carries on without a stutter, a sprite
+your game code set moving eases on from that speed when a brain takes
+over, and a sprite a wall stopped eases back up from the stop once the way
+is clear. Smoothing suits flocks and followers, where it turns stop-and-go hopping
+into flowing motion. It also softens every move a brain makes, the dpad's
+included -- at 100 a dpad-steered sprite takes about a quarter of a second
+to reach full speed -- so a game built on quick reactions, like a shooter
+or a maze chase, is better off without it. Set it back to 0 to turn it off.
 
 That number is the project's default, and any sprite can have its own
 instead. Give one sprite its own smoothing, in milliseconds, and it wins
