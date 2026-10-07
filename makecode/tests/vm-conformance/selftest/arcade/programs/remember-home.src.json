@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "rememberHome0001",
+  "name": "Remember home",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0rememberHome",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "home",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0homePoint000"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0rememberHome",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0homePoint000",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position"
+          ],
+          "children": [],
+          "ruleId": "fRu0rememberHom0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0homePoint000"
+          ],
+          "children": [],
+          "ruleId": "fRu0rememberHom1"
+        }
+      ]
+    }
+  ]
+}

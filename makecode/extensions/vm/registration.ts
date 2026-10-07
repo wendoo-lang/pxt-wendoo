@@ -14,9 +14,10 @@
  * fields (each with its accessor tile's metadata), an asset type's asset
  * kind, argument grammar (each slot with its tile's display label and icon,
  * and each modifier slot with its tile's sentence words), returns, outputs,
- * consumed WHEN result, a sensor's inline and writable-result flags, label,
- * group, docs, icon, sentence words. A pack may also give core tiles icons,
- * and add overloads to core operators. The drain installs behavior only and
+ * consumed WHEN result, a sensor's inline and writable-result flags, a struct
+ * type's variable factory flag, label, group, docs, icon, sentence words. A
+ * pack may also give core tiles icons, and add overloads to core operators.
+ * The drain installs behavior only and
  * ignores all of it; the catalog serializer reads it through
  * {@link writeCatalogEntries}.
  *
@@ -408,6 +409,23 @@ namespace wendoo {
     icon: any;
 
     constructor() {}
+  }
+
+  /**
+   * Catalog metadata of one struct type: what the Wendoo editor shows and
+   * offers for it. Catalog data only, like every {@link CatalogMeta}: the
+   * runtime reads none of it.
+   */
+  export class TypeMeta extends CatalogMeta {
+    /**
+     * Whether brains may hold variables of the type: the Wendoo editor offers
+     * a variable factory for it, minting variable tiles of the type.
+     */
+    variableFactory: boolean = false;
+
+    constructor() {
+      super();
+    }
   }
 
   /** Sentence frame of a sensor that reads as an action, as in "When I hear a bang". */
@@ -1296,7 +1314,7 @@ namespace wendoo {
   class PendingStructType extends PendingRegistration {
     private fields: StructFieldSpec[];
     private binding: StructTypeBinding;
-    private meta: CatalogMeta;
+    private meta: TypeMeta;
     /** Kind of the project assets an asset type's values name; `""` for any other struct type. */
     private assetKind: string;
     /** Whether the type is a brain type, its values each naming one of the project's brains. */
@@ -1307,7 +1325,7 @@ namespace wendoo {
       pack: string,
       fields: StructFieldSpec[],
       binding: StructTypeBinding,
-      meta: CatalogMeta,
+      meta: TypeMeta,
       assetKind: string,
       brain: boolean
     ) {
@@ -1525,9 +1543,9 @@ namespace wendoo {
      * @param name - Wendoo type name; struct values of the type carry the TypeId derived from it.
      * @param fields - Field specs, each with its accessor tile if {@link withAccessor} gave it one; the binding's `fieldIds` follow their order.
      * @param binding - Type binding carrying the type's hooks.
-     * @param meta - Catalog metadata of the type; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
      */
-    defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: CatalogMeta): void {
+    defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: TypeMeta): void {
       appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", false));
     }
 
@@ -1540,9 +1558,9 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding, carrying the asset kind; read asset ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
      */
-    defineAssetType(name: string, binding: AssetTypeBinding, meta?: CatalogMeta): void {
+    defineAssetType(name: string, binding: AssetTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(ASSET_FIELD, TYPE_STRING)];
       appendPending(new PendingStructType(name, this.name, fields, binding, meta, binding.assetKind, false));
     }
@@ -1556,9 +1574,9 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding; read document ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
      */
-    defineBrainType(name: string, binding: BrainTypeBinding, meta?: CatalogMeta): void {
+    defineBrainType(name: string, binding: BrainTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(BRAIN_FIELD, TYPE_STRING)];
       appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", true));
     }

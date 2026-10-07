@@ -91,7 +91,7 @@ namespace beacon {
   const pack = wendoo.pack(PACK_NAME);
 
   /** Catalog metadata of the `Beacon` type, sample values the catalog assertions pin. */
-  const beaconMeta = new wendoo.CatalogMeta();
+  const beaconMeta = new wendoo.TypeMeta();
   beaconMeta.label = "Beacon";
   beaconMeta.docs = "# Beacon\n\nA beacon at a fixed position, read through its field hooks.";
   beaconMeta.icon = "beacon";

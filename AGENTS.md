@@ -341,7 +341,11 @@ the current slice alone.
       in one read-only `id` field, the catalog marking the type `brain`,
       the binding minting a value naming a brain and logging a document id
       no compiled brain holds, once per id --
-      again the mechanism only, declared by a target's base pack; and core
+      again the mechanism only, declared by a target's base pack; and
+      variable types: a struct type's `TypeMeta` may set
+      `variableFactory`, the catalog marking the type `variableFactory` so
+      the editor offers variables of it -- the mechanism only, every
+      variable type flagged by a target's pack; and core
       tile icons: `defineCoreTileIcon` gives a core tile -- one of the
       editor's own core vocabulary, addressed by its stable tile id -- an
       icon the catalog carries under the giving pack, every icon given
@@ -440,7 +444,13 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite` and `Brain` types, the icons it gives the core tiles (the page tiles,
+      `Sprite` and `Brain` types, the variable factory flag and editor
+      label (`position`, `sprite`) of its `Vector2` and `Sprite` types (a
+      `Vector2` variable holds the point written to it -- the store's
+      deep copy is the snapshot; a `Sprite` variable holds the sprite
+      itself, its native backing copied by reference with no snapshot
+      hook, so once that sprite is destroyed its fields read nil and
+      writes through it change nothing), the icons it gives the core tiles (the page tiles,
       every page's own tile through the page family id, the timer, AND, OR,
       NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and
@@ -573,7 +583,9 @@ the current slice alone.
     authoring environment through the language model's own builders, under
     the ids it allocates and keeps in the project's id manifest -- each
     declared accessor as an accessor tile, each type once the types its
-    fields name are bound, each overload a pack adds to a core operator
+    fields name are bound, each type the catalog marks `variableFactory`
+    with its variable factory, wearing the type's label (its name when it
+    carries none) and icon, each overload a pack adds to a core operator
     onto that operator, minting no tile -- and puts
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold
@@ -583,7 +595,9 @@ the current slice alone.
     each literal of a brain type wears, and each icon packs give a core
     type to that core type, the first icon given standing and an icon
     given a name that is no core type reported; every type icon bound is
-    the brain editor's data-type icon for that type; the one
+    the brain editor's data-type icon for that type, which every variable
+    tile of the type carrying no icon of its own wears; a type's variable
+    factory label is the brain editor's name for that type; the one
     target-aware residue is the per-target theme
     record (the target's display name and theme token overrides), keyed
     by the target id carried in the session hello. Tripwire: this holds because

@@ -9,8 +9,9 @@
  * multiplication operator's over a `Vector2` and a number, each tile and
  * accessor with its icon, registered from this
  * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
- * each with its icon; the icons it gives the core tiles -- the page
- * tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
+ * each with its icon, and `Vector2` and `Sprite` each with the label the
+ * editor calls it by and a variable factory; the icons it gives the core
+ * tiles -- the page tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
  * operators, gets, the parentheses, random number, true, false, nil, and the
  * variable and tile factories; and the icons it gives the core number, text
  * and switch types.
@@ -106,6 +107,13 @@
  *   place of the project's: `DO [myself][move smoothing] [=] 0.15` eases
  *   its own sprite's moves, and `DO [bumped sprite][move smoothing] [=] 0`
  *   turns smoothing off for the sprite it bumps.
+ * - A brain may hold variables of the `Vector2` and `Sprite` types. A
+ *   variable never written reads nil. A `Vector2` variable holds the point
+ *   written to it, whatever happens after: `DO [$home] [=] [myself][position]`
+ *   remembers where the sprite stood. A `Sprite` variable holds the sprite
+ *   written to it, read where it is at every read: `DO [$target] [=]
+ *   [bumped sprite]` remembers the sprite bumped, and once that sprite is
+ *   destroyed, its fields read nil and writes through it change nothing.
  */
 namespace wendoo {
   /** Name the arcade base pack's registrations are reported under. */
@@ -763,17 +771,34 @@ namespace wendoo {
     ];
   }
 
-  /** Catalog metadata declaring `icon` and nothing else. */
-  function iconMeta(icon: Image): CatalogMeta {
-    const meta = new CatalogMeta();
+  /** Type metadata declaring `icon` and nothing else. */
+  function iconMeta(icon: Image): TypeMeta {
+    const meta = new TypeMeta();
     meta.icon = icon;
+    return meta;
+  }
+
+  /**
+   * Type metadata declaring `icon`, the display label `label` the editor
+   * calls the type by, and a variable factory: brains may hold variables of
+   * the type.
+   */
+  function variableTypeMeta(icon: Image, label: string): TypeMeta {
+    const meta = iconMeta(icon);
+    meta.label = label;
+    meta.variableFactory = true;
     return meta;
   }
 
   const arcadePack = pack(ARCADE_PACK_NAME);
 
-  arcadePack.defineStruct(TYPE_VECTOR2, vector2Fields(), vector2Binding, iconMeta(VECTOR2_TYPE_ICON));
-  arcadePack.defineStruct(TYPE_SPRITE, spriteFields(), spriteBinding, iconMeta(SPRITE_TYPE_ICON));
+  arcadePack.defineStruct(
+    TYPE_VECTOR2,
+    vector2Fields(),
+    vector2Binding,
+    variableTypeMeta(VECTOR2_TYPE_ICON, "position")
+  );
+  arcadePack.defineStruct(TYPE_SPRITE, spriteFields(), spriteBinding, variableTypeMeta(SPRITE_TYPE_ICON, "sprite"));
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, iconMeta(BRAIN_TYPE_ICON));
 

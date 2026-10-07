@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "id": "heldTargetBump01",
+  "name": "Held target",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0heldTargetBm",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "target",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0heldTarget00"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0heldTargetBm",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.var->fVr0heldTarget00",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped"
+          ],
+          "children": [],
+          "ruleId": "fRu0heldTarget00"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0heldTarget00",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.accessor->struct:<Vector2>->x"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0heldTarget00"
+          ],
+          "children": [],
+          "ruleId": "fRu0heldTarget01"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.var->fVr0heldTarget00",
+            "tile.accessor->struct:<Sprite>->image",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->image"
+          ],
+          "children": [],
+          "ruleId": "fRu0heldTarget02"
+        }
+      ]
+    }
+  ]
+}

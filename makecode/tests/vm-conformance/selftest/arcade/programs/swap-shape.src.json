@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "id": "swapThroughTemp1",
+  "name": "Swap shape",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0swapThroughT",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "a",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0swapPointA00"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "b",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0swapPointB00"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "t",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0swapPointT00"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0swapThroughT",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0swapPointA00",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0swapPointB00",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.op->add",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough1"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0swapPointT00",
+            "tile.op->assign",
+            "tile.var->fVr0swapPointA00"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough2"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0swapPointA00",
+            "tile.op->assign",
+            "tile.var->fVr0swapPointB00"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough3"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0swapPointB00",
+            "tile.op->assign",
+            "tile.var->fVr0swapPointT00"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough4"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.op->assign",
+            "tile.var->fVr0swapPointA00"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough5"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0swapPointB00"
+          ],
+          "children": [],
+          "ruleId": "fRu0swapThrough6"
+        }
+      ]
+    }
+  ]
+}

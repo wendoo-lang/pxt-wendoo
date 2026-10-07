@@ -102,6 +102,11 @@ export interface CatalogType extends CatalogMeta {
    * field.
    */
   readonly brain?: true;
+  /**
+   * `true` for a type brains may hold variables of, absent for any other
+   * type: the editor offers a variable factory minting variable tiles of it.
+   */
+  readonly variableFactory?: true;
 }
 
 /** What an action does with a numeric argument outside a slot's range. */
@@ -596,6 +601,7 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
     ...metaOf(entry),
     ...(asset === undefined ? {} : { asset }),
     ...(entry.brain === true ? { brain: true as const } : {}),
+    ...(entry.variableFactory === true ? { variableFactory: true as const } : {}),
   };
 }
 

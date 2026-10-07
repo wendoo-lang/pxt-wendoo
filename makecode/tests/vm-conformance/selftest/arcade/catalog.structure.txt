@@ -1,8 +1,8 @@
 pack arcade
-  type Vector2 icon
+  type Vector2 variableFactory icon
     field x number readOnly accessor accessor-icon
     field y number readOnly accessor accessor-icon
-  type Sprite native icon
+  type Sprite native variableFactory icon
     field image Image accessor accessor-icon
     field position Vector2 accessor accessor-icon
     field brain Brain accessor accessor-icon

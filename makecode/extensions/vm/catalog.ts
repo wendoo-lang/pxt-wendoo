@@ -13,10 +13,11 @@
  * - A type entry carries `name`, `native` (backed by host objects through
  *   registered hooks), `asset` (on an asset type, the kind of the project
  *   assets its values name), `brain` (on a brain type, whose values each name
- *   one of the project's brains), `fields` (each with `name`, `type`,
- *   `readOnly`, and `accessor` -- present exactly when the field has an
- *   accessor tile -- holding the accessor's metadata fields), and the
- *   metadata fields.
+ *   one of the project's brains), `variableFactory` (on a type brains may hold
+ *   variables of, for which the editor offers a variable factory), `fields`
+ *   (each with `name`, `type`, `readOnly`, and `accessor` -- present exactly
+ *   when the field has an accessor tile -- holding the accessor's metadata
+ *   fields), and the metadata fields.
  * - A tile entry carries `name`, `kind`, `async`, `inline` (a sensor reading
  *   as a value inside an expression), `writableResult` (a sensor whose result
  *   a brain may write a field through), its argument grammar as either
@@ -551,7 +552,7 @@ namespace wendoo {
      * @param native - Whether the type is backed by host objects through registered hooks.
      * @param assetKind - Kind of the project assets an asset type's values name; `""` for any other type.
      * @param brain - Whether the type is a brain type, its values each naming one of the project's brains.
-     * @param meta - Catalog metadata, or `undefined` when the registration declared none.
+     * @param meta - Catalog metadata, its variable factory flag included, or `undefined` when the registration declared none.
      */
     struct(
       pack: string,
@@ -560,7 +561,7 @@ namespace wendoo {
       native: boolean,
       assetKind: string,
       brain: boolean,
-      meta: CatalogMeta
+      meta: TypeMeta
     ): void {
       let entry = `{"name":${jsonQuote(name)}`;
       if (native) {
@@ -571,6 +572,10 @@ namespace wendoo {
       }
       if (brain) {
         entry += ',"brain":true';
+      }
+      // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
+      if (meta && meta.variableFactory) {
+        entry += ',"variableFactory":true';
       }
       if (fields.length > 0) {
         const rendered: string[] = [];

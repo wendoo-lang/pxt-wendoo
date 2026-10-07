@@ -11,6 +11,7 @@ const FULL_CATALOG = JSON.stringify({
         {
           name: "Beacon",
           native: true,
+          variableFactory: true,
           fields: [
             { name: "x", type: "number" },
             { name: "y", type: "number", readOnly: true },
@@ -251,6 +252,7 @@ describe("parseCatalog", () => {
           ],
           label: "Beacon",
           iconUrl: "data:image/svg+xml;base64,YmVhY29u",
+          variableFactory: true,
         },
         {
           name: "Snapshot",

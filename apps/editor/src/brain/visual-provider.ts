@@ -1,4 +1,4 @@
-import type { IBrainTileDef } from "@wendoo/core/app";
+import type { BrainTileVariableDef, IBrainTileDef } from "@wendoo/core/app";
 import { getCatalogFallbackLabel, mkLiteralTileId } from "@wendoo/core/app";
 import type { ITileCatalog } from "@wendoo/core/brain";
 import type { StructTypeDef, StructValue, TypeId } from "@wendoo/core/runtime";
@@ -33,28 +33,38 @@ function boundMetadata(tileCatalogs: readonly ITileCatalog[], tileDef: IBrainTil
  * preview as its face while the snapshot lists the asset, and its label
  * alone, with no face, while it is unresolved. A page's own tile shows its
  * metadata with `pageIcon` as its face, and its metadata alone while no page
- * icon is given. Every other tile shows the display metadata the environment
- * binds under its tile id, the icon its catalog entry carries included --
- * whichever environment the tile was read in -- and its own metadata when the
- * environment binds no tile under its id. Icons are data URIs for an image
- * source; render them only as one.
+ * icon is given. A variable tile carrying no icon of its own shows its
+ * variable type's icon, as `typeIcons` holds it, as its face. Every other tile
+ * shows the display metadata the environment binds under its tile id, the
+ * icon its catalog entry carries included -- whichever environment the tile
+ * was read in -- and its own metadata when the environment binds no tile
+ * under its id. Icons are data URIs for an image source; render them only as
+ * one.
  *
  * Build a new provider whenever the environment is rebuilt or the asset
- * literals or the page icon change.
+ * literals, the type icons or the page icon change.
  *
  * @param tileCatalogs - The environment's tile catalogs.
  * @param assetLiterals - The environment's asset literals, keyed by tile id.
+ * @param typeIcons - The environment's type icons, keyed by type id.
  * @param pageIcon - The icon every page's own tile wears; omit it while none is bound.
  */
 export function createTileVisualProvider(
   tileCatalogs: readonly ITileCatalog[],
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
+  typeIcons: ReadonlyMap<TypeId, string>,
   pageIcon?: string
 ): (tileDef: IBrainTileDef) => TileVisual | undefined {
   return (tileDef) => {
     const metadata = boundMetadata(tileCatalogs, tileDef);
     if (tileDef.kind === "page" && pageIcon !== undefined) {
       return { ...(metadata ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: pageIcon };
+    }
+    if (tileDef.kind === "variable" && metadata?.iconUrl === undefined) {
+      const typeIcon = typeIcons.get((tileDef as BrainTileVariableDef).varType);
+      if (typeIcon !== undefined) {
+        return { ...(metadata ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: typeIcon };
+      }
     }
     const literal = assetLiterals.get(tileDef.tileId);
     if (literal === undefined) return metadata;

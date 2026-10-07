@@ -29,9 +29,15 @@ import {
   arcadeSensorNames,
   arcadeSpriteOutputLabels,
   arcadeStructTextConstants,
+  arcadeTypeNames,
+  arcadeVariableFaces,
+  arcadeVariableFactories,
+  arcadeVariableRun,
+  arcadeVariableSource,
   BRAIN_LITERAL,
   CLOSE_PAREN,
   checkedInText,
+  FACTORY_ENTRY_PREFIX,
   IMAGE_LITERAL,
   IMAGE_LITERAL_ASSET_ID,
   MODIFIER_ENTRY_PREFIX,
@@ -43,6 +49,7 @@ import {
   type RenderedFile,
   renderVmPrograms,
   SENSOR_ENTRY_PREFIX,
+  VARIABLE_ENTRY_PREFIX,
 } from "./vm-programs.js";
 
 describe("the MakeCode VM extension's compiled programs", () => {
@@ -612,5 +619,105 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.ok(codes.includes(ParseDiagCode.UnexpectedExpressionAfterExpression));
     assert.ok(codes.includes(CompilationDiagCode.UncompilableExpressionDropped));
     assert.equal(warn.mock.callCount(), 1, "the compiler warns once of the expression it drops");
+  });
+
+  const home = `${VARIABLE_ENTRY_PREFIX}Vector2.home`;
+  const held = `${VARIABLE_ENTRY_PREFIX}Sprite.held`;
+  const xOf = `${ACCESSOR_ENTRY_PREFIX}Vector2.x`;
+
+  it("binds a variable factory for Sprite and for Vector2 alone, each producing its own type", () => {
+    assert.deepEqual(arcadeVariableFactories(), [
+      { name: "Vector2", produces: mkTypeId(NativeType.Struct, "Vector2") },
+      { name: "Sprite", produces: mkTypeId(NativeType.Struct, "Sprite") },
+      { name: "Image", produces: undefined },
+      { name: "Brain", produces: undefined },
+    ]);
+  });
+
+  it("offers the sprite and position variable factories at the head of a DO side and as the move's target once toward is placed", () => {
+    for (const factory of [`${FACTORY_ENTRY_PREFIX}Sprite`, `${FACTORY_ENTRY_PREFIX}Vector2`]) {
+      assert.ok(arcadeOffersLiteral(factory, [], []), `${factory} at the head of a DO side`);
+      assert.ok(arcadeOffersLiteral(factory, [], [move, toward]), `${factory} as the move's target`);
+    }
+    assert.ok(!arcadeOffersLiteral(`${FACTORY_ENTRY_PREFIX}Image`, [], []));
+  });
+
+  it("shows each variable factory and each variable it mints with its type's icon as their face", () => {
+    const faces = arcadeVariableFaces();
+
+    assert.deepEqual(
+      faces.map((face) => face.name),
+      ["Vector2", "Sprite"]
+    );
+    for (const face of faces) {
+      assert.notEqual(face.typeIcon, undefined, face.name);
+      assert.equal(face.factoryFace, face.typeIcon, face.name);
+      assert.equal(face.variableFace, face.typeIcon, face.name);
+    }
+  });
+
+  it("names the Sprite and Vector2 types by the labels their catalog entries carry, on their factories and in the editor's config", () => {
+    const names = arcadeTypeNames();
+
+    assert.deepEqual(
+      names.map((entry) => entry.name),
+      ["Vector2", "Sprite"]
+    );
+    for (const entry of names) {
+      assert.equal(entry.factoryLabel, entry.carried, entry.name);
+      assert.equal(entry.named, entry.carried, entry.name);
+    }
+  });
+
+  for (const [sentence, act] of [
+    ["$home = myself's position", [home, ASSIGN, myself, position]],
+    ["move toward $home", [move, toward, home]],
+    ["$held = myself", [held, ASSIGN, myself]],
+    ["move toward $held", [move, toward, held]],
+    ["$held's image = myself's image", [held, imageOf, ASSIGN, myself, imageOf]],
+    ["$home = $home plus myself's position", [home, ASSIGN, home, add, myself, position]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [...act]), []);
+    });
+  }
+
+  it("compiles a WHEN reading x through $held's position", () => {
+    const { codes, bytecode } = arcadeChainCompile([held, position, xOf], [move, toward, held], { when: [], act: [] });
+
+    assert.deepEqual(codes, []);
+    assert.notEqual(bytecode, undefined);
+  });
+
+  it("reads a position or sprite variable nothing wrote as nil, through accessor chains and a WHEN, without a fault", () => {
+    const { values, faults } = arcadeVariableRun(
+      [
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.x`, ASSIGN, home, xOf] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}Vector2.copy`, ASSIGN, home] },
+        { when: [], act: [held, position, ASSIGN, home] },
+        { when: [held, position, xOf], act: [`${VARIABLE_ENTRY_PREFIX}number.fired`, ASSIGN, NUMBER_LITERAL] },
+      ],
+      ["x", "copy", "fired", "home", "held"],
+      2
+    );
+    const [x, copy, fired, unwritten, unheld] = values;
+
+    assert.equal(faults, 0);
+    assert.equal(x?.t, NativeType.Nil);
+    assert.equal(copy?.t, NativeType.Nil);
+    assert.equal(fired?.t, NativeType.Number, "the gated rule never wrote its number variable past its starting 0");
+    assert.equal((fired as { v: number } | undefined)?.v, 0);
+    assert.equal(unwritten, undefined);
+    assert.equal(unheld, undefined);
+  });
+
+  it("writes a created variable into the brain's own source by name and type, and reads it back alike", () => {
+    const { written, read } = arcadeVariableSource([home, ASSIGN, myself, position]);
+
+    assert.equal(written.length, 1);
+    assert.deepEqual(Object.keys(written[0] ?? {}), ["version", "kind", "varName", "varType", "uniqueId"]);
+    assert.equal(written[0]?.varName, "home");
+    assert.equal(written[0]?.varType, mkTypeId(NativeType.Struct, "Vector2"));
+    assert.deepEqual(read, [{ varName: "home", varType: mkTypeId(NativeType.Struct, "Vector2") }]);
   });
 });

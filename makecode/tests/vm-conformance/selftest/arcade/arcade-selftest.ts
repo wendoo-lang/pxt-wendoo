@@ -3896,6 +3896,71 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** Milliseconds a move at the default speed takes to close a 60-pixel gap, with frames to spare. */
+  const CLOSING_MS = 1000;
+
+  /**
+   * In a scene of its own, check compiled programs holding `Vector2` and
+   * `Sprite` variables: a position variable remembers the point written to
+   * it, so a sprite moved away heads back to where it stood and lands there;
+   * two position variables swapped through a third each hold the other's
+   * point, the third keeping the first's after the first is overwritten; and
+   * a sprite variable reads nil until written, gating its rule off and
+   * skipping a write through it, then holds the very sprite written to it --
+   * a write through it reaching that sprite, a move toward it following it
+   * where it goes -- until that sprite is destroyed, when its fields read nil
+   * again and its rule gates off, its program running on.
+   */
+  function checkVariables(): void {
+    game.pushScene();
+    const homer = solidSprite(8, 40, 60);
+    wendoo.runBrain(homer, wendooBrains.p_rememberHome0001);
+    pause(FRAMES_MS);
+    const stayed = homer.x === 40 && homer.y === 60 && movesAt(homer, 0, 0);
+    homer.setPosition(100, 60);
+    pause(FRAMES_MS);
+    const headedHome = movesAt(homer, -DEFAULT_MOVE_SPEED, 0);
+    pause(CLOSING_MS);
+    check(
+      "a-position-variable-remembers-the-point-written-to-it-after-its-sprite-moves",
+      stayed && headedHome && near(homer.x, 40, 0.5) && near(homer.y, 60, 0.5) && movesAt(homer, 0, 0)
+    );
+    clearScene();
+
+    const swapper = solidSprite(8, 40, 60);
+    wendoo.runBrain(swapper, wendooBrains.p_swapThroughTemp1);
+    pause(FRAMES_MS);
+    const swapped = movesAlong(swapper, -40, -60, DEFAULT_MOVE_SPEED);
+    pause(CLOSING_MS);
+    check(
+      "position-variables-swapped-through-a-third-each-hold-the-others-point",
+      swapped && near(swapper.x, 40, 0.5) && near(swapper.y, 60, 0.5) && movesAt(swapper, 0, 0)
+    );
+    clearScene();
+
+    const mover = solidSprite(8, 40, 60);
+    const target = heroSprite(100, 60);
+    wendoo.runBrain(mover, wendooBrains.p_heldTargetBump01);
+    pause(FRAMES_MS);
+    check(
+      "a-sprite-variable-never-written-reads-nil-gating-its-rule-off-and-skipping-writes-through-it",
+      movesAt(mover, 0, 0) && mover.x === 40 && !target.image.equals(mover.image)
+    );
+    target.setPosition(46, 60);
+    pause(FRAMES_MS);
+    check("a-write-through-a-sprite-variable-reaches-the-sprite-written-to-it", target.image.equals(mover.image));
+    target.setPosition(130, 60);
+    pause(FRAMES_MS);
+    check("a-sprite-variable-reads-its-sprite-where-it-is-now", pursues(mover, target, DEFAULT_MOVE_SPEED));
+    target.destroy();
+    pause(FRAMES_MS);
+    check(
+      "a-sprite-variable-whose-sprite-is-destroyed-reads-nil-and-gates-its-rule-off",
+      movesAt(mover, 0, 0) && programOf(mover) === "heldTargetBump01"
+    );
+    game.popScene();
+  }
+
   /** Destroy every sprite in the current scene, and let the game run until the scene's programs have ended. */
   function clearScene(): void {
     const placed = game.currentScene().allSprites;
@@ -4183,8 +4248,9 @@ namespace arcadeSelftest {
    * and away modifiers, the in-range and out-of-range sensors, image assets
    * with the tiles reading them, the proximity sensors' image, sprite and
    * brain filters, their outputs and their positional modifiers, the target
-   * the move's toward and away carry, the move's wander, and the arcade icon
-   * encoder.
+   * the move's toward and away carry, the move's wander, its speed limit,
+   * move smoothing, non-finite motion, the equality operators, the operators
+   * over `Vector2`s, programs holding variables, and the arcade icon encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -4260,6 +4326,7 @@ namespace arcadeSelftest {
     checkEasingFromActualVelocity();
     checkEqualityOperators();
     checkVector2Operators();
+    checkVariables();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

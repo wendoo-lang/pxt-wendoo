@@ -190,7 +190,13 @@ function structuralListing(payload) {
   for (const pack of payload.packs || []) {
     line(0, "pack", pack.name);
     for (const type of pack.types || []) {
-      line(1, "type", type.name, ...fieldTokens(type, ["native", "asset", "brain"]), ...iconToken(type));
+      line(
+        1,
+        "type",
+        type.name,
+        ...fieldTokens(type, ["native", "asset", "brain", "variableFactory"]),
+        ...iconToken(type)
+      );
       for (const field of type.fields || []) {
         const accessor =
           field.accessor === undefined ? [] : ["accessor", ...iconToken(field.accessor).map(() => "accessor-icon")];

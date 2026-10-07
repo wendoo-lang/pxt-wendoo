@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { List, stream } from "@wendoo/core";
+import type { IBrainTileDef } from "@wendoo/core/app";
 import {
   BrainDef,
   CoreControlFlowId,
@@ -23,6 +24,7 @@ import {
   mkModifierTileId,
   mkOperatorTileId,
   mkSensorTileId,
+  mkVariableFactoryTileId,
 } from "@wendoo/core/app";
 import { isInlineTileDef, mkAccessorTileId, RuleSide } from "@wendoo/core/brain";
 import {
@@ -31,8 +33,14 @@ import {
   suggestTiles,
 } from "@wendoo/core/brain/language-service";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { BrainTileLiteralDef, BrainTilePageDef, type BrainTileSensorDef } from "@wendoo/core/brain/tiles";
-import type { StructValue } from "@wendoo/core/runtime";
+import {
+  type BrainTileFactoryDef,
+  BrainTileLiteralDef,
+  BrainTilePageDef,
+  type BrainTileSensorDef,
+  type BrainTileVariableDef,
+} from "@wendoo/core/brain/tiles";
+import type { StructValue, Value } from "@wendoo/core/runtime";
 import {
   BrainRuntime,
   linkedBrainProgramFromBytes,
@@ -47,6 +55,7 @@ import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-sessio
 import { writeBrainsModule } from "../../../../makecode/simx/bridge/src/brains-module.js";
 import { enrichCatalogIcons } from "../../../../makecode/simx/bridge/src/catalog-icons.js";
 import { writeIdsModule } from "../../../../makecode/simx/bridge/src/ids-module.js";
+import { buildBrainEditorConfig } from "../brain/editor-config.js";
 import { createTileVisualProvider } from "../brain/visual-provider.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
 import { compileBrainSource, readBrainSource, serializeBrainSource } from "../services/brain-source.js";
@@ -241,6 +250,9 @@ const ARCADE_SOURCES = [
   "calm.src.json",
   "shove.src.json",
   "match.src.json",
+  "remember-home.src.json",
+  "held-target.src.json",
+  "swap-shape.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -815,9 +827,56 @@ export const OPERATOR_ENTRY_PREFIX = "op:";
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the assignment operator's tile. */
 export const ASSIGN = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.Assign}`;
 
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for a variable, the rest of the entry naming its type and its name
+ * as `Type.name`, such as `var:Vector2.home` or `var:number.count`: the
+ * variable tile its type's variable factory mints.
+ */
+export const VARIABLE_ENTRY_PREFIX = "var:";
+
+/**
+ * The prefix of an entry of {@link arcadeOffersLiteral}'s looked-for tile
+ * standing for the variable factory of the type the rest of the entry names,
+ * such as `factory:Sprite`.
+ */
+export const FACTORY_ENTRY_PREFIX = "factory:";
+
+/** The WHEN and DO sides of one rule, each entry named as {@link arcadeImageRuleDiagnosticCodes} names entries. */
+export interface RuleSides {
+  readonly when: string[];
+  readonly act: string[];
+}
+
+/** The id of the variable factory of the type named `type`: a core type's by its catalog name, a declared type's by its type id. */
+function variableFactoryId(type: string): string {
+  return CORE_TYPE_IDS.has(type) ? type : mkTypeId(NativeType.Struct, type);
+}
+
+/**
+ * The variable tile the {@link VARIABLE_ENTRY_PREFIX} entry `entry` names, as
+ * the variable factory of its type in `environment` mints it for the brain
+ * editor. Throws when the environment binds no variable factory for the type.
+ */
+function mintedVariable(
+  environment: ReturnType<typeof buildAuthoringEnvironment>["environment"],
+  entry: string
+): IBrainTileDef {
+  const [type = "", name = ""] = entry.slice(VARIABLE_ENTRY_PREFIX.length).split(".");
+  const factory = environment.brainServices.edit.tiles.get(mkVariableFactoryTileId(variableFactoryId(type))) as
+    | BrainTileFactoryDef
+    | undefined;
+  const minted = factory?.manufacture(factory, { name });
+  if (minted === undefined) throw new Error(`no variable factory for ${type}`);
+  return minted;
+}
+
 /** The tile id of the tile an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides names, given how a bare tile name reads on its side. */
 function entryTileId(entry: string, bareTileId: (name: string) => string, literalId: string, brainLiteralId: string) {
   if (entry.startsWith(OPERATOR_ENTRY_PREFIX)) return mkOperatorTileId(entry.slice(OPERATOR_ENTRY_PREFIX.length));
+  if (entry.startsWith(FACTORY_ENTRY_PREFIX)) {
+    return mkVariableFactoryTileId(variableFactoryId(entry.slice(FACTORY_ENTRY_PREFIX.length)));
+  }
   if (entry === IMAGE_LITERAL) return literalId;
   if (entry === BRAIN_LITERAL) return brainLiteralId;
   if (entry === NIL_LITERAL) return mkLiteralTileId(CoreTypeIds.Nil, "nil");
@@ -867,12 +926,16 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
  * {@link SENSOR_ENTRY_PREFIX} for a sensor on either side, or an entry
  * starting {@link OPERATOR_ENTRY_PREFIX} for a core operator's tile, such
- * as {@link ASSIGN}. Given `child`, the rule holds one child rule, its WHEN side
- * and DO side the tiles `child.when` and `child.act` name. Returns the
- * brain, its rule, the environment it was authored in, and the tile ids of
- * the image's and the brain's literals.
+ * as {@link ASSIGN}, or an entry starting {@link VARIABLE_ENTRY_PREFIX} for a
+ * variable, minted by its type's variable factory where the brain first
+ * names it and held in the brain's own catalog. Given `child`, the rule holds
+ * one child rule, its WHEN side and DO side the tiles `child.when` and
+ * `child.act` name; given `siblings`, the rule's page holds a rule after it
+ * for each, its sides the tiles the sibling's `when` and `act` name. Returns
+ * the brain, its first rule, the environment it was authored in, and the tile
+ * ids of the image's and the brain's literals.
  */
-function arcadeImageRuleBrain(when: string[], act: string[], child?: { when: string[]; act: string[] }) {
+function arcadeImageRuleBrain(when: string[], act: string[], child?: RuleSides, siblings: readonly RuleSides[] = []) {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
   built.assetLiterals.applySnapshot([IMAGE_ASSET]);
   built.brainLiterals.applyBrains(new Map([[BRAIN_LITERAL_ID, { name: "Kin" }]]));
@@ -882,8 +945,18 @@ function arcadeImageRuleBrain(when: string[], act: string[], child?: { when: str
   brainDef.catalog().registerTileDef(number);
   const literalId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Image"), IMAGE_LITERAL_ASSET_ID);
   const brainLiteralId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Brain"), BRAIN_LITERAL_ID);
+  const variables = new Map<string, IBrainTileDef>();
+  const variableOf = (entry: string) => {
+    const held = variables.get(entry);
+    if (held !== undefined) return held;
+    const minted = mintedVariable(environment, entry);
+    brainDef.catalog().registerTileDef(minted);
+    variables.set(entry, minted);
+    return minted;
+  };
   const tileOf = (entry: string, tileId: (name: string) => string) => {
     if (entry === NUMBER_LITERAL) return number;
+    if (entry.startsWith(VARIABLE_ENTRY_PREFIX)) return variableOf(entry);
     const id = entryTileId(entry, tileId, literalId, brainLiteralId);
     const found = environment
       .tileCatalogs()
@@ -892,14 +965,15 @@ function arcadeImageRuleBrain(when: string[], act: string[], child?: { when: str
     if (found === undefined) throw new Error(`no tile ${entry}`);
     return found;
   };
-  const rule = (brainDef.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
-  for (const entry of when) rule.when().appendTile(tileOf(entry, mkSensorTileId));
-  for (const entry of act) rule.do().appendTile(tileOf(entry, mkActuatorTileId));
-  if (child !== undefined) {
-    const childRule = rule.appendNewRule();
-    for (const entry of child.when) childRule.when().appendTile(tileOf(entry, mkSensorTileId));
-    for (const entry of child.act) childRule.do().appendTile(tileOf(entry, mkActuatorTileId));
-  }
+  const fill = (target: BrainRuleDef, sides: RuleSides) => {
+    for (const entry of sides.when) target.when().appendTile(tileOf(entry, mkSensorTileId));
+    for (const entry of sides.act) target.do().appendTile(tileOf(entry, mkActuatorTileId));
+  };
+  const page = brainDef.pages().get(0) as BrainPageDef;
+  const rule = page.children().get(0) as BrainRuleDef;
+  fill(rule, { when, act });
+  if (child !== undefined) fill(rule.appendNewRule(), child);
+  for (const sibling of siblings) fill(page.appendNewRule(), sibling);
   return { environment, brainDef, rule, literalId, brainLiteralId };
 }
 
@@ -915,7 +989,7 @@ function arcadeImageRule(when: string[], act: string[]) {
 /**
  * Whether the candidate strip offers the tile `literal` -- {@link IMAGE_LITERAL},
  * {@link BRAIN_LITERAL}, {@link NIL_LITERAL}, or an output, modifier,
- * accessor, sensor or operator entry -- at the end of the WHEN
+ * accessor, sensor, operator or {@link FACTORY_ENTRY_PREFIX} entry -- at the end of the WHEN
  * side holding the tiles `when` names or, given `act`, at the end of the DO
  * side holding the tiles `act` names, each as
  * {@link arcadeImageRuleDiagnosticCodes} names them, given the side's
@@ -1137,7 +1211,12 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
     }
   }
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
-  const resolve = createTileVisualProvider(built.environment.tileCatalogs(), built.assetLiterals.view, built.pageIcon);
+  const resolve = createTileVisualProvider(
+    built.environment.tileCatalogs(),
+    built.assetLiterals.view,
+    built.typeIcons,
+    built.pageIcon
+  );
   const icons = [...carried].map(([tileId, url]) => {
     if (tileId === PAGE_FAMILY_TILE_ID) {
       return {
@@ -1194,6 +1273,172 @@ export function arcadeRenderedTypeIcons(): { name: string; carried: string; boun
       };
     }),
   ]);
+}
+
+/**
+ * Each type the arcade selftest's catalog declares, beside the type the
+ * variable factory the environment binding that catalog under its allocation
+ * binds for it produces; `undefined` where it binds none.
+ */
+export function arcadeVariableFactories(): { name: string; produces: string | undefined }[] {
+  const tiles = arcadeEnvironment().brainServices.edit.tiles;
+  return parseCatalog(arcadeCatalog())
+    .packs.flatMap((pack) => pack.types)
+    .map((type) => {
+      const factory = tiles.get(mkVariableFactoryTileId(mkTypeId(NativeType.Struct, type.name))) as
+        | BrainTileFactoryDef
+        | undefined;
+      return { name: type.name, produces: factory?.producedDataType };
+    });
+}
+
+/**
+ * For each type of the arcade selftest's pinned catalog the environment
+ * binding it -- once the simx has rendered it under the Arcade default
+ * palette -- binds a variable factory for: the icon the environment binds to
+ * the type, what the visual provider resolves the type's variable factory to
+ * as its face, and what it resolves a variable that factory mints to.
+ */
+export function arcadeVariableFaces(): {
+  name: string;
+  typeIcon: string | undefined;
+  factoryFace: string | undefined;
+  variableFace: string | undefined;
+}[] {
+  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, { info: () => {}, error: () => {} });
+  const built = buildAuthoringEnvironment(rendered, arcadeIds());
+  const resolve = createTileVisualProvider(
+    built.environment.tileCatalogs(),
+    built.assetLiterals.view,
+    built.typeIcons,
+    built.pageIcon
+  );
+  const tiles = built.environment.brainServices.edit.tiles;
+  return parseCatalog(rendered)
+    .packs.flatMap((pack) => pack.types)
+    .flatMap((type) => {
+      const typeId = mkTypeId(NativeType.Struct, type.name);
+      const factory = tiles.get(mkVariableFactoryTileId(typeId));
+      if (factory === undefined) return [];
+      return [
+        {
+          name: type.name,
+          typeIcon: built.typeIcons.get(typeId),
+          factoryFace: resolve(factory)?.iconUrl,
+          variableFace: resolve(mintedVariable(built.environment, `${VARIABLE_ENTRY_PREFIX}${type.name}.held`))
+            ?.iconUrl,
+        },
+      ];
+    });
+}
+
+/**
+ * Each type of the arcade selftest's catalog carrying a label, beside that
+ * label, the label of the variable factory the environment binding the
+ * catalog under its allocation binds for it, and the name the brain editor's
+ * config built from that environment calls it by.
+ */
+export function arcadeTypeNames(): {
+  name: string;
+  carried: string;
+  factoryLabel: string | undefined;
+  named: string | undefined;
+}[] {
+  const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
+  const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.typeIcons);
+  const tiles = built.environment.brainServices.edit.tiles;
+  return parseCatalog(arcadeCatalog())
+    .packs.flatMap((pack) => pack.types)
+    .flatMap((type) => {
+      if (type.label === undefined) return [];
+      const typeId = mkTypeId(NativeType.Struct, type.name);
+      return [
+        {
+          name: type.name,
+          carried: type.label,
+          factoryLabel: tiles.get(mkVariableFactoryTileId(typeId))?.metadata?.label,
+          named: config.dataTypeNames.get(typeId),
+        },
+      ];
+    });
+}
+
+/**
+ * What the reference VM makes of the variables of a brain authored in the
+ * environment binding the arcade selftest's catalog, its page's rules the
+ * sides `rules` names, compiled through the editor's compile path and run
+ * for `thinks` thinks in that environment, where every pack sensor reads nil
+ * and every pack actuator does nothing: the value each variable `read` names
+ * holds after -- `undefined` for one nothing wrote whose type has no starting
+ * value -- and how many faults the run's fibers raised. Throws when the brain
+ * does not compile clean.
+ *
+ * @param rules - The page's rules, in order, each side's entries named as {@link arcadeImageRuleDiagnosticCodes} names them.
+ * @param read - The names of the variables to read after the run.
+ * @param thinks - How many thinks to run, 20 milliseconds apart.
+ */
+export function arcadeVariableRun(
+  rules: readonly RuleSides[],
+  read: readonly string[],
+  thinks: number
+): { values: (Value | undefined)[]; faults: number } {
+  const [first = { when: [], act: [] }, ...siblings] = rules;
+  const { environment, brainDef } = arcadeImageRuleBrain(first.when, first.act, undefined, siblings);
+  const bytecode = compileCleanIn(environment, serializeBrainSource(brainDef));
+  const services = environment.brainServices;
+  const decoded = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(bytecode), {
+    precision: MAKECODE_VM_PRECISION,
+    typeRegistry: services.runtime.types,
+  });
+  let faults = 0;
+  const runtime = new BrainRuntime(
+    decoded.program.program,
+    decoded.program.pages,
+    { runtime: services.runtime, shared: services.shared, app: services.app },
+    undefined,
+    undefined,
+    {
+      onFiberFault: () => {
+        faults++;
+      },
+    }
+  );
+  runtime.startup();
+  for (let think = 1; think <= thinks; think++) runtime.think(think * 20);
+  return { values: read.map((name) => runtime.getVariable(name)), faults };
+}
+
+/**
+ * The variables a one-rule brain authored in the environment binding the
+ * arcade selftest's catalog writes into its source -- the rule's DO side the
+ * tiles `act` names, as {@link arcadeImageRuleDiagnosticCodes} names them --
+ * as `written`, each entry of the source's catalog of kind `variable`; and,
+ * as `read`, the name and type of each variable tile the rule holds once
+ * that source is read back in a fresh environment binding the catalog.
+ *
+ * @param act - The DO side's entries, such as `["var:Vector2.home", ASSIGN, "sensor:sensor.arcade.myself", "accessor:Sprite.position"]`.
+ */
+export function arcadeVariableSource(act: string[]): {
+  written: { kind: string; varName: string; varType: string; uniqueId: string }[];
+  read: { varName: string; varType: string }[];
+} {
+  const { brainDef } = arcadeImageRuleBrain([], act);
+  const source = serializeBrainSource(brainDef);
+  const document = JSON.parse(source) as {
+    catalog: { kind: string; varName: string; varType: string; uniqueId: string }[];
+  };
+  const brain = readBrainSource(arcadeEnvironment(), source);
+  const rule = (brain.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+  const read = rule
+    .do()
+    .tiles()
+    .toArray()
+    .filter((tile) => tile.kind === "variable")
+    .map((tile) => ({
+      varName: (tile as BrainTileVariableDef).varName,
+      varType: (tile as BrainTileVariableDef).varType,
+    }));
+  return { written: document.catalog.filter((entry) => entry.kind === "variable"), read };
 }
 
 /** The bytes the lowercase hex `hex` spells. */

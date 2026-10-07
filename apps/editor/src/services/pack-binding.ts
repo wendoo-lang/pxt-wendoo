@@ -10,6 +10,7 @@ import {
   getCatalogFallbackLabel,
   List,
   mkCallDef,
+  mkVariableFactoryTileId,
   mod,
   NIL_VALUE,
   optional,
@@ -182,7 +183,8 @@ function defaultValueOf(json: unknown): Value {
 /**
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type -- with the accessor tile
- * of each field declaring one -- each tile -- with the parameter and modifier
+ * of each field declaring one, and its variable factory when it carries the
+ * flag -- each tile -- with the parameter and modifier
  * tiles its grammar's slots need -- each operator, and each overload a pack
  * adds to a core operator, under the ids `ids` allocates. Each tile's, slot tile's and accessor tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
@@ -300,8 +302,10 @@ class PackBinder {
 
   /**
    * Registers `type` under its allocated atom, each field at the id the
-   * allocation gives it, and the accessor tile of each field declaring one,
-   * read-only when the field is.
+   * allocation gives it, the accessor tile of each field declaring one,
+   * read-only when the field is, and, for a type carrying the variable factory
+   * flag, its variable factory, whose display metadata carries the type's
+   * label -- its name when it carries none -- and its icon.
    */
   private bindType(type: CatalogType): void {
     const entry = this.ids.types.find((allocated) => allocated.name === type.name);
@@ -319,8 +323,16 @@ class PackBinder {
       name: type.name,
       atomId: entry.atom,
       fields: List.from(fields),
+      ...(type.variableFactory ? { variableFactory: true } : {}),
     });
     const catalog = this.api.brainServices.edit.tiles;
+    const factory = type.variableFactory ? catalog.get(mkVariableFactoryTileId(typeId)) : undefined;
+    if (factory !== undefined) {
+      factory.metadata = {
+        label: type.label ?? type.name,
+        ...(type.iconUrl === undefined ? {} : { iconUrl: type.iconUrl }),
+      };
+    }
     for (const field of type.fields) {
       if (field.accessor === undefined) continue;
       const tile = new BrainTileAccessorDef(typeId, field.name, this.typeOf(field.type), {
@@ -601,9 +613,9 @@ export function pageFamilyIcon(packs: readonly CatalogPack[]): string | undefine
 }
 
 /**
- * The module binding `packs` -- every struct type with its accessor tiles,
- * tile, operator and overload of a core operator a session catalog's packs
- * declare, and every icon they give a core tile --
+ * The module binding `packs` -- every struct type with its accessor tiles and
+ * any variable factory, every tile, operator and overload of a core operator
+ * a session catalog's packs declare, and every icon they give a core tile --
  * into an environment, under the ids
  * `ids` allocates; `ids` must allocate every name the packs declare. Pack
  * actions run nothing in the editor: a sensor reads nil and an actuator does

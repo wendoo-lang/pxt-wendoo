@@ -463,6 +463,12 @@ const EXPECTED_ARCADE_CHECKS = [
   "overflowing-vector2-arithmetic-holds-an-infinity-that-reads-as-no-point",
   "a-shove-rule-pushes-the-bumped-sprite-away-by-the-distance-between-their-centers",
   "a-position-comparison-rule-fires-while-its-sprite-shares-the-bumped-sprites-center",
+  "a-position-variable-remembers-the-point-written-to-it-after-its-sprite-moves",
+  "position-variables-swapped-through-a-third-each-hold-the-others-point",
+  "a-sprite-variable-never-written-reads-nil-gating-its-rule-off-and-skipping-writes-through-it",
+  "a-write-through-a-sprite-variable-reaches-the-sprite-written-to-it",
+  "a-sprite-variable-reads-its-sprite-where-it-is-now",
+  "a-sprite-variable-whose-sprite-is-destroyed-reads-nil-and-gates-its-rule-off",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -607,9 +613,11 @@ const ARCADE_HOST_REJECTIONS = [
  * targets the move's toward and away carry, the move's wander, the
  * `Sprite` type's move smoothing, move smoothing through brain changes,
  * move smoothing from the velocity a sprite has, the equality operators'
- * overloads, and the overloads over `Vector2`s.
+ * overloads, the overloads over `Vector2`s, and the programs holding
+ * variables.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
