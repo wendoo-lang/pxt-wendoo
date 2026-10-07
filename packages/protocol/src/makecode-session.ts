@@ -28,6 +28,7 @@ import type {
   MakeCodeManifestRequestMessage,
 } from "./makecode-manifest.js";
 import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
+import type { MakeCodeProjectInfo, MakeCodeProjectInfoMessage } from "./makecode-project-info.js";
 
 /** Newest version of the makecode-session protocol this build speaks. */
 export const MAKECODE_SESSION_PROTOCOL_VERSION = 1;
@@ -100,6 +101,7 @@ export type MakeCodeSessionMessage =
   | MakeCodeHelloMessage
   | MakeCodeCatalogMessage
   | MakeCodeAssetsMessage
+  | MakeCodeProjectInfoMessage
   | MakeCodeBrainsRequestMessage
   | MakeCodeBrainsReplyMessage
   | MakeCodeManifestRequestMessage
@@ -157,6 +159,15 @@ export interface MakeCodeSession {
    * next listener that attaches. Returns an unsubscribe function.
    */
   onAssets(listener: (assets: MakeCodeAsset[]) => void): () => void;
+  /** Publish the project's facts to the peer, whole. */
+  publishProjectInfo(info: MakeCodeProjectInfo): void;
+  /**
+   * Subscribe to the project facts published by the peer, each reading
+   * delivered whole. Readings received while no listener is attached are
+   * replayed to the next listener that attaches. Returns an unsubscribe
+   * function.
+   */
+  onProjectInfo(listener: (info: MakeCodeProjectInfo) => void): () => void;
   /**
    * Ask the peer serving the project for the brains the project holds.
    * Resolves with the peer's list; rejects with a `MakeCodeBrainsError`
@@ -269,6 +280,9 @@ class EstablishedSession implements MakeCodeSession {
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   /** Asset snapshots received while no assets listener was attached, in arrival order. */
   private readonly _bufferedAssets: MakeCodeAsset[][] = [];
+  private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
+  /** Project facts received while no project-info listener was attached, in arrival order. */
+  private readonly _bufferedProjectInfo: MakeCodeProjectInfo[] = [];
   private readonly _pending = new Map<string, PendingRequest>();
   private readonly _requestListeners = new Set<(request: MakeCodeBrainsRequest) => void>();
   /** Requests from the peer received while no request listener was attached, in arrival order. */
@@ -315,6 +329,18 @@ class EstablishedSession implements MakeCodeSession {
     for (const assets of this._bufferedAssets.splice(0)) listener(assets);
     return () => {
       this._assetsListeners.delete(listener);
+    };
+  }
+
+  publishProjectInfo(info: MakeCodeProjectInfo): void {
+    this._session.postMessage({ type: "makecode:projectInfo", payload: { ...info } });
+  }
+
+  onProjectInfo(listener: (info: MakeCodeProjectInfo) => void): () => void {
+    this._projectInfoListeners.add(listener);
+    for (const info of this._bufferedProjectInfo.splice(0)) listener(info);
+    return () => {
+      this._projectInfoListeners.delete(listener);
     };
   }
 
@@ -401,9 +427,9 @@ class EstablishedSession implements MakeCodeSession {
   }
 
   /**
-   * Routes one message from the peer: catalogs and asset snapshots to their
-   * listeners, brains and manifest requests to their family's request
-   * listeners, replies to their requests; drops the rest.
+   * Routes one message from the peer: catalogs, asset snapshots and project
+   * facts to their listeners, brains and manifest requests to their
+   * family's request listeners, replies to their requests; drops the rest.
    */
   private receive(message: SessionTraffic): void {
     if (message.type === "makecode:catalog") {
@@ -422,6 +448,15 @@ class EstablishedSession implements MakeCodeSession {
         return;
       }
       for (const listener of this._assetsListeners) listener(assets);
+      return;
+    }
+    if (message.type === "makecode:projectInfo") {
+      const info = message.payload;
+      if (this._projectInfoListeners.size === 0) {
+        this._bufferedProjectInfo.push(info);
+        return;
+      }
+      for (const listener of this._projectInfoListeners) listener(info);
       return;
     }
     if (

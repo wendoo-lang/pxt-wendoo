@@ -20,6 +20,7 @@ import {
   type MakeCodeEditorSessionState,
 } from "./makecode-editor-session.js";
 import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
+import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import { MAKECODE_SESSION_PROTOCOL_VERSION, MAKECODE_SESSION_ROLE_PATHS } from "./makecode-session.js";
 
 /** A message an app bridge carries. */
@@ -390,6 +391,29 @@ describe("makecode editor session", () => {
     bridge.deliver({ type: "makecode:assets", payload: { assets: [] } });
 
     assert.deepEqual(snapshots, [[image], []]);
+  });
+
+  it("delivers the project info of the current handshake only", async () => {
+    const { session } = openSession();
+    const infos: MakeCodeProjectInfo[] = [];
+    session.onProjectInfo((info) => {
+      infos.push(info);
+    });
+    session.start();
+    const bridge = lastBridge();
+    bridge.welcome("token-1");
+    bridge.deliver(MAKECODE_HELLO);
+    await microtasks();
+    bridge.deliver({ type: "makecode:projectInfo", payload: { name: "first" } });
+
+    bridge.change({ counterpartAway: true });
+    bridge.deliver({ type: "makecode:projectInfo", payload: { name: "after the counterpart left" } });
+    bridge.welcome("token-1");
+    bridge.deliver(MAKECODE_HELLO);
+    await microtasks();
+    bridge.deliver({ type: "makecode:projectInfo", payload: { name: "second" } });
+
+    assert.deepEqual(infos, [{ name: "first" }, { name: "second" }]);
   });
 
   it("is disconnected while its own connection is down or the counterpart is away", () => {

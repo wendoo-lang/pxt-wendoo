@@ -7,6 +7,7 @@ import type {
   MakeCodeEditorSession,
   MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,
+  MakeCodeProjectInfo,
 } from "@wendoo/makecode-session";
 import type { BindingTokenPersistence, EditorBrainsChannel } from "./editor-session-store.js";
 import { DISCONNECT_GRACE_MS, EditorSessionStore } from "./editor-session-store.js";
@@ -21,6 +22,7 @@ class FakeSession implements MakeCodeEditorSession {
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
+  private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
   constructor(options: MakeCodeEditorSessionOptions) {
@@ -52,6 +54,13 @@ class FakeSession implements MakeCodeEditorSession {
     this._assetsListeners.add(listener);
     return () => {
       this._assetsListeners.delete(listener);
+    };
+  }
+
+  onProjectInfo(listener: (info: MakeCodeProjectInfo) => void): () => void {
+    this._projectInfoListeners.add(listener);
+    return () => {
+      this._projectInfoListeners.delete(listener);
     };
   }
 
@@ -90,6 +99,11 @@ class FakeSession implements MakeCodeEditorSession {
   /** An asset snapshot arriving from the counterpart. */
   deliverAssets(assets: MakeCodeAsset[]): void {
     for (const listener of this._assetsListeners) listener(assets);
+  }
+
+  /** A reading of the project's facts arriving from the counterpart. */
+  deliverProjectInfo(info: MakeCodeProjectInfo): void {
+    for (const listener of this._projectInfoListeners) listener(info);
   }
 
   /** A makecode handshake completing, handing out `channel`. */
@@ -367,6 +381,65 @@ describe("editor session store", () => {
     store.connect("delta-echo-fox");
     first.deliverAssets([IMAGE_ASSET]);
     assert.equal(store.getSnapshot().assets, undefined);
+  });
+
+  it("holds the latest project name the MakeCode side published, none before the first arrives", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const session = lastSession();
+    session.set({ status: "connected" });
+    assert.equal(store.getSnapshot().projectName, undefined);
+
+    session.deliverProjectInfo({ name: "My Platformer" });
+    assert.equal(store.getSnapshot().projectName, "My Platformer");
+  });
+
+  it("publishes a rename on the same session it is held by, notifying subscribers", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const session = lastSession();
+    session.set({ status: "connected" });
+    session.deliverProjectInfo({ name: "My Platformer" });
+    let notified = 0;
+    store.subscribe(() => {
+      notified += 1;
+    });
+
+    session.deliverProjectInfo({ name: "Space Chase" });
+
+    assert.equal(store.getSnapshot().projectName, "Space Chase");
+    assert.equal(notified, 1);
+    assert.equal(sessions.length, 1);
+  });
+
+  it("keeps the project name across a disconnection, and drops it when the session ends", () => {
+    tokens.set("token", "token-1");
+    const store = openStore();
+    store.resume();
+    const session = lastSession();
+    session.set({ status: "connected" });
+    session.deliverProjectInfo({ name: "My Platformer" });
+
+    session.set({ status: "disconnected" });
+    assert.equal(store.getSnapshot().projectName, "My Platformer");
+
+    session.set({ status: "none", errorCode: BridgeSessionErrorCode.SESSION_ENDED });
+    assert.equal(store.getSnapshot().projectName, undefined);
+  });
+
+  it("drops the project name when the session is forgotten, and hears none from a replaced session", () => {
+    const store = openStore();
+    store.connect("apple-bird-cloud");
+    const first = lastSession();
+    first.set({ status: "connected" });
+    first.deliverProjectInfo({ name: "My Platformer" });
+
+    store.forget();
+    assert.equal(store.getSnapshot().projectName, undefined);
+
+    store.connect("delta-echo-fox");
+    first.deliverProjectInfo({ name: "My Platformer" });
+    assert.equal(store.getSnapshot().projectName, undefined);
   });
 
   it("exposes the MakeCode target the session reports, unknown while it reports none", () => {

@@ -55,8 +55,9 @@ export interface SimxBridgeOptions {
    */
   files: ProjectFiles;
   /**
-   * The editor's asset provider, which the MakeCode project's images and
-   * palette are listed from for the asset snapshot and the catalog's icons.
+   * The editor's asset provider, which the MakeCode project's images,
+   * palette and name are listed from for the asset snapshot, the catalog's
+   * icons and the project info.
    */
   assets: ProjectAssetsProvider;
   /**
@@ -151,8 +152,9 @@ const REJECTION_EXPLANATIONS: Record<SimChannelErrorCode, string> = {
 /**
  * The makecode session with the counterpart the bridge service has just
  * welcomed this connection to. It sends this side's hello at once and
- * publishes the latest catalog, then the latest asset snapshot, once the
- * counterpart's hello establishes it.
+ * publishes the latest catalog, then the latest asset snapshot, then the
+ * project's latest name as its project info, once the counterpart's hello
+ * establishes it.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -163,6 +165,7 @@ class CounterpartSession {
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, as published, if any.
    * @param latestAssets - The latest asset snapshot, if any.
+   * @param latestName - The project's latest name, if known.
    * @param serve - Answers each brains request the counterpart sends once the session is established.
    * @param serveManifest - Answers each manifest request the counterpart sends once the session is established.
    * @param settled - Called once the counterpart's hello is read: with
@@ -175,6 +178,7 @@ class CounterpartSession {
     target: string | undefined,
     latestCatalog: () => string | undefined,
     latestAssets: () => readonly MakeCodeAsset[] | undefined,
+    latestName: () => string | undefined,
     serve: (request: MakeCodeBrainsRequest) => void,
     serveManifest: (request: MakeCodeManifestRequest) => void,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
@@ -205,6 +209,10 @@ class CounterpartSession {
         if (snapshot !== undefined) {
           session.publishAssets(snapshot);
         }
+        const name = latestName();
+        if (name !== undefined) {
+          session.publishProjectInfo({ name });
+        }
         session.onBrainsRequest(serve);
         session.onManifestRequest(serveManifest);
         settled(undefined);
@@ -224,6 +232,11 @@ class CounterpartSession {
   /** Publish the asset snapshot `snapshot` to the peer, once the session is established. */
   publishAssets(snapshot: readonly MakeCodeAsset[]): void {
     this._session?.publishAssets(snapshot);
+  }
+
+  /** Publish the project's `name` to the peer as its project info, once the session is established. */
+  publishName(name: string): void {
+    this._session?.publishProjectInfo({ name });
   }
 
   /** Detach from the connection, whether or not the session was established. */
@@ -260,11 +273,13 @@ class CounterpartSession {
  * no session receives a catalog older than the program's newest. The
  * project's asset snapshot, listed from `assets`, is published into each
  * session once it is established, after the catalog, and into the current
- * one whenever it changes. When the bridge service reports a failure that
- * stops the connection -- another connection replacing this one, or the
- * session ending -- the code is logged and the bridge stays disconnected
- * until {@link SimxBridge.startNewSession}; an ended session's binding token
- * is cleared from `tokens`, so the next start forms a new session.
+ * one whenever it changes; so is the project's name, listed beside it, as
+ * the session's project info, after the snapshot. When the bridge service
+ * reports a failure that stops the connection -- another connection
+ * replacing this one, or the session ending -- the code is logged and the
+ * bridge stays disconnected until {@link SimxBridge.startNewSession}; an
+ * ended session's binding token is cleared from `tokens`, so the next
+ * start forms a new session.
  */
 export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
   const { tokens, log } = options;
@@ -338,6 +353,7 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
           options.target,
           () => publishedCatalog,
           () => projectAssets.snapshot,
+          () => projectAssets.name,
           serveBrains,
           serveManifest,
           handshakeSettled
@@ -396,6 +412,9 @@ export function startSimxBridge(options: SimxBridgeOptions): SimxBridge {
     }),
     projectAssets.onSnapshot((snapshot) => {
       counterpart?.publishAssets(snapshot);
+    }),
+    projectAssets.onName((name) => {
+      counterpart?.publishName(name);
     }),
   ];
 

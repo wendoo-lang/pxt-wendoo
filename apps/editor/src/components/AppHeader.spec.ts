@@ -22,6 +22,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     connectedSinceOpen: true,
     catalogText: undefined,
     assets: undefined,
+    projectName: undefined,
     target: undefined,
     ...fields,
   };
@@ -76,6 +77,34 @@ describe("AppHeader", () => {
     const markup = render(stateWith({ target: 42 as unknown as string }));
 
     assert.doesNotMatch(markup, /data-testid="target-name"/);
+  });
+
+  it("shows the project name as the path element after the target's", () => {
+    const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
+
+    assert.match(markup, /data-testid="project-name">My Platformer</);
+    assert.ok(markup.indexOf('data-testid="target-name"') < markup.indexOf('data-testid="project-name"'));
+    const between = markup.slice(
+      markup.indexOf('data-testid="target-name"'),
+      markup.indexOf('data-testid="project-name"')
+    );
+    assert.match(between, /<span aria-hidden="true"/);
+  });
+
+  it("shows the project name as the path element after the logotype while no target is declared", () => {
+    const markup = render(stateWith({ target: undefined, projectName: "My Platformer" }));
+
+    assert.doesNotMatch(markup, /data-testid="target-name"/);
+    assert.match(markup, /<span aria-hidden="true"[^>]*>[^<]*<\/span><span data-testid="project-name">My Platformer</);
+  });
+
+  it("shows the header it shows without a project name while none is known", () => {
+    for (const projectName of [undefined, "", 42 as unknown as string]) {
+      const named = render(stateWith({ target: "arcade", projectName }));
+
+      assert.doesNotMatch(named, /data-testid="project-name"/);
+      assert.equal(named, render(stateWith({ target: "arcade" })));
+    }
   });
 
   it("shows the session's connection status", () => {

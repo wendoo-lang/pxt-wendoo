@@ -82,6 +82,13 @@ export interface EditorSessionViewState {
    */
   readonly assets: readonly MakeCodeAsset[] | undefined;
   /**
+   * The project name the MakeCode side published last, exactly as it
+   * published it, or `undefined` before the first -- a MakeCode side that
+   * publishes no project facts leaves it `undefined`. Kept while
+   * disconnected; `undefined` whenever no session exists.
+   */
+  readonly projectName: string | undefined;
+  /**
    * Id of the MakeCode target the MakeCode side declared, for example
    * `microbit` or `arcade`, exactly as the session reports it: kept while
    * disconnected, `undefined` when unknown. Informational, for display and
@@ -132,6 +139,7 @@ export class EditorSessionStore {
   private _connectedSinceOpen = false;
   private _catalogText: string | undefined;
   private _assets: readonly MakeCodeAsset[] | undefined;
+  private _projectName: string | undefined;
   /** The binding token the current session holds, as its token hooks report it. */
   private _bindingToken: string | undefined;
   /** Whether an entered code was refused and the store fell back to the held token, with no welcome since. */
@@ -201,13 +209,14 @@ export class EditorSessionStore {
   /**
    * Forgets the session: ends it over a live connection, so the MakeCode
    * side is told it ended, then drops its binding token, held and persisted,
-   * the catalog and the asset snapshot, returning the editor to the connect page. With no live
-   * connection this is a local clear. The way back into a session is
-   * entering a join code.
+   * the catalog, the asset snapshot and the project name, returning the
+   * editor to the connect page. With no live connection this is a local
+   * clear. The way back into a session is entering a join code.
    */
   forget(): void {
     this._catalogText = undefined;
     this._assets = undefined;
+    this._projectName = undefined;
     this._entryRefused = false;
     if (this._session === undefined) {
       this.publish();
@@ -254,6 +263,10 @@ export class EditorSessionStore {
         this._assets = assets;
         this.publish();
       }),
+      session.onProjectInfo((info) => {
+        this._projectName = info.name;
+        this.publish();
+      }),
       session.onBrainsChannel((channel) => {
         const bound: EditorBrainsChannel = {
           binding: this._bindingToken,
@@ -272,8 +285,8 @@ export class EditorSessionStore {
 
   /**
    * Tracks the session's connectivity into the grace bookkeeping and whether
-   * it has connected, drops the catalog and the asset snapshot when no
-   * session exists, then publishes.
+   * it has connected, drops the catalog, the asset snapshot and the project
+   * name when no session exists, then publishes.
    */
   private sessionChanged(): void {
     const session = this._session;
@@ -281,6 +294,7 @@ export class EditorSessionStore {
     if (status === "none") {
       this._catalogText = undefined;
       this._assets = undefined;
+      this._projectName = undefined;
     }
     if (status === "connected") {
       this._connectedSinceOpen = true;
@@ -328,6 +342,7 @@ export class EditorSessionStore {
       connectedSinceOpen: this._connectedSinceOpen,
       catalogText: this._catalogText,
       assets: this._assets,
+      projectName: this._projectName,
       target: sessionState?.target,
     };
   }
@@ -346,6 +361,7 @@ export class EditorSessionStore {
       next.connectedSinceOpen === last.connectedSinceOpen &&
       next.catalogText === last.catalogText &&
       next.assets === last.assets &&
+      next.projectName === last.projectName &&
       next.target === last.target
     ) {
       return;

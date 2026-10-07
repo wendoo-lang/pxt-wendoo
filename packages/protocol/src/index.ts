@@ -65,6 +65,7 @@ export {
   MakeCodeManifestErrorCode,
   MakeCodeManifestProblemCode,
 } from "./makecode-manifest.js";
+export type { MakeCodeProjectInfo, MakeCodeProjectInfoMessage } from "./makecode-project-info.js";
 export type {
   MakeCodeCatalogMessage,
   MakeCodeCatalogPayload,

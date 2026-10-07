@@ -78,6 +78,19 @@ describe("project assets", () => {
     );
   }
 
+  /** Resolves with the next project name `subject` announces. */
+  function nextName(subject: ProjectAssets): Promise<string> {
+    return within(
+      new Promise((resolve) => {
+        const unsubscribe = subject.onName((name) => {
+          unsubscribe();
+          resolve(name);
+        });
+      }),
+      "a project name"
+    );
+  }
+
   it("lists the project's images and holds them as its snapshot, ordered by id, each with its kind, id, name, size and preview", async () => {
     provider.images = [listedImage("image2", [[1, 2]], "hero"), listedImage("image1", [[3], [0]])];
     provider.answer();
@@ -205,6 +218,25 @@ describe("project assets", () => {
     provider.change();
     await delay(40);
     assert.deepEqual(announced, [["#000000", "#00ff00"]]);
+  });
+
+  it("announces the project's name on the first listing and again only when it changes", async () => {
+    provider.answer();
+    const subject = start();
+    assert.equal(subject.name, undefined);
+    assert.equal(await nextName(subject), provider.name);
+    assert.equal(subject.name, provider.name);
+    await delay(20);
+    const announced: string[] = [];
+    subject.onName((name) => announced.push(name));
+    provider.change();
+    await delay(40);
+    assert.deepEqual(announced, []);
+    provider.name = "Space Chase";
+    provider.change();
+    await delay(40);
+    assert.deepEqual(announced, ["Space Chase"]);
+    assert.equal(subject.name, "Space Chase");
   });
 
   it("keeps retrying a refused or failed listing at a bounded rate until it succeeds, logging each by code and context", async () => {

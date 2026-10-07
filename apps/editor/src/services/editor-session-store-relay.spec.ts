@@ -305,6 +305,16 @@ describe("editor session store with the simx module on the relay", () => {
     assert.equal(state.target, undefined);
   });
 
+  it("holds the project name the simx lists, and follows a rename in MakeCode", async () => {
+    const { store } = await formSession();
+    await until(store, (s) => s.projectName === assets.name, "the project's name");
+
+    assets.name = "Space Chase";
+    assets.change();
+
+    await until(store, (s) => s.projectName === "Space Chase", "the renamed project's name");
+  });
+
   it("resumes by the persisted token on a fresh page load, presenting no code", async () => {
     const { store } = await formSession();
     store.stop();

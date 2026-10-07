@@ -762,6 +762,11 @@ describe("simx bridge on the relay", () => {
       return { type: "makecode:assets", payload: { assets: snapshot } };
     }
 
+    /** The `makecode:projectInfo` message publishing the project's `name`. */
+    function projectInfoMessage(name: string): MakeCodeSessionMessage {
+      return { type: "makecode:projectInfo", payload: { name } };
+    }
+
     /** The snapshot entry of a 4-bit image `id` of pixels `rows`, named `name` when given, under `palette`. */
     function snapshotEntry(id: string, rows: number[][], palette: readonly string[], name?: string): MakeCodeAsset {
       const entry: MakeCodeAsset = { kind: "image", id, width: rows[0].length, height: rows.length, previewUrl: "" };
@@ -790,6 +795,35 @@ describe("simx bridge on the relay", () => {
       assert.deepEqual(log.errors, []);
     });
 
+    it("publishes the project's name into the session once established, after the asset snapshot", async () => {
+      assets.answer();
+      const { joinCode } = await startSimx("{}");
+      const { editor } = await joinEditor(joinCode, "{}");
+
+      assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
+    });
+
+    it("publishes the project's name again when the project is renamed, and nothing for a change that keeps it", async () => {
+      assets.answer();
+      const { joinCode } = await startSimx("{}");
+      const { editor } = await joinEditor(joinCode, "{}");
+      await editor.nextMessage();
+      await editor.nextMessage();
+
+      assets.change();
+      await delay(300);
+      await editor.ping();
+      editor.assertNothingReceived();
+      assets.name = "Space Chase";
+      assets.change();
+
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage("Space Chase"));
+      await delay(300);
+      await editor.ping();
+      editor.assertNothingReceived();
+    });
+
     it("re-sends its current snapshot into the new session of an editor returning by its token", async () => {
       assets.images = [listedImage("image1", [[3]])];
       assets.answer();
@@ -806,6 +840,7 @@ describe("simx bridge on the relay", () => {
 
       assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
       assert.deepEqual(await returned.nextMessage(), published);
+      assert.deepEqual(await returned.nextMessage(), projectInfoMessage(assets.name));
     });
 
     it("publishes a new snapshot when the project's assets change, and nothing for a change that leaves the snapshot as it was", async () => {
@@ -814,6 +849,7 @@ describe("simx bridge on the relay", () => {
       const { joinCode } = await startSimx("{}");
       const { editor } = await joinEditor(joinCode, "{}");
       await editor.nextMessage();
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
       assets.change();
       await delay(300);
@@ -838,6 +874,7 @@ describe("simx bridge on the relay", () => {
       assertWelcome(await editor.hello({ joinCode }));
       await handshake(editor);
       assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
       frame.programPosts(iconCatalog(ICON));
 
@@ -851,6 +888,7 @@ describe("simx bridge on the relay", () => {
       assertWelcome(await editor.hello({ joinCode }));
       await handshake(editor);
       assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
       frame.programPosts(iconCatalog("8804"));
 
@@ -871,10 +909,13 @@ describe("simx bridge on the relay", () => {
       const editor = await relay.connect(EDITOR);
       assertWelcome(await editor.hello({ joinCode }));
       await handshake(editor);
-      const first = await editor.nextMessage();
-      const second = await editor.nextMessage();
+      const opening = [await editor.nextMessage(), await editor.nextMessage(), await editor.nextMessage()];
       assert.deepEqual(
-        [first, second].find((message) => message.type === "makecode:catalog"),
+        opening.find((message) => message.type === "makecode:projectInfo"),
+        projectInfoMessage(assets.name)
+      );
+      assert.deepEqual(
+        opening.find((message) => message.type === "makecode:catalog"),
         catalogMessage(renderedIconCatalog(ICON, assets.palette))
       );
 

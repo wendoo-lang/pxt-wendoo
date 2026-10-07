@@ -25,6 +25,8 @@ export function listedImage(id: string, rows: number[][], displayName?: string):
 export class FakeAssetProvider implements ProjectAssetsProvider {
   /** The images the project holds, as the provider lists them. */
   images: ProjassetsImage[] = [];
+  /** The project's name, as the provider lists it. */
+  name = "My Platformer";
   /** The project's palette, as the provider lists it. */
   palette: string[] = ["#000000", "#ffffff", "#ff2121", "#ff93c4"];
   /** The kind of every list request received, in order. */
@@ -69,6 +71,7 @@ export class FakeAssetProvider implements ProjectAssetsProvider {
     if (failure !== undefined) return Promise.reject(new ProjassetsError(failure, `list refused with ${failure}`));
     return this.whenAnswering().then(() => ({
       assets: this.images.map((image) => ({ ...image })),
+      name: this.name,
       palette: [...this.palette],
     }));
   }

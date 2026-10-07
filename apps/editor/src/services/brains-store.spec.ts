@@ -437,6 +437,10 @@ describe("brains store", () => {
         };
       }
 
+      onProjectInfo(): () => void {
+        return () => {};
+      }
+
       onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
         this._brainsChannelListeners.add(listener);
         return () => {

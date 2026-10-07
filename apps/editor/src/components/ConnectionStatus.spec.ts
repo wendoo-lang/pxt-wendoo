@@ -18,6 +18,7 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
     connectedSinceOpen: true,
     catalogText: undefined,
     assets: undefined,
+    projectName: undefined,
     target: undefined,
     ...fields,
   };
