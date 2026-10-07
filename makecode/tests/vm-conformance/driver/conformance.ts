@@ -265,7 +265,7 @@ namespace wendoo {
    * {@link ConformanceWorld.settleDue} with the ordinal of the think that is
    * about to run, before running it.
    */
-  export class ConformanceWorld extends HostWorld {
+  export class ConformanceWorld extends HostAttachment {
     private pending: DeferredSettlement[] = [];
     private anchorObject: ConformanceAnchor;
     private firstTarget: ConformanceTarget;

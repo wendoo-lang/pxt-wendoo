@@ -18,25 +18,25 @@ namespace wendoo {
   export const brainBinding = new BrainTypeBinding();
 
   /**
-   * The sprites running, in the program host of `world`, the brain `value`
+   * The sprites running, in the program host of `attachment`, the brain `value`
    * names, in start order. Empty when `value` is not a `Brain` value, nil
-   * included, when the world's program host has started no program on it,
+   * included, when the attachment's program host has started no program on it,
    * or when no sprite runs that brain.
    *
-   * @param world - World of the sprite whose program reads the value.
+   * @param attachment - Attachment of the sprite whose program reads the value.
    * @param value - Any value a program produced.
    */
   //% hidden
-  export function spritesRunning(world: SpriteWorld, value: Value): Sprite[] {
+  export function spritesRunning(attachment: SpriteAttachment, value: Value): Sprite[] {
     const documentId = brainBinding.documentIdOf(value);
     const runners: Sprite[] = [];
-    if (documentId.length === 0 || !world.host) {
+    if (documentId.length === 0 || !attachment.host) {
       return runners;
     }
-    const worlds = world.host.worldsRunning(documentId);
-    for (let i = 0; i < worlds.length; i++) {
-      if (worlds[i] instanceof SpriteWorld) {
-        runners.push((worlds[i] as SpriteWorld).sprite);
+    const attachments = attachment.host.attachmentsRunning(documentId);
+    for (let i = 0; i < attachments.length; i++) {
+      if (attachments[i] instanceof SpriteAttachment) {
+        runners.push((attachments[i] as SpriteAttachment).sprite);
       }
     }
     return runners;
@@ -56,9 +56,12 @@ namespace wendoo {
     return documentId.length > 0 && documentId === brainBinding.documentIdOf(b);
   }
 
-  /** The program host of the world `ctx` runs in, or `undefined` when that world is no actor's or no host runs it. */
+  /**
+   * The program host of the attachment `ctx` runs in, or `undefined` when
+   * that attachment is no actor's or no host runs it.
+   */
   function hostOf(ctx: ExecutionContext): ProgramHost {
-    return ctx.data instanceof ActorWorld ? (ctx.data as ActorWorld).host : undefined;
+    return ctx.data instanceof ActorAttachment ? (ctx.data as ActorAttachment).host : undefined;
   }
 
   /** The document id of the brain `sprite` runs in `host` now, or `""` when it runs none or `host` is `undefined`. */
@@ -68,8 +71,8 @@ namespace wendoo {
     }
     const hosted = host.hostedPrograms();
     for (let i = 0; i < hosted.length; i++) {
-      const world = hosted[i].world;
-      if (world instanceof SpriteWorld && (world as SpriteWorld).sprite === sprite) {
+      const attachment = hosted[i].attachment;
+      if (attachment instanceof SpriteAttachment && (attachment as SpriteAttachment).sprite === sprite) {
         return hosted[i].loaded.registration.id;
       }
     }
@@ -89,8 +92,8 @@ namespace wendoo {
 
   /**
    * The `Brain` value naming the brain `sprite` runs now in the program host
-   * of the world `ctx` runs in; `undefined` when it runs none -- the empty
-   * program {@link wendooBrains.none} included -- or that world has no
+   * of the attachment `ctx` runs in; `undefined` when it runs none -- the empty
+   * program {@link wendooBrains.none} included -- or that attachment has no
    * program host. A brain asked for but not yet started is not read.
    *
    * @param ctx - Execution context of the program reading the brain.
@@ -103,15 +106,15 @@ namespace wendoo {
   }
 
   /**
-   * Ask the program host of the world `ctx` runs in to run on `sprite`, from
-   * its next drain, the brain `value` names, ending the program the sprite
-   * runs then; given a value naming no brain, nil included, the empty program
-   * {@link wendooBrains.none}, which ends the sprite's program. Asks nothing
-   * when the sprite runs that brain already, or runs none and is given no
-   * brain, or the world has no program host; and when no compiled brain is
-   * registered under the document id `value` holds, asks nothing and reports
-   * the id unresolved. Only records the request: nothing starts or ends
-   * before the drain.
+   * Ask the program host of the attachment `ctx` runs in to run on `sprite`,
+   * from its next drain, the brain `value` names, ending the program the
+   * sprite runs then; given a value naming no brain, nil included, the empty
+   * program {@link wendooBrains.none}, which ends the sprite's program. Asks
+   * nothing when the sprite runs that brain already, or runs none and is
+   * given no brain, or the attachment has no program host; and when no
+   * compiled brain is registered under the document id `value` holds, asks
+   * nothing and reports the id unresolved. Only records the request: nothing
+   * starts or ends before the drain.
    *
    * @param ctx - Execution context of the program asking.
    * @param sprite - The sprite to run the brain on.
@@ -132,6 +135,6 @@ namespace wendoo {
         return;
       }
     }
-    host.attach(new SpriteWorld(sprite), registration);
+    host.attach(new SpriteAttachment(sprite), registration);
   }
 }

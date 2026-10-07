@@ -4,7 +4,7 @@
  * the screen -- the part of the scene the camera shows, less a margin at
  * every edge -- and picks a new one when its sprite arrives or the
  * destination's deadline passes. The destinations live in the sprite's
- * {@link SpriteWorld}, beside the random source that picks them.
+ * {@link SpriteAttachment}, beside the random source that picks them.
  */
 namespace wendoo {
   /** How near its destination, in pixels between the sprite's center and the destination, a wandering sprite counts as arrived. */

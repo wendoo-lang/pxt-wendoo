@@ -155,7 +155,7 @@ namespace registrationSelftest {
       new wendoo.RuleSubtreeLiveness(),
       new wendoo.BrainPageServices()
     );
-    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), new wendoo.HostWorld());
+    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), new wendoo.HostAttachment());
   }
 
   /** Whether the value `value` is the number `expected`. */
@@ -810,7 +810,7 @@ namespace registrationSelftest {
   }
 
   /** An actor the selftest ends by hand. */
-  class SelftestActor extends wendoo.ActorWorld {
+  class SelftestActor extends wendoo.ActorAttachment {
     /** Whether the actor has ended. */
     ended: boolean;
 
@@ -868,10 +868,10 @@ namespace registrationSelftest {
   const NOT_RUNNING = "<not running>";
 
   /** The document id of the program `actor` runs on `host`, or {@link NOT_RUNNING}. */
-  function programOf(host: wendoo.ProgramHost, actor: wendoo.ActorWorld): string {
+  function programOf(host: wendoo.ProgramHost, actor: wendoo.ActorAttachment): string {
     const hosted = host.hostedPrograms();
     for (let i = 0; i < hosted.length; i++) {
-      if (hosted[i].world === actor) {
+      if (hosted[i].attachment === actor) {
         return hosted[i].loaded.registration.id;
       }
     }
@@ -966,10 +966,10 @@ namespace registrationSelftest {
   }
 
   /** The program running on `actor` in `host`, or `undefined` when none does. */
-  function hostedOn(host: wendoo.ProgramHost, actor: wendoo.ActorWorld): wendoo.HostedProgram {
+  function hostedOn(host: wendoo.ProgramHost, actor: wendoo.ActorAttachment): wendoo.HostedProgram {
     const hosted = host.hostedPrograms();
     for (let i = 0; i < hosted.length; i++) {
-      if (hosted[i].world === actor) {
+      if (hosted[i].attachment === actor) {
         return hosted[i];
       }
     }

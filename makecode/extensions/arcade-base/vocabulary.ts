@@ -377,13 +377,13 @@ namespace wendoo {
    * as the image {@link imageOf} finds, and none when no image is found;
    * given a sprite, that sprite alone, and none when the value stands for
    * no sprite; given a brain, the sprites running it in the program host of
-   * `world`, as {@link spritesRunning} finds them, and none when no sprite
+   * `attachment`, as {@link spritesRunning} finds them, and none when no sprite
    * does. `undefined` when the filter is empty -- every sprite is admitted.
    *
-   * @param world - World of the sprite the sensor reads for.
+   * @param attachment - Attachment of the sprite the sensor reads for.
    * @param args - The sensor's argument buffer.
    */
-  function filterAdmits(world: SpriteWorld, args: Value[]): (other: Sprite) => boolean {
+  function filterAdmits(attachment: SpriteAttachment, args: Value[]): (other: Sprite) => boolean {
     if (isFilled(args, FILTER_SLOT_IMAGE)) {
       const wanted = imageOf(args[FILTER_SLOT_IMAGE]);
       return wanted ? (other: Sprite) => other.image.equals(wanted) : admitsNone;
@@ -393,7 +393,7 @@ namespace wendoo {
       return wanted ? (other: Sprite) => other === wanted : admitsNone;
     }
     if (isFilled(args, FILTER_SLOT_BRAIN)) {
-      const runners = spritesRunning(world, args[FILTER_SLOT_BRAIN]);
+      const runners = spritesRunning(attachment, args[FILTER_SLOT_BRAIN]);
       return runners.length > 0 ? (other: Sprite) => runners.indexOf(other) >= 0 : admitsNone;
     }
     return undefined;
@@ -403,18 +403,22 @@ namespace wendoo {
    * Which sprites a proximity sensor reads among, given its argument buffer
    * `args` whose positional modifiers start at `positionSlot`: those its
    * filter admits, as {@link filterAdmits} reads it, whose center lies
-   * strictly above the center of the sprite `world` holds when `above` is
+   * strictly above the center of the sprite `attachment` holds when `above` is
    * given, strictly below it when `below` is, strictly left of it when
    * `left of` is, and strictly right of it when `right of` is -- every given
    * condition at once. `undefined` when the filter is empty and no
    * positional modifier is given -- every sprite is read among.
    *
-   * @param world - World of the sprite the sensor reads for.
+   * @param attachment - Attachment of the sprite the sensor reads for.
    * @param args - The sensor's argument buffer.
    * @param positionSlot - Argument-buffer position of the sensor's first positional modifier.
    */
-  function proximityAdmits(world: SpriteWorld, args: Value[], positionSlot: number): (other: Sprite) => boolean {
-    const filter = filterAdmits(world, args);
+  function proximityAdmits(
+    attachment: SpriteAttachment,
+    args: Value[],
+    positionSlot: number
+  ): (other: Sprite) => boolean {
+    const filter = filterAdmits(attachment, args);
     const above = isFilled(args, positionSlot + POSITION_ABOVE);
     const below = isFilled(args, positionSlot + POSITION_BELOW);
     const left = isFilled(args, positionSlot + POSITION_LEFT);
@@ -422,7 +426,7 @@ namespace wendoo {
     if (!above && !below && !left && !right) {
       return filter;
     }
-    const sprite = world.sprite;
+    const sprite = attachment.sprite;
     return (other: Sprite) =>
       (!filter || filter(other)) &&
       (!above || other.y < sprite.y) &&
@@ -442,8 +446,8 @@ namespace wendoo {
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
-      const world = ctx.data as SpriteWorld;
-      const bumped = bumpedSprite(world.sprite, proximityAdmits(world, args, BUMP_SLOT_POSITION));
+      const attachment = ctx.data as SpriteAttachment;
+      const bumped = bumpedSprite(attachment.sprite, proximityAdmits(attachment, args, BUMP_SLOT_POSITION));
       const result = bumped ? spriteValue(bumped) : NIL_VALUE;
       setActionOutput(ctx, structTypeId(TYPE_SPRITE), BUMPED_OUTPUT, result);
       return result;
@@ -492,9 +496,9 @@ namespace wendoo {
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
-      const world = ctx.data as SpriteWorld;
-      const sprite = world.sprite;
-      const nearest = nearestSprite(sprite, proximityAdmits(world, args, RANGE_SLOT_POSITION));
+      const attachment = ctx.data as SpriteAttachment;
+      const sprite = attachment.sprite;
+      const nearest = nearestSprite(sprite, proximityAdmits(attachment, args, RANGE_SLOT_POSITION));
       let result = NIL_VALUE;
       if (nearest) {
         const range = senseRange(args[RANGE_SLOT]);
@@ -513,7 +517,7 @@ namespace wendoo {
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
-      return spriteValue((ctx.data as SpriteWorld).sprite);
+      return spriteValue((ctx.data as SpriteAttachment).sprite);
     }
   }
 
@@ -614,7 +618,7 @@ namespace wendoo {
   /**
    * `actuator.arcade.move`: records the program's sprite's move for this
    * frame's arbitration, a wander heading for the destination the move's
-   * call site holds in the sprite's world. A move heading for one goal
+   * call site holds in the sprite's attachment. A move heading for one goal
    * alone -- `toward` its goal, or `wander` toward its destination, with no
    * other direction added -- goes no farther than the goal in the frame,
    * its speed held by {@link speedWithinReach} over the frame's duration. A
@@ -627,8 +631,8 @@ namespace wendoo {
     }
 
     execSync(ctx: ExecutionContext, args: Value[]): Value {
-      const world = ctx.data as SpriteWorld;
-      const sprite = world.sprite;
+      const attachment = ctx.data as SpriteAttachment;
+      const sprite = attachment.sprite;
       const whenResult = getWhenResult(ctx);
       const up = isFilled(args, MOVE_SLOT_UP);
       const down = isFilled(args, MOVE_SLOT_DOWN);
@@ -641,8 +645,8 @@ namespace wendoo {
       let wander: DirectionVector;
       let destination: WanderLeg;
       if (isFilled(args, MOVE_SLOT_WANDER)) {
-        wander = world.wander.bearing(sprite, ctx.currentCallSiteId, ctx.time, game.currentScene().camera);
-        destination = world.wander.leg(ctx.currentCallSiteId);
+        wander = attachment.wander.bearing(sprite, ctx.currentCallSiteId, ctx.time, game.currentScene().camera);
+        destination = attachment.wander.leg(ctx.currentCallSiteId);
       }
       const specified = specifiedDirection(up, down, left, right, toward, away, bearing, wander);
       let speed = moveSpeed(args[MOVE_SLOT_SLOWLY], args[MOVE_SLOT_QUICKLY], args[MOVE_SLOT_SPEED]);

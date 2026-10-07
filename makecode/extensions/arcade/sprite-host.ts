@@ -5,7 +5,7 @@
  *
  * Every scene's host runs the core vocabulary and every pack's, bound
  * through the project's id manifest by the one drain the hosts share. Each
- * sprite runs its program in a {@link SpriteWorld}, through which a
+ * sprite runs its program in a {@link SpriteAttachment}, through which a
  * host-bound tile reaches the sprite.
  */
 namespace wendoo {

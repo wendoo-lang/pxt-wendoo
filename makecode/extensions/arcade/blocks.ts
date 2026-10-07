@@ -20,6 +20,6 @@ namespace wendoo {
     if (!sprite || !brain) {
       return;
     }
-    sceneProgramHost(game.currentScene()).attach(new SpriteWorld(sprite), brain);
+    sceneProgramHost(game.currentScene()).attach(new SpriteAttachment(sprite), brain);
   }
 }

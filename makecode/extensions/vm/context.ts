@@ -8,7 +8,7 @@ namespace wendoo {
    * execution context. The VM never reads it; a host body downcasts it to its
    * own subclass.
    */
-  export class HostWorld {
+  export class HostAttachment {
     constructor() {}
   }
 
@@ -525,13 +525,13 @@ namespace wendoo {
     /** 1-based ordinal of the current think. */
     currentTick: number = 0;
     /** Opaque per-run payload attached by the host profile. */
-    data: HostWorld;
+    data: HostAttachment;
     /** Code of the fault a host body raised, or {@link NO_FAULT}. */
     faultCode: number = NO_FAULT;
     /** Diagnostic text of the fault a host body raised. */
     faultMessage: string = "";
 
-    constructor(services: BrainServices, variables: VariableStore, data: HostWorld) {
+    constructor(services: BrainServices, variables: VariableStore, data: HostAttachment) {
       this.services = services;
       this.variables = variables;
       this.data = data;

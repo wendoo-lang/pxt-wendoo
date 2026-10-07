@@ -17,17 +17,17 @@ namespace wendoo {
   const STS_F64_MAX_HANDLES = 100000;
 
   /**
-   * The world of one actor a program runs on: the per-run payload its host
+   * The attachment of one actor a program runs on: the per-run payload its host
    * functions and actions reach through the execution context, and the
    * actor's lifecycle as the host loop sees it. A target subclasses it with
-   * its actor, overriding {@link ActorWorld.hasEnded} and
-   * {@link ActorWorld.isSameActor}.
+   * its actor, overriding {@link ActorAttachment.hasEnded} and
+   * {@link ActorAttachment.isSameActor}.
    */
   //% hidden
-  export class ActorWorld extends HostWorld {
+  export class ActorAttachment extends HostAttachment {
     /**
      * The program host running the actor's program, assigned when a host
-     * starts a program on this world; `undefined` until then.
+     * starts a program on this attachment; `undefined` until then.
      */
     host: ProgramHost = undefined;
 
@@ -44,13 +44,14 @@ namespace wendoo {
     }
 
     /**
-     * Whether `other` is the world of this same actor: attaching a program
-     * to a world ends the running program of every world this reports as the
-     * same actor. The base compares the worlds themselves.
+     * Whether `other` is the attachment of this same actor: attaching a
+     * program to an attachment ends the running program of every attachment
+     * this reports as the same actor. The base compares the attachments
+     * themselves.
      *
-     * @param other - World of the actor a program is being attached to.
+     * @param other - Attachment of the actor a program is being attached to.
      */
-    isSameActor(other: ActorWorld): boolean {
+    isSameActor(other: ActorAttachment): boolean {
       return other === this;
     }
   }
@@ -109,8 +110,8 @@ namespace wendoo {
   /** One program running on one actor. */
   //% hidden
   export class HostedProgram {
-    /** World of the actor the program runs on. */
-    world: ActorWorld;
+    /** Attachment of the actor the program runs on. */
+    attachment: ActorAttachment;
     /** The loaded program. */
     loaded: LoadedProgram;
     /** The program's runtime, which the host loop alone thinks. */
@@ -118,8 +119,13 @@ namespace wendoo {
     /** The observer the program's runtime reports to. */
     observer: HostedProgramObserver;
 
-    constructor(world: ActorWorld, loaded: LoadedProgram, runtime: BrainRuntime, observer: HostedProgramObserver) {
-      this.world = world;
+    constructor(
+      attachment: ActorAttachment,
+      loaded: LoadedProgram,
+      runtime: BrainRuntime,
+      observer: HostedProgramObserver
+    ) {
+      this.attachment = attachment;
       this.loaded = loaded;
       this.runtime = runtime;
       this.observer = observer;
@@ -185,11 +191,11 @@ namespace wendoo {
 
   /** One request to run a compiled brain on an actor, waiting for the next drain. */
   class AttachRequest {
-    world: ActorWorld;
+    attachment: ActorAttachment;
     registration: CompiledBrainRegistration;
 
-    constructor(world: ActorWorld, registration: CompiledBrainRegistration) {
-      this.world = world;
+    constructor(attachment: ActorAttachment, registration: CompiledBrainRegistration) {
+      this.attachment = attachment;
       this.registration = registration;
     }
   }
@@ -221,16 +227,16 @@ namespace wendoo {
     }
 
     /**
-     * Ask that `registration`'s program run on the actor `world` belongs to,
-     * from the next drain, in place of any program the actor runs then.
+     * Ask that `registration`'s program run on the actor `attachment` belongs
+     * to, from the next drain, in place of any program the actor runs then.
      * Records the request only; nothing runs until the drain. A refused
      * program ends the actor's program and starts nothing.
      *
-     * @param world - World of the actor to run the program on.
+     * @param attachment - Attachment of the actor to run the program on.
      * @param registration - The compiled brain to run.
      */
-    attach(world: ActorWorld, registration: CompiledBrainRegistration): void {
-      this.requests.push(new AttachRequest(world, registration));
+    attach(attachment: ActorAttachment, registration: CompiledBrainRegistration): void {
+      this.requests.push(new AttachRequest(attachment, registration));
     }
 
     /**
@@ -301,19 +307,19 @@ namespace wendoo {
     }
 
     /**
-     * The worlds of the actors running the compiled brain `documentId` now,
-     * in start order; empty when none does.
+     * The attachments of the actors running the compiled brain `documentId`
+     * now, in start order; empty when none does.
      *
      * @param documentId - Document id of a compiled brain.
      */
-    worldsRunning(documentId: string): ActorWorld[] {
-      const worlds: ActorWorld[] = [];
+    attachmentsRunning(documentId: string): ActorAttachment[] {
+      const attachments: ActorAttachment[] = [];
       for (let i = 0; i < this.running.length; i++) {
         if (this.running[i].loaded.registration.id === documentId) {
-          worlds.push(this.running[i].world);
+          attachments.push(this.running[i].attachment);
         }
       }
-      return worlds;
+      return attachments;
     }
 
     /** Every compiled brain whose current program was refused when loaded, in load order. */
@@ -329,10 +335,10 @@ namespace wendoo {
 
     /** Start the program `request` asks for, ending the one its actor runs. */
     private start(request: AttachRequest): void {
-      if (request.world.hasEnded()) {
+      if (request.attachment.hasEnded()) {
         return;
       }
-      this.endProgramOf(request.world);
+      this.endProgramOf(request.attachment);
       const loaded = this.load(request.registration);
       if (loaded.errorCode.length > 0) {
         return;
@@ -345,15 +351,15 @@ namespace wendoo {
         this.registries.types,
         observer,
         this.caps,
-        request.world
+        request.attachment
       );
-      request.world.host = this;
+      request.attachment.host = this;
       try {
         runtime.startup();
       } catch (e) {
         observer.onThrown(e);
       }
-      this.running.push(new HostedProgram(request.world, loaded, runtime, observer));
+      this.running.push(new HostedProgram(request.attachment, loaded, runtime, observer));
     }
 
     /**
@@ -366,7 +372,7 @@ namespace wendoo {
       for (let i = 0; i < this.running.length; i++) {
         const loaded = this.running[i].loaded;
         if (loaded.revision !== loaded.registration.revision) {
-          restarts.push(new AttachRequest(this.running[i].world, loaded.registration));
+          restarts.push(new AttachRequest(this.running[i].attachment, loaded.registration));
         }
       }
       return restarts;
@@ -376,18 +382,18 @@ namespace wendoo {
     private endEndedPrograms(): void {
       const kept: HostedProgram[] = [];
       for (let i = 0; i < this.running.length; i++) {
-        if (!this.running[i].world.hasEnded()) {
+        if (!this.running[i].attachment.hasEnded()) {
           kept.push(this.running[i]);
         }
       }
       this.running = kept;
     }
 
-    /** Drop the running program of the actor `world` belongs to, if it runs one. */
-    private endProgramOf(world: ActorWorld): void {
+    /** Drop the running program of the actor `attachment` belongs to, if it runs one. */
+    private endProgramOf(attachment: ActorAttachment): void {
       const kept: HostedProgram[] = [];
       for (let i = 0; i < this.running.length; i++) {
-        if (!this.running[i].world.isSameActor(world)) {
+        if (!this.running[i].attachment.isSameActor(attachment)) {
           kept.push(this.running[i]);
         }
       }

@@ -320,7 +320,7 @@ namespace wendoo {
      * @param types - Struct types the program's field hooks and deep copies dispatch against.
      * @param observer - Passive observer of the run's visible effects.
      * @param caps - Per-fiber and per-round capacity caps.
-     * @param world - Opaque per-run payload the host profile attaches to the context.
+     * @param attachment - Opaque per-run payload the host profile attaches to the context.
      */
     constructor(
       program: Program,
@@ -329,7 +329,7 @@ namespace wendoo {
       types: StructTypeRegistry,
       observer: VmObserver,
       caps: VmCaps,
-      world: HostWorld
+      attachment: HostAttachment
     ) {
       this.program = program;
       this.hostActions = hostActions;
@@ -343,7 +343,7 @@ namespace wendoo {
         new SchedulerRuleLiveness(this.scheduler),
         new RuntimeBrainPages(this)
       );
-      this.ctx = new ExecutionContext(services, variables, world);
+      this.ctx = new ExecutionContext(services, variables, attachment);
     }
 
     /** How many thinks have run a page since construction: the tick count the program's context carries. */

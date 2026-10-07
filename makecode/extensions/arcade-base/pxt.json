@@ -9,7 +9,7 @@
     },
     "files": [
         "README.md",
-        "sprite-world.ts",
+        "sprite-attachment.ts",
         "controller-read.ts",
         "direction.ts",
         "sprite-value.ts",

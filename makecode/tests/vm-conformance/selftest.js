@@ -328,7 +328,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "filtered-range-rules-read-the-nearest-sprite-wearing-the-image",
   "brain-type-takes-its-atom-and-field-from-the-manifest",
   "brain-type-reads-the-document-id-of-its-own-values",
-  "host-lists-the-worlds-running-a-brain",
+  "host-lists-the-attachments-running-a-brain",
   "bump-given-a-brain-reads-the-nearest-sprite-running-it",
   "bump-given-a-brain-no-sprite-runs-reads-nothing",
   "in-range-given-a-brain-reads-the-nearest-sprite-running-it",

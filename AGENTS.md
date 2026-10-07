@@ -368,7 +368,7 @@ the current slice alone.
       (the single-entry host loop a target's frame loop drains; every host
       of a program run shares the one drain of every pack's registrations
       through the project's id manifest, `hostRegistries`; each actor's
-      world names the host that started its program, which lists the
+      attachment names the host that started its program, which lists the
       actors running a given brain; each program's faults reach the host's
       observer as they are raised, retained nowhere, and are logged once
       per fault code through `debugLog`; a throw out of a program's start
@@ -396,8 +396,8 @@ the current slice alone.
       Arcade's is `makecode/extensions/arcade-base`
       (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-base`),
       registered as the pack `arcade`; it depends on the VM extension and
-      Arcade's `device` library. It owns the sprite's program world (the
-      `SpriteWorld` every arcade pack's host-bound tile reaches its sprite
+      Arcade's `device` library. It owns the sprite's program attachment (the
+      `SpriteAttachment` every arcade pack's host-bound tile reaches its sprite
       through), the `Vector2` type (a direction, or a point in a slot naming
       a place to head for; its `x` and `y` read-only accessors, `y` growing
       downward as the move's direction modifiers do; one holding an
@@ -409,7 +409,7 @@ the current slice alone.
       keeping its image given none; `position` reads a fresh `Vector2`
       snapshot of its center and a write sets the center at once, velocity
       left to move arbitration; `brain` reads the brain it runs through the
-      actor world's program host, nil while none runs, and a write only
+      actor attachment's program host, nil while none runs, and a write only
       records an attach request the drain applies -- idempotent for the
       brain already running, nil running the empty program, a document id
       no compiled brain holds a logged no-op; `moveSmoothing` reads, in
@@ -466,7 +466,7 @@ the current slice alone.
       every sprite-touch read, picking among touched sprites through the
       proximity read's scan), the wander module (one module owning each
       wandering move's random on-screen destination, kept per call site in
-      the sprite's world, its re-picks on arrival or deadline, and the random
+      the sprite's attachment, its re-picks on arrival or deadline, and the random
       source picking it), the `dpad`, `bump`, `in range`, `out of range`
       and `myself` sensors and the `move` actuator (`myself` reads the
       program's own sprite, inline and writable-result, so accessors follow

@@ -91,7 +91,7 @@ namespace arcadeSelftest {
   function hostedOf(sprite: Sprite): wendoo.HostedProgram {
     const hosted = wendoo.sceneProgramHost(game.currentScene()).hostedPrograms();
     for (let i = 0; i < hosted.length; i++) {
-      if ((hosted[i].world as wendoo.SpriteWorld).sprite === sprite) {
+      if ((hosted[i].attachment as wendoo.SpriteAttachment).sprite === sprite) {
         return hosted[i];
       }
     }
@@ -926,19 +926,19 @@ namespace arcadeSelftest {
     return wendoo.mkStruct(wendoo.structTypeId(IMAGE_TYPE), slots);
   }
 
-  /** A context whose world is `world`, for calling a tile's body directly. */
-  function contextIn(world: wendoo.SpriteWorld): wendoo.ExecutionContext {
+  /** A context whose attachment is `attachment`, for calling a tile's body directly. */
+  function contextIn(attachment: wendoo.SpriteAttachment): wendoo.ExecutionContext {
     const services = new wendoo.BrainServices(
       new wendoo.Program(),
       new wendoo.RuleSubtreeLiveness(),
       new wendoo.BrainPageServices()
     );
-    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), world);
+    return new wendoo.ExecutionContext(services, new wendoo.VariableStore(), attachment);
   }
 
-  /** A context whose world is a fresh world of `sprite`, for calling a tile's body directly. */
+  /** A context whose attachment is a fresh attachment of `sprite`, for calling a tile's body directly. */
   function contextOn(sprite: Sprite): wendoo.ExecutionContext {
-    return contextIn(new wendoo.SpriteWorld(sprite));
+    return contextIn(new wendoo.SpriteAttachment(sprite));
   }
 
   /** The bound body of the tile `tileName`, or `undefined` when no registration holds it. */
@@ -972,8 +972,8 @@ namespace arcadeSelftest {
    * writes.
    */
   function checkImageField(model: Sprite): void {
-    const world = hostedWorld(model);
-    const read = readField(world, model, "image");
+    const attachment = hostedAttachment(model);
+    const read = readField(attachment, model, "image");
     const assetSlot = read.fields ? read.fields[wendoo.projectIds().fieldId(IMAGE_TYPE, IMAGE_ASSET_FIELD)] : undefined;
     check(
       "image-reads-the-image-the-sprite-wears-its-asset-reading-empty",
@@ -989,8 +989,8 @@ namespace arcadeSelftest {
     const byId = solidSprite(8, 20, 40);
     const byName = solidSprite(8, 40, 40);
     const wrote =
-      writeField(world, byId, "image", imageLiteral(HERO_ASSET_ID)) &&
-      writeField(world, byName, "image", imageLiteral(HERO_DISPLAY_NAME));
+      writeField(attachment, byId, "image", imageLiteral(HERO_ASSET_ID)) &&
+      writeField(attachment, byName, "image", imageLiteral(HERO_DISPLAY_NAME));
     check(
       "image-write-wears-the-image-its-asset-resolves-to",
       wrote && byId.image.equals(heroPicture()) && byName.image.equals(heroPicture())
@@ -999,12 +999,12 @@ namespace arcadeSelftest {
     const steady = solidSprite(8, 60, 40);
     const steadyImage = steady.image;
     const keptGone =
-      writeField(world, steady, "image", imageLiteral(DELETED_ASSET_ID)) &&
-      writeField(world, steady, "image", imageLiteral(DELETED_ASSET_ID));
+      writeField(attachment, steady, "image", imageLiteral(DELETED_ASSET_ID)) &&
+      writeField(attachment, steady, "image", imageLiteral(DELETED_ASSET_ID));
     const keptOther =
-      writeField(world, steady, "image", wendoo.NIL_VALUE) &&
-      writeField(world, steady, "image", wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model.image)) &&
-      writeField(world, steady, "image", brainLiteral(TICKER_ID));
+      writeField(attachment, steady, "image", wendoo.NIL_VALUE) &&
+      writeField(attachment, steady, "image", wendoo.mkNativeStruct(wendoo.structTypeId("Decoy"), model.image)) &&
+      writeField(attachment, steady, "image", brainLiteral(TICKER_ID));
     check(
       "image-write-of-an-image-no-factory-holds-or-a-value-naming-no-image-keeps-the-image",
       keptGone && keptOther && steady.image === steadyImage
@@ -1012,7 +1012,7 @@ namespace arcadeSelftest {
 
     const source = solidSprite(8, 80, 40);
     const mimic = solidSprite(8, 100, 40);
-    const shared = writeField(world, mimic, "image", readField(world, source, "image"));
+    const shared = writeField(attachment, mimic, "image", readField(attachment, source, "image"));
     const sameInstance = mimic.image === source.image;
     source.image.setPixel(0, 0, 7);
     const drawnOnBoth = mimic.image.getPixel(0, 0) === 7;
@@ -1029,7 +1029,7 @@ namespace arcadeSelftest {
     const twin = heroSprite(byId.x + 3, byId.y);
     const reader = solidSprite(8, twin.x + 3, twin.y);
     const plain = solidSprite(8, reader.x + 1, reader.y);
-    const nearest = act(tileBody(wendoo.BUMP_TILE), reader, [readField(world, byId, "image"), nil, nil]);
+    const nearest = act(tileBody(wendoo.BUMP_TILE), reader, [readField(attachment, byId, "image"), nil, nil]);
     check("proximity-filters-read-a-worn-image-by-its-pixels", standsFor(nearest, twin));
 
     const doomed = solidSprite(8, 120, 40);
@@ -1037,8 +1037,8 @@ namespace arcadeSelftest {
     doomed.destroy();
     check(
       "image-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
-      readsNothing(readField(world, doomed, "image")) &&
-        writeField(world, doomed, "image", imageLiteral(HERO_ASSET_ID)) &&
+      readsNothing(readField(attachment, doomed, "image")) &&
+        writeField(attachment, doomed, "image", imageLiteral(HERO_ASSET_ID)) &&
         doomed.image === doomedImage
     );
     const placed = [byId, byName, steady, source, mimic, twin, reader, plain];
@@ -1067,13 +1067,13 @@ namespace arcadeSelftest {
     );
 
     const late = solidSprite(8, 60, 20);
-    const world = hostedWorld(late);
+    const attachment = hostedAttachment(late);
     const lateLiteral = imageLiteral(LATE_ASSET_ID);
     const beforeLate = late.image;
-    writeField(world, late, "image", lateLiteral);
+    writeField(attachment, late, "image", lateLiteral);
     const unchangedBeforeLate = late.image === beforeLate;
     helpers._registerFactory("image", (name: string) => (name === LATE_ASSET_ID ? latePicture() : null));
-    writeField(world, late, "image", lateLiteral);
+    writeField(attachment, late, "image", lateLiteral);
     check("image-resolves-when-it-is-used", unchangedBeforeLate && late.image.equals(latePicture()));
 
     const model = solidSprite(8, 80, 20);
@@ -1132,18 +1132,18 @@ namespace arcadeSelftest {
 
   /**
    * What the proximity sensor `tileName` reads on behalf of the sprite whose
-   * world is `world` given the brain filter `brain` and, on a range sensor,
-   * the range `range`.
+   * attachment is `attachment` given the brain filter `brain` and, on a range
+   * sensor, the range `range`.
    */
   function senseBrain(
     tileName: string,
-    world: wendoo.SpriteWorld,
+    attachment: wendoo.SpriteAttachment,
     brain: wendoo.Value,
     range: wendoo.Value
   ): wendoo.Value {
     const nil = wendoo.NIL_VALUE;
     const body = tileBody(tileName);
-    return body ? body.execSync(contextIn(world), filterArgs(tileName, nil, nil, brain, range)) : nil;
+    return body ? body.execSync(contextIn(attachment), filterArgs(tileName, nil, nil, brain, range)) : nil;
   }
 
   /** Whether `value` is nil. */
@@ -1307,18 +1307,18 @@ namespace arcadeSelftest {
     return wendoo.mkStruct(wendoo.structTypeId(BRAIN_TYPE), slots);
   }
 
-  /** A world of `sprite` whose program host is the current scene's, for calling a tile's body on its behalf. */
-  function hostedWorld(sprite: Sprite): wendoo.SpriteWorld {
-    const world = new wendoo.SpriteWorld(sprite);
-    world.host = wendoo.sceneProgramHost(game.currentScene());
-    return world;
+  /** An attachment of `sprite` whose program host is the current scene's, for calling a tile's body on its behalf. */
+  function hostedAttachment(sprite: Sprite): wendoo.SpriteAttachment {
+    const attachment = new wendoo.SpriteAttachment(sprite);
+    attachment.host = wendoo.sceneProgramHost(game.currentScene());
+    return attachment;
   }
 
   /**
    * In a scene of its own, check the brain filter every proximity sensor
    * takes: the `Brain` type takes its atom and its one field from the
    * project's ids module and reads the document id only of its own values;
-   * a scene's program host lists the worlds running a brain; around a
+   * a scene's program host lists the attachments running a brain; around a
    * reader touching a plain sprite 2 pixels away, a sprite running no brain
    * 3 pixels away and a sprite running the ticker 6 pixels away, with
    * another running it 100 pixels away, each sensor given the ticker's brain
@@ -1357,16 +1357,16 @@ namespace arcadeSelftest {
     wendoo.runBrain(nearRunner, wendooBrains.p_akBQz0nySKaYx37w);
     wendoo.runBrain(farRunner, wendooBrains.p_akBQz0nySKaYx37w);
     pause(FRAMES_MS);
-    const running = host.worldsRunning(TICKER_ID);
+    const running = host.attachmentsRunning(TICKER_ID);
     check(
-      "host-lists-the-worlds-running-a-brain",
+      "host-lists-the-attachments-running-a-brain",
       running.length === 2 &&
-        (running[0] as wendoo.SpriteWorld).sprite === nearRunner &&
-        (running[1] as wendoo.SpriteWorld).sprite === farRunner &&
-        host.worldsRunning(UNKNOWN_BRAIN_ID).length === 0
+        (running[0] as wendoo.SpriteAttachment).sprite === nearRunner &&
+        (running[1] as wendoo.SpriteAttachment).sprite === farRunner &&
+        host.attachmentsRunning(UNKNOWN_BRAIN_ID).length === 0
     );
 
-    const world = hostedWorld(reader);
+    const attachment = hostedAttachment(reader);
     const ticker = brainLiteral(TICKER_ID);
     const nil = wendoo.NIL_VALUE;
     const narrow = wendoo.mkNumber(3);
@@ -1376,23 +1376,23 @@ namespace arcadeSelftest {
       const range = tile === wendoo.OUT_OF_RANGE_TILE ? narrow : nil;
       check(
         `${stem}-given-a-brain-reads-the-nearest-sprite-running-it`,
-        standsFor(senseBrain(tile, world, ticker, range), nearRunner)
+        standsFor(senseBrain(tile, attachment, ticker, range), nearRunner)
       );
       check(
         `${stem}-given-a-brain-no-sprite-runs-reads-nothing`,
-        readsNothing(senseBrain(tile, world, brainLiteral(UNKNOWN_BRAIN_ID), range)) &&
-          readsNothing(senseBrain(tile, world, imageLiteral(HERO_ASSET_ID), range))
+        readsNothing(senseBrain(tile, attachment, brainLiteral(UNKNOWN_BRAIN_ID), range)) &&
+          readsNothing(senseBrain(tile, attachment, imageLiteral(HERO_ASSET_ID), range))
       );
     }
 
     wendoo.runBrain(reader, wendooBrains.p_akBQz0nySKaYx37w);
     pause(FRAMES_MS);
-    const ownWorld = hostedWorld(reader);
+    const ownAttachment = hostedAttachment(reader);
     let readsAnother = true;
     for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
       const tile = PROXIMITY_SENSORS[i][0];
       const range = tile === wendoo.OUT_OF_RANGE_TILE ? narrow : nil;
-      if (!standsFor(senseBrain(tile, ownWorld, ticker, range), nearRunner)) {
+      if (!standsFor(senseBrain(tile, ownAttachment, ticker, range), nearRunner)) {
         readsAnother = false;
       }
     }
@@ -1401,7 +1401,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     let readsNoneAlone = true;
     for (let i = 0; i < PROXIMITY_SENSORS.length; i++) {
-      if (!readsNothing(senseBrain(PROXIMITY_SENSORS[i][0], ownWorld, ticker, nil))) {
+      if (!readsNothing(senseBrain(PROXIMITY_SENSORS[i][0], ownAttachment, ticker, nil))) {
         readsNoneAlone = false;
       }
     }
@@ -1450,22 +1450,36 @@ namespace arcadeSelftest {
   }
 
   /**
-   * What a program running in `world` reads from the field `field` of the
+   * What a program running in `attachment` reads from the field `field` of the
    * `Sprite` value standing for `sprite`, through the type's field getter as
    * the VM dispatches it: nil when the getter reads nothing.
    */
-  function readField(world: wendoo.SpriteWorld, sprite: Sprite, field: string): wendoo.Value {
-    const read = wendoo.spriteBinding.fieldGetter(wendoo.spriteValue(sprite), spriteFieldId(field), contextIn(world));
+  function readField(attachment: wendoo.SpriteAttachment, sprite: Sprite, field: string): wendoo.Value {
+    const read = wendoo.spriteBinding.fieldGetter(
+      wendoo.spriteValue(sprite),
+      spriteFieldId(field),
+      contextIn(attachment)
+    );
     return read ? read : wendoo.NIL_VALUE;
   }
 
   /**
-   * Whether the type's field setter accepts a program running in `world`
+   * Whether the type's field setter accepts a program running in `attachment`
    * writing `value` into the field `field` of the `Sprite` value standing for
    * `sprite`, as the VM dispatches it; a refusal would fault the program.
    */
-  function writeField(world: wendoo.SpriteWorld, sprite: Sprite, field: string, value: wendoo.Value): boolean {
-    return wendoo.spriteBinding.fieldSetter(wendoo.spriteValue(sprite), spriteFieldId(field), value, contextIn(world));
+  function writeField(
+    attachment: wendoo.SpriteAttachment,
+    sprite: Sprite,
+    field: string,
+    value: wendoo.Value
+  ): boolean {
+    return wendoo.spriteBinding.fieldSetter(
+      wendoo.spriteValue(sprite),
+      spriteFieldId(field),
+      value,
+      contextIn(attachment)
+    );
   }
 
   /** Whether `value` is a `Vector2` holding the point `x`, `y`. */
@@ -1497,7 +1511,7 @@ namespace arcadeSelftest {
   function checkSpriteFields(): void {
     game.pushScene();
     const reader = solidSprite(8, 20, 100);
-    const world = hostedWorld(reader);
+    const attachment = hostedAttachment(reader);
     let fieldIdsMatch = wendoo.spriteBinding.fieldIds.length === SPRITE_FIELDS.length;
     for (let i = 0; i < SPRITE_FIELDS.length; i++) {
       fieldIdsMatch = fieldIdsMatch && wendoo.spriteBinding.fieldIds[i] === spriteFieldId(SPRITE_FIELDS[i]);
@@ -1508,9 +1522,9 @@ namespace arcadeSelftest {
     );
 
     const walker = solidSprite(8, 40, 50);
-    const first = readField(world, walker, "position");
+    const first = readField(attachment, walker, "position");
     walker.setPosition(60, 70);
-    const second = readField(world, walker, "position");
+    const second = readField(attachment, walker, "position");
     check(
       "position-reads-a-snapshot-of-the-sprites-center",
       holdsPoint(first, 40, 50) && holdsPoint(second, 60, 70) && first !== second
@@ -1518,7 +1532,12 @@ namespace arcadeSelftest {
 
     walker.vx = 30;
     walker.vy = -20;
-    const accepted = writeField(world, walker, "position", wendoo.vector2Value(new wendoo.DirectionVector(80, 90)));
+    const accepted = writeField(
+      attachment,
+      walker,
+      "position",
+      wendoo.vector2Value(new wendoo.DirectionVector(80, 90))
+    );
     check(
       "position-write-sets-the-center-at-once-and-keeps-the-velocity",
       accepted && walker.x === 80 && walker.y === 90 && walker.vx === 30 && walker.vy === -20
@@ -1526,8 +1545,8 @@ namespace arcadeSelftest {
     walker.vx = 0;
     walker.vy = 0;
 
-    const keptNil = writeField(world, walker, "position", wendoo.NIL_VALUE);
-    const keptOther = writeField(world, walker, "position", imageLiteral(HERO_ASSET_ID));
+    const keptNil = writeField(attachment, walker, "position", wendoo.NIL_VALUE);
+    const keptOther = writeField(attachment, walker, "position", imageLiteral(HERO_ASSET_ID));
     check(
       "position-write-of-a-value-naming-no-point-moves-nothing",
       keptNil && keptOther && walker.x === 80 && walker.y === 90
@@ -1541,13 +1560,13 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     check(
       "brain-reads-the-brain-its-sprite-runs-or-nil",
-      namesBrain(readField(world, runner, "brain"), TICKER_ID) &&
-        readsNothing(readField(world, idle, "brain")) &&
-        readsNothing(readField(world, dormant, "brain"))
+      namesBrain(readField(attachment, runner, "brain"), TICKER_ID) &&
+        readsNothing(readField(attachment, idle, "brain")) &&
+        readsNothing(readField(attachment, dormant, "brain"))
     );
 
-    const started = writeField(world, dormant, "brain", brainLiteral(TICKER_ID));
-    const waited = programOf(dormant) === NOT_RUNNING && readsNothing(readField(world, dormant, "brain"));
+    const started = writeField(attachment, dormant, "brain", brainLiteral(TICKER_ID));
+    const waited = programOf(dormant) === NOT_RUNNING && readsNothing(readField(attachment, dormant, "brain"));
     pause(FRAMES_MS);
     check(
       "brain-write-waits-for-the-drain-which-starts-the-brain",
@@ -1558,7 +1577,7 @@ namespace arcadeSelftest {
     const ticks = ticksOf(runner);
     let repeated = true;
     for (let i = 0; i < 3; i++) {
-      repeated = writeField(world, runner, "brain", brainLiteral(TICKER_ID)) && repeated;
+      repeated = writeField(attachment, runner, "brain", brainLiteral(TICKER_ID)) && repeated;
       pause(FRAMES_MS / 4);
     }
     check(
@@ -1566,7 +1585,7 @@ namespace arcadeSelftest {
       repeated && hostedOf(runner) === instance && ticksOf(runner) > ticks
     );
 
-    const replaced = writeField(world, runner, "brain", brainLiteral(TWIN_IDS[0]));
+    const replaced = writeField(attachment, runner, "brain", brainLiteral(TWIN_IDS[0]));
     const stillTicker = programOf(runner) === TICKER_ID;
     pause(FRAMES_MS);
     check(
@@ -1574,21 +1593,21 @@ namespace arcadeSelftest {
       replaced && stillTicker && programOf(runner) === TWIN_IDS[0]
     );
 
-    const ended = writeField(world, runner, "brain", wendoo.NIL_VALUE);
+    const ended = writeField(attachment, runner, "brain", wendoo.NIL_VALUE);
     const neverRan = solidSprite(8, 180, 100);
-    const nothingToEnd = writeField(world, neverRan, "brain", wendoo.NIL_VALUE);
+    const nothingToEnd = writeField(attachment, neverRan, "brain", wendoo.NIL_VALUE);
     pause(FRAMES_MS);
     check(
       "brain-write-of-nil-ends-the-program-and-starts-nothing-on-a-sprite-running-none",
       ended &&
         nothingToEnd &&
         programOf(runner) === wendooBrains.none.id &&
-        readsNothing(readField(world, runner, "brain")) &&
+        readsNothing(readField(attachment, runner, "brain")) &&
         programOf(neverRan) === NOT_RUNNING
     );
 
-    const unresolvedFirst = writeField(world, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
-    const unresolvedAgain = writeField(world, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
+    const unresolvedFirst = writeField(attachment, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
+    const unresolvedAgain = writeField(attachment, dormant, "brain", brainLiteral(UNKNOWN_BRAIN_ID));
     pause(FRAMES_MS);
     check(
       "brain-write-of-a-brain-no-registration-holds-changes-nothing",
@@ -1602,10 +1621,10 @@ namespace arcadeSelftest {
     const x = doomed.x;
     check(
       "a-destroyed-sprite-reads-nil-and-ignores-writes",
-      readsNothing(readField(world, doomed, "position")) &&
-        readsNothing(readField(world, doomed, "brain")) &&
-        writeField(world, doomed, "position", wendoo.vector2Value(new wendoo.DirectionVector(5, 5))) &&
-        writeField(world, doomed, "brain", brainLiteral(TWIN_IDS[0])) &&
+      readsNothing(readField(attachment, doomed, "position")) &&
+        readsNothing(readField(attachment, doomed, "brain")) &&
+        writeField(attachment, doomed, "position", wendoo.vector2Value(new wendoo.DirectionVector(5, 5))) &&
+        writeField(attachment, doomed, "brain", brainLiteral(TWIN_IDS[0])) &&
         doomed.x === x
     );
     pause(FRAMES_MS);
@@ -1722,8 +1741,8 @@ namespace arcadeSelftest {
 
   /**
    * A context running under a child rule whose parent is
-   * {@link OUTPUT_PARENT_RULE}, its world a fresh world of `sprite`; it runs
-   * under the parent until its rule funcId is changed.
+   * {@link OUTPUT_PARENT_RULE}, its attachment a fresh attachment of
+   * `sprite`; it runs under the parent until its rule funcId is changed.
    */
   function chainContextOn(sprite: Sprite): wendoo.ExecutionContext {
     const ctx = contextOn(sprite);
@@ -2449,9 +2468,9 @@ namespace arcadeSelftest {
     return leg.x >= margin && leg.x <= screen.width - margin && leg.y >= margin && leg.y <= screen.height - margin;
   }
 
-  /** The world `sprite`'s program runs in, in the current scene. */
-  function runningWorld(sprite: Sprite): wendoo.SpriteWorld {
-    return hostedOf(sprite).world as wendoo.SpriteWorld;
+  /** The attachment `sprite`'s program runs in, in the current scene. */
+  function runningAttachment(sprite: Sprite): wendoo.SpriteAttachment {
+    return hostedOf(sprite).attachment as wendoo.SpriteAttachment;
   }
 
   /** Duration of the current scene's last frame, in milliseconds: the time its programs last thought over. */
@@ -2465,7 +2484,7 @@ namespace arcadeSelftest {
    * slower when the destination lies within one frame's move.
    */
   function headsForItsLeg(sprite: Sprite, speed: number): boolean {
-    const wander = runningWorld(sprite).wander;
+    const wander = runningAttachment(sprite).wander;
     if (wander.legs.length !== 1) {
       return false;
     }
@@ -2477,7 +2496,7 @@ namespace arcadeSelftest {
   /**
    * In a scene of its own, check the move's wander: destinations picked on
    * screen inside the margin, in the camera's view as it moves, with the
-   * random source a sprite's world carries; a wander heading straight for
+   * random source a sprite's attachment carries; a wander heading straight for
    * its destination, keeping it while the sprite is farther than the arrival
    * distance and before its deadline, and picking anew on arrival, the
    * arrival distance included, or once the deadline passes; two call sites
@@ -2495,70 +2514,72 @@ namespace arcadeSelftest {
     const margin = wendoo.WANDER_SCREEN_MARGIN;
     const walker = solidSprite(8, 40, 60);
 
-    const lowWorld = new wendoo.SpriteWorld(walker);
+    const lowAttachment = new wendoo.SpriteAttachment(walker);
     const low = new PinnedRandom(false);
-    lowWorld.wander.random = low;
-    lowWorld.wander.bearing(walker, 1, 0, camera);
-    const highWorld = new wendoo.SpriteWorld(walker);
-    highWorld.wander.random = new PinnedRandom(true);
-    highWorld.wander.bearing(walker, 1, 0, camera);
+    lowAttachment.wander.random = low;
+    lowAttachment.wander.bearing(walker, 1, 0, camera);
+    const highAttachment = new wendoo.SpriteAttachment(walker);
+    highAttachment.wander.random = new PinnedRandom(true);
+    highAttachment.wander.bearing(walker, 1, 0, camera);
     camera.offsetX = 40;
     camera.offsetY = 30;
-    const shiftedWorld = new wendoo.SpriteWorld(walker);
-    shiftedWorld.wander.random = new PinnedRandom(false);
-    shiftedWorld.wander.bearing(walker, 1, 0, camera);
+    const shiftedAttachment = new wendoo.SpriteAttachment(walker);
+    shiftedAttachment.wander.random = new PinnedRandom(false);
+    shiftedAttachment.wander.bearing(walker, 1, 0, camera);
     camera.offsetX = 0;
     camera.offsetY = 0;
     check(
       "wander-picks-its-destination-on-screen-inside-the-margin",
       low.asked.join(",") === [margin, screen.width - margin, margin, screen.height - margin].join(",") &&
-        legAt(lowWorld.wander.leg(1), margin, margin) &&
-        legAt(highWorld.wander.leg(1), screen.width - margin, screen.height - margin) &&
-        legAt(shiftedWorld.wander.leg(1), 40 + margin, 30 + margin)
+        legAt(lowAttachment.wander.leg(1), margin, margin) &&
+        legAt(highAttachment.wander.leg(1), screen.width - margin, screen.height - margin) &&
+        legAt(shiftedAttachment.wander.leg(1), 40 + margin, 30 + margin)
     );
 
-    const world = new wendoo.SpriteWorld(walker);
+    const attachment = new wendoo.SpriteAttachment(walker);
     const queued = new QueuedRandom([120, 90, 30, 20, 140, 100]);
-    world.wander.random = queued;
-    const first = world.wander.bearing(walker, 4, 1000, camera);
+    attachment.wander.random = queued;
+    const first = attachment.wander.bearing(walker, 4, 1000, camera);
     const firstUnit = unitBetween(40, 60, 120, 90);
     check(
       "wander-heads-straight-for-its-destination",
-      pointsAt(first, firstUnit.x, firstUnit.y) && legAt(world.wander.leg(4), 120, 90)
+      pointsAt(first, firstUnit.x, firstUnit.y) && legAt(attachment.wander.leg(4), 120, 90)
     );
 
     walker.setPosition(100, 80);
-    const kept = world.wander.bearing(walker, 4, 2000, camera);
+    const kept = attachment.wander.bearing(walker, 4, 2000, camera);
     const keptUnit = unitBetween(100, 80, 120, 90);
     const keptFar = pointsAt(kept, keptUnit.x, keptUnit.y);
     walker.setPosition(120 - wendoo.WANDER_ARRIVAL_DISTANCE - 1, 90);
-    world.wander.bearing(walker, 4, 2000, camera);
+    attachment.wander.bearing(walker, 4, 2000, camera);
     check(
       "wander-keeps-its-destination-until-it-arrives",
-      keptFar && queued.taken === 2 && legAt(world.wander.leg(4), 120, 90)
+      keptFar && queued.taken === 2 && legAt(attachment.wander.leg(4), 120, 90)
     );
 
     walker.setPosition(120 - wendoo.WANDER_ARRIVAL_DISTANCE, 90);
-    const repicked = world.wander.bearing(walker, 4, 2000, camera);
+    const repicked = attachment.wander.bearing(walker, 4, 2000, camera);
     const repickedUnit = unitBetween(120 - wendoo.WANDER_ARRIVAL_DISTANCE, 90, 30, 20);
     check(
       "wander-picks-anew-on-arrival",
-      queued.taken === 4 && legAt(world.wander.leg(4), 30, 20) && pointsAt(repicked, repickedUnit.x, repickedUnit.y)
+      queued.taken === 4 &&
+        legAt(attachment.wander.leg(4), 30, 20) &&
+        pointsAt(repicked, repickedUnit.x, repickedUnit.y)
     );
 
     walker.setPosition(100, 100);
-    world.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS - 1, camera);
-    const keptBeforeDeadline = queued.taken === 4 && legAt(world.wander.leg(4), 30, 20);
-    world.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS, camera);
+    attachment.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS - 1, camera);
+    const keptBeforeDeadline = queued.taken === 4 && legAt(attachment.wander.leg(4), 30, 20);
+    attachment.wander.bearing(walker, 4, 2000 + wendoo.WANDER_DEADLINE_MS, camera);
     check(
       "wander-picks-anew-once-its-deadline-passes",
       keptBeforeDeadline &&
         queued.taken === 6 &&
-        legAt(world.wander.leg(4), 140, 100) &&
-        world.wander.leg(4).deadline === 2000 + 2 * wendoo.WANDER_DEADLINE_MS
+        legAt(attachment.wander.leg(4), 140, 100) &&
+        attachment.wander.leg(4).deadline === 2000 + 2 * wendoo.WANDER_DEADLINE_MS
     );
 
-    const pair = new wendoo.SpriteWorld(walker);
+    const pair = new wendoo.SpriteAttachment(walker);
     pair.wander.random = new QueuedRandom([20, 20, 140, 100, 60, 30]);
     walker.setPosition(80, 60);
     const toFirst = pair.wander.bearing(walker, 3, 0, camera);
@@ -2575,16 +2596,16 @@ namespace arcadeSelftest {
         legAt(pair.wander.leg(7), 140, 100)
     );
 
-    const bodyWorld = new wendoo.SpriteWorld(walker);
-    bodyWorld.wander.random = new QueuedRandom([120, 90]);
+    const bodyAttachment = new wendoo.SpriteAttachment(walker);
+    bodyAttachment.wander.random = new QueuedRandom([120, 90]);
     walker.setPosition(40, 60);
-    const ctx = contextIn(bodyWorld);
+    const ctx = contextIn(bodyAttachment);
     ctx.currentCallSiteId = 9;
     ctx.time = 1500;
     const args = moveBuffer();
     args[MOVE_WANDER] = PRESENT;
     moveNow(ctx, args);
-    const bodyLeg = bodyWorld.wander.leg(9);
+    const bodyLeg = bodyAttachment.wander.leg(9);
     const movedFirst = movesAlong(walker, 80, 30, 100);
     const composed = moveBuffer();
     composed[MOVE_WANDER] = PRESENT;
@@ -2601,10 +2622,10 @@ namespace arcadeSelftest {
     );
 
     stopFrames();
-    const closeWorld = new wendoo.SpriteWorld(walker);
-    closeWorld.wander.random = new QueuedRandom([43, 64]);
+    const closeAttachment = new wendoo.SpriteAttachment(walker);
+    closeAttachment.wander.random = new QueuedRandom([43, 64]);
     placeAt(walker, 40, 60);
-    const closeCtx = contextIn(closeWorld);
+    const closeCtx = contextIn(closeAttachment);
     closeCtx.currentCallSiteId = 2;
     closeCtx.dt = STEP_MS;
     const brisk = moveBuffer();
@@ -2613,20 +2634,20 @@ namespace arcadeSelftest {
     moveNow(closeCtx, brisk);
     check(
       "wander-within-one-step-lands-on-its-destination",
-      legAt(closeWorld.wander.leg(2), 43, 64) && movesAlong(walker, 3, 4, speedToReach(400, 5, STEP_MS))
+      legAt(closeAttachment.wander.leg(2), 43, 64) && movesAlong(walker, 3, 4, speedToReach(400, 5, STEP_MS))
     );
 
-    const restWorld = new wendoo.SpriteWorld(walker);
-    restWorld.wander.random = new QueuedRandom([40, 60]);
-    const restCtx = contextIn(restWorld);
+    const restAttachment = new wendoo.SpriteAttachment(walker);
+    restAttachment.wander.random = new QueuedRandom([40, 60]);
+    const restCtx = contextIn(restAttachment);
     restCtx.currentCallSiteId = 2;
     restCtx.dt = STEP_MS;
     moveNow(restCtx, brisk);
-    check("wander-arrived-holds-still", legAt(restWorld.wander.leg(2), 40, 60) && movesAt(walker, 0, 0));
+    check("wander-arrived-holds-still", legAt(restAttachment.wander.leg(2), 40, 60) && movesAt(walker, 0, 0));
 
     const arrivals: number[] = [];
     for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
-      const roving = new wendoo.SpriteWorld(walker);
+      const roving = new wendoo.SpriteAttachment(walker);
       roving.wander.random = new SeededRandom(7);
       placeAt(walker, 80, 60);
       const rovingCtx = contextIn(roving);
@@ -2688,7 +2709,7 @@ namespace arcadeSelftest {
     const drawn = solidSprite(8, 40, 60);
     wendoo.runBrain(drawn, wendooBrains.p_drawnTowardWndr1);
     pause(FRAMES_MS);
-    const drawnWander = runningWorld(drawn).wander;
+    const drawnWander = runningAttachment(drawn).wander;
     const drawnLeg = drawnWander.legs[0];
     const toLure = unitToward(drawn, lure);
     const toLeg = unitBetween(drawn.x, drawn.y, drawnLeg.x, drawnLeg.y);
@@ -2705,7 +2726,7 @@ namespace arcadeSelftest {
     const doubled = solidSprite(8, 80, 60);
     wendoo.runBrain(doubled, wendooBrains.p_twofoldWander001);
     pause(FRAMES_MS);
-    const doubledWander = runningWorld(doubled).wander;
+    const doubledWander = runningAttachment(doubled).wander;
     let twoLegs = doubledWander.legs.length === 2 && doubledWander.callSiteIds[0] !== doubledWander.callSiteIds[1];
     let blendX = 0;
     let blendY = 0;
@@ -2914,7 +2935,7 @@ namespace arcadeSelftest {
       for (let i = 0; i < FRAME_SCHEDULES.length; i++) {
         placeAt(quarry, 113, 60);
         placeAt(glider, 20, 60);
-        const ctx = contextIn(new wendoo.SpriteWorld(glider));
+        const ctx = contextIn(new wendoo.SpriteAttachment(glider));
         let farthest = glider.x;
         stepMove(ctx, pursuit, FRAME_SCHEDULES[i], 90, (timeMs: number) => {
           farthest = Math.max(farthest, glider.x);
@@ -2990,9 +3011,9 @@ namespace arcadeSelftest {
     );
 
     const walker = solidSprite(8, 80, 90);
-    const world = new wendoo.SpriteWorld(walker);
-    const keptInfinite = writeField(world, walker, "position", pointValue(INFINITE, 20));
-    const keptNan = writeField(world, walker, "position", pointValue(20, NOT_A_NUMBER));
+    const attachment = new wendoo.SpriteAttachment(walker);
+    const keptInfinite = writeField(attachment, walker, "position", pointValue(INFINITE, 20));
+    const keptNan = writeField(attachment, walker, "position", pointValue(20, NOT_A_NUMBER));
     check(
       "position-write-of-a-non-finite-point-moves-nothing",
       keptInfinite && keptNan && walker.x === 80 && walker.y === 90
@@ -3180,40 +3201,40 @@ namespace arcadeSelftest {
     game.pushScene();
     const heavy = SMOOTHING_TIME_CONSTANTS[1];
     const reader = solidSprite(8, 20, 20);
-    const world = hostedWorld(reader);
+    const attachment = hostedAttachment(reader);
     const smoothed = solidSprite(8, 40, 20);
 
     wendoo.moveSmoothing = 100;
-    const readsProjects = readsNumber(readField(world, smoothed, "moveSmoothing"), 0.1);
+    const readsProjects = readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0.1);
     wendoo.setMoveSmoothing(smoothed, heavy);
-    const readsOwn = readsNumber(readField(world, smoothed, "moveSmoothing"), 0.15);
+    const readsOwn = readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0.15);
     wendoo.setMoveSmoothing(smoothed, -1);
     wendoo.moveSmoothing = 0;
-    const readsOff = readsNumber(readField(world, smoothed, "moveSmoothing"), 0);
+    const readsOff = readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0);
     wendoo.moveSmoothing = -50;
     check(
       "move-smoothing-reads-in-seconds-the-smoothing-its-sprite-eases-with",
-      readsProjects && readsOwn && readsOff && readsNumber(readField(world, smoothed, "moveSmoothing"), 0)
+      readsProjects && readsOwn && readsOff && readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0)
     );
 
     wendoo.moveSmoothing = 0;
-    const wrote = writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(0.15));
+    const wrote = writeField(attachment, smoothed, "moveSmoothing", wendoo.mkNumber(0.15));
     const roundTrips =
       wrote &&
-      readsNumber(readField(world, smoothed, "moveSmoothing"), 0.15) &&
+      readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0.15) &&
       wendoo.moveSmoothingOf(smoothed) === heavy &&
       easesWith(smoothed, heavy);
     wendoo.moveSmoothing = 100;
-    writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(-2));
+    writeField(attachment, smoothed, "moveSmoothing", wendoo.mkNumber(-2));
     check(
       "move-smoothing-write-round-trips-its-seconds-and-a-negative-number-turns-smoothing-off",
       roundTrips &&
-        readsNumber(readField(world, smoothed, "moveSmoothing"), 0) &&
+        readsNumber(readField(attachment, smoothed, "moveSmoothing"), 0) &&
         wendoo.moveSmoothingOf(smoothed) === 0 &&
         easesWith(smoothed, 0)
     );
 
-    writeField(world, smoothed, "moveSmoothing", wendoo.mkNumber(INFINITE));
+    writeField(attachment, smoothed, "moveSmoothing", wendoo.mkNumber(INFINITE));
     const applicator = new wendoo.DirectMotionApplicator();
     smoothed.vx = 0;
     applicator.apply(new wendoo.MotionVerdict(smoothed, 100, 0), STEP_MS);
@@ -3224,7 +3245,7 @@ namespace arcadeSelftest {
     applicator.apply(new wendoo.MotionVerdict(smoothed, 40, 0), STEP_MS);
     check(
       "move-smoothing-write-of-an-infinity-holds-its-sprite-at-the-speed-it-has-and-sets-a-slow-down-at-once",
-      readsNumber(readField(world, smoothed, "moveSmoothing"), INFINITE) &&
+      readsNumber(readField(attachment, smoothed, "moveSmoothing"), INFINITE) &&
         heldAtRest &&
         heldAtSpeed &&
         smoothed.vx === 40 &&
@@ -3242,7 +3263,7 @@ namespace arcadeSelftest {
     let unchanged = true;
     for (let i = 0; i < unusable.length; i++) {
       unchanged =
-        writeField(world, smoothed, "moveSmoothing", unusable[i]) &&
+        writeField(attachment, smoothed, "moveSmoothing", unusable[i]) &&
         unchanged &&
         wendoo.moveSmoothingOf(smoothed) === heavy;
     }
@@ -3253,8 +3274,8 @@ namespace arcadeSelftest {
     doomed.destroy();
     check(
       "move-smoothing-on-a-destroyed-sprite-reads-nil-and-ignores-writes",
-      readsNothing(readField(world, doomed, "moveSmoothing")) &&
-        writeField(world, doomed, "moveSmoothing", wendoo.mkNumber(0)) &&
+      readsNothing(readField(attachment, doomed, "moveSmoothing")) &&
+        writeField(attachment, doomed, "moveSmoothing", wendoo.mkNumber(0)) &&
         wendoo.moveSmoothingOf(doomed) === heavy
     );
     smoothed.destroy();
@@ -3293,7 +3314,7 @@ namespace arcadeSelftest {
     check(
       "a-move-smoothing-assignment-through-the-bumped-sprite-output-gives-the-sprite-it-touches-that-smoothing",
       wendoo.moveSmoothingOf(touched) === 0 &&
-        readsNumber(readField(world, touched, "moveSmoothing"), 0) &&
+        readsNumber(readField(attachment, touched, "moveSmoothing"), 0) &&
         wendoo.moveSmoothingOf(calmer) === wendoo.moveSmoothing &&
         programOf(calmer) === "calmBumpedSmooth"
     );
@@ -3315,7 +3336,7 @@ namespace arcadeSelftest {
       easedFromTheStart &&
         programOf(keeper) === "climbMoveUp00001" &&
         wendoo.moveSmoothingOf(keeper) === heavy &&
-        readsNumber(readField(world, keeper, "moveSmoothing"), 0.15) &&
+        readsNumber(readField(attachment, keeper, "moveSmoothing"), 0.15) &&
         keeper.vy > -99
     );
     keeper.destroy();
@@ -3367,7 +3388,7 @@ namespace arcadeSelftest {
     game.pushScene();
     stopFrames();
     const heavy = SMOOTHING_TIME_CONSTANTS[1];
-    const world = hostedWorld(solidSprite(8, 20, 20));
+    const attachment = hostedAttachment(solidSprite(8, 20, 20));
     const cruiser = solidSprite(8, 20, 60);
     const starter = solidSprite(8, 20, 100);
     wendoo.setMoveSmoothing(cruiser, heavy);
@@ -3386,7 +3407,7 @@ namespace arcadeSelftest {
       programOf(cruiser) === COUNTED_ID &&
       movesAt(cruiser, easedFromRest(CRUISE_FRAMES + 1, heavy), 0) &&
       movesAt(starter, easedFromRest(1, heavy), 0);
-    writeField(world, cruiser, "brain", brainLiteral(ADVANCE_ID));
+    writeField(attachment, cruiser, "brain", brainLiteral(ADVANCE_ID));
     stepFrame(++frame);
     check(
       "a-smoothed-sprite-eases-on-from-the-velocity-it-has-through-a-brain-change",
@@ -3411,8 +3432,8 @@ namespace arcadeSelftest {
       stepFrame(++frame);
     }
     const recruising = movesAt(cruiser, easedFromRest(CRUISE_FRAMES, heavy), 0);
-    writeField(world, cruiser, "brain", wendoo.NIL_VALUE);
-    writeField(world, cruiser, "brain", brainLiteral(COUNTED_ID));
+    writeField(attachment, cruiser, "brain", wendoo.NIL_VALUE);
+    writeField(attachment, cruiser, "brain", brainLiteral(COUNTED_ID));
     stepFrame(++frame);
     check(
       "a-smoothed-sprite-given-no-brain-and-a-new-one-on-one-frame-eases-on-from-the-velocity-it-has",
@@ -3421,7 +3442,7 @@ namespace arcadeSelftest {
 
     cruiser.destroy();
     starter.destroy();
-    world.sprite.destroy();
+    attachment.sprite.destroy();
     resumeFrames();
     game.popScene();
   }
@@ -3612,8 +3633,8 @@ namespace arcadeSelftest {
     const hero = heroSprite(30, 30);
     const twin = heroSprite(60, 30);
     const plain = solidSprite(8, 90, 30);
-    const world = hostedWorld(plain);
-    const worn = (sprite: Sprite) => readField(world, sprite, "image");
+    const attachment = hostedAttachment(plain);
+    const worn = (sprite: Sprite) => readField(attachment, sprite, "image");
     check(
       "image-equality-reads-pixels-whether-a-sprite-wears-the-image-or-an-asset-names-it",
       comparesBoth(IMAGE_TYPE, plain, worn(hero), imageLiteral(HERO_ASSET_ID), true) &&
@@ -3791,11 +3812,11 @@ namespace arcadeSelftest {
 
     const nil = wendoo.NIL_VALUE;
     const plain = solidSprite(8, 90, 30);
-    const world = hostedWorld(plain);
+    const attachment = hostedAttachment(plain);
     const here = solidSprite(8, 30, 30);
     const alsoHere = solidSprite(8, 30, 30);
     const there = solidSprite(8, 30, 31);
-    const at = (sprite: Sprite) => readField(world, sprite, "position");
+    const at = (sprite: Sprite) => readField(attachment, sprite, "position");
     check(
       "vector2-equality-holds-exactly-when-both-components-are-equal",
       comparesBoth(VECTOR2_TYPE, plain, pointValue(20, 30), pointValue(20, 30), true) &&
@@ -3848,7 +3869,7 @@ namespace arcadeSelftest {
     const huge = pointValue(1e308, 1);
     const overflowed = computes(wendoo.OPERATOR_MULTIPLY, POINT_AND_NUMBER, plain, huge, wendoo.mkNumber(10));
     const walker = solidSprite(8, 80, 90);
-    const kept = writeField(hostedWorld(walker), walker, "position", overflowed);
+    const kept = writeField(hostedAttachment(walker), walker, "position", overflowed);
     check(
       "overflowing-vector2-arithmetic-holds-an-infinity-that-reads-as-no-point",
       pointComponent(overflowed, "x") === INFINITE &&
@@ -4149,7 +4170,7 @@ namespace arcadeSelftest {
   function runtimeIn(host: wendoo.ProgramHost, sprite: Sprite): wendoo.BrainRuntime {
     const hosted = host.hostedPrograms();
     for (let i = 0; i < hosted.length; i++) {
-      if ((hosted[i].world as wendoo.SpriteWorld).sprite === sprite) {
+      if ((hosted[i].attachment as wendoo.SpriteAttachment).sprite === sprite) {
         return hosted[i].runtime;
       }
     }
