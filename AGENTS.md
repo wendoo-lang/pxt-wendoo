@@ -418,7 +418,9 @@ the current slice alone.
       seconds gives the sprite smoothing of its own, a negative number
       giving it 0 and a write holding no usable number a no-op logged once
       per run; a destroyed sprite reads nil
-      and ignores writes, and no write is ever refused), the `Image` asset
+      and ignores writes, and no write is ever refused; the type's existence
+      hook reports a value standing for a destroyed sprite gone, so every
+      truthiness test a brain makes reads it as nothing), the `Image` asset
       type (a plain struct holding the pxt asset id of one of the project's
       images, resolved through pxt's image factories when a tile uses it,
       never baked into a program; an id no factory holds resolves to
@@ -449,8 +451,9 @@ the current slice alone.
       `Vector2` variable holds the point written to it -- the store's
       deep copy is the snapshot; a `Sprite` variable holds the sprite
       itself, its native backing copied by reference with no snapshot
-      hook, so once that sprite is destroyed its fields read nil and
-      writes through it change nothing), the icons it gives the core tiles (the page tiles,
+      hook, so once that sprite is destroyed the variable reads as nothing:
+      a WHEN holding it does not fire, its fields read nil, writes through
+      it change nothing, and an action it is placed in does not run), the icons it gives the core tiles (the page tiles,
       every page's own tile through the page family id, the timer, AND, OR,
       NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and

@@ -71,7 +71,9 @@ namespace wendoo {
    * 0, off; a write of anything else, not-a-number included, changes
    * nothing and is logged as {@link MOVE_SMOOTHING_UNUSABLE}. A destroyed
    * sprite reads nil from every field and ignores every write. No write is
-   * ever refused.
+   * ever refused. A value standing for a destroyed sprite, or for none, does
+   * not exist to the existence hook, so every truthiness test reads it as
+   * nothing.
    */
   //% hidden
   export class SpriteBinding extends StructTypeBinding {
@@ -82,11 +84,12 @@ namespace wendoo {
       super();
       this.hasFieldGetter = true;
       this.hasFieldSetter = true;
+      this.hasExists = true;
     }
 
     fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
-      const sprite = spriteOf(source);
-      if (!sprite || isDestroyed(sprite)) {
+      const sprite = liveSpriteOf(source);
+      if (!sprite) {
         return undefined;
       }
       if (fieldId === this.fieldIds[SPRITE_FIELD_IMAGE]) {
@@ -106,8 +109,8 @@ namespace wendoo {
     }
 
     fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
-      const sprite = spriteOf(source);
-      if (!sprite || isDestroyed(sprite)) {
+      const sprite = liveSpriteOf(source);
+      if (!sprite) {
         return true;
       }
       if (fieldId === this.fieldIds[SPRITE_FIELD_IMAGE]) {
@@ -126,6 +129,10 @@ namespace wendoo {
         this.writeMoveSmoothing(sprite, value);
       }
       return true;
+    }
+
+    exists(source: Value, ctx: ExecutionContext): boolean {
+      return !!liveSpriteOf(source);
     }
 
     /** Give `sprite` the smoothing of the number of seconds `value` holds, held at 0 or above; log a value holding no usable number, the first time, and change nothing. */
@@ -183,6 +190,20 @@ namespace wendoo {
   }
 
   /**
+   * The sprite `value` stands for while it is not destroyed, or `undefined`
+   * when `value` stands for no sprite or for a destroyed one.
+   *
+   * @param value - Any value a program produced.
+   */
+  function liveSpriteOf(value: Value): Sprite {
+    const sprite = spriteOf(value);
+    if (!sprite || isDestroyed(sprite)) {
+      return undefined;
+    }
+    return sprite;
+  }
+
+  /**
    * Whether `a` and `b` stand for one and the same sprite, and it is not
    * destroyed. `false` when either stands for no sprite or for a destroyed
    * one, so two values standing for one destroyed sprite are not the same.
@@ -192,8 +213,8 @@ namespace wendoo {
    */
   //% hidden
   export function sameSprite(a: Value, b: Value): boolean {
-    const sprite = spriteOf(a);
-    if (!sprite || isDestroyed(sprite)) {
+    const sprite = liveSpriteOf(a);
+    if (!sprite) {
       return false;
     }
     return sprite === spriteOf(b);

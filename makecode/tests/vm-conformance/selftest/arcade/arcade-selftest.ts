@@ -3913,10 +3913,12 @@ namespace arcadeSelftest {
    * sprite variable with nothing gating its rule: never written, the variable
    * is nil and gates the move off, so the sprite holds still; written a live
    * sprite, the move pursues it; once that sprite is destroyed, the variable
-   * still holds a sprite value, standing for no sprite, and the move adds
-   * nothing for it, falling back to the default direction. And a range pair
-   * filtered on a sprite variable never written fires neither rule while
-   * another sprite is in range.
+   * still holds a sprite value, standing for no sprite, which reads as
+   * nothing, so it gates the move off and the sprite holds still. And a range
+   * pair filtered on a sprite variable never written fires neither rule while
+   * another sprite is in range. And a rule whose WHEN is a sprite variable
+   * alone fires while the sprite written to it lives, and stops firing for
+   * good once that sprite is destroyed.
    */
   function checkVariables(): void {
     game.pushScene();
@@ -3986,8 +3988,8 @@ namespace arcadeSelftest {
     quarry.destroy();
     pause(FRAMES_MS);
     check(
-      "a-move-toward-a-sprite-variable-whose-sprite-is-destroyed-falls-back-to-the-default-direction",
-      movesAt(seeker, DEFAULT_MOVE_SPEED, 0) && programOf(seeker) === "towardHeldVar001"
+      "a-move-toward-a-sprite-variable-whose-sprite-is-destroyed-holds-still",
+      movesAt(seeker, 0, 0) && programOf(seeker) === "towardHeldVar001"
     );
     clearScene();
 
@@ -3998,6 +4000,29 @@ namespace arcadeSelftest {
     check(
       "a-range-pair-filtered-on-a-sprite-variable-never-written-fires-neither-rule",
       movesAt(sifter, 0, 0) && sifter.x === 40 && sifter.y === 60
+    );
+    clearScene();
+
+    const keeper = solidSprite(8, 40, 60);
+    const kept = solidSprite(8, 100, 60);
+    wendoo.runBrain(keeper, wendooBrains.p_heldWhenGate0001);
+    pause(FRAMES_MS);
+    const idleUntilWritten = movesAt(keeper, 0, 0) && keeper.x === 40;
+    kept.setPosition(46, 60);
+    pause(FRAMES_MS);
+    kept.setPosition(130, 60);
+    pause(FRAMES_MS);
+    check(
+      "a-rule-whose-when-is-a-sprite-variable-fires-while-its-sprite-lives",
+      idleUntilWritten && movesAt(keeper, DEFAULT_MOVE_SPEED, 0)
+    );
+    kept.destroy();
+    pause(FRAMES_MS);
+    const stoppedAt = keeper.x;
+    pause(FRAMES_MS);
+    check(
+      "a-rule-whose-when-is-a-sprite-variable-stops-for-good-once-its-sprite-is-destroyed",
+      movesAt(keeper, 0, 0) && keeper.x === stoppedAt && programOf(keeper) === "heldWhenGate0001"
     );
     game.popScene();
   }

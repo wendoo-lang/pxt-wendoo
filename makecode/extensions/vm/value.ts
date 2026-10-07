@@ -212,12 +212,15 @@ namespace wendoo {
 
   /**
    * Whether `v` passes a truthiness gate. Unknown, void, nil, `false`,
-   * numeric zero, the empty string and the empty list are falsy; every other
-   * value is truthy.
+   * numeric zero, the empty string and the empty list are falsy, and so is a
+   * struct whose registered type declares an existence hook that reports the
+   * value's host object gone; every other value is truthy.
    *
    * @param v - Value to test.
+   * @param types - Struct types whose existence hooks the test consults.
+   * @param ctx - Execution context of the testing fiber.
    */
-  export function isTruthy(v: Value): boolean {
+  export function isTruthy(v: Value, types: StructTypeRegistry, ctx: ExecutionContext): boolean {
     if (v.t === ValueTag.Unknown || v.t === ValueTag.Void || v.t === ValueTag.Nil) {
       return false;
     }
@@ -232,6 +235,11 @@ namespace wendoo {
     }
     if (v.t === ValueTag.List) {
       return v.fields.length > 0;
+    }
+    if (v.t === ValueTag.Struct) {
+      const binding = types.getByTypeId(v.typeId);
+      // biome-ignore lint/complexity/useOptionalChain: pxt's static subset does not compile optional chaining.
+      return !(binding && binding.hasExists) || binding.exists(v, ctx);
     }
     return true;
   }

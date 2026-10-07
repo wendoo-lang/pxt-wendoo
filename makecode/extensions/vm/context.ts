@@ -785,7 +785,8 @@ namespace wendoo {
    * the stable type-atom id its wire (TYPS) entries record. A closed struct
    * type registers with every hook flag false; a native-backed type
    * subclasses, sets the flag of each hook it implements, and overrides that
-   * hook to dispatch into the host object behind the value.
+   * hook to dispatch into the host object behind the value, or to report
+   * whether that object still exists.
    */
   export class StructTypeBinding {
     /** TypeId a struct value of this type carries, e.g. `"struct:<Point>"`, assigned when it is registered. */
@@ -804,6 +805,8 @@ namespace wendoo {
     hasFieldSetter: boolean;
     /** Whether {@link StructTypeBinding.snapshotNative} is registered; false copies the native handle by reference. */
     hasSnapshotNative: boolean;
+    /** Whether {@link StructTypeBinding.exists} is registered; false keeps every value of the type truthy. */
+    hasExists: boolean;
     /** Whether the type declares every field read-only, so no brain can write one. */
     fieldsAreReadOnly: boolean;
 
@@ -814,6 +817,7 @@ namespace wendoo {
       this.hasFieldGetter = false;
       this.hasFieldSetter = false;
       this.hasSnapshotNative = false;
+      this.hasExists = false;
       this.fieldsAreReadOnly = false;
     }
 
@@ -855,6 +859,19 @@ namespace wendoo {
     // biome-ignore lint/suspicious/noExplicitAny: pxt's static subset has no unknown type.
     snapshotNative(source: Value, ctx: ExecutionContext): any {
       return source.native;
+    }
+
+    /**
+     * Whether the host object behind `source` still exists. Every truthiness
+     * test of a value of the type calls it, and a value it answers false for
+     * is falsy. It must not change host state, and its answer may differ
+     * between calls. The base implementation answers true.
+     *
+     * @param source - Struct value being tested.
+     * @param ctx - Execution context of the testing fiber.
+     */
+    exists(source: Value, ctx: ExecutionContext): boolean {
+      return true;
     }
   }
 

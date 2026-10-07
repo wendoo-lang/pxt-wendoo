@@ -255,6 +255,7 @@ const ARCADE_SOURCES = [
   "swap-shape.src.json",
   "toward-held.src.json",
   "filter-unset.src.json",
+  "held-when-gate.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

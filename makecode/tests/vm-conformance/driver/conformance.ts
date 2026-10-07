@@ -68,7 +68,8 @@
  *   world's one anchor host object. Every `Anchor` value handed out before the
  *   call keeps fronting that object, and from then on the type's field hooks
  *   designate nothing: reads return absent, which the VM renders nil, and
- *   writes are rejected.
+ *   writes are rejected. Every `Marker` value over the object is falsy from
+ *   then on.
  * - `defer target()` -- asynchronous sensor whose handle resolves to a fresh
  *   `Target` value one tick after its dispatch, backed by a lazy resolver
  *   over the world's call-counting target resolution. `Target` registers
@@ -87,9 +88,16 @@
  *   field through, and `{x: 6.25, y: 0.75}` to `sealed`, whose value is
  *   read-only. Each output's tile reads the struct in the sensor's rule and
  *   the rules below it.
+ * - `marker()` -- synchronous sensor returning a fresh `Marker` value over the
+ *   world's one anchor host object. `Marker` (field `x`, read-only) is a
+ *   second native-backed view of that object, and the profile's one type
+ *   declaring an existence hook: the hook reports whether the world has
+ *   destroyed the object, so after `destroy anchor` every `Marker` value is
+ *   falsy. Its field getter reads `x` off the object whether or not it was
+ *   destroyed.
  *
- * The profile also registers its three struct types -- `Point` (closed),
- * `Anchor`, and `Target` -- so every corpus program's TYPS atom entries
+ * The profile also registers its four struct types -- `Point` (closed),
+ * `Anchor`, `Target`, and `Marker` -- so every corpus program's TYPS atom entries
  * resolve at load. The profile's `Mode` enum type is program-local: its
  * symbols travel in each program's own type table, so the replay registers
  * nothing for it.
@@ -151,6 +159,7 @@ namespace wendoo {
     DestroyAnchor = 1039,
     NotANumber = 1040,
     PointOutputs = 1041,
+    Marker = 1042,
   }
 
   /**
@@ -279,7 +288,8 @@ namespace wendoo {
     /**
      * Destroy the world's one anchor host object. Every `Anchor` value already
      * handed out keeps fronting it, and every field hook of the type then
-     * designates nothing. Destroying an already destroyed anchor changes
+     * designates nothing; every `Marker` value over it reads as gone to its
+     * type's existence hook. Destroying an already destroyed anchor changes
      * nothing.
      */
     destroyAnchor(): void {
@@ -585,6 +595,12 @@ namespace wendoo {
   /** TypeId of the conformance profile's `Target` native struct type. */
   const CONFORMANCE_TARGET_TYPE_ID = structTypeId(TARGET_TYPE_NAME);
 
+  /** Wendoo type name of the conformance profile's existence-hooked struct type. */
+  const MARKER_TYPE_NAME = "Marker";
+
+  /** TypeId of the conformance profile's `Marker` native struct type. */
+  const CONFORMANCE_MARKER_TYPE_ID = structTypeId(MARKER_TYPE_NAME);
+
   /** Stable type-atom id of the `Point` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_POINT_ATOM_ID = 1024;
 
@@ -593,6 +609,9 @@ namespace wendoo {
 
   /** Stable type-atom id of the `Target` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_TARGET_ATOM_ID = 1026;
+
+  /** Stable type-atom id of the `Marker` struct type; corpus TYPS entries record it verbatim. */
+  const CONFORMANCE_MARKER_ATOM_ID = 1027;
 
   /** Field specs of the `Point` type, in declaration order. */
   const POINT_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
@@ -603,6 +622,9 @@ namespace wendoo {
   /** Field specs of the `Target` type, in declaration order. */
   const TARGET_FIELDS = [readOnlyField("value", TYPE_NUMBER)];
 
+  /** Field specs of the `Marker` type, in declaration order. */
+  const MARKER_FIELDS = [readOnlyField("x", TYPE_NUMBER)];
+
   /** Hand-assigned field ids of the `Point` type, parallel to {@link POINT_FIELDS}; corpus programs record them verbatim. */
   const POINT_FIELD_IDS = [0, 1];
 
@@ -612,6 +634,9 @@ namespace wendoo {
   /** Hand-assigned field ids of the `Target` type, parallel to {@link TARGET_FIELDS}; corpus programs record them verbatim. */
   const TARGET_FIELD_IDS = [0];
 
+  /** Hand-assigned field ids of the `Marker` type, parallel to {@link MARKER_FIELDS}; corpus programs record them verbatim. */
+  const MARKER_FIELD_IDS = [0];
+
   /** Position of the `Anchor` type's `x` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_ANCHOR_FIELD_X = 0;
 
@@ -620,6 +645,9 @@ namespace wendoo {
 
   /** Position of the `Target` type's `value` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_TARGET_FIELD_VALUE = 0;
+
+  /** Position of the `Marker` type's `x` field in its declaration, which indexes the binding's field ids. */
+  const CONFORMANCE_MARKER_FIELD_X = 0;
 
   /**
    * Lazy native handle of an unassigned `Target` value: resolves to the host
@@ -741,6 +769,32 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The `Marker` type: a field getter reading the world's anchor host object
+   * whether or not it was destroyed, and the existence hook reporting whether
+   * it was.
+   */
+  class MarkerTypeBinding extends StructTypeBinding {
+    constructor() {
+      super();
+      this.hasFieldGetter = true;
+      this.hasExists = true;
+      this.fieldsAreReadOnly = true;
+    }
+
+    fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
+      const anchor = source.native as ConformanceAnchor;
+      if (!anchor || fieldId !== this.fieldIds[CONFORMANCE_MARKER_FIELD_X]) {
+        return undefined;
+      }
+      return mkNumber(anchor.x);
+    }
+
+    exists(source: Value, ctx: ExecutionContext): boolean {
+      return resolveConformanceAnchor(source.native) !== undefined;
+    }
+  }
+
   /** Settles its handle as resolved, carrying an `Anchor` value built at settle time over the world's anchor. */
   class AnchorReadingSettlement extends DeferredSettlement {
     private handle: AsyncHandle;
@@ -795,6 +849,18 @@ namespace wendoo {
       const world = ctx.data as ConformanceWorld;
       world.destroyAnchor();
       return VOID_VALUE;
+    }
+  }
+
+  /** `marker()`: returns a fresh `Marker` value over the world's anchor host object. */
+  class MarkerSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const world = ctx.data as ConformanceWorld;
+      return mkNativeStruct(CONFORMANCE_MARKER_TYPE_ID, world.anchor());
     }
   }
 
@@ -1123,6 +1189,13 @@ namespace wendoo {
     TARGET_FIELD_IDS,
     new TargetTypeBinding()
   );
+  defineConformanceStruct(
+    MARKER_TYPE_NAME,
+    CONFORMANCE_MARKER_ATOM_ID,
+    MARKER_FIELDS,
+    MARKER_FIELD_IDS,
+    new MarkerTypeBinding()
+  );
 
   bindConformanceAction(
     "sensor.conformance.echo",
@@ -1239,6 +1312,12 @@ namespace wendoo {
     ConformanceActionId.PointOutputs,
     new PointOutputsSensor(),
     pointOutputsSpec
+  );
+  bindConformanceAction(
+    "sensor.conformance.marker",
+    ConformanceActionId.Marker,
+    new MarkerSensor(),
+    sensorSpec([], MARKER_TYPE_NAME, "marker")
   );
 
   bindConformanceOperator(

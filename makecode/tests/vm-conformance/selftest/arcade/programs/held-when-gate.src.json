@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "heldWhenGate0001",
+  "name": "Held when gate",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0heldWhenGate",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "target",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0heldWhenGate"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0heldWhenGate",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.var->fVr0heldWhenGate",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped"
+          ],
+          "children": [],
+          "ruleId": "fRu0heldWhenGat0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0heldWhenGate"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.right"
+          ],
+          "children": [],
+          "ruleId": "fRu0heldWhenGat1"
+        }
+      ]
+    }
+  ]
+}

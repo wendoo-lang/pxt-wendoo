@@ -697,7 +697,7 @@ namespace wendoo {
      */
     private execJmpIfFalse(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const condition = this.pop(fiber);
-      frame.pc += isTruthy(condition) ? 1 : ins.a;
+      frame.pc += isTruthy(condition, this.types, fiber.ctx) ? 1 : ins.a;
       return StepOutcome.Continue;
     }
 
@@ -707,7 +707,7 @@ namespace wendoo {
      */
     private execJmpIfTrue(fiber: Fiber, ins: Instr, frame: Frame): StepOutcome {
       const condition = this.pop(fiber);
-      frame.pc += isTruthy(condition) ? ins.a : 1;
+      frame.pc += isTruthy(condition, this.types, fiber.ctx) ? ins.a : 1;
       return StepOutcome.Continue;
     }
 
@@ -1003,7 +1003,7 @@ namespace wendoo {
       const ruleFuncId = this.frameRuleFuncId(frame);
       services.ruleVars.setByName(ruleFuncId, WHEN_RESULT_VAR, whenResult);
 
-      const fired = presenceGated ? whenResult.t !== ValueTag.Nil : isTruthy(whenResult);
+      const fired = presenceGated ? whenResult.t !== ValueTag.Nil : isTruthy(whenResult, this.types, fiber.ctx);
       services.ruleFiring.set(
         ruleFuncId,
         chained
