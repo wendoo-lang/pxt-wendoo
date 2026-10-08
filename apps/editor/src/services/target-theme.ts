@@ -5,8 +5,8 @@ import type { TileColorDef } from "@wendoo/ui";
  * The editor's themeable token set: every CSS custom property a target theme
  * may override. It holds the semantic color contract `@wendoo/ui` declares in
  * `ui.css` -- the tokens the editor's own UI and the shared components paint
- * with -- and the brain editor's `--color-brain-*` tokens. A target theme
- * may override any of them.
+ * with -- and the brain editor's `--color-brain-*` and `--shadow-brain-*`
+ * tokens. A target theme may override any of them.
  *
  * Every color the editor's UI paints is one of these tokens, used through its
  * Tailwind utility (`bg-success`, `text-muted-foreground`) or `var()`; no
@@ -49,8 +49,10 @@ export const THEME_TOKENS = [
   "--color-brain-desk-from",
   "--color-brain-desk-to",
   "--color-brain-desk-glow",
+  "--color-brain-desk-shade",
   "--color-brain-rule-from",
   "--color-brain-rule-to",
+  "--shadow-brain-rule",
   "--color-brain-panel",
   "--color-brain-armed",
   "--color-brain-tile-border",
@@ -86,7 +88,11 @@ export const THEME_TOKENS = [
 /** One member of {@link THEME_TOKENS}. */
 export type ThemeToken = (typeof THEME_TOKENS)[number];
 
-/** Values that replace the default theme's, keyed by token; a token left out keeps its default. Values are CSS colors. */
+/**
+ * Values that replace the default theme's, keyed by token; a token left out
+ * keeps its default. Each value is a CSS value of its token's kind: a color
+ * for a `--color-*` token, a `box-shadow` value for a `--shadow-*` one.
+ */
 export type ThemeTokenOverrides = Readonly<Partial<Record<ThemeToken, string>>>;
 
 /**
@@ -112,14 +118,14 @@ function bothSides(hue: string): TileColorDef {
 
 /**
  * Arcade's theme: MakeCode's arcade-light chrome -- a teal header under white
- * ink, purple accents -- over a paper desk of white rule cards, teal capsules,
- * and tiles filled in light pastels under dark ink.
+ * ink, purple accents -- over a teal-tinted paper desk of white rule cards,
+ * teal capsules and teal-cast shadows, and tiles filled in light pastels under
+ * dark ink. Tokens it leaves out take the editor's default light theme.
  */
 const ARCADE_THEME: TargetTheme = {
   displayName: "Arcade",
   tokens: {
     "--color-primary": "#5d4fba",
-    "--color-primary-foreground": "#ffffff",
     "--color-border": "#d4e0e3",
     "--color-header": "#116e79",
     "--color-header-foreground": "#ffffff",
@@ -127,29 +133,18 @@ const ARCADE_THEME: TargetTheme = {
     "--color-header-dot-connected": "#4ade80",
     "--color-brain-desk-from": "#eef4f6",
     "--color-brain-desk-to": "#e2ecef",
-    "--color-brain-desk-glow": "transparent",
-    "--color-brain-rule-from": "#ffffff",
+    "--color-brain-desk-shade": "rgba(17, 110, 121, 0.09)",
     "--color-brain-rule-to": "#f6fafb",
+    "--shadow-brain-rule": "0 2px 8px rgba(17, 110, 121, 0.1)",
     "--color-brain-panel": "#f4f8f9",
     "--color-brain-armed": "#5d4fba",
     "--color-brain-accent": "#5d4fba",
     "--color-brain-accent-ink": "#5d4fba",
-    "--color-brain-on-accent": "#ffffff",
     "--color-brain-ink": "#1c2a2e",
-    "--color-brain-recess": "#ffffff",
     "--color-brain-inline-ink": "#1c2a2e",
-    "--color-brain-amber": "#d97706",
-    "--color-brain-amber-ink": "#b45309",
-    "--color-brain-amber-wash": "#fcd34d",
     "--color-brain-capsule": "#0e606a",
     "--color-brain-capsule-edge": "#0b454c",
     "--color-brain-capsule-ink": "#ffffff",
-    "--color-brain-capsule-otherwise": "oklch(88% 0.1 111)",
-    "--color-brain-capsule-otherwise-edge": "oklch(60% 0.12 111)",
-    "--color-brain-capsule-otherwise-ink": "oklch(30% 0.06 111)",
-    "--color-brain-capsule-then": "oklch(88% 0.1 315)",
-    "--color-brain-capsule-then-edge": "oklch(60% 0.12 315)",
-    "--color-brain-capsule-then-ink": "oklch(30% 0.06 315)",
   },
   tileColors: {
     sensor: bothSides("#ffe9c7"),

@@ -88,7 +88,7 @@ describe("AppHeader", () => {
   it("shows the project name as the path element after the target's", () => {
     const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
 
-    assert.match(markup, /data-testid="project-name">My Platformer</);
+    assert.match(markup, /data-testid="project-name"[^>]*>My Platformer</);
     assert.ok(markup.indexOf('data-testid="target-name"') < markup.indexOf('data-testid="project-name"'));
     const between = markup.slice(
       markup.indexOf('data-testid="target-name"'),
@@ -101,7 +101,20 @@ describe("AppHeader", () => {
     const markup = render(stateWith({ target: undefined, projectName: "My Platformer" }));
 
     assert.doesNotMatch(markup, /data-testid="target-name"/);
-    assert.match(markup, /<span aria-hidden="true"[^>]*>[^<]*<\/span><span data-testid="project-name">My Platformer</);
+    assert.match(
+      markup,
+      /<span aria-hidden="true"[^>]*>[^<]*<\/span><span data-testid="project-name"[^>]*>My Platformer</
+    );
+  });
+
+  it("cuts a long project name short with an ellipsis, carrying the whole name on hover", () => {
+    const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
+    const tag = /<span [^>]*data-testid="project-name"[^>]*>/.exec(markup)?.[0];
+
+    assert.ok(tag, "expected the project name");
+    assert.match(tag, /\bclass="[^"]*\btruncate\b/);
+    assert.match(tag, /\bclass="[^"]*\bmax-w-/);
+    assert.match(tag, /\btitle="[^"]+"/);
   });
 
   it("shows the header it shows without a project name while none is known", () => {

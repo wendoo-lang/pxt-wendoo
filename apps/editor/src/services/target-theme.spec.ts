@@ -61,10 +61,10 @@ const OVERRIDING_THEMES: ReadonlyMap<string, TargetTheme> = new Map([
   ["plain", { displayName: "Plain", tokens: {} }],
 ]);
 
-/** Every `--color-*` custom property declared in the CSS file at `relativePath` from this spec. */
-function declaredColorTokens(relativePath: string): string[] {
+/** Every `--color-*` and `--shadow-*` custom property declared in the CSS file at `relativePath` from this spec. */
+function declaredThemeTokens(relativePath: string): string[] {
   const css = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
-  return [...css.matchAll(/(--color-[a-z0-9-]+)\s*:/g)].map((match) => match[1]);
+  return [...css.matchAll(/(--(?:color|shadow)-[a-z0-9-]+)\s*:/g)].map((match) => match[1]);
 }
 
 describe("resolveTarget", () => {
@@ -114,17 +114,18 @@ describe("resolveTarget", () => {
 });
 
 describe("the themeable token set", () => {
-  it("holds every color token the shared UI contract declares, the brain editor's included", () => {
+  it("holds every color and shadow token the shared UI contract declares, the brain editor's included", () => {
     const members = new Set<string>(THEME_TOKENS);
-    const declared = declaredColorTokens("../../../../external/wendoo-lang/packages/ui/src/ui.css");
+    const declared = declaredThemeTokens("../../../../external/wendoo-lang/packages/ui/src/ui.css");
 
     assert.ok(declared.includes("--color-brain-accent"));
+    assert.ok(declared.includes("--shadow-brain-rule"));
     for (const token of declared) assert.ok(members.has(token), `${token} is not in the themeable set`);
   });
 
-  it("holds every color token the editor's own default theme declares", () => {
+  it("holds every color and shadow token the editor's own default theme declares", () => {
     const members = new Set<string>(THEME_TOKENS);
-    for (const token of declaredColorTokens("../globals.css")) {
+    for (const token of declaredThemeTokens("../globals.css")) {
       assert.ok(members.has(token), `${token} is not in the themeable set`);
     }
   });

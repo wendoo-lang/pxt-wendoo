@@ -14,10 +14,12 @@ import { WendooLogotype } from "./WendooLogo";
  * MakeCode side declared a target, its display name, carrying the target id
  * as `data-target`; and when the MakeCode side published a project name
  * that is a non-empty string, that name, following the store as the project
- * is renamed -- and the Docs toggle, the brains' save status and the
- * connection status, followed by the End session action while the status is
- * `connected` or `reconnecting`. Mount it under a `DocsSidebarProvider`; the
- * Docs toggle opens and closes that provider's sidebar.
+ * is renamed, cut short with an ellipsis past a fixed width or the width the
+ * header leaves it, and carrying the whole name as its `title` -- and the Docs
+ * toggle, the brains' save status and the connection status, followed by the
+ * End session action while the status is `connected` or `reconnecting`. Mount
+ * it under a `DocsSidebarProvider`; the Docs toggle opens and closes that
+ * provider's sidebar.
  */
 export function AppHeader() {
   const state = useEditorSessionState();
@@ -32,7 +34,7 @@ export function AppHeader() {
       data-testid="app-header"
       className="flex shrink-0 items-center justify-between gap-4 border-border border-b bg-header px-4 py-3 text-header-foreground"
     >
-      <h1 className="flex items-baseline gap-2 font-bold text-base">
+      <h1 className="flex min-w-0 items-baseline gap-2 font-bold text-base">
         <a href="https://wendoo.com" target="_blank" rel="noopener noreferrer" aria-label="Wendoo homepage">
           <WendooLogotype className="h-5 w-auto translate-y-[10.5%]" />
         </a>
@@ -51,7 +53,9 @@ export function AppHeader() {
             <span aria-hidden="true" className="text-header-muted-foreground">
               /
             </span>
-            <span data-testid="project-name">{projectName}</span>
+            <span data-testid="project-name" title={projectName} className="max-w-64 truncate">
+              {projectName}
+            </span>
           </>
         )}
       </h1>

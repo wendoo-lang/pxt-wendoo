@@ -39,6 +39,36 @@
   /* The connected status dot on the header. A theme whose header fill sits
      near the success hue overrides this with a brighter, lighter green. */
   --color-header-dot-connected: var(--color-success);
+  /* The brain editor on light ground: a slate paper desk under a soft shade,
+     white rule cards, a light offering panel, chrome inked in dark slate, and
+     the editor's accent on the armed ring and the accent roles. The WHEN and
+     DO capsules keep the ui.css slate. */
+  --color-brain-desk-from: #f1f5f9;
+  --color-brain-desk-to: #e2e8f0;
+  --color-brain-desk-glow: transparent;
+  --color-brain-desk-shade: rgba(0, 0, 0, 0.06);
+  --color-brain-rule-from: #ffffff;
+  --color-brain-rule-to: #f8fafc;
+  --color-brain-panel: #f1f5f9;
+  --color-brain-armed: var(--color-primary);
+  --color-brain-accent: var(--color-primary);
+  --color-brain-accent-ink: var(--color-primary);
+  --color-brain-on-accent: var(--color-primary-foreground);
+  --color-brain-ink: #1e293b;
+  --color-brain-recess: #ffffff;
+  /* Semantic amber relit for a light desk; the mark agrees with the warning
+     status color. */
+  --color-brain-amber: #d97706;
+  --color-brain-amber-ink: #b45309;
+  --color-brain-amber-wash: #fcd34d;
+  /* The trigger-mode switch's two marked modes as light chips, apart from
+     the dark WHEN capsule by lightness and from each other by hue. */
+  --color-brain-capsule-otherwise: oklch(88% 0.1 111);
+  --color-brain-capsule-otherwise-edge: oklch(60% 0.12 111);
+  --color-brain-capsule-otherwise-ink: oklch(30% 0.06 111);
+  --color-brain-capsule-then: oklch(88% 0.1 315);
+  --color-brain-capsule-then-edge: oklch(60% 0.12 315);
+  --color-brain-capsule-then-ink: oklch(30% 0.06 315);
 }
 
 @media (prefers-reduced-motion: reduce) {
