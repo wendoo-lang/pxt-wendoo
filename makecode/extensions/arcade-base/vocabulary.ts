@@ -6,17 +6,17 @@
  * actuator, the core equality and inequality operators' overloads over two
  * images, two sprites, two brains and two `Vector2`s, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
- * multiplication operator's over a `Vector2` and a number, each tile and
- * accessor with its icon, registered from this file's top-level code at
- * program start, `Vector2`, `Sprite` and `Brain` each with its icon, and
- * `Vector2` and `Sprite` each with the label the editor calls it by and a
- * variable factory; the icons it gives the core tiles -- the page tiles,
- * the timer, AND, OR, NOT, the six comparisons, the arithmetic operators,
- * gets, the parentheses, random number, true, false, nil, and the variable
- * and tile factories; the icons it gives the core number, text and switch
- * types; and, in the simulator only, the docs page {@link arcadeBaseDocs}
- * holds for each tile, output, type and accessor it documents, which
- * {@link attachArcadeBaseDocs} gives them.
+ * multiplication operator's over a `Vector2` and a number, registered from
+ * this file's top-level code at program start, `Vector2` and `Sprite` each
+ * with the label the editor calls it by and a variable factory. In the
+ * simulator only, {@link attachArcadeBaseIcons} gives each tile, modifier
+ * tile, output and accessor its icon and the `Vector2`, `Sprite` and `Brain`
+ * types theirs, and gives icons to the core tiles (the page tiles, the
+ * timer, AND, OR, NOT, the six comparisons, the arithmetic operators, gets,
+ * the parentheses, random number, true, false, nil, and the variable and
+ * tile factories) and to the core number, text and switch types; and
+ * {@link attachArcadeBaseDocs} gives each tile, output, type and accessor it
+ * documents the docs page {@link arcadeBaseDocs} holds for it.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
@@ -679,14 +679,13 @@ namespace wendoo {
   }
 
   /**
-   * The `Sprite` output named `name`, its tile labelled `label` and showing
-   * `icon`, declared writable-result: a brain may write a field of the
-   * sprite it holds through its tile.
+   * The `Sprite` output named `name`, its tile labelled `label`, declared
+   * writable-result: a brain may write a field of the sprite it holds
+   * through its tile.
    */
-  function spriteOutput(name: string, label: string, icon: Image): TileOutputSpec {
+  function spriteOutput(name: string, label: string): TileOutputSpec {
     const declared = output(name, TYPE_SPRITE);
     declared.label = label;
-    declared.icon = icon;
     declared.writableResult = true;
     return declared;
   }
@@ -695,12 +694,6 @@ namespace wendoo {
   function anonymousArg(type: string): ArgSlotSpec {
     const slot = arg(`anon.${type}`, type);
     slot.anonymous = true;
-    return slot;
-  }
-
-  /** `slot`, carrying `icon` as the icon of the tile that fills it. */
-  function iconed(slot: ArgSlotSpec, icon: Image): ArgSlotSpec {
-    slot.icon = icon;
     return slot;
   }
 
@@ -730,9 +723,9 @@ namespace wendoo {
     return optional(choice([anonymousArg(TYPE_IMAGE), anonymousArg(TYPE_SPRITE), anonymousArg(TYPE_BRAIN)]));
   }
 
-  /** The shared positional modifier `tileId`, labelled `label`, read with the word `form`, showing `icon`. */
-  function positionModifier(tileId: string, label: string, form: string, icon: Image): ArgSlotSpec {
-    return iconed(modifier(tileId, label, tileLanguage(form)), icon);
+  /** The shared positional modifier `tileId`, labelled `label`, read with the word `form`. */
+  function positionModifier(tileId: string, label: string, form: string): ArgSlotSpec {
+    return modifier(tileId, label, tileLanguage(form));
   }
 
   /**
@@ -744,14 +737,14 @@ namespace wendoo {
     return [
       optional(
         choice([
-          positionModifier("modifier.position.above", "above", "above me", ABOVE_ICON),
-          positionModifier("modifier.position.below", "below", "below me", BELOW_ICON),
+          positionModifier("modifier.position.above", "above", "above me"),
+          positionModifier("modifier.position.below", "below", "below me"),
         ])
       ),
       optional(
         choice([
-          positionModifier("modifier.position.left", "left of", "to my left", LEFT_OF_ICON),
-          positionModifier("modifier.position.right", "right of", "to my right", RIGHT_OF_ICON),
+          positionModifier("modifier.position.left", "left of", "to my left"),
+          positionModifier("modifier.position.right", "right of", "to my right"),
         ])
       ),
     ];
@@ -767,30 +760,22 @@ namespace wendoo {
     return [optional(choice([bag([filterSlot(), rangeSlot()].concat(positionSlots()))]))];
   }
 
-  /** The four optional direction modifier slots, up, down, left then right, each with its icon. */
+  /** The four optional direction modifier slots, up, down, left then right. */
   function directionModifiers(): TileArgSpec[] {
     return [
-      optional(iconed(modifier("modifier.direction.up"), UP_ICON)),
-      optional(iconed(modifier("modifier.direction.down"), DOWN_ICON)),
-      optional(iconed(modifier("modifier.direction.left"), LEFT_ICON)),
-      optional(iconed(modifier("modifier.direction.right"), RIGHT_ICON)),
+      optional(modifier("modifier.direction.up")),
+      optional(modifier("modifier.direction.down")),
+      optional(modifier("modifier.direction.left")),
+      optional(modifier("modifier.direction.right")),
     ];
   }
 
-  /** Type metadata declaring `icon` and nothing else. */
-  function iconMeta(icon: Image): TypeMeta {
-    const meta = new TypeMeta();
-    meta.icon = icon;
-    return meta;
-  }
-
   /**
-   * Type metadata declaring `icon`, the display label `label` the editor
-   * calls the type by, and a variable factory: brains may hold variables of
-   * the type.
+   * Type metadata declaring the display label `label` the editor calls the
+   * type by, and a variable factory: brains may hold variables of the type.
    */
-  function variableTypeMeta(icon: Image, label: string): TypeMeta {
-    const meta = iconMeta(icon);
+  function variableTypeMeta(label: string): TypeMeta {
+    const meta = new TypeMeta();
     meta.label = label;
     meta.variableFactory = true;
     return meta;
@@ -798,18 +783,18 @@ namespace wendoo {
 
   const arcadePack = pack(ARCADE_PACK_NAME);
 
-  const vector2Meta = variableTypeMeta(VECTOR2_TYPE_ICON, "position");
+  const vector2Meta = variableTypeMeta("position");
   const vector2FieldSpecs = vector2Fields();
   arcadePack.defineStruct(TYPE_VECTOR2, vector2FieldSpecs, vector2Binding, vector2Meta);
-  const spriteMeta = variableTypeMeta(SPRITE_TYPE_ICON, "sprite");
+  const spriteMeta = variableTypeMeta("sprite");
   const spriteFieldSpecs = spriteFields();
   arcadePack.defineStruct(TYPE_SPRITE, spriteFieldSpecs, spriteBinding, spriteMeta);
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
-  arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, iconMeta(BRAIN_TYPE_ICON));
+  const brainMeta = new TypeMeta();
+  arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);
 
   const dpadSpec = new TileSpec(TILE_KIND_SENSOR, directionModifiers(), TYPE_VECTOR2);
   dpadSpec.label = "dpad";
-  dpadSpec.icon = DPAD_ICON;
   dpadSpec.language.form = "press";
   dpadSpec.language.bare = "the dpad";
   arcadePack.bind(DPAD_TILE, new DpadSensor(), dpadSpec);
@@ -823,15 +808,15 @@ namespace wendoo {
     optional(moveDirectionSlot),
     optional(
       choice([
-        repeatedUpTo(iconed(modifier("modifier.slowly"), SLOWLY_ICON), 1, MOVE_SPEED_STEPS_MAX),
-        repeatedUpTo(iconed(modifier("modifier.quickly"), QUICKLY_ICON), 1, MOVE_SPEED_STEPS_MAX),
+        repeatedUpTo(modifier("modifier.slowly"), 1, MOVE_SPEED_STEPS_MAX),
+        repeatedUpTo(modifier("modifier.quickly"), 1, MOVE_SPEED_STEPS_MAX),
         moveSpeedSlot,
       ])
     ),
   ];
-  const moveTowardSlot = iconed(modifier("modifier.movement.toward"), TOWARD_ICON);
+  const moveTowardSlot = modifier("modifier.movement.toward");
   moveTowardSlot.name = MOVE_TOWARD_NAME;
-  const moveAwaySlot = iconed(modifier("modifier.movement.away", "away from"), AWAY_ICON);
+  const moveAwaySlot = modifier("modifier.movement.away", "away from");
   moveAwaySlot.name = MOVE_AWAY_NAME;
   const moveTargetArgs: TileArgSpec[] = [
     conditional(MOVE_TOWARD_NAME, moveTargetSlot(), conditional(MOVE_AWAY_NAME, moveTargetSlot())),
@@ -839,7 +824,7 @@ namespace wendoo {
   const moveRelationalArgs: TileArgSpec[] = [
     optional(moveTowardSlot),
     optional(moveAwaySlot),
-    optional(iconed(modifier("modifier.movement.wander", "wander", tileLanguage("around")), WANDER_ICON)),
+    optional(modifier("modifier.movement.wander", "wander", tileLanguage("around"))),
   ];
   const moveSpec = new TileSpec(
     TILE_KIND_ACTUATOR,
@@ -847,35 +832,30 @@ namespace wendoo {
     ""
   );
   moveSpec.label = "move";
-  moveSpec.icon = MOVE_ICON;
   arcadePack.bind(MOVE_TILE, new MoveActuator(), moveSpec);
 
   const bumpSpec = new TileSpec(TILE_KIND_SENSOR, [filterSlot()].concat(positionSlots()), TYPE_SPRITE);
   bumpSpec.label = "bump";
-  bumpSpec.icon = BUMP_ICON;
-  bumpSpec.outputs = [spriteOutput(BUMPED_OUTPUT, "bumped sprite", BUMP_ICON)];
+  bumpSpec.outputs = [spriteOutput(BUMPED_OUTPUT, "bumped sprite")];
   bumpSpec.language.bare = "anything";
   arcadePack.bind(BUMP_TILE, new BumpSensor(), bumpSpec);
 
   const inRangeSpec = new TileSpec(TILE_KIND_SENSOR, rangeSensorArgs(), TYPE_SPRITE);
   inRangeSpec.label = "in range";
-  inRangeSpec.icon = IN_RANGE_ICON;
-  inRangeSpec.outputs = [spriteOutput(IN_RANGE_OUTPUT, "sprite in range", IN_RANGE_ICON)];
+  inRangeSpec.outputs = [spriteOutput(IN_RANGE_OUTPUT, "sprite in range")];
   inRangeSpec.language.frame = SENTENCE_FRAME_STATE;
   inRangeSpec.language.bare = "of anything";
   arcadePack.bind(IN_RANGE_TILE, new RangeSensor(true, IN_RANGE_OUTPUT), inRangeSpec);
 
   const outOfRangeSpec = new TileSpec(TILE_KIND_SENSOR, rangeSensorArgs(), TYPE_SPRITE);
   outOfRangeSpec.label = "out of range";
-  outOfRangeSpec.icon = OUT_OF_RANGE_ICON;
-  outOfRangeSpec.outputs = [spriteOutput(OUT_OF_RANGE_OUTPUT, "sprite out of range", OUT_OF_RANGE_ICON)];
+  outOfRangeSpec.outputs = [spriteOutput(OUT_OF_RANGE_OUTPUT, "sprite out of range")];
   outOfRangeSpec.language.frame = SENTENCE_FRAME_STATE;
   outOfRangeSpec.language.bare = "of anything";
   arcadePack.bind(OUT_OF_RANGE_TILE, new RangeSensor(false, OUT_OF_RANGE_OUTPUT), outOfRangeSpec);
 
   const myselfSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_SPRITE);
   myselfSpec.label = "myself";
-  myselfSpec.icon = MYSELF_ICON;
   myselfSpec.inline = true;
   myselfSpec.writableResult = true;
   arcadePack.bind(MYSELF_TILE, new MyselfSensor(), myselfSpec);
@@ -900,43 +880,134 @@ namespace wendoo {
     new OperatorSpec([TYPE_VECTOR2, TYPE_NUMBER], TYPE_VECTOR2)
   );
 
-  arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", CORE_ON_PAGE_ENTERED_ICON);
-  arcadePack.defineCoreTileIcon("tile.actuator->switch-page", CORE_SWITCH_PAGE_ICON);
-  arcadePack.defineCoreTileIcon("tile.actuator->restart-page", CORE_RESTART_PAGE_ICON);
-  arcadePack.defineCoreTileIcon("tile.sensor->current-page", CORE_CURRENT_PAGE_ICON);
-  arcadePack.defineCoreTileIcon("tile.sensor->previous-page", CORE_PREVIOUS_PAGE_ICON);
-  arcadePack.defineCoreTileIcon("tile.page", CORE_PAGE_ICON);
-  arcadePack.defineCoreTileIcon("tile.sensor->sensor.timeout", CORE_TIMER_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->and", CORE_AND_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->or", CORE_OR_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->not", CORE_NOT_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->eq", CORE_EQUAL_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->ne", CORE_NOT_EQUAL_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->lt", CORE_LESS_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->le", CORE_LESS_OR_EQUAL_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->gt", CORE_GREATER_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->ge", CORE_GREATER_OR_EQUAL_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->add", CORE_PLUS_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->sub", CORE_MINUS_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->mul", CORE_MULTIPLY_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->div", CORE_DIVIDE_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->neg", CORE_NEGATIVE_ICON);
-  arcadePack.defineCoreTileIcon("tile.op->assign", CORE_ASSIGN_ICON);
-  arcadePack.defineCoreTileIcon("tile.cf->open-paren", CORE_OPEN_PAREN_ICON);
-  arcadePack.defineCoreTileIcon("tile.cf->close-paren", CORE_CLOSE_PAREN_ICON);
-  arcadePack.defineCoreTileIcon("tile.sensor->random", CORE_RANDOM_ICON);
-  arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->true", CORE_TRUE_ICON);
-  arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->false", CORE_FALSE_ICON);
-  arcadePack.defineCoreTileIcon("tile.literal->nil:<nil>->nil", CORE_NIL_ICON);
-  arcadePack.defineCoreTileIcon("tile.var.factory->boolean", CORE_BOOLEAN_VARIABLE_ICON);
-  arcadePack.defineCoreTileIcon("tile.var.factory->number", CORE_NUMBER_VARIABLE_ICON);
-  arcadePack.defineCoreTileIcon("tile.var.factory->string", CORE_TEXT_VARIABLE_ICON);
-  arcadePack.defineCoreTileIcon("tile.lit.factory->number", CORE_NUMBER_TILE_ICON);
-  arcadePack.defineCoreTileIcon("tile.lit.factory->string", CORE_TEXT_TILE_ICON);
+  /**
+   * Give every argument slot among `nodes`, and among the nodes under them,
+   * that the tile `tileId` fills the icon `icon`.
+   */
+  function attachGrammarSlotIcon(nodes: TileArgSpec[], tileId: string, icon: Image): void {
+    for (const node of nodes) {
+      if (node.kind === CALL_SPEC_ARG) {
+        const slot = node as ArgSlotSpec;
+        if (slot.tileId === tileId) {
+          slot.icon = icon;
+        }
+      } else if (node.kind === CALL_SPEC_SEQ) {
+        attachGrammarSlotIcon((node as SeqSpec).items, tileId, icon);
+      } else if (node.kind === CALL_SPEC_BAG) {
+        attachGrammarSlotIcon((node as BagSpec).items, tileId, icon);
+      } else if (node.kind === CALL_SPEC_CHOICE) {
+        attachGrammarSlotIcon((node as ChoiceSpec).options, tileId, icon);
+      } else if (node.kind === CALL_SPEC_OPTIONAL) {
+        attachGrammarSlotIcon([(node as OptionalSpec).item], tileId, icon);
+      } else if (node.kind === CALL_SPEC_REPEAT) {
+        attachGrammarSlotIcon([(node as RepeatSpec).item], tileId, icon);
+      } else if (node.kind === CALL_SPEC_CONDITIONAL) {
+        const conditional = node as ConditionalSpec;
+        attachGrammarSlotIcon([conditional.thenItem], tileId, icon);
+        if (conditional.elseItem) {
+          attachGrammarSlotIcon([conditional.elseItem], tileId, icon);
+        }
+      }
+    }
+  }
 
-  arcadePack.defineCoreTypeIcon(TYPE_NUMBER, NUMBER_TYPE_ICON);
-  arcadePack.defineCoreTypeIcon(TYPE_STRING, TEXT_TYPE_ICON);
-  arcadePack.defineCoreTypeIcon(TYPE_BOOLEAN, SWITCH_TYPE_ICON);
+  /** Give every argument slot of every tile among `tiles` that the tile `tileId` fills the icon `icon`. */
+  function attachSlotIcon(tiles: TileSpec[], tileId: string, icon: Image): void {
+    for (const declared of tiles) {
+      attachGrammarSlotIcon(declared.args, tileId, icon);
+    }
+  }
+
+  /** Give the accessor tile of the field named `name` among `fields` the icon `icon`. */
+  function attachAccessorIcon(fields: StructFieldSpec[], name: string, icon: Image): void {
+    for (const declared of fields) {
+      if (declared.name === name && declared.accessor) {
+        declared.accessor.icon = icon;
+      }
+    }
+  }
+
+  /**
+   * Give each of the pack's tiles, the modifier tiles filling their slots,
+   * its sensors' outputs, its `Vector2`, `Sprite` and `Brain` types and their
+   * accessor tiles their icons, and give the core tiles and the core number,
+   * text and switch types the pack's icons for them. Call it once, after the
+   * pack's registrations and before the catalog is first published. Does
+   * nothing on hardware.
+   */
+  //% shim=TD_NOOP
+  function attachArcadeBaseIcons(): void {
+    vector2Meta.icon = vector2TypeIcon();
+    attachAccessorIcon(vector2FieldSpecs, "x", xAccessorIcon());
+    attachAccessorIcon(vector2FieldSpecs, "y", yAccessorIcon());
+    spriteMeta.icon = spriteTypeIcon();
+    attachAccessorIcon(spriteFieldSpecs, "image", imageAccessorIcon());
+    attachAccessorIcon(spriteFieldSpecs, "position", positionAccessorIcon());
+    attachAccessorIcon(spriteFieldSpecs, "brain", brainTypeIcon());
+    attachAccessorIcon(spriteFieldSpecs, "moveSmoothing", moveSmoothingAccessorIcon());
+    brainMeta.icon = brainTypeIcon();
+    dpadSpec.icon = dpadIcon();
+    moveSpec.icon = moveIcon();
+    bumpSpec.icon = bumpIcon();
+    bumpSpec.outputs[0].icon = bumpIcon();
+    inRangeSpec.icon = inRangeIcon();
+    inRangeSpec.outputs[0].icon = inRangeIcon();
+    outOfRangeSpec.icon = outOfRangeIcon();
+    outOfRangeSpec.outputs[0].icon = outOfRangeIcon();
+    myselfSpec.icon = myselfIcon();
+    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec];
+    attachSlotIcon(tiles, "modifier.direction.up", upIcon());
+    attachSlotIcon(tiles, "modifier.direction.down", downIcon());
+    attachSlotIcon(tiles, "modifier.direction.left", leftIcon());
+    attachSlotIcon(tiles, "modifier.direction.right", rightIcon());
+    attachSlotIcon(tiles, "modifier.slowly", slowlyIcon());
+    attachSlotIcon(tiles, "modifier.quickly", quicklyIcon());
+    attachSlotIcon(tiles, "modifier.movement.toward", towardIcon());
+    attachSlotIcon(tiles, "modifier.movement.away", awayIcon());
+    attachSlotIcon(tiles, "modifier.movement.wander", wanderIcon());
+    attachSlotIcon(tiles, "modifier.position.above", aboveIcon());
+    attachSlotIcon(tiles, "modifier.position.below", belowIcon());
+    attachSlotIcon(tiles, "modifier.position.left", leftOfIcon());
+    attachSlotIcon(tiles, "modifier.position.right", rightOfIcon());
+
+    arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", coreOnPageEnteredIcon());
+    arcadePack.defineCoreTileIcon("tile.actuator->switch-page", coreSwitchPageIcon());
+    arcadePack.defineCoreTileIcon("tile.actuator->restart-page", coreRestartPageIcon());
+    arcadePack.defineCoreTileIcon("tile.sensor->current-page", coreCurrentPageIcon());
+    arcadePack.defineCoreTileIcon("tile.sensor->previous-page", corePreviousPageIcon());
+    arcadePack.defineCoreTileIcon("tile.page", corePageIcon());
+    arcadePack.defineCoreTileIcon("tile.sensor->sensor.timeout", coreTimerIcon());
+    arcadePack.defineCoreTileIcon("tile.op->and", coreAndIcon());
+    arcadePack.defineCoreTileIcon("tile.op->or", coreOrIcon());
+    arcadePack.defineCoreTileIcon("tile.op->not", coreNotIcon());
+    arcadePack.defineCoreTileIcon("tile.op->eq", coreEqualIcon());
+    arcadePack.defineCoreTileIcon("tile.op->ne", coreNotEqualIcon());
+    arcadePack.defineCoreTileIcon("tile.op->lt", coreLessIcon());
+    arcadePack.defineCoreTileIcon("tile.op->le", coreLessOrEqualIcon());
+    arcadePack.defineCoreTileIcon("tile.op->gt", coreGreaterIcon());
+    arcadePack.defineCoreTileIcon("tile.op->ge", coreGreaterOrEqualIcon());
+    arcadePack.defineCoreTileIcon("tile.op->add", corePlusIcon());
+    arcadePack.defineCoreTileIcon("tile.op->sub", coreMinusIcon());
+    arcadePack.defineCoreTileIcon("tile.op->mul", coreMultiplyIcon());
+    arcadePack.defineCoreTileIcon("tile.op->div", coreDivideIcon());
+    arcadePack.defineCoreTileIcon("tile.op->neg", coreNegativeIcon());
+    arcadePack.defineCoreTileIcon("tile.op->assign", coreAssignIcon());
+    arcadePack.defineCoreTileIcon("tile.cf->open-paren", coreOpenParenIcon());
+    arcadePack.defineCoreTileIcon("tile.cf->close-paren", coreCloseParenIcon());
+    arcadePack.defineCoreTileIcon("tile.sensor->random", coreRandomIcon());
+    arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->true", coreTrueIcon());
+    arcadePack.defineCoreTileIcon("tile.literal->boolean:<boolean>->false", coreFalseIcon());
+    arcadePack.defineCoreTileIcon("tile.literal->nil:<nil>->nil", coreNilIcon());
+    arcadePack.defineCoreTileIcon("tile.var.factory->boolean", coreBooleanVariableIcon());
+    arcadePack.defineCoreTileIcon("tile.var.factory->number", coreNumberVariableIcon());
+    arcadePack.defineCoreTileIcon("tile.var.factory->string", coreTextVariableIcon());
+    arcadePack.defineCoreTileIcon("tile.lit.factory->number", coreNumberTileIcon());
+    arcadePack.defineCoreTileIcon("tile.lit.factory->string", coreTextTileIcon());
+
+    arcadePack.defineCoreTypeIcon(TYPE_NUMBER, numberTypeIcon());
+    arcadePack.defineCoreTypeIcon(TYPE_STRING, textTypeIcon());
+    arcadePack.defineCoreTypeIcon(TYPE_BOOLEAN, switchTypeIcon());
+  }
 
   /**
    * Give the accessor tile of the field named `name` among `fields` the docs
@@ -980,5 +1051,6 @@ namespace wendoo {
     myselfSpec.docs = arcadeBaseDocs(MYSELF_TILE);
   }
 
+  attachArcadeBaseIcons();
   attachArcadeBaseDocs();
 }

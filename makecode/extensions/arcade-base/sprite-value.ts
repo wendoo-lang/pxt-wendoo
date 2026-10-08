@@ -44,10 +44,10 @@ namespace wendoo {
   //% hidden
   export function spriteFields(): StructFieldSpec[] {
     return [
-      withAccessor(field("image", TYPE_IMAGE), "image", IMAGE_ACCESSOR_ICON),
-      withAccessor(field("position", TYPE_VECTOR2), "position", POSITION_ACCESSOR_ICON),
-      withAccessor(field("brain", TYPE_BRAIN), "brain", BRAIN_TYPE_ICON),
-      withAccessor(field("moveSmoothing", TYPE_NUMBER), "move smoothing", MOVE_SMOOTHING_ACCESSOR_ICON),
+      withAccessor(field("image", TYPE_IMAGE), "image"),
+      withAccessor(field("position", TYPE_VECTOR2), "position"),
+      withAccessor(field("brain", TYPE_BRAIN), "brain"),
+      withAccessor(field("moveSmoothing", TYPE_NUMBER), "move smoothing"),
     ];
   }
 

@@ -4096,8 +4096,8 @@ namespace arcadeSelftest {
         encoder.encode(image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX))) === MONO_ICON_HEX
     );
     const icons = [
-      wendoo.DPAD_ICON,
-      wendoo.IMAGE_ACCESSOR_ICON,
+      wendoo.dpadIcon(),
+      wendoo.imageAccessorIcon(),
       heroPicture(),
       image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX)),
     ];

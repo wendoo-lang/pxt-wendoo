@@ -475,7 +475,12 @@ the current slice alone.
       NOT, the six comparisons, the arithmetic
       operators, gets, the parentheses, random number, true, false, nil, and
       the variable and tile factories), and the icons it gives the core
-      number, text and switch types (`number`, `string` and `boolean`), the controller read (one module owning every
+      number, text and switch types (`number`, `string` and `boolean`), the
+      pack's one icon attachment (a `shim=TD_NOOP` function called after the
+      pack registers, giving every icon above -- each the img literal one
+      function returns -- so in the simulator it gives the icons before the
+      catalog is first published and on hardware it compiles to nothing and
+      no icon reaches the binary), the controller read (one module owning every
       raw read and its dead-banded transform), the proximity read (one
       module owning the
       nearest-sprite scan and its center-distance metric, made

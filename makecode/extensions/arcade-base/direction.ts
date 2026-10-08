@@ -35,10 +35,7 @@ namespace wendoo {
    */
   //% hidden
   export function vector2Fields(): StructFieldSpec[] {
-    return [
-      withAccessor(readOnlyField("x", TYPE_NUMBER), "x", X_ACCESSOR_ICON),
-      withAccessor(readOnlyField("y", TYPE_NUMBER), "y", Y_ACCESSOR_ICON),
-    ];
+    return [withAccessor(readOnlyField("x", TYPE_NUMBER), "x"), withAccessor(readOnlyField("y", TYPE_NUMBER), "y")];
   }
 
   /**
