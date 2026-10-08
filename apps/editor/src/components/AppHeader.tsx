@@ -34,7 +34,7 @@ export function AppHeader() {
       data-testid="app-header"
       className="flex shrink-0 items-center justify-between gap-4 border-border border-b bg-header px-4 py-3 text-header-foreground"
     >
-      <h1 className="flex min-w-0 items-baseline gap-2 font-bold text-base">
+      <h1 className="flex min-w-0 items-baseline gap-2 font-semibold text-base">
         <a href="https://wendoo.com" target="_blank" rel="noopener noreferrer" aria-label="Wendoo homepage">
           <WendooLogotype className="h-5 w-auto translate-y-[10.5%]" />
         </a>
