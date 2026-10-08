@@ -1,4 +1,5 @@
 import { DocsPage as SharedDocsPage } from "@wendoo/docs";
+import { Toaster } from "@wendoo/ui";
 import { useMemo } from "react";
 import { registeredTypeNames } from "./brain/editor-config";
 import { createTileVisualProvider } from "./brain/visual-provider";
@@ -8,7 +9,7 @@ import { buildAuthoringEnvironment } from "./services/authoring-environment";
 /**
  * Full-page documentation view served at `/docs`: the core docs, over the
  * core environment {@link buildAuthoringEnvironment} builds with no session
- * catalog.
+ * catalog, and the toast region the docs announce through.
  */
 export function DocsPage() {
   const environment = useMemo(() => buildAuthoringEnvironment(undefined).environment, []);
@@ -29,6 +30,8 @@ export function DocsPage() {
       resolveTileVisual={resolveTileVisual}
       backLabel="Editor"
       backHref="/"
-    />
+    >
+      <Toaster />
+    </SharedDocsPage>
   );
 }
