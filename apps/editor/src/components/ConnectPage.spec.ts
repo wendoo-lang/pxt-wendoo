@@ -4,7 +4,10 @@ import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EditorSessionProvider } from "../contexts/editor-session.js";
+import { RecentBindingsProvider } from "../contexts/recent-bindings.js";
+import type { RecentBinding } from "../services/binding-entries.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
+import type { RecentBindings } from "../services/recent-bindings.js";
 import { ConnectPage } from "./ConnectPage.js";
 
 /** A view state with `fields` layered over connect-page defaults. */
@@ -25,13 +28,28 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
   };
 }
 
-/** Renders `ui` under a provider whose store reports `state`. */
-function renderWith(state: EditorSessionViewState, ui: ReactElement): string {
+/** Renders `ui` under providers whose store reports `state` and whose recent projects are `recent`. */
+function renderWith(state: EditorSessionViewState, ui: ReactElement, recent: readonly RecentBinding[] = []): string {
   const store = {
     subscribe: () => () => {},
     getSnapshot: () => state,
   } as unknown as EditorSessionStore;
-  return renderToStaticMarkup(createElement(EditorSessionProvider, { value: store }, ui));
+  const bindings = {
+    subscribe: () => () => {},
+    getSnapshot: () => recent,
+  } as unknown as RecentBindings;
+  return renderToStaticMarkup(
+    createElement(
+      EditorSessionProvider,
+      { value: store },
+      createElement(RecentBindingsProvider, { value: bindings }, ui)
+    )
+  );
+}
+
+/** A recent project with id `id`, carrying `fields`. */
+function recentBinding(id: string, fields: Partial<RecentBinding> = {}): RecentBinding {
+  return { id, projectName: undefined, target: undefined, lastSeen: 0, ...fields };
 }
 
 describe("ConnectPage", () => {
@@ -44,6 +62,22 @@ describe("ConnectPage", () => {
     assert.doesNotMatch(markup, /data-testid="connect-status"/);
     assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
     assert.doesNotMatch(markup, /data-testid="ended-notice"/);
+    assert.doesNotMatch(markup, /data-testid="recent-projects"/);
+  });
+
+  it("lists the recent projects below the entry, one row each carrying its entry id and target, with open and remove", () => {
+    const markup = renderWith(stateWith({}), createElement(ConnectPage), [
+      recentBinding("00000000000000aa", { projectName: "Space Chase", target: "arcade" }),
+      recentBinding("00000000000000bb"),
+    ]);
+
+    assert.match(markup, /data-testid="recent-projects"/);
+    assert.ok(markup.indexOf('data-testid="join-code-input"') < markup.indexOf('data-testid="recent-projects"'));
+    const rows = [...markup.matchAll(/data-testid="recent-project" data-binding-id="([0-9a-f]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(rows, ["00000000000000aa", "00000000000000bb"]);
+    assert.match(markup, /data-binding-id="00000000000000aa" data-target="arcade"/);
+    assert.equal(markup.match(/data-testid="recent-project-open"/g)?.length, 2);
+    assert.equal(markup.match(/data-testid="recent-project-remove"/g)?.length, 2);
   });
 
   it("shows an entered code's progress: submitted and connecting, then accepted and waiting for the project", () => {

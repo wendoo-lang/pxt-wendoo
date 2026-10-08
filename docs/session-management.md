@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-03
+updated: 2026-10-08
 ---
 
 # Session Management in pxt-wendoo
@@ -579,7 +579,8 @@ carries a session across frames.
   refresh, and a MakeCode tab closed and opened again on the project
   all present the stored token and rejoin the session, so the editor
   waiting on its own token is welcomed with no code entered. The
-  editor persists its token the same way, so the binding survives
+  editor persists each binding it joins in an entry of its own (see
+  "The editor webapp on this object", below), so the binding survives
   either side's tab closing.
 - TWO TABS, ONE PROJECT: a second MakeCode tab on the same project
   presents the same token, and the relay's token takeover resolves
@@ -651,9 +652,11 @@ is vacant, and the relay sends it to whichever side is connected:
   second editor entering the code of a connected session is refused
   and the session is undisturbed: there is no replacement.
 - The one takeover is by token. MakeCode tabs on one project share
-  the stored simx token, and editor tabs of one origin share the
-  persisted editor token; the newer connection takes the role over,
-  and the older one holds on `SESSION_REPLACED`. An editor holds
+  the stored simx token; the newer connection takes the role over,
+  and the older one holds on `SESSION_REPLACED`. Editor tabs of one
+  origin never present one binding's token together: each holds its
+  binding under an exclusive claim (see "The editor webapp on this
+  object", below). An editor holds
   until it is started again, which takes the session back; a simx
   rests on its `replaced` panel until its next fresh hello -- a page
   reload, or MakeCode resuming the simulator as its tab regains
@@ -770,10 +773,19 @@ it keys on a session id.
   (`JOIN_CODE_UNKNOWN`) shows a not-recognized notice above the
   cleared entry, and an ended session
   (`SESSION_ENDED`) returns here with an ended notice, the entry being
-  the way to connect afresh. With a token persisted from an earlier
-  page load, the app resumes the session on load and skips this page,
-  unless the page was opened with a join code in its fragment (see
-  "Opening the editor from the simx", below).
+  the way to connect afresh. When the tab holds a binding at boot
+  (see BINDING ENTRIES, below), the app resumes its session on load
+  and skips this page, unless the page was opened with a join code in
+  its fragment (see "Opening the editor from the simx", below).
+  Below the entry, while any exist, the page lists RECENT PROJECTS:
+  the binding entries no other tab holds, most recently seen first,
+  one row each (`recent-project`, carrying the entry id as
+  `data-binding-id` and the target id as `data-target`) showing the
+  project name and the target's display name. Clicking a row takes
+  the entry as this tab's binding and resumes its session; when
+  another tab took it first the list is re-read instead. Each row's
+  remove control deletes its entry. The list is re-read when the page
+  returns to the connect view and when another tab changes an entry.
 - The SESSION VIEW shows once a session exists, under the APP
   HEADER: the Wendoo logotype (a link to https://wendoo.com, opening
   in a new tab), the declared target's display name,
@@ -834,9 +846,35 @@ it keys on a session id.
   held renders its notice in the session view instead, while the store
   falls back to the token's session (see "Opening the editor from the
   simx", below).
-- The binding token persists in `localStorage` through a small
-  persistence module (load/save/clear/has) wired into the session's
-  token hooks; the store owns nothing else durable.
+- BINDING ENTRIES: `localStorage` keeps one entry per binding the
+  editor has joined, each under its own key,
+  `<app>:binding:<id>`, the id a 64-bit FNV-1a digest of the binding
+  token -- the relay signs one token per binding, so the id names the
+  binding across reconnections and relay restarts that keep the
+  binding secret. An entry holds the token, the project name and
+  target the session last reported, and when a tab last joined,
+  resumed, or connected over it; the recent projects show the name
+  and target, never the token. `sessionStorage` records the
+  binding this tab holds, so a reload resumes the same project. A tab
+  holds a binding only under its EXCLUSIVE CLAIM, a Web Lock named
+  like the entry key, let go when the tab closes or reloads; a page
+  without Web Locks (outside a secure context) claims without
+  excluding, and says so in the console. At boot
+  (`openTabBinding` in `apps/editor/src/services/binding-entries.ts`),
+  before rendering, the editor moves a token stored under its former
+  single key into an entry, prunes, and resumes the binding the tab
+  recorded, while its claim is free -- a duplicated tab copies the
+  record, finds its twin holding the claim, and holds none. A tab
+  that recorded none -- a new tab -- holds none either: the connect
+  page, with its recent projects, is the way in. Pruning removes
+  unclaimed entries not seen for thirty days, then the oldest-seen
+  unclaimed entries beyond sixteen; an entry lost this way costs that
+  project's join code, which the simx shows only once its session is
+  ended from its panel. The tab's binding is the store's token persistence:
+  joining a session upserts its entry and moves the tab's record and
+  claim to it, leaving the earlier entry for other tabs; the session's
+  clear hook -- `forget()` and `SESSION_ENDED` -- removes this tab's
+  entry alone. The store owns nothing else durable.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
   the catalog, from which it builds the environment brains are edited
   and compiled in -- the catalog's packs bound under the project's id
@@ -1167,11 +1205,11 @@ browser tabs in a URL, never on the session wire.
   the ordinary entry states, and a code that went stale before the tab
   opened is refused with `JOIN_CODE_UNKNOWN` like a typed one. Any
   other fragment is left in the URL, and a page with no code resumes
-  by its persisted token as before.
+  the binding the tab holds, if any, as before.
 - WITH A HELD TOKEN: the session presents the entered code beside the
-  persisted token, and the relay matches the code alone. A code in
-  service joins its session, and the welcome's token replaces the
-  persisted one. When the relay refuses the code, the store opens a
+  token of the binding the tab holds, and the relay matches the code
+  alone. A code in service joins its session, which becomes the tab's
+  binding, the earlier entry kept for other tabs. When the relay refuses the code, the store opens a
   new session presenting the token alone, so the tab falls back into
   the session it already had; the session view shows the
   not-recognized notice, carrying `JOIN_CODE_UNKNOWN`, until that

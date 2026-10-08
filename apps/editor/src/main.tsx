@@ -4,16 +4,15 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { BrainsProvider } from "./contexts/brains";
 import { EditorSessionProvider } from "./contexts/editor-session";
+import { RecentBindingsProvider } from "./contexts/recent-bindings";
 import { DocsPage } from "./DocsPage";
-import {
-  clearBindingToken,
-  hasBindingToken,
-  loadBindingToken,
-  saveBindingToken,
-} from "./services/binding-token-persistence";
+import { bindingClaimsFor } from "./services/binding-claims";
+import { deferredStorage, openTabBinding, type TabBinding } from "./services/binding-entries";
 import { BrainsStore } from "./services/brains-store";
+import { bindDocumentTitle } from "./services/document-title";
 import { EditorSessionStore } from "./services/editor-session-store";
 import { enterSession } from "./services/fragment-entry";
+import { RecentBindings } from "./services/recent-bindings";
 import { bindTargetTheme } from "./services/target-theme";
 import "./globals.css";
 
@@ -33,22 +32,23 @@ function bridgeUrlFor(hostname: string): string {
 }
 
 /**
- * Opens the page's session and renders the editor over it into `mount`:
- * the session store, the brains store over it, the target theme bound to the
- * document, and the session stopped as the page is hidden for good.
+ * Opens the page's session over `binding`, the binding this tab holds, and
+ * renders the editor over it into `mount`: the session store, the recent
+ * projects the connect page lists, the brains store over the session store,
+ * the target theme bound to the document, and the session stopped as the
+ * page is hidden for good.
  */
-function mountEditor(mount: HTMLElement): void {
+function mountEditor(mount: HTMLElement, binding: TabBinding): void {
   const store = new EditorSessionStore({
     bridgeUrl: bridgeUrlFor(window.location.hostname),
-    persistence: {
-      load: loadBindingToken,
-      save: saveBindingToken,
-      clear: clearBindingToken,
-      has: hasBindingToken,
-    },
+    persistence: binding,
   });
+  binding.track(store);
+  const recent = new RecentBindings(binding, store);
+  recent.followStorage(window);
   const brains = new BrainsStore(store, store);
   bindTargetTheme(store, document.documentElement);
+  bindDocumentTitle(store, document);
   enterSession(store, window);
   window.addEventListener(
     "pagehide",
@@ -61,9 +61,11 @@ function mountEditor(mount: HTMLElement): void {
   createRoot(mount).render(
     <StrictMode>
       <EditorSessionProvider value={store}>
-        <BrainsProvider value={brains}>
-          <App />
-        </BrainsProvider>
+        <RecentBindingsProvider value={recent}>
+          <BrainsProvider value={brains}>
+            <App />
+          </BrainsProvider>
+        </RecentBindingsProvider>
       </EditorSessionProvider>
     </StrictMode>
   );
@@ -81,5 +83,11 @@ if (window.location.pathname.startsWith("/docs")) {
     </StrictMode>
   );
 } else {
-  mountEditor(root);
+  void openTabBinding({
+    local: deferredStorage(() => localStorage),
+    session: deferredStorage(() => sessionStorage),
+    claims: bindingClaimsFor("locks" in navigator ? navigator.locks : undefined),
+  }).then((binding) => {
+    mountEditor(root, binding);
+  });
 }

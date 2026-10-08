@@ -13,6 +13,9 @@ import { type SimxBridge, type SimxLog, startSimxBridge } from "../../../../make
 import { FakeAssetProvider, listedImage } from "../../../../makecode/simx/bridge/src/test-support/asset-provider.js";
 import { FakeProjfsHost } from "../../../../makecode/simx/bridge/src/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../../../makecode/simx/bridge/src/vendor/projfs.js";
+import { FakeBindingClaims } from "../test-support/fake-binding-claims.js";
+import { MemoryStorage } from "../test-support/memory-storage.js";
+import { bindingEntryId, openTabBinding, readBindingEntries, type TabBinding } from "./binding-entries.js";
 import type { BindingTokenPersistence, EditorSessionViewState } from "./editor-session-store.js";
 import { EditorSessionStore } from "./editor-session-store.js";
 import { enterSession, type PageAddress } from "./fragment-entry.js";
@@ -81,23 +84,6 @@ class FakeFrame implements SimxFrame {
     for (const listener of this._listeners) {
       listener({ data: packet });
     }
-  }
-}
-
-/** Web storage holding its items in memory. */
-class MemoryStorage implements TokenStorage {
-  private readonly _items = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this._items.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string): void {
-    this._items.set(key, value);
-  }
-
-  removeItem(key: string): void {
-    this._items.delete(key);
   }
 }
 
@@ -564,5 +550,150 @@ describe("editor session store with the simx module on the relay", () => {
     assert.equal(state.view, "session");
     assert.equal(lastEditorHello()?.bindingToken, undefined);
     assert.equal(lastEditorHello()?.joinCode, restartedCode);
+  });
+
+  describe("two projects, each with its own editor tab", () => {
+    let local: MemoryStorage;
+    let claims: FakeBindingClaims;
+    let projectFiles: ProjfsClient[];
+
+    beforeEach(() => {
+      local = new MemoryStorage();
+      claims = new FakeBindingClaims();
+      projectFiles = [];
+    });
+
+    afterEach(() => {
+      for (const client of projectFiles) client.dispose();
+    });
+
+    /** One project: a simx in its own frame over its own token store and files, posting `catalog`. */
+    async function startProject(catalog: string): Promise<{ simx: SimxBridge; joinCode: string }> {
+      const projectFrame = new FakeFrame();
+      const client = new FakeProjfsHost().client();
+      projectFiles.push(client);
+      const simx = startSimxBridge({
+        frame: projectFrame,
+        bridgeUrl: relay.address,
+        tokens: openBindingTokenStore(() => new MemoryStorage()),
+        log: silentLog,
+        files: client,
+        assets,
+      });
+      bridges.push(simx);
+      const deadline = Date.now() + 2000;
+      while (simx.joinCode === undefined) {
+        if (Date.now() > deadline) throw new Error("timed out waiting for the project's join code");
+        await delay(10);
+      }
+      const joinCode = simx.joinCode;
+      projectFrame.programPosts(catalog);
+      return { simx, joinCode };
+    }
+
+    /** One editor tab booted over the shared storage and claims: its binding, its store, and its closing. */
+    async function openTab(session = new MemoryStorage()): Promise<{
+      session: MemoryStorage;
+      binding: TabBinding;
+      store: EditorSessionStore;
+      close(): void;
+    }> {
+      const tab = claims.tab();
+      const binding = await openTabBinding({ local, session, claims: tab.claims });
+      const store = new EditorSessionStore({ bridgeUrl: relay.address, persistence: binding });
+      binding.track(store);
+      stores.push(store);
+      return {
+        session,
+        binding,
+        store,
+        close() {
+          store.stop();
+          tab.close();
+        },
+      };
+    }
+
+    it("keeps each tab on its own project across reloads; a fresh tab resumes nothing and lists only the unheld project", async () => {
+      const one = await startProject(CATALOG);
+      const two = await startProject(NEWER_CATALOG);
+      const tabA = await openTab();
+      tabA.store.connect(one.joinCode);
+      await until(
+        tabA.store,
+        (s) => s.status === "connected" && s.catalogText === CATALOG,
+        "tab A to join project one"
+      );
+      const tabB = await openTab();
+      tabB.store.connect(two.joinCode);
+      await until(
+        tabB.store,
+        (s) => s.status === "connected" && s.catalogText === NEWER_CATALOG,
+        "tab B to join project two"
+      );
+      assert.equal(readBindingEntries(local).size, 2);
+
+      const tokenA = tabA.binding.load();
+      tabA.close();
+      const reloadedA = await openTab(tabA.session);
+      assert.equal(reloadedA.binding.load(), tokenA);
+      assert.equal(reloadedA.store.resume(), true);
+      await until(
+        reloadedA.store,
+        (s) => s.status === "connected" && s.catalogText === CATALOG,
+        "reloaded tab A to resume project one"
+      );
+      assert.equal(lastEditorHello()?.bindingToken, tokenA);
+      assert.equal(tabB.store.getSnapshot().status, "connected");
+      assert.equal(tabB.store.getSnapshot().errorCode, undefined);
+
+      const fresh = await openTab();
+      assert.equal(fresh.store.resume(), false);
+      assert.equal(fresh.store.getSnapshot().view, "connect");
+      assert.deepEqual(await fresh.binding.recent(), []);
+
+      const tokenB = tabB.binding.load();
+      tabB.close();
+      const coldStart = await openTab();
+      assert.equal(coldStart.store.resume(), false);
+      assert.deepEqual(
+        (await coldStart.binding.recent()).map((binding) => binding.id),
+        [bindingEntryId(tokenB ?? "")]
+      );
+      assert.equal(await coldStart.binding.take(bindingEntryId(tokenB ?? "")), true);
+      assert.equal(coldStart.store.resume(), true);
+      await until(
+        coldStart.store,
+        (s) => s.status === "connected" && s.catalogText === NEWER_CATALOG,
+        "a cold-started tab to open the listed project"
+      );
+      assert.equal(lastEditorHello()?.bindingToken, tokenB);
+      assert.equal(reloadedA.store.getSnapshot().status, "connected");
+    });
+
+    it("drops only the ended project's entry when its session ends, the other tab's entry and session kept", async () => {
+      const one = await startProject(CATALOG);
+      const two = await startProject(NEWER_CATALOG);
+      const tabA = await openTab();
+      tabA.store.connect(one.joinCode);
+      await until(tabA.store, (s) => s.status === "connected", "tab A to join project one");
+      const tabB = await openTab();
+      tabB.store.connect(two.joinCode);
+      await until(tabB.store, (s) => s.status === "connected", "tab B to join project two");
+
+      one.simx.startNewSession();
+      await until(
+        tabA.store,
+        (s) => s.view === "connect" && s.errorCode === BridgeSessionErrorCode.SESSION_ENDED,
+        "tab A to be told its session ended"
+      );
+
+      assert.deepEqual(
+        [...readBindingEntries(local).values()].map((entry) => entry.token),
+        [tabB.binding.load()]
+      );
+      assert.equal(tabA.binding.has(), false);
+      assert.equal(tabB.store.getSnapshot().status, "connected");
+    });
   });
 });
