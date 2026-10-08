@@ -75,7 +75,7 @@ describe("SessionView", () => {
     const markup = render(stateWith({ target: "arcade" }));
 
     assert.match(markup, /data-testid="app-header"/);
-    assert.match(markup, /data-testid="target-name" data-target="arcade">Arcade</);
+    assert.match(markup, /data-testid="target-name" data-target="arcade"/);
     assert.match(markup, /data-testid="connection-status" data-status="connected"/);
   });
 

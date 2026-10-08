@@ -42,7 +42,7 @@ export function AppHeader() {
               /
             </span>
             <span data-testid="target-name" data-target={target.id}>
-              {target.displayName}
+              MakeCode {target.displayName}
             </span>
           </>
         )}

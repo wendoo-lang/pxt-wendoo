@@ -23,7 +23,7 @@ export function EndSessionAction({ confirming, onConfirmingChange, session }: En
       <button
         type="button"
         data-testid="end-session-button"
-        className="rounded-md border border-destructive/30 bg-background px-2.5 py-1 font-medium text-destructive text-xs hover:bg-destructive/10"
+        className="rounded-md border border-destructive/30 bg-background px-2.5 py-1 font-medium text-destructive text-xs hover:bg-[color-mix(in_srgb,var(--color-destructive)_10%,var(--color-background))]"
         onClick={() => onConfirmingChange(true)}
       >
         End session

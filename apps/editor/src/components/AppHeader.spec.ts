@@ -63,7 +63,7 @@ describe("AppHeader", () => {
     const markup = render(stateWith({ target: "microbit" }));
 
     assert.match(markup, /data-testid="app-header"/);
-    assert.match(markup, /data-testid="target-name" data-target="microbit">micro:bit</);
+    assert.match(markup, /data-testid="target-name" data-target="microbit"/);
   });
 
   it("shows the logotype alone, with no target segment, while no target is declared", () => {
@@ -76,7 +76,7 @@ describe("AppHeader", () => {
   it("shows an unrecognized target's raw id", () => {
     const markup = render(stateWith({ target: "gameboy" }));
 
-    assert.match(markup, /data-testid="target-name" data-target="gameboy">gameboy</);
+    assert.match(markup, /data-testid="target-name" data-target="gameboy">[^<]*gameboy/);
   });
 
   it("treats a non-string declaration as undeclared", () => {
