@@ -8,6 +8,7 @@ import { SessionView } from "@/components/SessionView";
 import { useBrainsState } from "@/contexts/brains";
 import { useEditorSessionState } from "@/contexts/editor-session";
 import { createDocsTileCatalog, createEditorDocsRegistry } from "@/docs/docs-registry";
+import { resolveTarget } from "@/services/target-theme";
 
 /**
  * Root view: the join-code entry while no session exists, and the session --
@@ -15,10 +16,12 @@ import { createDocsTileCatalog, createEditorDocsRegistry } from "@/docs/docs-reg
  * components announce through; and the docs sidebar, over a docs registry
  * and tile visuals rebuilt from the brains store's environment each time it
  * changes, its entries and pages opening in the sidebar with no link to the
- * standalone docs pages.
+ * standalone docs pages. Tiles, in the docs and the brain editor alike, are
+ * filled in the declared target's tile colors where its theme gives them.
  */
 export function App() {
-  const { view } = useEditorSessionState();
+  const { view, target } = useEditorSessionState();
+  const tileColors = resolveTarget(target)?.tileColors;
   const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
   const docsRegistry = useMemo(
     () => createEditorDocsRegistry(environment, new Set([...assetLiterals.keys(), ...brainLiterals.keys()])),
@@ -27,8 +30,8 @@ export function App() {
   const docsTileCatalog = useMemo(() => createDocsTileCatalog(environment), [environment]);
   const docsDataTypeNames = useMemo(() => registeredTypeNames(environment), [environment]);
   const docsResolveTileVisual = useMemo(
-    () => createTileVisualProvider(environment.tileCatalogs(), assetLiterals, typeIcons, pageIcon),
-    [environment, assetLiterals, typeIcons, pageIcon]
+    () => createTileVisualProvider(environment.tileCatalogs(), assetLiterals, typeIcons, pageIcon, tileColors),
+    [environment, assetLiterals, typeIcons, pageIcon, tileColors]
   );
 
   return (
@@ -41,7 +44,7 @@ export function App() {
       resolveTileVisual={docsResolveTileVisual}
       showDocsPageLinks={false}
     >
-      {view === "connect" ? <ConnectPage /> : <SessionView />}
+      {view === "connect" ? <ConnectPage /> : <SessionView tileColors={tileColors} />}
       <Toaster />
       <DocsSidebar />
     </DocsSidebarProvider>

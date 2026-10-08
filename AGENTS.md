@@ -634,8 +634,8 @@ the current slice alone.
     tile of the type carrying no icon of its own wears; a type's variable
     factory label is the brain editor's name for that type; the one
     target-aware residue is the per-target theme
-    record (the target's display name and theme token overrides), keyed
-    by the target id carried in the session hello. Tripwire: this holds because
+    record (the target's display name, theme token overrides and tile
+    colors), keyed by the target id carried in the session hello. Tripwire: this holds because
     user-authored tiles live on the MakeCode side -- a Wendoo-TS user-tile
     flow in this editor would reintroduce target-specific ambient typings
     and must be raised as a boundary change, not slipped in. (The directory

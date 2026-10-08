@@ -15,6 +15,7 @@ import { type BrainTileFactoryDef, BrainTilePageDef } from "@wendoo/core/brain/t
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { emptyIdManifest } from "../services/id-allocation.js";
+import type { TileKindColors } from "../services/target-theme.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,
@@ -28,6 +29,24 @@ import {
   SPOT_ICON,
 } from "../test-support/asset-catalog.js";
 import { createTileVisualProvider } from "./visual-provider.js";
+
+/** Tile colors giving each tile kind a fill pair of its own. */
+const KIND_COLORS: TileKindColors = {
+  undefined: { when: "#000001", do: "#000002" },
+  sensor: { when: "#000003", do: "#000004" },
+  actuator: { when: "#000005", do: "#000006" },
+  parameter: { when: "#000007", do: "#000008" },
+  operator: { when: "#000009", do: "#00000a" },
+  variable: { when: "#00000b", do: "#00000c" },
+  literal: { when: "#00000d", do: "#00000e" },
+  factory: { when: "#00000f", do: "#000010" },
+  controlFlow: { when: "#000011", do: "#000012" },
+  modifier: { when: "#000013", do: "#000014" },
+  accessor: { when: "#000015", do: "#000016" },
+  page: { when: "#000017", do: "#000018" },
+  output: { when: "#000019", do: "#00001a" },
+  missing: { when: "#00001b", do: "#00001c" },
+};
 
 /** The icon {@link PAGE_ICON_CATALOG} gives the page family. */
 const PAGE_ICON = "data:image/svg+xml;base64,cGFnZQ==";
@@ -192,5 +211,42 @@ describe("createTileVisualProvider", () => {
 
     assert.deepEqual(resolve(bare), bare.metadata);
     assert.equal(resolve(bare)?.iconUrl, undefined);
+  });
+
+  it("fills every tile in the pair the tile colors hold for its kind, keeping the rest of how it shows", () => {
+    const { environment, assetLiterals, typeIcons } = bound([
+      picture("img1", "hero", "data:image/svg+xml;base64,aGVybw=="),
+    ]);
+    const resolve = createTileVisualProvider(
+      environment.tileCatalogs(),
+      assetLiterals.view,
+      typeIcons,
+      undefined,
+      KIND_COLORS
+    );
+
+    const spot = resolve(catalogTile(environment, mkSensorTileId(SPOT)));
+    const show = resolve(catalogTile(environment, mkActuatorTileId(SHOW)));
+    const blank = resolve(catalogTile(environment, mkModifierTileId("modifier.gallery.blank")));
+    const hero = resolve(catalogTile(environment, mkLiteralTileId(PICTURE_TYPE, "img1")));
+    const page = resolve(new BrainTilePageDef("page-start", "start"));
+
+    assert.equal(spot?.colorDef, KIND_COLORS.sensor);
+    assert.equal(spot?.iconUrl, SPOT_ICON);
+    assert.equal(show?.colorDef, KIND_COLORS.actuator);
+    assert.equal(blank?.colorDef, KIND_COLORS.modifier);
+    assert.equal(hero?.colorDef, KIND_COLORS.literal);
+    assert.equal(hero?.label, "hero");
+    assert.equal(page?.colorDef, KIND_COLORS.page);
+    assert.equal(page?.label, "start");
+  });
+
+  it("gives no tile a fill of its own while no tile colors are given", () => {
+    const { environment, assetLiterals, typeIcons } = bound();
+    const resolve = createTileVisualProvider(environment.tileCatalogs(), assetLiterals.view, typeIcons);
+
+    assert.equal(resolve(catalogTile(environment, mkSensorTileId(SPOT)))?.colorDef, undefined);
+    assert.equal(resolve(catalogTile(environment, mkActuatorTileId(SHOW)))?.colorDef, undefined);
+    assert.equal(resolve(new BrainTilePageDef("page-start", "start"))?.colorDef, undefined);
   });
 });

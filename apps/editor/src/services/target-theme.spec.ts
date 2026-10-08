@@ -68,9 +68,22 @@ function declaredColorTokens(relativePath: string): string[] {
 }
 
 describe("resolveTarget", () => {
-  it("resolves each shipped target to its display name, with no token overrides", () => {
-    assert.deepEqual(resolveTarget("arcade"), { id: "arcade", displayName: "Arcade", tokens: {} });
-    assert.deepEqual(resolveTarget("microbit"), { id: "microbit", displayName: "micro:bit", tokens: {} });
+  it("resolves arcade to its display name, its token overrides and its tile colors", () => {
+    const arcade = resolveTarget("arcade");
+
+    assert.equal(arcade?.id, "arcade");
+    assert.equal(arcade?.displayName, "Arcade");
+    assert.ok(Object.keys(arcade?.tokens ?? {}).length > 0);
+    assert.notEqual(arcade?.tileColors, undefined);
+  });
+
+  it("resolves micro:bit to its display name, with no token overrides and no tile colors", () => {
+    assert.deepEqual(resolveTarget("microbit"), {
+      id: "microbit",
+      displayName: "micro:bit",
+      tokens: {},
+      tileColors: undefined,
+    });
   });
 
   it("resolves an undeclared target to nothing", () => {
@@ -85,8 +98,18 @@ describe("resolveTarget", () => {
   });
 
   it("resolves an unrecognized id to the raw id with the default theme, including ids naming object members", () => {
-    assert.deepEqual(resolveTarget("gameboy"), { id: "gameboy", displayName: "gameboy", tokens: {} });
-    assert.deepEqual(resolveTarget("constructor"), { id: "constructor", displayName: "constructor", tokens: {} });
+    assert.deepEqual(resolveTarget("gameboy"), {
+      id: "gameboy",
+      displayName: "gameboy",
+      tokens: {},
+      tileColors: undefined,
+    });
+    assert.deepEqual(resolveTarget("constructor"), {
+      id: "constructor",
+      displayName: "constructor",
+      tokens: {},
+      tileColors: undefined,
+    });
   });
 });
 
@@ -153,6 +176,35 @@ describe("bindTargetTheme", () => {
 
     source.declare("tinted");
     source.declare("gameboy");
+    assert.equal(surface.properties.size, 0);
+  });
+
+  it("themes the surface for arcade from the shipped record, setting every override it carries", () => {
+    const surface = recordingSurface();
+    const overrides = Object.keys(TARGET_THEMES.get("arcade")?.tokens ?? {});
+
+    bindTargetTheme(targetSource("arcade"), surface);
+
+    assert.ok(overrides.includes("--color-brain-desk-from"));
+    assert.ok(overrides.includes("--color-header"));
+    assert.deepEqual([...surface.properties.keys()].sort(), [...overrides].sort());
+  });
+
+  it("leaves the default theme standing from the shipped record while no target, or an unknown one, is declared", () => {
+    const surface = recordingSurface();
+    const source = targetSource(undefined);
+
+    bindTargetTheme(source, surface);
+    assert.equal(surface.properties.size, 0);
+
+    source.declare("arcade");
+    assert.notEqual(surface.value("--color-brain-desk-from"), undefined);
+
+    source.declare("gameboy");
+    assert.equal(surface.properties.size, 0);
+
+    source.declare("arcade");
+    source.declare(undefined);
     assert.equal(surface.properties.size, 0);
   });
 });

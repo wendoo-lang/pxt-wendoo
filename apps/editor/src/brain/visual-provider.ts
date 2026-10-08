@@ -7,6 +7,7 @@ import type { CustomLiteralType, TileVisual } from "@wendoo/ui";
 import { createElement } from "react";
 import { ASSET_FIELD, type AssetLiteral } from "@/services/asset-literals";
 import { BRAIN_FIELD, type BrainLiteral } from "@/services/brain-literals";
+import type { TileKindColors } from "@/services/target-theme";
 
 /** The registered types an asset literal's value is read through. */
 export interface AssetTypeRegistry {
@@ -41,19 +42,44 @@ function boundMetadata(tileCatalogs: readonly ITileCatalog[], tileDef: IBrainTil
  * under its id. Icons are data URIs for an image source; render them only as
  * one.
  *
+ * Given `tileColors`, every tile is filled in the pair `tileColors` holds for
+ * its kind; without, a tile carries no fill of its own and is drawn in the
+ * brain editor's default hue.
+ *
  * Build a new provider whenever the environment is rebuilt or the asset
- * literals, the type icons or the page icon change.
+ * literals, the type icons, the page icon or the tile colors change.
  *
  * @param tileCatalogs - The environment's tile catalogs.
  * @param assetLiterals - The environment's asset literals, keyed by tile id.
  * @param typeIcons - The environment's type icons, keyed by type id.
  * @param pageIcon - The icon every page's own tile wears; omit it while none is bound.
+ * @param tileColors - The declared target's tile fills, keyed by tile kind; omit them while it gives none.
  */
 export function createTileVisualProvider(
   tileCatalogs: readonly ITileCatalog[],
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
   typeIcons: ReadonlyMap<TypeId, string>,
-  pageIcon?: string
+  pageIcon?: string,
+  tileColors?: TileKindColors
+): (tileDef: IBrainTileDef) => TileVisual | undefined {
+  const resolve = visualResolver(tileCatalogs, assetLiterals, typeIcons, pageIcon);
+  if (tileColors === undefined) return resolve;
+  return (tileDef) => ({
+    ...(resolve(tileDef) ?? { label: getCatalogFallbackLabel(tileDef) }),
+    colorDef: tileColors[tileDef.kind],
+  });
+}
+
+/**
+ * Resolves a tile to how it shows -- its label, its face and the rest of its
+ * display metadata -- carrying no fill of its own; `undefined` where neither
+ * the catalogs nor the tile itself carry metadata for it.
+ */
+function visualResolver(
+  tileCatalogs: readonly ITileCatalog[],
+  assetLiterals: ReadonlyMap<string, AssetLiteral>,
+  typeIcons: ReadonlyMap<TypeId, string>,
+  pageIcon: string | undefined
 ): (tileDef: IBrainTileDef) => TileVisual | undefined {
   return (tileDef) => {
     const metadata = boundMetadata(tileCatalogs, tileDef);

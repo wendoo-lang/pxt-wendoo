@@ -53,7 +53,7 @@ export function connectionStatus(
 const DOT_TOKENS: Record<EditorConnectionStatus, string> = {
   connecting: "bg-muted-foreground",
   waiting: "bg-primary",
-  connected: "bg-success",
+  connected: "bg-header-dot-connected",
   reconnecting: "bg-warning",
   replaced: "bg-muted-foreground",
   ended: "bg-muted-foreground",
@@ -71,25 +71,34 @@ const STATUS_WORDS: Record<EditorConnectionStatus, string> = {
   update: "update needed",
 };
 
-/** The 8px status dot, colored for `status` and carrying it as `data-status`. Decorative; label it alongside. */
+/**
+ * The 8px status dot, colored for `status` and carrying it as `data-status`,
+ * ringed in the header's ink so the color reads on any header fill.
+ * Decorative; label it alongside.
+ */
 export function StatusDot({ status }: { status: EditorConnectionStatus }) {
   return (
     <span
       data-testid="status-dot"
       data-status={status}
       aria-hidden="true"
-      className={`size-2 shrink-0 rounded-full ${DOT_TOKENS[status]}`}
+      className={`size-2 shrink-0 rounded-full ring-1 ring-header-edge ${DOT_TOKENS[status]}`}
     />
   );
 }
 
-/** The status dot and its lowercase status word, carrying `status` as `data-status`. */
+/**
+ * The status dot and its lowercase status word, carrying `status` as
+ * `data-status`: a non-interactive badge framed in the header's wash and
+ * hairline edge so it holds up on any header fill. The word is written in
+ * the app header's muted ink; mount it on the app header.
+ */
 export function ConnectionStatus({ status }: { status: EditorConnectionStatus }) {
   return (
     <output
       data-testid="connection-status"
       data-status={status}
-      className="flex items-center gap-1.5 text-muted-foreground text-xs"
+      className="flex items-center gap-1.5 rounded-md border border-header-edge bg-header-wash px-2.5 py-1 text-header-muted-foreground text-xs"
     >
       <StatusDot status={status} />
       {STATUS_WORDS[status]}

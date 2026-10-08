@@ -97,7 +97,7 @@ describe("StatusDot", () => {
     const expected: Record<EditorConnectionStatus, string> = {
       connecting: "bg-muted-foreground",
       waiting: "bg-primary",
-      connected: "bg-success",
+      connected: "bg-header-dot-connected",
       reconnecting: "bg-warning",
       replaced: "bg-muted-foreground",
       ended: "bg-muted-foreground",

@@ -27,6 +27,18 @@
   --color-destructive: #b91c1c;
   /* Status words, secondary text, and the neutral status dot. */
   --color-muted-foreground: #6b6b6b;
+  /* The app header's fill, its ink, and the ink of its separators and status words. */
+  --color-header: var(--color-background);
+  --color-header-foreground: var(--color-foreground);
+  --color-header-muted-foreground: var(--color-muted-foreground);
+  /* The non-interactive badge on the header (the connection status): a wash
+     and a hairline edge derived from the header's ink, so the badge stays
+     legible on any header fill without reading as a button. */
+  --color-header-wash: color-mix(in srgb, var(--color-header-foreground) 9%, transparent);
+  --color-header-edge: color-mix(in srgb, var(--color-header-foreground) 28%, transparent);
+  /* The connected status dot on the header. A theme whose header fill sits
+     near the success hue overrides this with a brighter, lighter green. */
+  --color-header-dot-connected: var(--color-success);
 }
 
 @media (prefers-reduced-motion: reduce) {

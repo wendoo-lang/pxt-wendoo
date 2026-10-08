@@ -155,11 +155,11 @@ session data, declared when the kind's handshake binds:
   credentials, never from it.
 - The editor presents it through its per-target record
   (`TARGET_THEMES` in `apps/editor/src/services/target-theme.ts`),
-  which maps a target id to a display name and theme token
-  overrides. An undeclared target, or a declared value that is not a
-  non-empty string, shows the Wendoo logotype alone in the default
-  theme; an id the record does not know shows raw, in the default
-  theme.
+  which maps a target id to a display name, theme token overrides,
+  and the colors its tiles are filled in. An undeclared target, or a
+  declared value that is not a non-empty string, shows the Wendoo
+  logotype alone in the default theme; an id the record does not know
+  shows raw, in the default theme.
 
 ## The brains payload family
 

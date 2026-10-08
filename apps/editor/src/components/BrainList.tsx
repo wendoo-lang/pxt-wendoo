@@ -12,6 +12,7 @@ import { useBrains, useBrainsState } from "@/contexts/brains";
 import type { AssetLiteral } from "@/services/asset-literals";
 import { BRAIN_ASSET_UNRESOLVED } from "@/services/asset-literals";
 import type { BrainDamageCode, BrainsStore } from "@/services/brains-store";
+import type { TileKindColors } from "@/services/target-theme";
 import {
   BrainDiagnosticsList,
   BrainErrorBadge,
@@ -119,9 +120,10 @@ type BrainDialog =
  * project is damaged shows a {@link BrainDamageNotice} below its row, offering Restore while the store
  * is reconciled with the project. A damaged brain
  * the store holds no copy of is listed after the held brains under the name
- * the project gave it, with the notice alone and no other controls.
+ * the project gave it, with the notice alone and no other controls. The brain
+ * editor it opens fills tiles in `tileColors` where they are given.
  */
-export function BrainList() {
+export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   const store = useBrains();
   const { brains, damaged, reconciled, unresolvedAssets } = useBrainsState();
   const uncopied = [...damaged].filter(([id]) => !brains.has(id));
@@ -332,7 +334,12 @@ export function BrainList() {
         />
       )}
       {editingBrainId !== null && (
-        <BrainEditor key={editingBrainId} brainId={editingBrainId} onClose={() => setEditingBrainId(null)} />
+        <BrainEditor
+          key={editingBrainId}
+          brainId={editingBrainId}
+          tileColors={tileColors}
+          onClose={() => setEditingBrainId(null)}
+        />
       )}
     </section>
   );

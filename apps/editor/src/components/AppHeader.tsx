@@ -30,7 +30,7 @@ export function AppHeader() {
   return (
     <header
       data-testid="app-header"
-      className="flex shrink-0 items-center justify-between gap-4 border-border border-b px-4 py-3"
+      className="flex shrink-0 items-center justify-between gap-4 border-border border-b bg-header px-4 py-3 text-header-foreground"
     >
       <h1 className="flex items-baseline gap-2 font-bold text-base">
         <a href="https://wendoo.com" target="_blank" rel="noopener noreferrer" aria-label="Wendoo homepage">
@@ -38,7 +38,7 @@ export function AppHeader() {
         </a>
         {target !== undefined && (
           <>
-            <span aria-hidden="true" className="text-muted-foreground">
+            <span aria-hidden="true" className="text-header-muted-foreground">
               /
             </span>
             <span data-testid="target-name" data-target={target.id}>
@@ -48,7 +48,7 @@ export function AppHeader() {
         )}
         {projectName !== undefined && (
           <>
-            <span aria-hidden="true" className="text-muted-foreground">
+            <span aria-hidden="true" className="text-header-muted-foreground">
               /
             </span>
             <span data-testid="project-name">{projectName}</span>

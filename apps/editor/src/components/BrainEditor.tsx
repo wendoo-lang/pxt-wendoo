@@ -6,6 +6,7 @@ import type { BrainEditing } from "@/brain/editing";
 import { openBrainEditing } from "@/brain/editing";
 import { buildBrainEditorConfig } from "@/brain/editor-config";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import type { TileKindColors } from "@/services/target-theme";
 
 interface BrainEditorSessionProps {
   /** The dialog's config. */
@@ -45,6 +46,8 @@ interface BrainEditorProps {
   brainId: string;
   /** Called once the dialog has closed. */
   onClose: () => void;
+  /** The declared target's tile fills, keyed by tile kind; omit them while it gives none. */
+  tileColors?: TileKindColors;
 }
 
 /**
@@ -52,11 +55,12 @@ interface BrainEditorProps {
  * document as the store holds it when the editor mounts, and applies each
  * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
  * dialog's config follows the store's environment, its asset and brain
- * literals, its type icons and its page icon, rebuilt each time any of them changes. Mount it keyed by `brainId` to edit another brain.
+ * literals, its type icons and its page icon, and `tileColors`, rebuilt each
+ * time any of them changes. Mount it keyed by `brainId` to edit another brain.
  * The dialog opens a tile's documentation, and toggles the docs sidebar,
  * through the docs sidebar context; mount it under a `DocsSidebarProvider`.
  */
-export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
+export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) {
   const store = useBrains();
   const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
   const {
@@ -68,7 +72,7 @@ export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
   } = useDocsSidebar();
   const config = useMemo(
     (): BrainEditorConfig => ({
-      ...buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon),
+      ...buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon, tileColors),
       onTileDocs: openDocsForTile,
       docsIntegration: { isOpen: isDocsOpen, toggle: toggleDocs, close: closeDocs, reportMode: reportEditorMode },
     }),
@@ -78,6 +82,7 @@ export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
       brainLiterals,
       typeIcons,
       pageIcon,
+      tileColors,
       openDocsForTile,
       isDocsOpen,
       toggleDocs,

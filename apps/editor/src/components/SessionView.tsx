@@ -1,6 +1,7 @@
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
 import { useBrainsState } from "@/contexts/brains";
 import { useEditorSession, useEditorSessionState } from "@/contexts/editor-session";
+import type { TileKindColors } from "@/services/target-theme";
 import { AppHeader } from "./AppHeader";
 import { BrainList } from "./BrainList";
 import { CatalogDiagnosticsNotice } from "./CatalogDiagnosticsNotice";
@@ -11,9 +12,10 @@ import { VersionNotice } from "./VersionNotice";
  * and the catalog's diagnostics. The replacement hold and a version
  * rejection render their notices at once, as does the not-recognized
  * notice for an entered code refused while the store falls back to the
- * held session.
+ * held session. The brain editor fills tiles in `tileColors` where they are
+ * given.
  */
-export function SessionView() {
+export function SessionView({ tileColors }: { tileColors?: TileKindColors }) {
   const store = useEditorSession();
   const { errorCode } = useEditorSessionState();
   const { catalogDiagnostics } = useBrainsState();
@@ -65,7 +67,7 @@ export function SessionView() {
           </section>
         )}
         <VersionNotice errorCode={errorCode} />
-        <BrainList />
+        <BrainList tileColors={tileColors} />
         <CatalogDiagnosticsNotice diagnostics={catalogDiagnostics} />
       </main>
     </div>

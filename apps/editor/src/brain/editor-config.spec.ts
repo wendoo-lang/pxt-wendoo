@@ -10,6 +10,7 @@ import type { BrainEditorConfig } from "@wendoo/ui";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { BRAIN_SOURCE_NAMESPACE, readBrainSource } from "../services/brain-source.js";
 import { emptyIdManifest } from "../services/id-allocation.js";
+import { TARGET_THEMES } from "../services/target-theme.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,
@@ -56,6 +57,19 @@ describe("buildBrainEditorConfig", () => {
     const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
 
     assert.equal(config.projectNamespace, BRAIN_SOURCE_NAMESPACE);
+  });
+
+  it("fills tiles in the tile colors it is given, and gives them no fill of their own without", () => {
+    const { environment } = buildAuthoringEnvironment(undefined);
+    const tileColors = TARGET_THEMES.get("arcade")?.tileColors;
+    const page = new BrainTilePageDef("page-start", "start");
+
+    const themed = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), undefined, tileColors);
+    const plain = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
+
+    assert.notEqual(tileColors, undefined);
+    assert.equal(themed.resolveTileVisual?.(page)?.colorDef, tileColors?.page);
+    assert.equal(plain.resolveTileVisual?.(page)?.colorDef, undefined);
   });
 
   it("follows a rebuilt environment: a config built from it reads the new environment", () => {

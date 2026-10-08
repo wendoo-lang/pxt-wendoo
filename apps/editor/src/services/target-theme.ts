@@ -1,3 +1,6 @@
+import type { BrainTileKind } from "@wendoo/core/app";
+import type { TileColorDef } from "@wendoo/ui";
+
 /**
  * The editor's themeable token set: every CSS custom property a target theme
  * may override. It holds the semantic color contract `@wendoo/ui` declares in
@@ -37,6 +40,12 @@ export const THEME_TOKENS = [
   "--color-border",
   "--color-input",
   "--color-ring",
+  "--color-header",
+  "--color-header-foreground",
+  "--color-header-muted-foreground",
+  "--color-header-wash",
+  "--color-header-edge",
+  "--color-header-dot-connected",
   "--color-brain-desk-from",
   "--color-brain-desk-to",
   "--color-brain-desk-glow",
@@ -80,13 +89,85 @@ export type ThemeToken = (typeof THEME_TOKENS)[number];
 /** Values that replace the default theme's, keyed by token; a token left out keeps its default. Values are CSS colors. */
 export type ThemeTokenOverrides = Readonly<Partial<Record<ThemeToken, string>>>;
 
+/**
+ * The WHEN/DO fill pair each kind of tile is drawn in, keyed by tile kind.
+ * Colors are six-digit hex strings, as `TileColorDef` takes them.
+ */
+export type TileKindColors = Readonly<Record<BrainTileKind, TileColorDef>>;
+
 /** What the editor knows about one MakeCode target: how it names the target, and how it themes for it. */
 export interface TargetTheme {
   /** The target's name as the app header shows it, for example `micro:bit`. */
   readonly displayName: string;
   /** The token overrides applied while this target is declared; empty for the default theme. */
   readonly tokens: ThemeTokenOverrides;
+  /** The tile fills worn while this target is declared; absent where tiles keep the brain editor's default hue. */
+  readonly tileColors?: TileKindColors;
 }
+
+/** A fill pair drawing both sides of a rule in `hue`. */
+function bothSides(hue: string): TileColorDef {
+  return { when: hue, do: hue };
+}
+
+/**
+ * Arcade's theme: MakeCode's arcade-light chrome -- a teal header under white
+ * ink, purple accents -- over a paper desk of white rule cards, teal capsules,
+ * and tiles filled in light pastels under dark ink.
+ */
+const ARCADE_THEME: TargetTheme = {
+  displayName: "Arcade",
+  tokens: {
+    "--color-primary": "#5d4fba",
+    "--color-primary-foreground": "#ffffff",
+    "--color-border": "#d4e0e3",
+    "--color-header": "#116e79",
+    "--color-header-foreground": "#ffffff",
+    "--color-header-muted-foreground": "#dbe9eb",
+    "--color-header-dot-connected": "#4ade80",
+    "--color-brain-desk-from": "#eef4f6",
+    "--color-brain-desk-to": "#e2ecef",
+    "--color-brain-desk-glow": "transparent",
+    "--color-brain-rule-from": "#ffffff",
+    "--color-brain-rule-to": "#f6fafb",
+    "--color-brain-panel": "#f4f8f9",
+    "--color-brain-armed": "#5d4fba",
+    "--color-brain-accent": "#5d4fba",
+    "--color-brain-accent-ink": "#5d4fba",
+    "--color-brain-on-accent": "#ffffff",
+    "--color-brain-ink": "#1c2a2e",
+    "--color-brain-recess": "#ffffff",
+    "--color-brain-inline-ink": "#1c2a2e",
+    "--color-brain-amber": "#d97706",
+    "--color-brain-amber-ink": "#b45309",
+    "--color-brain-amber-wash": "#fcd34d",
+    "--color-brain-capsule": "#0e606a",
+    "--color-brain-capsule-edge": "#0b454c",
+    "--color-brain-capsule-ink": "#ffffff",
+    "--color-brain-capsule-otherwise": "oklch(88% 0.1 111)",
+    "--color-brain-capsule-otherwise-edge": "oklch(60% 0.12 111)",
+    "--color-brain-capsule-otherwise-ink": "oklch(30% 0.06 111)",
+    "--color-brain-capsule-then": "oklch(88% 0.1 315)",
+    "--color-brain-capsule-then-edge": "oklch(60% 0.12 315)",
+    "--color-brain-capsule-then-ink": "oklch(30% 0.06 315)",
+  },
+  tileColors: {
+    sensor: bothSides("#ffe9c7"),
+    output: bothSides("#ffe9c7"),
+    actuator: bothSides("#d5e8ff"),
+    accessor: bothSides("#d5e8ff"),
+    literal: bothSides("#e9f7e6"),
+    variable: bothSides("#e9f7e6"),
+    factory: bothSides("#e9f7e6"),
+    modifier: bothSides("#eef1f4"),
+    operator: bothSides("#eef1f4"),
+    parameter: bothSides("#eef1f4"),
+    controlFlow: bothSides("#eef1f4"),
+    page: bothSides("#eef1f4"),
+    missing: bothSides("#eef1f4"),
+    undefined: bothSides("#eef1f4"),
+  },
+};
 
 /**
  * The per-target record: each known MakeCode target's {@link TargetTheme},
@@ -94,7 +175,7 @@ export interface TargetTheme {
  * entry here to support a new target.
  */
 export const TARGET_THEMES: ReadonlyMap<string, TargetTheme> = new Map<string, TargetTheme>([
-  ["arcade", { displayName: "Arcade", tokens: {} }],
+  ["arcade", ARCADE_THEME],
   ["microbit", { displayName: "micro:bit", tokens: {} }],
 ]);
 
@@ -106,6 +187,8 @@ export interface ResolvedTarget {
   readonly displayName: string;
   /** The record's token overrides; empty for a target the record does not know. */
   readonly tokens: ThemeTokenOverrides;
+  /** The record's tile fills; `undefined` for a target the record gives none, or does not know. */
+  readonly tileColors: TileKindColors | undefined;
 }
 
 /**
@@ -113,7 +196,7 @@ export interface ResolvedTarget {
  * to {@link TARGET_THEMES}). Returns `undefined` when no target is declared:
  * for `undefined`, the empty string, and any value that is not a string. An
  * id `themes` does not know resolves to itself as the display name, with no
- * overrides.
+ * overrides and no tile fills.
  */
 export function resolveTarget(
   declared: unknown,
@@ -121,7 +204,12 @@ export function resolveTarget(
 ): ResolvedTarget | undefined {
   if (typeof declared !== "string" || declared === "") return undefined;
   const theme = themes.get(declared);
-  return { id: declared, displayName: theme?.displayName ?? declared, tokens: theme?.tokens ?? {} };
+  return {
+    id: declared,
+    displayName: theme?.displayName ?? declared,
+    tokens: theme?.tokens ?? {},
+    tileColors: theme?.tileColors,
+  };
 }
 
 /** An element whose inline style carries the applied theme. Any `HTMLElement` satisfies it. */

@@ -6,6 +6,7 @@ import type { BrainEditorConfig } from "@wendoo/ui";
 import type { AssetLiteral } from "@/services/asset-literals";
 import type { BrainLiteral } from "@/services/brain-literals";
 import { BRAIN_SOURCE_NAMESPACE } from "@/services/brain-source";
+import type { TileKindColors } from "@/services/target-theme";
 import { createAssetLiteralTypes, createBrainLiteralTypes, createTileVisualProvider } from "./visual-provider";
 
 /**
@@ -49,22 +50,26 @@ function localizerView(base: Localizer): Localizer {
  * as this one binds it -- a display-only literal
  * type per asset type those literals hold and per brain type `brainLiterals`
  * hold, each type's data-type icon as `typeIcons` holds it, every page's own
- * tile wearing `pageIcon`, and brain files saved and loaded relative to
- * {@link BRAIN_SOURCE_NAMESPACE}. Build a new config whenever the environment
- * is rebuilt or the asset or brain literals change.
+ * tile wearing `pageIcon`, every tile filled in the pair `tileColors` holds
+ * for its kind where they are given, and brain files saved and loaded
+ * relative to {@link BRAIN_SOURCE_NAMESPACE}. Build a new config whenever the
+ * environment is rebuilt or the asset or brain literals or the tile colors
+ * change.
  *
  * @param environment - The brains store's current environment.
  * @param assetLiterals - The environment's asset literals, as the brains store reports them.
  * @param brainLiterals - The environment's brain literals, as the brains store reports them.
  * @param typeIcons - The environment's type icons, keyed by type id, as the brains store reports them.
  * @param pageIcon - The environment's page icon, as the brains store reports it; omit it while none is bound.
+ * @param tileColors - The declared target's tile fills, keyed by tile kind; omit them while it gives none.
  */
 export function buildBrainEditorConfig(
   environment: WendooEnvironment,
   assetLiterals: ReadonlyMap<string, AssetLiteral>,
   brainLiterals: ReadonlyMap<string, BrainLiteral>,
   typeIcons: ReadonlyMap<TypeId, string>,
-  pageIcon?: string
+  pageIcon?: string,
+  tileColors?: TileKindColors
 ): BrainEditorConfig {
   const tileCatalogs = environment.tileCatalogs();
   return {
@@ -74,7 +79,7 @@ export function buildBrainEditorConfig(
       ...createAssetLiteralTypes(environment.brainServices.runtime.types, assetLiterals),
       ...createBrainLiteralTypes(environment.brainServices.runtime.types, brainLiterals),
     ],
-    resolveTileVisual: createTileVisualProvider(tileCatalogs, assetLiterals, typeIcons, pageIcon),
+    resolveTileVisual: createTileVisualProvider(tileCatalogs, assetLiterals, typeIcons, pageIcon, tileColors),
     brainServices: environment.brainServices,
     localizer: localizerView(environment.appServices.localizer),
     projectNamespace: BRAIN_SOURCE_NAMESPACE,
