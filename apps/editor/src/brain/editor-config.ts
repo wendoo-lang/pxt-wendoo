@@ -14,7 +14,7 @@ import { createAssetLiteralTypes, createBrainLiteralTypes, createTileVisualProvi
  * and otherwise the type's registry name with any `module::` qualifier
  * dropped.
  */
-function registeredTypeNames(environment: WendooEnvironment): ReadonlyMap<string, string> {
+export function registeredTypeNames(environment: WendooEnvironment): ReadonlyMap<string, string> {
   const names = new Map<string, string>();
   const tiles = environment.brainServices.edit.tiles;
   for (const [typeId, typeDef] of environment.brainServices.runtime.types.entries()) {

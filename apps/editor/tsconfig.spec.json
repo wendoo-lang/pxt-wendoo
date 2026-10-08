@@ -18,10 +18,10 @@
     "src/components/BrainEditor.tsx",
     "src/components/BrainList.tsx",
     "src/components/CatalogDiagnosticsNotice.tsx",
-    "src/components/CatalogPanel.tsx",
     "src/components/ConfirmDialog.tsx",
     "src/components/ConnectPage.tsx",
     "src/components/ConnectionStatus.tsx",
+    "src/components/DocsButton.tsx",
     "src/components/EndSession.tsx",
     "src/components/Modal.tsx",
     "src/components/NameInputDialog.tsx",
@@ -31,7 +31,13 @@
     "src/components/WendooLogo.tsx",
     "src/contexts/brains.tsx",
     "src/contexts/editor-session.tsx",
-    "../../external/wendoo-lang/packages/ui/src/**/*.tsx"
+    "../../external/wendoo-lang/packages/ui/src/**/*.tsx",
+    "../../external/wendoo-lang/packages/docs/src/**/*.tsx"
   ],
-  "exclude": ["node_modules", "dist", "../../external/wendoo-lang/packages/ui/src/**/*.spec.tsx"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../../external/wendoo-lang/packages/ui/src/**/*.spec.tsx",
+    "../../external/wendoo-lang/packages/docs/src/**/*.spec.tsx"
+  ]
 }

@@ -20,8 +20,9 @@ its observable bytecode semantics.
 
 ## Status
 
-Early. The repository is being bootstrapped and nothing here runs end to end
-yet.
+Under development. The path runs end to end -- a sprite drawn in Arcade, a
+brain authored in the Wendoo editor, running inside the game -- but nothing
+is released yet, and formats and extension coordinates may still change.
 
 ## Layout
 
@@ -30,12 +31,13 @@ The top level splits by side of the integration.
 | Directory                                    | Contents                                                                                                         |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | [apps/editor](apps/editor/)                  | The Wendoo editor webapp. Authors brains and talks to the MakeCode project through the bridge.                   |
-| [apps/bridge](apps/bridge/)                  | The Arcade bridge service, relaying between the editor and the simx.                                             |
-| [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); vocabulary packs supply genre-specific tiles. |
+| [apps/bridge](apps/bridge/)                  | The bridge service, relaying between the editor and the simx.                                                    |
+| [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); `arcade-base` is Arcade's base vocabulary pack, and `arcade` is the extension a project adds. |
 | [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `bridge` joins the editor webapp to the MakeCode project.               |
+| [packages/](packages/)                       | Shared npm packages: contracts spoken by units on both sides of the integration. `protocol` carries the MakeCode session kinds. |
 | [external/wendoo-lang](external/wendoo-lang) | The upstream language, compiler, and reference VM (submodule).                                                   |
 
-`apps/` and `makecode/simx/` are ordinary npm/TypeScript projects.
+`apps/`, `makecode/simx/`, and `packages/` are ordinary npm/TypeScript projects.
 `makecode/extensions/` are pxt projects built by the MakeCode toolchain, in the
 static TypeScript subset it compiles. The root `pxt.json` exists only because
 pxt requires a top-level extension for the nested ones to resolve.
@@ -49,8 +51,11 @@ the Wendoo language lives in a submodule.
 ```bash
 git clone --recurse-submodules https://github.com/wendoo-lang/pxt-wendoo.git
 cd pxt-wendoo
-npm install
+npm run bootstrap
 ```
+
+`bootstrap` installs every package and builds the `file:` dependency graph,
+dependencies first.
 
 Run the editor webapp:
 

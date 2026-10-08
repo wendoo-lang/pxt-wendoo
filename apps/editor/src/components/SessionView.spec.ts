@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { BridgeSessionErrorCode, PeerSessionErrorCode } from "@wendoo/bridge-app";
+import { DocsSidebarProvider } from "@wendoo/docs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
@@ -33,8 +34,8 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
 
 /**
  * Renders the session view under providers whose session store reports
- * `state`, and whose brains store follows it and holds a brain named each of
- * `brainNames`.
+ * `state`, whose brains store follows it and holds a brain named each of
+ * `brainNames`, and whose docs sidebar is closed.
  */
 function render(state: EditorSessionViewState, brainNames: readonly string[] = []): string {
   const store = {
@@ -47,19 +48,24 @@ function render(state: EditorSessionViewState, brainNames: readonly string[] = [
     createElement(
       EditorSessionProvider,
       { value: store },
-      createElement(BrainsProvider, { value: brains }, createElement(SessionView))
+      createElement(
+        BrainsProvider,
+        { value: brains },
+        createElement(DocsSidebarProvider, null, createElement(SessionView))
+      )
     )
   );
 }
 
 describe("SessionView", () => {
-  it("shows the catalog while connected, with no join code, even one the store holds, and no notices", () => {
+  it("shows no join code while connected, even one the store holds, no notices, and no catalog panel", () => {
     const markup = render(stateWith({}));
 
     assert.doesNotMatch(markup, /data-testid="join-code"/);
     assert.doesNotMatch(markup, /apple-bird-cloud/);
     assert.doesNotMatch(markup, /data-testid="copy-join-code"/);
-    assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
+    assert.doesNotMatch(markup, /data-testid="catalog-panel"/);
+    assert.doesNotMatch(markup, /data-testid="catalog-tile"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
     assert.doesNotMatch(markup, /data-testid="version-notice"/);
     assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
@@ -73,21 +79,21 @@ describe("SessionView", () => {
     assert.match(markup, /data-testid="connection-status" data-status="connected"/);
   });
 
-  it("stays quiet about a disconnection within the grace, keeping the catalog rendered", () => {
-    const markup = render(stateWith({ status: "disconnected" }));
+  it("stays quiet about a disconnection within the grace, keeping the session view rendered", () => {
+    const markup = render(stateWith({ status: "disconnected" }), ["Chaser"]);
 
     assert.match(markup, /data-testid="connection-status" data-status="connected"/);
-    assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
+    assert.match(markup, /data-testid="brain-list"/);
   });
 
   it("states a disconnection past the grace in the header alone, offering End session there and no away card", () => {
-    const markup = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }));
+    const markup = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }), ["Chaser"]);
 
     assert.match(markup, /data-testid="connection-status" data-status="reconnecting"/);
     assert.match(markup, /data-testid="end-session-button"/);
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.doesNotMatch(markup, /data-testid="forget-button"/);
-    assert.match(markup, /data-testid="catalog-tile" data-name="move"/);
+    assert.match(markup, /data-testid="brain-list"/);
   });
 
   it("shows the replacement hold at once, with reconnect and start-over actions", () => {
@@ -134,12 +140,11 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
   });
 
-  it("shows the brain list above the catalog panel, listing the store's brains", () => {
+  it("shows the brain list, listing the store's brains", () => {
     const markup = render(stateWith({}), ["Chaser"]);
 
     assert.match(markup, /data-testid="brain-list"/);
     assert.match(markup, /data-testid="brain-item"[^>]*data-brain-name="Chaser"/);
-    assert.ok(markup.indexOf('data-testid="brain-list"') < markup.indexOf('data-testid="catalog-panel"'));
   });
 
   it("shows no catalog diagnostics for a catalog the environment reads without problems", () => {
@@ -148,14 +153,13 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /data-testid="catalog-diagnostics"/);
   });
 
-  it("shows the catalog's diagnostics by stable code beside the catalog panel, above it", () => {
+  it("shows the catalog's diagnostics by stable code", () => {
     const markup = render(stateWith({}));
 
     assert.match(
       markup,
       new RegExp(`data-testid="catalog-diagnostic" data-code="${CATALOG_PACK_UNBOUND}" data-pack="motion"`)
     );
-    assert.ok(markup.indexOf('data-testid="catalog-diagnostics"') < markup.indexOf('data-testid="catalog-panel"'));
   });
 
   it("shows an unreadable catalog's diagnostic by its stable code", () => {

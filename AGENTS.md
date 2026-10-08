@@ -426,7 +426,24 @@ the current slice alone.
       never baked into a program; an id no factory holds resolves to
       nothing, logged once per id, and the game runs on; a value read from
       a sprite's image instead wraps that image object itself, its asset id
-      reading empty), the `Brain` type (the vm's brain type, naming one of
+      reading empty), the pack's docs pages (one markdown page per
+      documented tile or output under `docs/content/en/tiles/`, per
+      documented struct type -- `Vector2` and `Sprite` -- under
+      `docs/content/en/types/`, and per documented accessor under
+      `docs/content/en/accessors/`, each named `<key>.md` by its key -- a
+      tile's or type's name, `output.<name>` for an output, and
+      `accessor.<field>` for an accessor, one accessor page serving every
+      field the attachment wires to it -- packed verbatim into the generated
+      `docs.g.ts` -- `npm run gen:docs` in the extension -- whose
+      `arcadeBaseDocs` lookup the pack's one docs attachment reads each
+      tile's, output's, type's and accessor's catalog docs from by key; the
+      attachment is a `shim=TD_NOOP` function called after the pack
+      registers, so in the simulator it sets the docs before the catalog is
+      first published and on hardware it compiles to nothing and no page
+      reaches the binary; the page of the sensor declaring an output, and of
+      a struct type giving an accessor, shows the output's or accessor's tile
+      and links to its own page),
+      the `Brain` type (the vm's brain type, naming one of
       the project's brains by document id), the core equality and
       inequality operators' overloads over two images (equal when they have
       the same pixels, whichever image objects they are; an image no
@@ -578,8 +595,23 @@ the current slice alone.
     greppably free of platform names; platform content inside a core package
     becomes citable precedent for more of it.
   - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
-    management, compiler integration, the project's id allocation, and
-    diagnostics. The editor is
+    management, compiler integration, the project's id allocation,
+    diagnostics, and the docs surface (the core docs pages from
+    `@wendoo/docs`, in a sidebar the brain editor opens and standalone at
+    `/docs`, which opens no session; every other visible catalog tile of a
+    kind with a docs category, the packs' sensors and actuators among
+    them, is listed with the docs markdown the catalog gives it as its
+    page, and with no page of its own while it is given none, as
+    microbit-sim lists its undocumented host tiles; a struct type's docs
+    ride its variable factory tile, whose page is the type's, listed under
+    the Data Types heading while it carries docs and not at all while it
+    carries none; an output or accessor tile carrying docs has a page of
+    its own, unlisted -- in no list or search, opened by its tile id from
+    the tile's docs action or a `tile:` reference -- and no page while it
+    carries none; the standalone route binds no session catalog, so it
+    holds the core pages alone and no pack page, and the session's sidebar
+    links to no standalone page).
+    The editor is
     TARGET-BLIND: the tile vocabulary is injected from the MakeCode side
     over the bridge, so the catalog is session data, never build
     configuration -- the editor binds the catalog's packs into its

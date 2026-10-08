@@ -1,0 +1,8 @@
+{
+  "name": "wendoo-arcade-base-dev",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "gen:docs": "node gen-docs.js"
+  }
+}

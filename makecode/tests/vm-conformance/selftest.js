@@ -21,8 +21,9 @@
  * - one `wendoo program-faulted <code> <id>` line per entry in
  *   `EXPECTED_FAULT_LINES`, in that order, and no other;
  * - one `CATALOG <payload>` line whose payload is printable-ASCII JSON whose
- *   structural listing is `EXPECTED_CATALOG_STRUCTURE`, and, across the runs
- *   of one target, byte-identical payloads;
+ *   structural listing is `EXPECTED_CATALOG_STRUCTURE`, and which is, as
+ *   JSON, the registration catalog fixture; and, across the runs of one
+ *   target, byte-identical payloads;
  * - `CHECKS failed 0`, and the run's `SIMCAP PASS` verdict, which the program
  *   only reaches by surviving every diagnostic.
  *
@@ -39,7 +40,8 @@
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is printable-ASCII JSON whose structural listing is
- * `EXPECTED_ARCADE_CATALOG_STRUCTURE`, its types, accessors, tiles, modifier
+ * `EXPECTED_ARCADE_CATALOG_STRUCTURE`, which is, as JSON, the arcade catalog
+ * fixture, its types, accessors, tiles, modifier
  * slots, core tile icon entries and core type icon entries carrying icons,
  * and every icon it carries a 16 by 16 image with at least one pixel drawn.
  *
@@ -51,6 +53,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const util = require("util");
 const { spawnSync } = require("child_process");
 
 const capture = require("./capture");
@@ -1016,11 +1019,32 @@ function payloadStructure(what, payload, expected) {
   return { parsed, failures: listingFailures(what, catalog.structuralListing(parsed), expected) };
 }
 
-/** The ways the capture's catalog payload misses `EXPECTED_CATALOG_STRUCTURE`; empty when it holds. */
+/**
+ * The ways the catalog fixture at `file` misses the parsed catalog payload
+ * `parsed`: `<fixture> is not JSON: ...` when it cannot be read as JSON, and
+ * `<fixture> is not the catalog the run posted` when it differs; empty when
+ * it matches. Refresh a stale fixture from the posted payload.
+ */
+function fixtureStaleness(file, parsed) {
+  const what = path.relative(__dirname, file);
+  let fixture;
+  try {
+    fixture = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    return [`${what} is not JSON: ${error.message}`];
+  }
+  return util.isDeepStrictEqual(fixture, parsed) ? [] : [`${what} is not the catalog the run posted`];
+}
+
+/**
+ * The ways the capture's catalog payload misses `EXPECTED_CATALOG_STRUCTURE`
+ * or the registration catalog fixture; empty when it holds.
+ */
 function catalogFailures(log) {
   const payload = catalog.payloadOf(log);
   if (payload === null) return ["no single CATALOG line"];
-  return payloadStructure("catalog payload", payload, EXPECTED_CATALOG_STRUCTURE).failures;
+  const read = payloadStructure("catalog payload", payload, EXPECTED_CATALOG_STRUCTURE);
+  return read.parsed ? [...read.failures, ...fixtureStaleness(CATALOG_FIXTURE, read.parsed)] : read.failures;
 }
 
 /**
@@ -1134,7 +1158,13 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (posted) {
     const read = payloadStructure("posted catalog", posted.payload, EXPECTED_ARCADE_CATALOG_STRUCTURE);
     failures.push(...read.failures);
-    if (read.parsed) failures.push(...arcadeIconFailures(read.parsed), ...arcadeIconValidityFailures(read.parsed));
+    if (read.parsed) {
+      failures.push(
+        ...arcadeIconFailures(read.parsed),
+        ...arcadeIconValidityFailures(read.parsed),
+        ...fixtureStaleness(ARCADE_CATALOG_FIXTURE, read.parsed)
+      );
+    }
   }
   failures.push(...debugLoggingFailures(log));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);

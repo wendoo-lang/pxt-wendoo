@@ -39,8 +39,8 @@ const PLAIN_TYPE = mkTypeId(NativeType.Struct, "Plain");
 
 /**
  * A catalog in the rendered form the simx publishes: a native `Spot` type
- * brains may hold variables of, carrying a label and an icon; a `Point` type
- * brains may hold variables of, carrying neither; a `Plain` type carrying no
+ * brains may hold variables of, carrying a label, an icon and docs; a `Point`
+ * type brains may hold variables of, carrying none of them; a `Plain` type carrying no
  * variable factory flag; and an inline sensor reading a `Spot`.
  */
 const VARIABLE_CATALOG = JSON.stringify({
@@ -54,6 +54,7 @@ const VARIABLE_CATALOG = JSON.stringify({
           variableFactory: true,
           fields: [{ name: "place", type: "Point" }],
           label: "spot",
+          docs: "# Spot",
           iconUrl: "data:image/svg+xml;base64,c3BvdA==",
         },
         { name: "Point", variableFactory: true, fields: [{ name: "x", type: "number", readOnly: true }] },
@@ -124,6 +125,13 @@ describe("binding a catalog type's variable factory", () => {
     assert.equal(factoryFor(environment, SPOT_TYPE)?.metadata?.iconUrl, carriedType("Spot").iconUrl);
     assert.equal(factoryFor(environment, POINT_TYPE)?.metadata?.label, carriedType("Point").name);
     assert.equal(factoryFor(environment, POINT_TYPE)?.metadata?.iconUrl, undefined);
+  });
+
+  it("carries the docs a type's catalog entry carries on its variable factory, and none for a type carrying none", () => {
+    const { environment } = bound();
+
+    assert.equal(factoryFor(environment, SPOT_TYPE)?.metadata?.docsMarkdown, carriedType("Spot").docs);
+    assert.equal(factoryFor(environment, POINT_TYPE)?.metadata?.docsMarkdown, undefined);
   });
 
   it("offers each variable factory at the head of a DO side, and none for a type without the flag", () => {

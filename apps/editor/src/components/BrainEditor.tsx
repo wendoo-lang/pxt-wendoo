@@ -1,3 +1,4 @@
+import { useDocsSidebar } from "@wendoo/docs";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorDialog, BrainEditorProvider } from "@wendoo/ui";
 import { useMemo, useState } from "react";
@@ -52,13 +53,37 @@ interface BrainEditorProps {
  * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
  * dialog's config follows the store's environment, its asset and brain
  * literals, its type icons and its page icon, rebuilt each time any of them changes. Mount it keyed by `brainId` to edit another brain.
+ * The dialog opens a tile's documentation, and toggles the docs sidebar,
+ * through the docs sidebar context; mount it under a `DocsSidebarProvider`.
  */
 export function BrainEditor({ brainId, onClose }: BrainEditorProps) {
   const store = useBrains();
   const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
+  const {
+    openDocsForTile,
+    isOpen: isDocsOpen,
+    toggle: toggleDocs,
+    close: closeDocs,
+    reportEditorMode,
+  } = useDocsSidebar();
   const config = useMemo(
-    () => buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon),
-    [environment, assetLiterals, brainLiterals, typeIcons, pageIcon]
+    (): BrainEditorConfig => ({
+      ...buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon),
+      onTileDocs: openDocsForTile,
+      docsIntegration: { isOpen: isDocsOpen, toggle: toggleDocs, close: closeDocs, reportMode: reportEditorMode },
+    }),
+    [
+      environment,
+      assetLiterals,
+      brainLiterals,
+      typeIcons,
+      pageIcon,
+      openDocsForTile,
+      isDocsOpen,
+      toggleDocs,
+      closeDocs,
+      reportEditorMode,
+    ]
   );
   const [editing] = useState(() => openBrainEditing(store, brainId));
   const [isOpen, setIsOpen] = useState(true);

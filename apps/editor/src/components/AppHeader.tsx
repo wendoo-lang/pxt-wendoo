@@ -1,7 +1,9 @@
+import { useDocsSidebar } from "@wendoo/docs";
 import { useBrainsState } from "@/contexts/brains";
 import { useEditorSessionState } from "@/contexts/editor-session";
 import { resolveTarget } from "@/services/target-theme";
 import { ConnectionStatus, connectionStatus } from "./ConnectionStatus";
+import { DocsButton } from "./DocsButton";
 import { EndSession } from "./EndSession";
 import { SaveStatus } from "./SaveStatus";
 import { WendooLogotype } from "./WendooLogo";
@@ -12,13 +14,15 @@ import { WendooLogotype } from "./WendooLogo";
  * MakeCode side declared a target, its display name, carrying the target id
  * as `data-target`; and when the MakeCode side published a project name
  * that is a non-empty string, that name, following the store as the project
- * is renamed -- and the brains' save status and the connection status,
- * followed by the End session action while the status is `connected` or
- * `reconnecting`.
+ * is renamed -- and the Docs toggle, the brains' save status and the
+ * connection status, followed by the End session action while the status is
+ * `connected` or `reconnecting`. Mount it under a `DocsSidebarProvider`; the
+ * Docs toggle opens and closes that provider's sidebar.
  */
 export function AppHeader() {
   const state = useEditorSessionState();
   const brains = useBrainsState();
+  const { toggle: toggleDocs, isOpen: isDocsOpen } = useDocsSidebar();
   const target = resolveTarget(state.target);
   const projectName = typeof state.projectName === "string" && state.projectName !== "" ? state.projectName : undefined;
   const status = connectionStatus(state);
@@ -52,6 +56,7 @@ export function AppHeader() {
         )}
       </h1>
       <div className="flex items-center gap-3">
+        <DocsButton isOpen={isDocsOpen} onToggle={toggleDocs} />
         <SaveStatus facts={brains} />
         {status !== undefined && <ConnectionStatus status={status} />}
         {(status === "connected" || status === "reconnecting") && <EndSession />}

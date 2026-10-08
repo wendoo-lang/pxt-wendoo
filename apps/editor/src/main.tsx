@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { BrainsProvider } from "./contexts/brains";
 import { EditorSessionProvider } from "./contexts/editor-session";
+import { DocsPage } from "./DocsPage";
 import {
   clearBindingToken,
   hasBindingToken,
@@ -31,37 +32,54 @@ function bridgeUrlFor(hostname: string): string {
   return loopback ? "localhost:6465" : DEFAULT_MAKECODE_BRIDGE_URL;
 }
 
+/**
+ * Opens the page's session and renders the editor over it into `mount`:
+ * the session store, the brains store over it, the target theme bound to the
+ * document, and the session stopped as the page is hidden for good.
+ */
+function mountEditor(mount: HTMLElement): void {
+  const store = new EditorSessionStore({
+    bridgeUrl: bridgeUrlFor(window.location.hostname),
+    persistence: {
+      load: loadBindingToken,
+      save: saveBindingToken,
+      clear: clearBindingToken,
+      has: hasBindingToken,
+    },
+  });
+  const brains = new BrainsStore(store, store);
+  bindTargetTheme(store, document.documentElement);
+  enterSession(store, window);
+  window.addEventListener(
+    "pagehide",
+    () => {
+      store.stop();
+    },
+    { once: true }
+  );
+
+  createRoot(mount).render(
+    <StrictMode>
+      <EditorSessionProvider value={store}>
+        <BrainsProvider value={brains}>
+          <App />
+        </BrainsProvider>
+      </EditorSessionProvider>
+    </StrictMode>
+  );
+}
+
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("Root element not found");
 }
 
-const store = new EditorSessionStore({
-  bridgeUrl: bridgeUrlFor(window.location.hostname),
-  persistence: {
-    load: loadBindingToken,
-    save: saveBindingToken,
-    clear: clearBindingToken,
-    has: hasBindingToken,
-  },
-});
-const brains = new BrainsStore(store, store);
-bindTargetTheme(store, document.documentElement);
-enterSession(store, window);
-window.addEventListener(
-  "pagehide",
-  () => {
-    store.stop();
-  },
-  { once: true }
-);
-
-createRoot(root).render(
-  <StrictMode>
-    <EditorSessionProvider value={store}>
-      <BrainsProvider value={brains}>
-        <App />
-      </BrainsProvider>
-    </EditorSessionProvider>
-  </StrictMode>
-);
+if (window.location.pathname.startsWith("/docs")) {
+  createRoot(root).render(
+    <StrictMode>
+      <DocsPage />
+    </StrictMode>
+  );
+} else {
+  mountEditor(root);
+}

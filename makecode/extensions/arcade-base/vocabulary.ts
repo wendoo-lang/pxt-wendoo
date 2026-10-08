@@ -7,14 +7,16 @@
  * images, two sprites, two brains and two `Vector2`s, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
  * multiplication operator's over a `Vector2` and a number, each tile and
- * accessor with its icon, registered from this
- * file's top-level code at program start, `Vector2`, `Sprite` and `Brain`
- * each with its icon, and `Vector2` and `Sprite` each with the label the
- * editor calls it by and a variable factory; the icons it gives the core
- * tiles -- the page tiles, the timer, AND, OR, NOT, the six comparisons, the arithmetic
- * operators, gets, the parentheses, random number, true, false, nil, and the
- * variable and tile factories; and the icons it gives the core number, text
- * and switch types.
+ * accessor with its icon, registered from this file's top-level code at
+ * program start, `Vector2`, `Sprite` and `Brain` each with its icon, and
+ * `Vector2` and `Sprite` each with the label the editor calls it by and a
+ * variable factory; the icons it gives the core tiles -- the page tiles,
+ * the timer, AND, OR, NOT, the six comparisons, the arithmetic operators,
+ * gets, the parentheses, random number, true, false, nil, and the variable
+ * and tile factories; the icons it gives the core number, text and switch
+ * types; and, in the simulator only, the docs page {@link arcadeBaseDocs}
+ * holds for each tile, output, type and accessor it documents, which
+ * {@link attachArcadeBaseDocs} gives them.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
  *   points nowhere. Its direction modifiers mask the reading: each admits
@@ -678,8 +680,8 @@ namespace wendoo {
 
   /**
    * The `Sprite` output named `name`, its tile labelled `label` and showing
-   * `icon`, declared writable-result: a brain may write a field of the sprite
-   * it holds through its tile.
+   * `icon`, declared writable-result: a brain may write a field of the
+   * sprite it holds through its tile.
    */
   function spriteOutput(name: string, label: string, icon: Image): TileOutputSpec {
     const declared = output(name, TYPE_SPRITE);
@@ -796,13 +798,12 @@ namespace wendoo {
 
   const arcadePack = pack(ARCADE_PACK_NAME);
 
-  arcadePack.defineStruct(
-    TYPE_VECTOR2,
-    vector2Fields(),
-    vector2Binding,
-    variableTypeMeta(VECTOR2_TYPE_ICON, "position")
-  );
-  arcadePack.defineStruct(TYPE_SPRITE, spriteFields(), spriteBinding, variableTypeMeta(SPRITE_TYPE_ICON, "sprite"));
+  const vector2Meta = variableTypeMeta(VECTOR2_TYPE_ICON, "position");
+  const vector2FieldSpecs = vector2Fields();
+  arcadePack.defineStruct(TYPE_VECTOR2, vector2FieldSpecs, vector2Binding, vector2Meta);
+  const spriteMeta = variableTypeMeta(SPRITE_TYPE_ICON, "sprite");
+  const spriteFieldSpecs = spriteFields();
+  arcadePack.defineStruct(TYPE_SPRITE, spriteFieldSpecs, spriteBinding, spriteMeta);
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, iconMeta(BRAIN_TYPE_ICON));
 
@@ -936,4 +937,48 @@ namespace wendoo {
   arcadePack.defineCoreTypeIcon(TYPE_NUMBER, NUMBER_TYPE_ICON);
   arcadePack.defineCoreTypeIcon(TYPE_STRING, TEXT_TYPE_ICON);
   arcadePack.defineCoreTypeIcon(TYPE_BOOLEAN, SWITCH_TYPE_ICON);
+
+  /**
+   * Give the accessor tile of the field named `name` among `fields` the docs
+   * page {@link arcadeBaseDocs} holds under the key `page`.
+   */
+  function attachAccessorDocs(fields: StructFieldSpec[], name: string, page: string): void {
+    for (const declared of fields) {
+      if (declared.name === name && declared.accessor) {
+        declared.accessor.docs = arcadeBaseDocs(page);
+      }
+    }
+  }
+
+  /**
+   * Give each of the pack's tiles, its sensors' outputs, its `Vector2` and
+   * `Sprite` types and their accessor tiles the docs page {@link arcadeBaseDocs}
+   * holds under the key it is wired to: a tile's or type's name, and
+   * `output.<name>` or `accessor.<field>` for an output or an accessor, one
+   * accessor page serving every field wired to it. Call it once, after the
+   * pack's registrations and before the catalog is first published. Does
+   * nothing on hardware.
+   */
+  //% shim=TD_NOOP
+  function attachArcadeBaseDocs(): void {
+    vector2Meta.docs = arcadeBaseDocs(TYPE_VECTOR2);
+    attachAccessorDocs(vector2FieldSpecs, "x", "accessor.x");
+    attachAccessorDocs(vector2FieldSpecs, "y", "accessor.y");
+    spriteMeta.docs = arcadeBaseDocs(TYPE_SPRITE);
+    attachAccessorDocs(spriteFieldSpecs, "image", "accessor.image");
+    attachAccessorDocs(spriteFieldSpecs, "position", "accessor.position");
+    attachAccessorDocs(spriteFieldSpecs, "brain", "accessor.brain");
+    attachAccessorDocs(spriteFieldSpecs, "moveSmoothing", "accessor.moveSmoothing");
+    dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
+    moveSpec.docs = arcadeBaseDocs(MOVE_TILE);
+    bumpSpec.docs = arcadeBaseDocs(BUMP_TILE);
+    bumpSpec.outputs[0].docs = arcadeBaseDocs("output.bumped");
+    inRangeSpec.docs = arcadeBaseDocs(IN_RANGE_TILE);
+    inRangeSpec.outputs[0].docs = arcadeBaseDocs("output.inRange");
+    outOfRangeSpec.docs = arcadeBaseDocs(OUT_OF_RANGE_TILE);
+    outOfRangeSpec.outputs[0].docs = arcadeBaseDocs("output.outOfRange");
+    myselfSpec.docs = arcadeBaseDocs(MYSELF_TILE);
+  }
+
+  attachArcadeBaseDocs();
 }

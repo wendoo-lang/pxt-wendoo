@@ -23,8 +23,12 @@
       "@/*": ["./src/*"],
       "react": ["./node_modules/@types/react", "./node_modules/react"],
       "react-dom": ["./node_modules/@types/react-dom", "./node_modules/react-dom"],
+      "react/*": ["./node_modules/@types/react/*", "./node_modules/react/*"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*", "./node_modules/react-dom/*"],
       "@wendoo/ui": ["../../external/wendoo-lang/packages/ui/src/index.ts"],
-      "@wendoo/ui/*": ["../../external/wendoo-lang/packages/ui/src/*"]
+      "@wendoo/ui/*": ["../../external/wendoo-lang/packages/ui/src/*"],
+      "@wendoo/docs": ["../../external/wendoo-lang/packages/docs/src/index.ts"],
+      "@wendoo/docs/*": ["../../external/wendoo-lang/packages/docs/src/*"]
     }
   },
   "include": ["src"],

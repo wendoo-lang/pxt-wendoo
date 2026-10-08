@@ -32,7 +32,7 @@ looks.
 - **bumped sprite**, **sprite in range** and **sprite out of range** --
   the sprite **bump**, **in range** or **out of range** found, as a tile of
   its own you can use later in the same rule, or in the rules tucked under
-  it: **WHEN bump DO myself image = bumped sprite image** dresses your
+  it: **WHEN bump DO myself image gets bumped sprite image** dresses your
   sprite just like whatever it bumps.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
@@ -56,22 +56,57 @@ looks.
 - **image**, **position** and **brain** -- put one after a sprite, like
   **myself** or **bumped sprite**, to read that part of it: the picture it
   wears, the spot its center is at, or the brain it runs (nothing while it
-  runs none). Add **=** to change your own sprite: **DO myself image =**
-  one of your project's images changes its picture, **DO myself position =
-  bumped sprite position** jumps it onto what it bumps, and **DO myself
-  brain =** another brain switches to that brain from the next frame --
-  set it to nothing to stop.
+  runs none). Add **gets** to change your own sprite: **DO myself image
+  gets** one of your project's images changes its picture, **DO myself
+  position gets bumped sprite position** jumps it onto what it bumps, and
+  **DO myself brain gets** another brain switches to that brain from the
+  next frame. To stop a sprite's brain, make a brain with no rules and
+  switch to that one: a brain with no rules does nothing.
 - **move smoothing** -- put it after a sprite to read how gradually that
   sprite speeds up, in seconds (0 while it starts at full speed), and add
-  **=** to change it: **DO myself move smoothing = 0.15** gives your sprite
-  smooth starts of its own, and **WHEN bump DO bumped sprite move smoothing
-  = 0** makes whatever it bumps start crisply. See "Smooth starts" below.
+  **gets** to change it: **DO myself move smoothing gets 0.15** gives your
+  sprite smooth starts of its own, and **WHEN bump DO bumped sprite move
+  smoothing gets 0** makes whatever it bumps start crisply. See "Smooth
+  starts" below.
 - **x** and **y** -- put one after a position to read just one number of
   it: **x** grows to the right and **y** grows downward, the same way
-  **up** and **down** point on **move**. Compare them with **<** and **>**:
-  tucked under **WHEN in range**, a rule **WHEN sprite in range position y
-  < myself position y DO move up** climbs while that sprite is higher up
-  the screen than yours.
+  **up** and **down** point on **move**. Compare them with **less than**
+  and **greater than**: tucked under **WHEN in range**, a rule **WHEN
+  sprite in range position y less than myself position y DO move up**
+  climbs while that sprite is higher up the screen than yours.
+- **equal to** and **not equal to** -- put one between two images, two
+  sprites, two brains or two positions to compare them. Two images are
+  equal when they have the same pixels, wherever each one came from; two
+  sprites when they are the same sprite and it has not been destroyed; two
+  brains when they are the same brain; and two positions when their **x**
+  and their **y** both match. Something that stands for nothing is equal to
+  nothing, not even another nothing, and **not equal to** is on exactly
+  when **equal to** is not. **WHEN myself image equal to** one of your
+  project's images **DO move wander** strolls while your sprite wears that
+  picture, however it came to wear it.
+- **position** and **sprite** variables -- make a variable of either kind
+  to have your brain remember a spot or hold on to a sprite. Until a rule
+  gives it one, the variable holds nothing. A position variable keeps the
+  spot it was given, even after the sprite it came from moves on: with a
+  position variable named **home**, **WHEN this page starts DO home gets
+  myself position** remembers where your sprite began, and **WHEN in range
+  DO move toward home** sends it back there whenever another sprite comes
+  near. A sprite variable holds the sprite itself, wherever it goes: with a
+  sprite variable named **target**, **WHEN bump DO target gets bumped
+  sprite** picks the sprite yours touches, and **WHEN target DO move toward
+  target** keeps chasing it. Once that sprite is destroyed, the variable
+  reads as nothing: **WHEN target** stops firing, reading a part of it gives
+  nothing, changing a part of it changes nothing, and a move toward it does
+  not run.
+- **plus**, **minus** and **multiplied by** -- work out a new position from
+  others. **plus** adds two positions and **minus** takes one from another,
+  **x** with **x** and **y** with **y**; a position **multiplied by** a
+  number has both its **x** and its **y** multiplied by it. Each gives a new
+  position of its own. **WHEN in range DO move toward home multiplied by 0.5
+  plus sprite in range position multiplied by 0.5** makes a goalkeeper that
+  stands halfway between home and whatever comes near. The number goes after
+  the position, never before it, and positions cannot be divided. A result
+  too big to hold is no position at all.
 
 ### How fast a move goes
 
@@ -157,7 +192,7 @@ the moment it is fired, and every other sprite eases with the default of
 before or after the brain. Give it a negative number, like
 `wendoo.setMoveSmoothing(platform, -1)`, to have it follow the default
 again. A brain can set it too, in seconds, with **move smoothing** --
-**DO myself move smoothing = 0.06** gives its sprite the platform's 60
+**DO myself move smoothing gets 0.06** gives its sprite the platform's 60
 milliseconds.
 
 > **Heads up:** this extension is under development and not ready to use in

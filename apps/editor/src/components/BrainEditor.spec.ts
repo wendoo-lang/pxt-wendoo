@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { DocsSidebarProvider } from "@wendoo/docs";
 import { BrainEditorDialog } from "@wendoo/ui";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,10 +25,14 @@ function session(catalogText: string | undefined) {
   };
 }
 
-/** Renders the editor on brain `brainId` over `store`. */
+/** Renders the editor on brain `brainId` over `store`, under a docs sidebar. */
 function render(store: BrainsStore, brainId: string): string {
   return renderToStaticMarkup(
-    createElement(BrainsProvider, { value: store }, createElement(BrainEditor, { brainId, onClose: () => {} }))
+    createElement(
+      BrainsProvider,
+      { value: store },
+      createElement(DocsSidebarProvider, null, createElement(BrainEditor, { brainId, onClose: () => {} }))
+    )
   );
 }
 

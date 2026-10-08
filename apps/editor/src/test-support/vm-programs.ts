@@ -471,12 +471,12 @@ function refusedPrograms(): SelftestProgram[] {
 }
 
 /** The arcade selftest's catalog as the session delivers it: the payload text the arcade base pack serializes. */
-function arcadeCatalog(): string {
+export function arcadeCatalog(): string {
   return JSON.stringify(JSON.parse(readRepoFile(ARCADE_CATALOG)));
 }
 
 /** The editor's allocation for the arcade selftest's catalog, made in a project holding {@link ARCADE_PRIOR_IDS}. */
-function arcadeIds(): MakeCodeIdManifest {
+export function arcadeIds(): MakeCodeIdManifest {
   return allocateIds(ARCADE_PRIOR_IDS, parseCatalog(arcadeCatalog()));
 }
 

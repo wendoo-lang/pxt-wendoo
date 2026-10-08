@@ -184,7 +184,8 @@ function defaultValueOf(json: unknown): Value {
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type -- with the accessor tile
  * of each field declaring one, and its variable factory when it carries the
- * flag -- each tile -- with the parameter and modifier
+ * flag, the factory's display metadata carrying the type's label, icon and
+ * docs -- each tile -- with the parameter and modifier
  * tiles its grammar's slots need -- each operator, and each overload a pack
  * adds to a core operator, under the ids `ids` allocates. Each tile's, slot tile's and accessor tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
@@ -305,7 +306,7 @@ class PackBinder {
    * allocation gives it, the accessor tile of each field declaring one,
    * read-only when the field is, and, for a type carrying the variable factory
    * flag, its variable factory, whose display metadata carries the type's
-   * label -- its name when it carries none -- and its icon.
+   * label -- its name when it carries none -- its icon and its docs.
    */
   private bindType(type: CatalogType): void {
     const entry = this.ids.types.find((allocated) => allocated.name === type.name);
@@ -330,6 +331,7 @@ class PackBinder {
     if (factory !== undefined) {
       factory.metadata = {
         label: type.label ?? type.name,
+        ...(type.docs === undefined ? {} : { docsMarkdown: type.docs }),
         ...(type.iconUrl === undefined ? {} : { iconUrl: type.iconUrl }),
       };
     }

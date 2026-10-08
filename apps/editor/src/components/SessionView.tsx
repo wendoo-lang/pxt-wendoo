@@ -4,19 +4,18 @@ import { useEditorSession, useEditorSessionState } from "@/contexts/editor-sessi
 import { AppHeader } from "./AppHeader";
 import { BrainList } from "./BrainList";
 import { CatalogDiagnosticsNotice } from "./CatalogDiagnosticsNotice";
-import { CatalogPanel } from "./CatalogPanel";
 import { VersionNotice } from "./VersionNotice";
 
 /**
  * The session: the app header, the recovery affordances, the brain list,
- * the catalog's diagnostics, and the catalog panel. The replacement hold and
- * a version rejection render their notices at once, as does the
- * not-recognized notice for an entered code refused while the store falls
- * back to the held session.
+ * and the catalog's diagnostics. The replacement hold and a version
+ * rejection render their notices at once, as does the not-recognized
+ * notice for an entered code refused while the store falls back to the
+ * held session.
  */
 export function SessionView() {
   const store = useEditorSession();
-  const { errorCode, catalogText } = useEditorSessionState();
+  const { errorCode } = useEditorSessionState();
   const { catalogDiagnostics } = useBrainsState();
 
   const replaced = errorCode === BridgeSessionErrorCode.SESSION_REPLACED;
@@ -68,7 +67,6 @@ export function SessionView() {
         <VersionNotice errorCode={errorCode} />
         <BrainList />
         <CatalogDiagnosticsNotice diagnostics={catalogDiagnostics} />
-        <CatalogPanel catalogText={catalogText} />
       </main>
     </div>
   );

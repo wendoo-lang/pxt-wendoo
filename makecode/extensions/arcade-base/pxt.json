@@ -21,6 +21,7 @@
         "overlap-read.ts",
         "motion.ts",
         "wander.ts",
+        "docs.g.ts",
         "vocabulary.ts"
     ],
     "supportedTargets": [

@@ -24,6 +24,7 @@
   "dependencies": {
     "@wendoo/bridge-app": "file:../../external/wendoo-lang/packages/bridge-app",
     "@wendoo/core": "file:../../external/wendoo-lang/packages/core",
+    "@wendoo/docs": "file:../../external/wendoo-lang/packages/docs",
     "@wendoo/makecode-session": "file:../../packages/protocol",
     "@wendoo/ui": "file:../../external/wendoo-lang/packages/ui",
     "lucide-react": "^0.561.0",

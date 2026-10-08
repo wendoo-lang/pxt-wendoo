@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
+import { DocsSidebarProvider } from "@wendoo/docs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
@@ -29,8 +30,9 @@ function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewSt
 }
 
 /**
- * Renders the header under providers whose session store reports `state` and
- * whose brains store reports `brains` over an empty store's view.
+ * Renders the header under providers whose session store reports `state`,
+ * whose brains store reports `brains` over an empty store's view, and whose
+ * docs sidebar is closed.
  */
 function render(state: EditorSessionViewState, brains: Partial<BrainsViewState> = {}): string {
   const store = {
@@ -47,7 +49,11 @@ function render(state: EditorSessionViewState, brains: Partial<BrainsViewState> 
     createElement(
       EditorSessionProvider,
       { value: store },
-      createElement(BrainsProvider, { value: brainsStore }, createElement(AppHeader))
+      createElement(
+        BrainsProvider,
+        { value: brainsStore },
+        createElement(DocsSidebarProvider, null, createElement(AppHeader))
+      )
     )
   );
 }
@@ -173,6 +179,17 @@ describe("AppHeader", () => {
     assert.match(saving, /data-testid="save-status" data-save-state="saving"/);
 
     assert.match(render(stateWith({})), /data-testid="save-status" data-save-state="saved"/);
+  });
+
+  it("offers the Docs toggle first in the controls, before the save status, collapsed while the sidebar is closed", () => {
+    const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
+    const tag = /<button [^>]*data-testid="docs-button"[^>]*>/.exec(markup)?.[0];
+
+    assert.ok(tag, "expected the docs button");
+    assert.match(tag, /aria-controls="docs-sidebar"/);
+    assert.match(tag, /aria-expanded="false"/);
+    assert.ok(markup.indexOf("</h1>") < markup.indexOf('data-testid="docs-button"'));
+    assert.ok(markup.indexOf('data-testid="docs-button"') < markup.indexOf('data-testid="save-status"'));
   });
 
   it("links the logotype to the Wendoo homepage in a new tab", () => {

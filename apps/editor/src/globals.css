@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../../../external/wendoo-lang/packages/ui/src/ui.css";
 @source "../../../external/wendoo-lang/packages/ui/src";
+@source "../../../external/wendoo-lang/packages/docs/src";
 
 @layer base {
   body {
