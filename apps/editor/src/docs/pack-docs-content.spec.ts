@@ -4,7 +4,8 @@
  * binding the arcade selftest's catalog: each page is the content of the docs
  * entry of every registration it documents, opened in session by that
  * entry's tile id; the tile and type pages are listed and the output and
- * accessor pages are not; every `brain` fence parses and names only tile ids
+ * accessor pages are not; every page documenting a sensor or an actuator holds
+ * an `assistant` fence; every `brain` fence parses and names only tile ids
  * the environment or the fence's own catalog holds; every `tile:` reference
  * names a tile with a docs entry; and every `concept:` reference names a
  * registered concept page. Also records which pages the standalone docs
@@ -48,6 +49,9 @@ const ACCESSOR_PAGE_DIR = "accessors";
 
 /** A ```brain fence, capturing the body inside its info line and its closing line. */
 const BRAIN_FENCE_RE = /^```brain[^\n]*\n([\s\S]*?)\n```$/gm;
+
+/** An ```assistant fence: its info line, its body and its closing line. */
+const ASSISTANT_FENCE_RE = /^```assistant\n[\s\S]*?\n```$/m;
 
 /** An inline `tile:<id>` code span, capturing the id. */
 const TILE_REF_RE = /`tile:([^`]*)`/g;
@@ -216,6 +220,22 @@ describe("the arcade base pack's docs pages", () => {
         page.listing === "listed",
         `${page.file}: ${page.entryTileId} is not ${page.listing}`
       );
+    }
+  });
+
+  test("hold an assistant fence wherever they document a sensor or an actuator", () => {
+    const tiles = arcadeCatalogParsed().packs.flatMap((pack) => pack.tiles);
+    for (const kind of ["sensor", "actuator"] as const) {
+      const tileIds = new Set(
+        tiles
+          .filter((entry) => entry.kind === kind)
+          .map((entry) => (kind === "sensor" ? mkSensorTileId(entry.name) : mkActuatorTileId(entry.name)))
+      );
+      const documented = pages.filter((page) => tileIds.has(page.entryTileId));
+      assert.ok(documented.length > 0, `no ${kind} pages found`);
+      for (const page of documented) {
+        assert.match(page.markdown, ASSISTANT_FENCE_RE, `${page.file}: no assistant fence`);
+      }
     }
   });
 

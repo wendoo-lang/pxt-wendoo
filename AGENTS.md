@@ -442,7 +442,10 @@ the current slice alone.
       first published and on hardware it compiles to nothing and no page
       reaches the binary; the page of the sensor declaring an output, and of
       a struct type giving an accessor, shows the output's or accessor's tile
-      and links to its own page),
+      and links to its own page; every sensor's and actuator's page holds an
+      `assistant` fence, the composition rules a composing assistant reads,
+      and the editor's sweep of the pack's docs content fails on one
+      without),
       the `Brain` type (the vm's brain type, naming one of
       the project's brains by document id), the core equality and
       inequality operators' overloads over two images (equal when they have

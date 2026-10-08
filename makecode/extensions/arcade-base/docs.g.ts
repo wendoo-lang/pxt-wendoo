@@ -915,6 +915,36 @@ namespace wendoo {
                 "| `tile:tile.modifier->modifier.direction.left`  | Listen to left       |\n" +
                 "| `tile:tile.modifier->modifier.direction.right` | Listen to right      |\n" +
                 "\n" +
+                "```assistant\n" +
+                "Grammar of dpad, as the editor offers it:\n" +
+                "- up, down, left, right: each optional, each at most once, in any order. Nothing else: no value, no\n" +
+                "  parameter, no output tile. dpad is not inline, so no accessor or operator follows it and it fills no\n" +
+                "  value slot; its reading reaches the DO side only as the WHEN result.\n" +
+                "\n" +
+                "What it reads: player one's controller, fresh at every run, as a Vector2 (x grows rightward, y downward).\n" +
+                "- A digital dpad reads -1, 0 or 1 on each axis, so a held diagonal reads (1, 1) in size, longer than 1.\n" +
+                "  Both buttons of one axis held read 0 on that axis; only opposite buttons held reads off.\n" +
+                "- An analog stick reads each axis dead-banded: a deflection up to 0.1 reads 0, the rest rescales from 0\n" +
+                "  to 1. A stick pushed part of the way reads a vector shorter than 1.\n" +
+                "\n" +
+                "The modifier mask:\n" +
+                "- None placed admits every component. Each placed modifier admits only its own direction's component,\n" +
+                "  and every other component reads 0. A kept component keeps its size; nothing is rescaled.\n" +
+                "- Opposite modifiers do not cancel on dpad: left and right together admit the whole horizontal axis,\n" +
+                "  and all four together are the same as none.\n" +
+                "- A reading masked to (0, 0) is off. WHEN dpad up is off while only right is held, and carries (0, -1)\n" +
+                "  while up and right are held.\n" +
+                "\n" +
+                "The WHEN result is the masked Vector2, and move consumes it:\n" +
+                "- An undirected move -- no direction modifier, or move's own modifiers cancelling, and no direction\n" +
+                "  value placed after move -- goes along it, held to length 1: a digital diagonal moves at the speed of a\n" +
+                "  straight line, and a shorter analog reading moves slower in proportion.\n" +
+                "- move's own cardinals, a toward or away from with a target, or wander replace that direction, and dpad\n" +
+                "  only gates the rule: WHEN dpad up DO move left goes left while up is held.\n" +
+                "- toward or away from with no target placed add nothing under dpad, its result being no Sprite, so the\n" +
+                "  move still follows the dpad.\n" +
+                "```\n" +
+                "\n" +
                 "## See Also\n" +
                 "\n" +
                 "`tile:tile.actuator->actuator.arcade.move`\n" +
@@ -1064,6 +1094,36 @@ namespace wendoo {
                 "  ],\n" +
                 "  \"catalog\": []\n" +
                 "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of myself: no arguments. It is inline and placeable on either side of a rule: a Sprite value\n" +
+                "that accessors and operators may follow, filling any slot that value, or the value an accessor after it\n" +
+                "reads, fits -- a sensor's filter, move's target, an operand, a parenthesized group. Its value is the\n" +
+                "program's own sprite.\n" +
+                "\n" +
+                "Writing through it:\n" +
+                "- Its result is writable: [myself] [image | position | brain | move smoothing] [gets] <value> changes\n" +
+                "  the program's own sprite. Each accessor's own page holds when and how the write lands.\n" +
+                "- [myself] [gets] is never a write, since only a variable or a field is written, and the x and y of\n" +
+                "  [myself] [position] are read-only.\n" +
+                "\n" +
+                "As the filter of bump, in range or out of range:\n" +
+                "- [myself] alone admits nothing: the program's own sprite is never read, so the sensor stays off and its\n" +
+                "  output holds nothing.\n" +
+                "- [myself] [brain] admits the other sprites running the brain this sprite runs; [myself] [image] the\n" +
+                "  other sprites wearing an image with the same pixels as this sprite's.\n" +
+                "- Flock: WHEN [in range] [myself] [brain] DO [move] [toward]. The WHEN result is the nearest other sprite\n" +
+                "  running this brain, while it is within range, and toward chases it; a sprite alone running the brain\n" +
+                "  leaves the rule off.\n" +
+                "\n" +
+                "On the WHEN side:\n" +
+                "- Inside a comparison, such as [myself] [image] [equal to] <image>, the WHEN result is the comparison's\n" +
+                "  true or false, not a Sprite or a direction: an undirected move under it goes rightward, and toward or\n" +
+                "  away from with no target placed add nothing.\n" +
+                "- As the whole WHEN, myself is always on and its WHEN result is this sprite itself, so toward or away\n" +
+                "  from with no target placed add nothing, a toward alone holding still. [move] [toward] [myself] and\n" +
+                "  [move] [away from] [myself] add nothing the same way.\n" +
                 "```\n" +
                 "\n" +
                 "## See Also\n" +
