@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "scoreAwardTwo001",
+  "name": "Award",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0scoreAward01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 5,
+      "valueLabel": "5",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0scoreAward01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score",
+            "tile.literal->number:<number>->5",
+            "tile.literal->struct:<Player>->2"
+          ],
+          "children": [],
+          "ruleId": "fRu0scoreAward01"
+        }
+      ]
+    }
+  ]
+}

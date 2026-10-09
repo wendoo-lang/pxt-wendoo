@@ -8,16 +8,17 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * bump, in-range, out-of-range, myself and move tiles and the `Sprite` and
- * `Vector2` accessors, driven by pressing the controller's buttons and
- * placing and moving sprites from game code, and programs updated while the
- * game runs, through the messages the Wendoo simulator extension posts. It
- * also calls the bump, in-range, out-of-range and myself tiles' bodies and
- * the `Sprite` type's field hooks directly with image asset, sprite and
- * brain values, images resolved through an image factory registered the way
- * a project's images module registers one, and the move tile's body with
- * sprite and point targets and with wander destinations picked from random
- * sources it scripts.
+ * bump, in-range, out-of-range, myself, move and add-score tiles, its player
+ * literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
+ * pressing the controllers' buttons, placing and moving sprites and setting
+ * scores from game code, and programs updated while the game runs, through
+ * the messages the Wendoo simulator extension posts. It also calls the
+ * bump, in-range, out-of-range, myself, dpad and add-score tiles' bodies and
+ * the `Sprite` and `Player` types' field hooks directly with image asset,
+ * sprite, brain and player values, images resolved through an image factory
+ * registered the way a project's images module registers one, and the move
+ * tile's body with sprite and point targets and with wander destinations
+ * picked from random sources it scripts.
  *
  * Output grammar, one line each:
  *
@@ -37,6 +38,10 @@
  * - `wendoo WENDOO_BRAIN_UNRESOLVED <id>` -- one per brain document id no
  *   compiled brain holds when a sprite's brain was first set to it, as the
  *   arcade base pack logs it.
+ * - `wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE` and `wendoo WENDOO_SCORE_UNUSABLE`
+ *   -- one each for the whole run, the first time a sprite's move smoothing
+ *   is written, and a score written or added to, with no usable number, as
+ *   the arcade base pack logs them.
  * - `wendoo program-faulted <code> <id>` -- one per fault code a running
  *   program raised, the first time it raised it, as its scene's host logs it;
  *   a run whose programs all run without a fault logs none.
@@ -4063,6 +4068,238 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
   }
 
+  /** Wendoo type name of the `Player` type. */
+  const PLAYER_TYPE = "Player";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Player` type. */
+  const PLAYER_ATOM = 1028;
+
+  /** The `Player` value naming the player numbered `player`, as the literal of that player compiles. */
+  function playerLiteral(player: number): wendoo.Value {
+    const fieldId = wendoo.projectIds().fieldId(PLAYER_TYPE, "number");
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i <= fieldId; i++) {
+      slots.push(wendoo.NIL_VALUE);
+    }
+    slots[fieldId] = wendoo.mkNumber(player);
+    return wendoo.mkStruct(wendoo.structTypeId(PLAYER_TYPE), slots);
+  }
+
+  /** What the `Player` type's field getter reads from the `score` field of `player`, in `ctx`; nil when it reads nothing. */
+  function readScore(ctx: wendoo.ExecutionContext, player: wendoo.Value): wendoo.Value {
+    const read = wendoo.playerBinding.fieldGetter(player, wendoo.projectIds().fieldId(PLAYER_TYPE, "score"), ctx);
+    return read ? read : wendoo.NIL_VALUE;
+  }
+
+  /**
+   * Whether the `Player` type's field setter accepts writing `value` into the
+   * `score` field of `player`, in `ctx`, as the VM dispatches it; a refusal
+   * would fault the program.
+   */
+  function writeScore(ctx: wendoo.ExecutionContext, player: wendoo.Value, value: wendoo.Value): boolean {
+    return wendoo.playerBinding.fieldSetter(player, wendoo.projectIds().fieldId(PLAYER_TYPE, "score"), value, ctx);
+  }
+
+  /**
+   * Whether Arcade's head-up display drew anything in the screen's top-right
+   * corner on the last frame: where it shows player one's score, and player
+   * two's in its multiplayer display. Nothing else a player check places
+   * reaches the corner.
+   */
+  function hudCornerDrawn(): boolean {
+    return screen.getPixel(screen.width - 1, 0) !== 0;
+  }
+
+  /**
+   * In a scene of its own, check the `Player` type through its field hooks
+   * and the add-score tile's body called directly, player one alone: the
+   * type takes its atom and fields from the project's ids module; a value
+   * names its player by number, and an empty player slot names player one; a
+   * read of player one's score is 0 and leaves the corner of the screen
+   * empty until a write sets the score, which reads back through Arcade and
+   * shows there; a write takes Arcade's whole-number truncation toward zero;
+   * a write of no finite number changes nothing and is never refused; a read
+   * follows the score game code sets; and add score adds 1 given nothing, a
+   * negative number taking points away, and given no finite number changes
+   * nothing. Then, the display switched by a third player's score, add
+   * score given a player changes that player's score alone.
+   */
+  function checkPlayerScores(): void {
+    game.pushScene();
+    const holder = solidSprite(4, 80, 60);
+    const ctx = contextOn(holder);
+    const nil = wendoo.NIL_VALUE;
+    const ids = wendoo.projectIds();
+    check(
+      "player-type-takes-its-atom-and-fields-from-the-manifest",
+      wendoo.playerBinding.atomId === PLAYER_ATOM &&
+        wendoo.playerBinding.typeId === wendoo.structTypeId(PLAYER_TYPE) &&
+        wendoo.playerBinding.fieldIds.length === 2 &&
+        wendoo.playerBinding.fieldIds[0] === ids.fieldId(PLAYER_TYPE, "number") &&
+        wendoo.playerBinding.fieldIds[1] === ids.fieldId(PLAYER_TYPE, "score")
+    );
+    check(
+      "a-player-value-names-its-player-and-an-empty-player-slot-names-player-one",
+      wendoo.playerNumberOf(playerLiteral(3)) === 3 &&
+        wendoo.playerNumberOf(nil) === 0 &&
+        wendoo.playerNumberOf(wendoo.mkNumber(2)) === 0 &&
+        wendoo.slotPlayerNumber(nil) === 1 &&
+        wendoo.slotPlayerNumber(undefined) === 1 &&
+        wendoo.slotPlayerNumber(playerLiteral(4)) === 4
+    );
+
+    const one = playerLiteral(1);
+    const firstRead = readScore(ctx, one);
+    pause(FRAMES_MS);
+    const silent = !hudCornerDrawn();
+    const wrote = writeScore(ctx, one, wendoo.mkNumber(7));
+    pause(FRAMES_MS);
+    check(
+      "a-read-of-player-ones-score-shows-nothing-until-a-write-sets-it-through-arcade",
+      readsNumber(firstRead, 0) &&
+        silent &&
+        wrote &&
+        info.score() === 7 &&
+        readsNumber(readScore(ctx, one), 7) &&
+        hudCornerDrawn()
+    );
+
+    writeScore(ctx, one, wendoo.mkNumber(2.5));
+    const raised = info.score();
+    writeScore(ctx, one, wendoo.mkNumber(-2.5));
+    check("a-score-write-takes-arcades-whole-number-truncation", raised === 2 && info.score() === -2);
+
+    info.setScore(4);
+    const unusable = [
+      wendoo.mkNumber(NOT_A_NUMBER),
+      wendoo.mkNumber(INFINITE),
+      wendoo.mkNumber(-INFINITE),
+      nil,
+      wendoo.mkString("ten"),
+    ];
+    let kept = true;
+    for (let i = 0; i < unusable.length; i++) {
+      kept = writeScore(ctx, one, unusable[i]) && kept && info.score() === 4;
+    }
+    check("a-score-write-of-no-finite-number-changes-nothing", kept);
+
+    info.changeScoreBy(8);
+    check("a-score-read-follows-the-score-game-code-sets", readsNumber(readScore(ctx, one), 12));
+
+    const addScore = tileBody(wendoo.ADD_SCORE_TILE);
+    info.setScore(0);
+    act(addScore, holder, [nil, nil]);
+    const bare = info.score() === 1;
+    act(addScore, holder, [wendoo.mkNumber(-3), nil]);
+    check(
+      "add-score-adds-one-to-player-one-given-nothing-and-a-negative-number-takes-away",
+      bare && info.score() === -2
+    );
+    act(addScore, holder, [wendoo.mkNumber(INFINITE), nil]);
+    act(addScore, holder, [wendoo.mkNumber(NOT_A_NUMBER), one]);
+    check("add-score-given-no-finite-number-changes-nothing", info.score() === -2);
+
+    act(addScore, holder, [wendoo.mkNumber(5), playerLiteral(3)]);
+    check(
+      "add-score-given-a-player-changes-that-players-score-alone",
+      info.player3.impl.score() === 5 && info.score() === -2 && info.player2.impl.score() === 0
+    );
+    game.popScene();
+  }
+
+  /**
+   * In scenes of their own, check compiled programs adding to and reading
+   * scores: a bare add score adds 1 to player one, one given a negative
+   * number takes that many away, and one given an amount that reads nothing
+   * adds nothing; a program reading player one's score moves once game code
+   * sets it past the program's mark; and programs given a number and a
+   * player, in either order, change that player's score. Then, in a fresh
+   * scene, a program reading player two's score switches the game to
+   * Arcade's multiplayer display, its corner drawn though no score was ever
+   * set.
+   */
+  function checkScorePrograms(): void {
+    game.pushScene();
+    spriteRunning(wendooBrains.p_scoreBonusBare01);
+    pause(FRAMES_MS);
+    const afterBonus = info.score() === 1;
+    spriteRunning(wendooBrains.p_scorePenalty0001);
+    pause(FRAMES_MS);
+    const afterPenalty = info.score() === -2;
+    spriteRunning(wendooBrains.p_scoreUnsetAmount);
+    pause(FRAMES_MS);
+    check("a-program-adding-score-adds-one-or-the-number-it-is-given-to-player-one", afterBonus && afterPenalty);
+    check("a-program-adding-an-amount-that-reads-nothing-adds-nothing", info.score() === -2);
+
+    const watcher = spriteRunning(wendooBrains.p_scoreWatchOne001);
+    pause(FRAMES_MS);
+    const still = movesAt(watcher, 0, 0);
+    info.setScore(10);
+    pause(FRAMES_MS);
+    check("a-program-reads-player-ones-score-as-game-code-sets-it", still && movesAt(watcher, 100, 0));
+
+    spriteRunning(wendooBrains.p_scoreAwardTwo001);
+    spriteRunning(wendooBrains.p_scoreAwardFlip01);
+    pause(FRAMES_MS);
+    check(
+      "a-program-adding-score-given-a-number-and-a-player-in-either-order-changes-that-players-score",
+      info.player2.impl.score() === 5 && info.player3.impl.score() === 2 && info.score() === 10
+    );
+    game.popScene();
+
+    game.pushScene();
+    pause(FRAMES_MS);
+    const quiet = !hudCornerDrawn();
+    const twoWatcher = spriteRunning(wendooBrains.p_scoreWatchTwo001);
+    pause(FRAMES_MS);
+    check(
+      "a-program-reading-player-twos-score-switches-the-game-to-arcades-multiplayer-display",
+      quiet && hudCornerDrawn() && movesAt(twoWatcher, 0, 0) && !info.player1.impl.hasScore()
+    );
+    game.popScene();
+  }
+
+  /**
+   * In a scene of its own, check the dpad's player: a program placing the
+   * dpad given player two follows player two's controller and not player
+   * one's, while a program placing the bare dpad follows player one's and not
+   * player two's; and the dpad's body, given the four-slot argument buffer
+   * of a program compiled before the dpad took a player, reads player one's
+   * dpad as an empty player slot does, and given a player reads that
+   * player's.
+   */
+  function checkPlayerDpad(): void {
+    game.pushScene();
+    const one = spriteRunning(wendooBrains.p_followDpadMove01);
+    const two = spriteRunning(wendooBrains.p_dpadPlayerTwo001);
+    controller.player2.right.setPressed(true);
+    pause(FRAMES_MS);
+    const twoOnly = movesAt(two, 100, 0) && movesAt(one, 0, 0);
+    controller.player2.right.setPressed(false);
+    controller.right.setPressed(true);
+    pause(FRAMES_MS);
+    const oneOnly = movesAt(one, 100, 0) && movesAt(two, 0, 0);
+    controller.right.setPressed(false);
+    check("a-dpad-given-player-two-follows-player-twos-controller-and-a-bare-dpad-player-ones", twoOnly && oneOnly);
+
+    const nil = wendoo.NIL_VALUE;
+    const dpad = tileBody(wendoo.DPAD_TILE);
+    controller.up.setPressed(true);
+    controller.player2.down.setPressed(true);
+    const earlier = act(dpad, one, [nil, nil, nil, nil]);
+    const empty = act(dpad, one, [nil, nil, nil, nil, nil]);
+    const second = act(dpad, one, [nil, nil, nil, nil, playerLiteral(2)]);
+    const fourth = act(dpad, one, [nil, nil, nil, nil, playerLiteral(4)]);
+    controller.up.setPressed(false);
+    controller.player2.down.setPressed(false);
+    check(
+      "a-dpad-given-the-argument-buffer-of-a-program-compiled-before-its-player-slot-reads-player-one",
+      holdsPoint(earlier, 0, -1) && holdsPoint(empty, 0, -1) && holdsPoint(second, 0, 1) && readsNothing(fourth)
+    );
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -4337,7 +4574,8 @@ namespace arcadeSelftest {
    * brain filters, their outputs and their positional modifiers, the target
    * the move's toward and away carry, the move's wander, its speed limit,
    * move smoothing, non-finite motion, the equality operators, the operators
-   * over `Vector2`s, programs holding variables, and the arcade icon encoder.
+   * over `Vector2`s, programs holding variables, players' scores and dpads,
+   * and the arcade icon encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -4414,6 +4652,9 @@ namespace arcadeSelftest {
     checkEqualityOperators();
     checkVector2Operators();
     checkVariables();
+    checkPlayerScores();
+    checkScorePrograms();
+    checkPlayerDpad();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

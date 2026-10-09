@@ -81,18 +81,36 @@ namespace wendoo {
   }
 
   /**
-   * The direction player one's dpad points now, read fresh: each component
-   * from -1 to 1, the zero vector when it points nowhere. A digital dpad
-   * reads full deflection on each pressed direction, so holding two
-   * directions reads a diagonal of two unit components; an analog
-   * controller reads each axis dead-banded.
+   * Arcade's controller of the player numbered `player`: player two's,
+   * three's or four's for 2, 3 or 4, and player one's for any other number.
+   */
+  function controllerOf(player: number): controller.Controller {
+    switch (player) {
+      case 2:
+        return controller.player2;
+      case 3:
+        return controller.player3;
+      case 4:
+        return controller.player4;
+    }
+    return controller.player1;
+  }
+
+  /**
+   * The direction the dpad of the player numbered `player` points now, read
+   * fresh: each component from -1 to 1, the zero vector when it points
+   * nowhere. A digital dpad reads full deflection on each pressed direction,
+   * so holding two directions reads a diagonal of two unit components; an
+   * analog controller reads each axis dead-banded.
+   *
+   * @param player - The player's number: 2, 3 or 4 for that player, any other number for player one.
    */
   //% hidden
-  export function readDpadDirection(): DirectionVector {
-    const player = controller.player1;
-    if (player.analog) {
-      return new DirectionVector(analogAxis(player.left, player.right), analogAxis(player.up, player.down));
+  export function readDpadDirection(player: number): DirectionVector {
+    const pad = controllerOf(player);
+    if (pad.analog) {
+      return new DirectionVector(analogAxis(pad.left, pad.right), analogAxis(pad.up, pad.down));
     }
-    return new DirectionVector(digitalAxis(player.left, player.right), digitalAxis(player.up, player.down));
+    return new DirectionVector(digitalAxis(pad.left, pad.right), digitalAxis(pad.up, pad.down));
   }
 }

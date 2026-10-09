@@ -1,9 +1,9 @@
 # Wendoo Arcade Base
 
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
-shares: the tiles a brain uses to read the controller, notice what its
-sprite touches and what is near it, move its sprite, and change how it
-looks.
+shares: the tiles a brain uses to read the controllers, notice what its
+sprite touches and what is near it, move its sprite, change how it looks,
+and keep score.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -34,6 +34,17 @@ looks.
   its own you can use later in the same rule, or in the rules tucked under
   it: **WHEN bump DO myself image gets bumped sprite image** dresses your
   sprite just like whatever it bumps.
+- **player one**, **player two**, **player three** and **player four** --
+  the players of your game, each with a controller and a score of its own.
+  Give **dpad** a player to read that player's controller: **WHEN dpad
+  player two DO move** steers with the second controller. **add score** is
+  a DO tile adding 1 to player one's score on every frame its rule is on;
+  give it a number to add that many instead -- a negative number takes
+  points away -- and a player to change that player's score. Put **score**
+  after a player to read it: **WHEN player one score greater than 9 DO
+  move** waits for 10 points. Once a rule reads or changes the score of
+  player two, three or four, the game shows scores the way Arcade does for
+  several players, each in a corner of its own.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or

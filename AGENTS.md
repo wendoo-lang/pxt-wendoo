@@ -435,7 +435,7 @@ the current slice alone.
       a sprite's image instead wraps that image object itself, its asset id
       reading empty), the pack's docs pages (one markdown page per
       documented tile or output under `docs/content/en/tiles/`, per
-      documented struct type -- `Vector2` and `Sprite` -- under
+      documented struct type -- `Vector2`, `Sprite` and `Player` -- under
       `docs/content/en/types/`, and per documented accessor under
       `docs/content/en/accessors/`, each named `<key>.md` by its key -- a
       tile's or type's name, `output.<name>` for an output, and
@@ -454,7 +454,18 @@ the current slice alone.
       and the editor's sweep of the pack's docs content fails on one
       without),
       the `Brain` type (the vm's brain type, naming one of
-      the project's brains by document id), the core equality and
+      the project's brains by document id), the `Player` type (a struct
+      naming one of Arcade's four players by the number its read-only
+      `number` field holds, with four declared literals -- keys `1` to `4`,
+      labelled `player one` to `player four` -- and no variable factory; its
+      writable `score` accessor reads and writes that player's score through
+      `info.playerN.impl` alone, never the `parts="multiplayer"` sugar, which
+      would mark every game multiplayer, so Arcade's head-up display behaves
+      as its own score blocks leave it: a read of player one's score shows
+      nothing until a write sets it, and any read or write of player two's,
+      three's or four's switches to the multiplayer display; a write of a
+      finite number takes Arcade's whole-number truncation, and one holding
+      no finite number changes nothing and is logged once per run), the core equality and
       inequality operators' overloads over two images (equal when they have
       the same pixels, whichever image objects they are; an image no
       factory holds, or a value naming no image, equals nothing), two
@@ -473,7 +484,7 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite` and `Brain` types, the variable factory flag and editor
+      `Sprite`, `Brain` and `Player` types, the variable factory flag and editor
       label (`position`, `sprite`) of its `Vector2` and `Sprite` types (a
       `Vector2` variable holds the point written to it -- the store's
       deep copy is the snapshot; a `Sprite` variable holds the sprite
@@ -491,7 +502,7 @@ the current slice alone.
       function returns -- so in the simulator it gives the icons before the
       catalog is first published and on hardware it compiles to nothing and
       no icon reaches the binary), the controller read (one module owning every
-      raw read and its dead-banded transform), the proximity read (one
+      raw read of any player's controller and its dead-banded transform), the proximity read (one
       module owning the
       nearest-sprite scan and its center-distance metric, made
       synchronously at sense time), the overlap read (one module owning
@@ -500,7 +511,12 @@ the current slice alone.
       wandering move's random on-screen destination, kept per call site in
       the sprite's attachment, its re-picks on arrival or deadline, and the random
       source picking it), the `dpad`, `bump`, `in range`, `out of range`
-      and `myself` sensors and the `move` actuator (`myself` reads the
+      and `myself` sensors and the `move` and `add score` actuators (dpad
+      reads the controller of the player its optional anonymous `Player`
+      names, else player one's, an argument buffer ending before that slot
+      reading player one's too; add score adds its optional anonymous
+      number, else 1, to the score of its optional anonymous `Player`, else
+      player one's, the two in either order; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "scoreUnsetAmount",
+  "name": "Unset amount",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0scoreUnset01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "bonus",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0bonusAmount0"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0scoreUnset01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score",
+            "tile.var->fVr0bonusAmount0"
+          ],
+          "children": [],
+          "ruleId": "fRu0scoreUnset01"
+        }
+      ]
+    }
+  ]
+}

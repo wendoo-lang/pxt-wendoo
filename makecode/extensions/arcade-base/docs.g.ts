@@ -8,6 +8,42 @@ namespace wendoo {
      */
     //% hidden
     export function arcadeBaseDocs(name: string): string {
+        if (name === "Player") {
+            return "```brain noframe\n" +
+                "{\n" +
+                "  \"tiles\": [\n" +
+                "    \"tile.literal->struct:<Player>->1\",\n" +
+                "    \"tile.literal->struct:<Player>->2\",\n" +
+                "    \"tile.literal->struct:<Player>->3\",\n" +
+                "    \"tile.literal->struct:<Player>->4\"\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "# Player\n" +
+                "\n" +
+                "One of the four players in your game.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "**player one**, **player two**, **player three** and **player four** are the players of an Arcade game,\n" +
+                "each with a controller of its own. Give one to **dpad** to read that player's dpad, or to **add score**\n" +
+                "to change that player's score. Without one, both use player one.\n" +
+                "\n" +
+                "## Score\n" +
+                "\n" +
+                "`tile:tile.accessor->struct:<Player>->score` is a player's score. Put it after a player to read it, and\n" +
+                "use **add score** to change it.\n" +
+                "\n" +
+                "Player one's score shows on the screen once it changes. Once a rule reads or changes the score of\n" +
+                "player two, three or four, the game shows scores the way Arcade does for several players: each in a\n" +
+                "corner of its own.\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.add-score`\n" +
+                "`tile:tile.sensor->sensor.arcade.dpad`\n";
+        }
         if (name === "Sprite") {
             return "```brain noframe\n" +
                 "{\n" +
@@ -85,8 +121,8 @@ namespace wendoo {
                 "## X and Y\n" +
                 "\n" +
                 "`tile:tile.accessor->struct:<Vector2>->x` reads how far across a position is, and\n" +
-                "`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels. A brain reads them but cannot\n" +
-                "change them. Open either to see how.\n" +
+                "`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels. A brain reads them one number at a\n" +
+                "time; to change where something is, give it a whole new position. Open either to see how.\n" +
                 "\n" +
                 "## A Snapshot\n" +
                 "\n" +
@@ -353,6 +389,72 @@ namespace wendoo {
                 "`tile:tile.accessor->struct:<Vector2>->y`\n" +
                 "`tile:tile.actuator->actuator.arcade.move`\n";
         }
+        if (name === "accessor.score") {
+            return "```brain noframe\n" +
+                "{ \"tiles\": [\"tile.literal->struct:<Player>->1\", \"${tileId}\"] }\n" +
+                "```\n" +
+                "\n" +
+                "# Score\n" +
+                "\n" +
+                "A player's score.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Put **score** after a player to read that player's score: **WHEN player one score greater than 9 DO\n" +
+                "move** moves your sprite once player one has scored 10. A score is always a whole number.\n" +
+                "\n" +
+                "**add score** changes it.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\n" +
+                "        \"tile.literal->struct:<Player>->1\",\n" +
+                "        \"tile.accessor->struct:<Player>->score\",\n" +
+                "        \"tile.op->gt\",\n" +
+                "        \"tile.literal->number:<number>->9\"\n" +
+                "      ],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.move\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Move once player one has scored 10.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->9\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 9,\n" +
+                "      \"valueLabel\": \"9\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "- [player one] .. [player four] [score] reads that player's score, a whole number, 0 before anything\n" +
+                "  changes it. Arcade's own score is player one's: game code's info.setScore and info.changeScoreBy\n" +
+                "  change what [player one] [score] reads.\n" +
+                "- The editor offers no gets after score: a player tile is a literal, not a variable or a writable\n" +
+                "  result, so [player one] [score] [gets] <number> is refused. Change a score with [add score].\n" +
+                "- Reading player one's score shows nothing on the screen. Reading or changing the score of player two,\n" +
+                "  three or four switches the game to Arcade's display for several players, for the rest of the scene.\n" +
+                "```\n" +
+                "\n" +
+                "## Provided By\n" +
+                "\n" +
+                "Every player has a **score**: `tile:tile.var.factory->struct:<Player>`\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.add-score`\n";
+        }
         if (name === "accessor.x") {
             return "```brain noframe\n" +
                 "{ \"tiles\": [\"tile.sensor->sensor.arcade.myself\", \"tile.accessor->struct:<Sprite>->position\", \"${tileId}\"] }\n" +
@@ -469,6 +571,82 @@ namespace wendoo {
                 "\n" +
                 "`tile:tile.accessor->struct:<Vector2>->x`\n" +
                 "`tile:tile.accessor->struct:<Sprite>->position`\n";
+        }
+        if (name === "actuator.arcade.add-score") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Add Score\n" +
+                "\n" +
+                "Adds to a player's score.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **add score** on the **DO** side of a rule to add 1 to player one's score. Give it a number to add\n" +
+                "that much instead -- a negative number takes points away -- and a player to change that player's\n" +
+                "score: **DO add score 5 player two** gives player two 5 points.\n" +
+                "\n" +
+                "Like every DO tile, it acts on every frame its rule is on, so **WHEN dpad DO add score** keeps adding\n" +
+                "while the dpad is held. **WHEN this page starts DO add score** adds just once.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->on-page-entered\"],\n" +
+                "      \"do\": [\n" +
+                "        \"tile.actuator->actuator.arcade.add-score\",\n" +
+                "        \"tile.literal->number:<number>->5\",\n" +
+                "        \"tile.literal->struct:<Player>->2\"\n" +
+                "      ],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Give player two 5 points as the page starts.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->5\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 5,\n" +
+                "      \"valueLabel\": \"5\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of add score, as the editor offers it:\n" +
+                "- An optional number and an optional Player, each at most once, in either order. Nothing else: no\n" +
+                "  modifier, no named parameter, no output tile.\n" +
+                "- No number adds 1. A number adds that much, a negative number subtracting.\n" +
+                "- No Player changes player one's score. [player one] .. [player four] change that player's.\n" +
+                "- A number or Player placed as anything but a literal tile -- a variable, an accessor, an operator --\n" +
+                "  that reads as nothing leaves the action undone for that frame. A number holding no finite value\n" +
+                "  changes nothing either.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It runs on every frame its rule fires, adding again each time: a rule that should score once needs a\n" +
+                "  WHEN that fires once, such as [this page starts].\n" +
+                "- The score is Arcade's own: [player one] is the score game code's info.score() reads. Arcade keeps\n" +
+                "  whole numbers, so a fraction is dropped toward zero when the score is stored: adding 2.5 to 0 stores\n" +
+                "  2.\n" +
+                "- Player one's score appears on the screen at its first change. Changing the score of player two,\n" +
+                "  three or four switches the game to Arcade's display for several players, for the rest of the scene.\n" +
+                "- [player one] [score] [gets] <number> is refused: a player tile is not a variable. Read a score with\n" +
+                "  [player one] [score].\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.var.factory->struct:<Player>`\n" +
+                "`tile:tile.accessor->struct:<Player>->score`\n";
         }
         if (name === "actuator.arcade.move") {
             return "```brain noframe do\n" +
@@ -885,6 +1063,9 @@ namespace wendoo {
                 "On a controller with an analog stick, a stick pushed part of the way carries a shorter direction, and\n" +
                 "**move** goes slower along it.\n" +
                 "\n" +
+                "**dpad** reads player one's dpad. Give it a player to read that player's instead: **WHEN dpad player two\n" +
+                "DO move** steers your sprite with player two's controller.\n" +
+                "\n" +
                 "## Example\n" +
                 "\n" +
                 "```brain\n" +
@@ -917,11 +1098,15 @@ namespace wendoo {
                 "\n" +
                 "```assistant\n" +
                 "Grammar of dpad, as the editor offers it:\n" +
-                "- up, down, left, right: each optional, each at most once, in any order. Nothing else: no value, no\n" +
-                "  parameter, no output tile. dpad is not inline, so no accessor or operator follows it and it fills no\n" +
-                "  value slot; its reading reaches the DO side only as the WHEN result.\n" +
+                "- up, down, left, right: each optional, each at most once, in any order.\n" +
+                "- One optional Player, at most once, anywhere among the modifiers: [player one] .. [player four].\n" +
+                "  Nothing else: no other value, no parameter, no output tile. dpad is not inline, so no accessor or\n" +
+                "  operator follows it and it fills no value slot; its reading reaches the DO side only as the WHEN\n" +
+                "  result.\n" +
                 "\n" +
-                "What it reads: player one's controller, fresh at every run, as a Vector2 (x grows rightward, y downward).\n" +
+                "What it reads: the controller of the Player placed, else player one's, fresh at every run, as a Vector2\n" +
+                "(x grows rightward, y downward). A Player placed as anything but a literal tile that reads as nothing\n" +
+                "leaves the rule off for that frame.\n" +
                 "- A digital dpad reads -1, 0 or 1 on each axis, so a held diagonal reads (1, 1) in size, longer than 1.\n" +
                 "  Both buttons of one axis held read 0 on that axis; only opposite buttons held reads off.\n" +
                 "- An analog stick reads each axis dead-banded: a deflection up to 0.1 reads 0, the rest rescales from 0\n" +
@@ -948,7 +1133,8 @@ namespace wendoo {
                 "## See Also\n" +
                 "\n" +
                 "`tile:tile.actuator->actuator.arcade.move`\n" +
-                "`tile:tile.var.factory->struct:<Vector2>`\n";
+                "`tile:tile.var.factory->struct:<Vector2>`\n" +
+                "`tile:tile.var.factory->struct:<Player>`\n";
         }
         if (name === "sensor.arcade.in-range") {
             return "```brain noframe when\n" +

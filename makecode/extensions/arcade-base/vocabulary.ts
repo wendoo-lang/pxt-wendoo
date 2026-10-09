@@ -1,17 +1,20 @@
 /**
  * The arcade base pack's vocabulary: the `Vector2` type, its `x` and `y`
  * read-only accessors, the `Sprite` type, its `image`, `position`,
- * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain` type, the `dpad`,
- * `bump`, `in range`, `out of range` and `myself` sensors, the `move`
- * actuator, the core equality and inequality operators' overloads over two
- * images, two sprites, two brains and two `Vector2`s, and the core addition
+ * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain`
+ * type, the `Player` type with its four literals and its `score` accessor,
+ * the `dpad`, `bump`, `in range`, `out of range` and `myself` sensors, the
+ * `move` and `add score` actuators, the core equality and inequality
+ * operators' overloads over two images, two sprites, two brains and two
+ * `Vector2`s, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
  * multiplication operator's over a `Vector2` and a number, registered from
  * this file's top-level code at program start, `Vector2` and `Sprite` each
  * with the label the editor calls it by and a variable factory. In the
  * simulator only, {@link attachArcadeBaseIcons} gives each tile, modifier
- * tile, output and accessor its icon and the `Vector2`, `Sprite` and `Brain`
- * types theirs, and gives icons to the core tiles (the page tiles, the
+ * tile, output and accessor its icon and the `Vector2`, `Sprite`, `Brain`
+ * and `Player` types theirs, and gives icons to the core tiles (the page
+ * tiles, the
  * timer, AND, OR, NOT, the six comparisons, the arithmetic operators, gets,
  * the parentheses, random number, true, false, nil, and the variable and
  * tile factories) and to the core number, text and switch types; and
@@ -19,9 +22,9 @@
  * documents the docs page {@link arcadeBaseDocs} holds for it.
  *
  * - `WHEN [dpad]` reads player one's dpad as a `Vector2`, or nil while it
- *   points nowhere. Its direction modifiers mask the reading: each admits
- *   its own direction's component, none admits every component, and a
- *   reading masked to nothing is nil.
+ *   points nowhere; given a player, that player's dpad. Its direction
+ *   modifiers mask the reading: each admits its own direction's component,
+ *   none admits every component, and a reading masked to nothing is nil.
  * - The proximity sensors -- `bump`, `in range` and `out of range` -- each
  *   take one optional filter, an image, a sprite or a brain, and read only
  *   the sprites it admits: given an image, the sprites whose image has the
@@ -109,6 +112,12 @@
  *   place of the project's: `DO [myself][move smoothing] [=] 0.15` eases
  *   its own sprite's moves, and `DO [bumped sprite][move smoothing] [=] 0`
  *   turns smoothing off for the sprite it bumps.
+ * - `[player one]` to `[player four]` name Arcade's four players, and a
+ *   player's `score` reads that player's score: `WHEN [player one] [score]
+ *   [greater than] 9 DO [move]` moves once player one scores 10.
+ * - `DO [add score]` adds 1 to player one's score; given a number, it adds
+ *   that number, a negative number taking it away, and given a player, it
+ *   changes that player's score: `DO [add score] 5 [player two]`.
  * - A brain may hold variables of the `Vector2` and `Sprite` types. A
  *   variable never written reads nil. A `Vector2` variable holds the point
  *   written to it, whatever happens after: `DO [$home] [=] [myself][position]`
@@ -145,6 +154,10 @@ namespace wendoo {
   /** Tile name of the myself sensor. */
   //% hidden
   export const MYSELF_TILE = "sensor.arcade.myself";
+
+  /** Tile name of the add-score actuator. */
+  //% hidden
+  export const ADD_SCORE_TILE = "actuator.arcade.add-score";
 
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
@@ -187,6 +200,13 @@ namespace wendoo {
   const DPAD_SLOT_DOWN = 1;
   const DPAD_SLOT_LEFT = 2;
   const DPAD_SLOT_RIGHT = 3;
+
+  /** Argument-buffer position of the dpad's player, after its direction modifiers. */
+  const DPAD_SLOT_PLAYER = 4;
+
+  /** Argument-buffer positions of the add-score actuator's amount and player. */
+  const ADD_SCORE_SLOT_AMOUNT = 0;
+  const ADD_SCORE_SLOT_PLAYER = 1;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -351,7 +371,12 @@ namespace wendoo {
     return result;
   }
 
-  /** `sensor.arcade.dpad`: player one's dpad direction, masked by the direction modifiers, or nil when the mask leaves nothing. */
+  /**
+   * `sensor.arcade.dpad`: the dpad direction of the player its player slot
+   * names, else player one's, masked by the direction modifiers, or nil when
+   * the mask leaves nothing. An argument buffer ending before the player
+   * slot reads player one's dpad.
+   */
   class DpadSensor extends HostActionBinding {
     constructor() {
       super(false);
@@ -363,7 +388,8 @@ namespace wendoo {
       const left = isFilled(args, DPAD_SLOT_LEFT);
       const right = isFilled(args, DPAD_SLOT_RIGHT);
       const all = !up && !down && !left && !right;
-      const masked = maskDirection(readDpadDirection(), all || up, all || down, all || left, all || right);
+      const direction = readDpadDirection(slotPlayerNumber(args[DPAD_SLOT_PLAYER]));
+      const masked = maskDirection(direction, all || up, all || down, all || left, all || right);
       return masked.isZero() ? NIL_VALUE : vector2Value(masked);
     }
   }
@@ -509,6 +535,22 @@ namespace wendoo {
       }
       setActionOutput(ctx, structTypeId(TYPE_SPRITE), this.output, result);
       return result;
+    }
+  }
+
+  /**
+   * `actuator.arcade.add-score`: adds to the score of the player its player
+   * slot names, else player one's, the number its amount slot holds, else 1,
+   * as {@link PlayerBinding.addScore} adds it.
+   */
+  class AddScoreActuator extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      playerBinding.addScore(slotPlayerNumber(args[ADD_SCORE_SLOT_PLAYER]), args[ADD_SCORE_SLOT_AMOUNT]);
+      return VOID_VALUE;
     }
   }
 
@@ -760,6 +802,15 @@ namespace wendoo {
     return [optional(choice([bag([filterSlot(), rangeSlot()].concat(positionSlots()))]))];
   }
 
+  /**
+   * The argument grammar the add-score actuator declares: an optional
+   * amount and an optional player, in either order, each anonymous value
+   * filling the slot of its type -- a number the amount, a player the player.
+   */
+  function addScoreArgs(): TileArgSpec[] {
+    return [optional(choice([bag([optional(anonymousArg(TYPE_NUMBER)), optional(anonymousArg(TYPE_PLAYER))])]))];
+  }
+
   /** The four optional direction modifier slots, up, down, left then right. */
   function directionModifiers(): TileArgSpec[] {
     return [
@@ -792,8 +843,17 @@ namespace wendoo {
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
   const brainMeta = new TypeMeta();
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);
+  const playerMeta = new TypeMeta();
+  playerMeta.label = "player";
+  playerMeta.literals = playerLiterals();
+  const playerFieldSpecs = playerFields();
+  arcadePack.defineStruct(TYPE_PLAYER, playerFieldSpecs, playerBinding, playerMeta);
 
-  const dpadSpec = new TileSpec(TILE_KIND_SENSOR, directionModifiers(), TYPE_VECTOR2);
+  const dpadSpec = new TileSpec(
+    TILE_KIND_SENSOR,
+    directionModifiers().concat([optional(anonymousArg(TYPE_PLAYER))]),
+    TYPE_VECTOR2
+  );
   dpadSpec.label = "dpad";
   dpadSpec.language.form = "press";
   dpadSpec.language.bare = "the dpad";
@@ -859,6 +919,10 @@ namespace wendoo {
   myselfSpec.inline = true;
   myselfSpec.writableResult = true;
   arcadePack.bind(MYSELF_TILE, new MyselfSensor(), myselfSpec);
+
+  const addScoreSpec = new TileSpec(TILE_KIND_ACTUATOR, addScoreArgs(), "");
+  addScoreSpec.label = "add score";
+  arcadePack.bind(ADD_SCORE_TILE, new AddScoreActuator(), addScoreSpec);
 
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
@@ -929,8 +993,8 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, the modifier tiles filling their slots,
-   * its sensors' outputs, its `Vector2`, `Sprite` and `Brain` types and their
-   * accessor tiles their icons, and give the core tiles and the core number,
+   * its sensors' outputs, its `Vector2`, `Sprite`, `Brain` and `Player` types
+   * and their accessor tiles their icons, and give the core tiles and the core number,
    * text and switch types the pack's icons for them. Call it once, after the
    * pack's registrations and before the catalog is first published. Does
    * nothing on hardware.
@@ -946,6 +1010,8 @@ namespace wendoo {
     attachAccessorIcon(spriteFieldSpecs, "brain", brainTypeIcon());
     attachAccessorIcon(spriteFieldSpecs, "moveSmoothing", moveSmoothingAccessorIcon());
     brainMeta.icon = brainTypeIcon();
+    playerMeta.icon = playerTypeIcon();
+    attachAccessorIcon(playerFieldSpecs, "score", scoreAccessorIcon());
     dpadSpec.icon = dpadIcon();
     moveSpec.icon = moveIcon();
     bumpSpec.icon = bumpIcon();
@@ -955,7 +1021,8 @@ namespace wendoo {
     outOfRangeSpec.icon = outOfRangeIcon();
     outOfRangeSpec.outputs[0].icon = outOfRangeIcon();
     myselfSpec.icon = myselfIcon();
-    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec];
+    addScoreSpec.icon = addScoreIcon();
+    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec, addScoreSpec];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
     attachSlotIcon(tiles, "modifier.direction.left", leftIcon());
@@ -1022,8 +1089,8 @@ namespace wendoo {
   }
 
   /**
-   * Give each of the pack's tiles, its sensors' outputs, its `Vector2` and
-   * `Sprite` types and their accessor tiles the docs page {@link arcadeBaseDocs}
+   * Give each of the pack's tiles, its sensors' outputs, its `Vector2`,
+   * `Sprite` and `Player` types and their accessor tiles the docs page {@link arcadeBaseDocs}
    * holds under the key it is wired to: a tile's or type's name, and
    * `output.<name>` or `accessor.<field>` for an output or an accessor, one
    * accessor page serving every field wired to it. Call it once, after the
@@ -1040,6 +1107,8 @@ namespace wendoo {
     attachAccessorDocs(spriteFieldSpecs, "position", "accessor.position");
     attachAccessorDocs(spriteFieldSpecs, "brain", "accessor.brain");
     attachAccessorDocs(spriteFieldSpecs, "moveSmoothing", "accessor.moveSmoothing");
+    playerMeta.docs = arcadeBaseDocs(TYPE_PLAYER);
+    attachAccessorDocs(playerFieldSpecs, "score", "accessor.score");
     dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
     moveSpec.docs = arcadeBaseDocs(MOVE_TILE);
     bumpSpec.docs = arcadeBaseDocs(BUMP_TILE);
@@ -1049,6 +1118,7 @@ namespace wendoo {
     outOfRangeSpec.docs = arcadeBaseDocs(OUT_OF_RANGE_TILE);
     outOfRangeSpec.outputs[0].docs = arcadeBaseDocs("output.outOfRange");
     myselfSpec.docs = arcadeBaseDocs(MYSELF_TILE);
+    addScoreSpec.docs = arcadeBaseDocs(ADD_SCORE_TILE);
   }
 
   attachArcadeBaseIcons();

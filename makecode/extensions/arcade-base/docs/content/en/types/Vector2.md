@@ -14,8 +14,8 @@ a position too. A **position** variable remembers one.
 ## X and Y
 
 `tile:tile.accessor->struct:<Vector2>->x` reads how far across a position is, and
-`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels. A brain reads them but cannot
-change them. Open either to see how.
+`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels. A brain reads them one number at a
+time; to change where something is, give it a whole new position. Open either to see how.
 
 ## A Snapshot
 

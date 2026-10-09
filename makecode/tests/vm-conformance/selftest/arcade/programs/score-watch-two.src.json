@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "scoreWatchTwo001",
+  "name": "Watch two",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0scoreWatch02",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 9,
+      "valueLabel": "9",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0scoreWatch02",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.literal->struct:<Player>->2",
+            "tile.accessor->struct:<Player>->score",
+            "tile.op->gt",
+            "tile.literal->number:<number>->9"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0scoreWatch02"
+        }
+      ]
+    }
+  ]
+}

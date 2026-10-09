@@ -18,6 +18,9 @@ and held straight up, it is off.
 On a controller with an analog stick, a stick pushed part of the way carries a shorter direction, and
 **move** goes slower along it.
 
+**dpad** reads player one's dpad. Give it a player to read that player's instead: **WHEN dpad player two
+DO move** steers your sprite with player two's controller.
+
 ## Example
 
 ```brain
@@ -50,11 +53,15 @@ On a controller with an analog stick, a stick pushed part of the way carries a s
 
 ```assistant
 Grammar of dpad, as the editor offers it:
-- up, down, left, right: each optional, each at most once, in any order. Nothing else: no value, no
-  parameter, no output tile. dpad is not inline, so no accessor or operator follows it and it fills no
-  value slot; its reading reaches the DO side only as the WHEN result.
+- up, down, left, right: each optional, each at most once, in any order.
+- One optional Player, at most once, anywhere among the modifiers: [player one] .. [player four].
+  Nothing else: no other value, no parameter, no output tile. dpad is not inline, so no accessor or
+  operator follows it and it fills no value slot; its reading reaches the DO side only as the WHEN
+  result.
 
-What it reads: player one's controller, fresh at every run, as a Vector2 (x grows rightward, y downward).
+What it reads: the controller of the Player placed, else player one's, fresh at every run, as a Vector2
+(x grows rightward, y downward). A Player placed as anything but a literal tile that reads as nothing
+leaves the rule off for that frame.
 - A digital dpad reads -1, 0 or 1 on each axis, so a held diagonal reads (1, 1) in size, longer than 1.
   Both buttons of one axis held read 0 on that axis; only opposite buttons held reads off.
 - An analog stick reads each axis dead-banded: a deflection up to 0.1 reads 0, the rest rescales from 0
@@ -82,3 +89,4 @@ The WHEN result is the masked Vector2, and move consumes it:
 
 `tile:tile.actuator->actuator.arcade.move`
 `tile:tile.var.factory->struct:<Vector2>`
+`tile:tile.var.factory->struct:<Player>`

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "scoreAwardFlip01",
+  "name": "Award flipped",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0scoreAwardFl",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 2,
+      "valueLabel": "2",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0scoreAwardFl",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score",
+            "tile.literal->struct:<Player>->3",
+            "tile.literal->number:<number>->2"
+          ],
+          "children": [],
+          "ruleId": "fRu0scoreAwardFl"
+        }
+      ]
+    }
+  ]
+}

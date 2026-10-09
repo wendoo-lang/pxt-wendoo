@@ -256,6 +256,14 @@ const ARCADE_SOURCES = [
   "toward-held.src.json",
   "filter-unset.src.json",
   "held-when-gate.src.json",
+  "score-bonus.src.json",
+  "score-penalty.src.json",
+  "score-award.src.json",
+  "score-award-flipped.src.json",
+  "score-unset.src.json",
+  "score-watch.src.json",
+  "score-watch-two.src.json",
+  "dpad-two.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -845,6 +853,14 @@ export const VARIABLE_ENTRY_PREFIX = "var:";
  */
 export const FACTORY_ENTRY_PREFIX = "factory:";
 
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the literal tile a declared type's literal is bound as, the
+ * rest of the entry naming its type and its key as `Type.key`, such as
+ * `literal:Player.2`.
+ */
+export const LITERAL_ENTRY_PREFIX = "literal:";
+
 /** The WHEN and DO sides of one rule, each entry named as {@link arcadeImageRuleDiagnosticCodes} names entries. */
 export interface RuleSides {
   readonly when: string[];
@@ -883,6 +899,10 @@ function entryTileId(entry: string, bareTileId: (name: string) => string, litera
   if (entry === IMAGE_LITERAL) return literalId;
   if (entry === BRAIN_LITERAL) return brainLiteralId;
   if (entry === NIL_LITERAL) return mkLiteralTileId(CoreTypeIds.Nil, "nil");
+  if (entry.startsWith(LITERAL_ENTRY_PREFIX)) {
+    const [type = "", key = ""] = entry.slice(LITERAL_ENTRY_PREFIX.length).split(".");
+    return mkLiteralTileId(mkTypeId(NativeType.Struct, type), key);
+  }
   if (entry === OPEN_PAREN) return mkControlFlowTileId(CoreControlFlowId.OpenParen);
   if (entry === CLOSE_PAREN) return mkControlFlowTileId(CoreControlFlowId.CloseParen);
   if (entry.startsWith(MODIFIER_ENTRY_PREFIX)) return mkModifierTileId(entry);
@@ -922,7 +942,9 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
  * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
  * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
- * catalog, {@link NIL_LITERAL} for the core nil literal, {@link OPEN_PAREN} and
+ * catalog, {@link NIL_LITERAL} for the core nil literal, an entry starting
+ * {@link LITERAL_ENTRY_PREFIX} for a declared type's literal tile,
+ * {@link OPEN_PAREN} and
  * {@link CLOSE_PAREN} for the parenthesis tiles, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
  * output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
  * shared modifier tile it declares, an entry starting
@@ -1336,10 +1358,10 @@ export function arcadeVariableFaces(): {
 }
 
 /**
- * Each type of the arcade selftest's catalog carrying a label, beside that
- * label, the label of the variable factory the environment binding the
- * catalog under its allocation binds for it, and the name the brain editor's
- * config built from that environment calls it by.
+ * Each type of the arcade selftest's catalog carrying a label and marked
+ * `variableFactory`, beside that label, the label of the variable factory the
+ * environment binding the catalog under its allocation binds for it, and the
+ * name the brain editor's config built from that environment calls it by.
  */
 export function arcadeTypeNames(): {
   name: string;
@@ -1353,7 +1375,7 @@ export function arcadeTypeNames(): {
   return parseCatalog(arcadeCatalog())
     .packs.flatMap((pack) => pack.types)
     .flatMap((type) => {
-      if (type.label === undefined) return [];
+      if (type.label === undefined || !type.variableFactory) return [];
       const typeId = mkTypeId(NativeType.Struct, type.name);
       return [
         {

@@ -7,7 +7,8 @@
  * accessor pages are not; every page documenting a sensor or an actuator holds
  * an `assistant` fence; every `brain` fence parses and names only tile ids
  * the environment or the fence's own catalog holds; every `tile:` reference
- * names a tile with a docs entry; and every `concept:` reference names a
+ * names a tile with a docs entry, and one the environment holds or whose
+ * entry carries a label, so it draws as a tile; and every `concept:` reference names a
  * registered concept page. Also records which pages the standalone docs
  * route, which binds no session catalog, resolves: the core pages, and none
  * of the pack's.
@@ -179,8 +180,9 @@ let registry: DocsRegistry;
 let pages: ContentPage[];
 
 before(() => {
-  environment = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds()).environment;
-  registry = createEditorDocsRegistry(environment, new Set());
+  const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
+  environment = built.environment;
+  registry = createEditorDocsRegistry(environment, new Set(), built.typePages);
   pages = contentPages();
 });
 
@@ -274,6 +276,14 @@ describe("the arcade base pack's docs pages", () => {
     assert.ok(refs.length > 0, "no tile references found");
     const unresolved = refs.filter((ref) => !registry.tiles.has(ref.id)).map((ref) => `${ref.file}: ${ref.id}`);
     assert.deepEqual(unresolved, []);
+  });
+
+  test("reference only tiles the environment holds or entries carrying a label, so each draws as a tile", () => {
+    const tileCatalog = createDocsTileCatalog(environment);
+    const undrawn = referencesIn(pages, TILE_REF_RE)
+      .filter((ref) => tileCatalog.get(ref.id) === undefined && registry.tiles.get(ref.id)?.label === undefined)
+      .map((ref) => `${ref.file}: ${ref.id}`);
+    assert.deepEqual(undrawn, []);
   });
 
   test("reference only registered concept pages", () => {

@@ -11,12 +11,24 @@ pack arcade
     field asset string readOnly
   type Brain brain icon
     field id string readOnly
+  type Player native icon
+    field number number readOnly
+    field score number accessor accessor-icon
+    literal 1
+      value number {"t":3,"v":1}
+    literal 2
+      value number {"t":3,"v":2}
+    literal 3
+      value number {"t":3,"v":3}
+    literal 4
+      value number {"t":3,"v":4}
   tile sensor sensor.arcade.dpad returns=Vector2 icon
     args
       arg modifier.direction.up optional modifier icon
       arg modifier.direction.down optional modifier icon
       arg modifier.direction.left optional modifier icon
       arg modifier.direction.right optional modifier icon
+      arg anon.Player type=Player anonymous optional
   tile actuator actuator.arcade.move icon
     call
       conditional condition=toward
@@ -114,6 +126,15 @@ pack arcade
                 arg modifier.position.left modifier icon
                 arg modifier.position.right modifier icon
   tile sensor sensor.arcade.myself returns=Sprite inline writableResult icon
+  tile actuator actuator.arcade.add-score icon
+    call
+      optional
+        choice
+          bag
+            optional
+              arg anon.number type=number anonymous
+            optional
+              arg anon.Player type=Player anonymous
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

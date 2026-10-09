@@ -15,6 +15,7 @@
         "sprite-value.ts",
         "image-asset.ts",
         "brain-value.ts",
+        "player-value.ts",
         "icons.ts",
         "icon-encoder.ts",
         "proximity-read.ts",

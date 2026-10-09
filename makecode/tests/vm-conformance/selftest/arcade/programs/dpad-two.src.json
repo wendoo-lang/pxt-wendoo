@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "dpadPlayerTwo001",
+  "name": "Dpad two",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dpadPlayer02",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dpadPlayer02",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.dpad",
+            "tile.literal->struct:<Player>->2"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0dpadPlayer02"
+        }
+      ]
+    }
+  ]
+}

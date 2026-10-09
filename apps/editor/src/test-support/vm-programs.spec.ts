@@ -40,6 +40,7 @@ import {
   FACTORY_ENTRY_PREFIX,
   IMAGE_LITERAL,
   IMAGE_LITERAL_ASSET_ID,
+  LITERAL_ENTRY_PREFIX,
   MODIFIER_ENTRY_PREFIX,
   NIL_LITERAL,
   NUMBER_LITERAL,
@@ -306,6 +307,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
 
     assert.deepEqual(icons.map((icon) => icon.name).sort(), [
       "Brain",
+      "Player",
       "Sprite",
       "Vector2",
       "boolean",
@@ -631,6 +633,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       { name: "Sprite", produces: mkTypeId(NativeType.Struct, "Sprite") },
       { name: "Image", produces: undefined },
       { name: "Brain", produces: undefined },
+      { name: "Player", produces: undefined },
     ]);
   });
 
@@ -719,5 +722,58 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.equal(written[0]?.varName, "home");
     assert.equal(written[0]?.varType, mkTypeId(NativeType.Struct, "Vector2"));
     assert.deepEqual(read, [{ varName: "home", varType: mkTypeId(NativeType.Struct, "Vector2") }]);
+  });
+
+  const playerOne = `${LITERAL_ENTRY_PREFIX}Player.1`;
+  const playerTwo = `${LITERAL_ENTRY_PREFIX}Player.2`;
+  const scoreOf = `${ACCESSOR_ENTRY_PREFIX}Player.score`;
+  const addScore = "actuator.arcade.add-score";
+  const dpad = "sensor.arcade.dpad";
+  const greaterThan = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.GreaterThan}`;
+
+  it("offers a player at the dpad and at add score, and score after a player", () => {
+    assert.ok(arcadeOffersLiteral(playerTwo, [dpad]));
+    assert.ok(arcadeOffersLiteral(playerTwo, [], [addScore]));
+    assert.ok(arcadeOffersLiteral(scoreOf, [], [playerOne]));
+  });
+
+  for (const [sentence, when, act] of [
+    ["a WHEN reading player one's score", [playerOne, scoreOf, greaterThan, NUMBER_LITERAL], [move]],
+    ["a bare add score", [], [addScore]],
+    ["add score given a number, then a player", [], [addScore, NUMBER_LITERAL, playerTwo]],
+    ["add score given a player, then a number", [], [addScore, playerTwo, NUMBER_LITERAL]],
+    ["add score given player one's score as its amount", [], [addScore, playerOne, scoreOf]],
+    [
+      "a dpad given player two among its direction modifiers",
+      [dpad, up, playerTwo, `${MODIFIER_ENTRY_PREFIX}direction.left`],
+      [move],
+    ],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("refuses add score given two numbers or two players", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [addScore, NUMBER_LITERAL, NUMBER_LITERAL],
+      [addScore, playerTwo, playerOne],
+    ]) {
+      assert.ok(
+        arcadeImageRuleDiagnosticCodes([], act).includes(ParseDiagCode.UnexpectedExpressionAfterExpression),
+        act.join(" ")
+      );
+    }
+  });
+
+  it("neither offers nor takes an assignment to a player's score, its player being a literal", (t) => {
+    t.mock.method(console, "warn", () => {});
+    assert.equal(arcadeOffersLiteral(ASSIGN, [], [playerOne, scoreOf]), false);
+    assert.ok(
+      arcadeImageRuleDiagnosticCodes([], [playerOne, scoreOf, ASSIGN, NUMBER_LITERAL]).includes(
+        ParseDiagCode.ReadOnlyResultFieldAssignment
+      )
+    );
   });
 });

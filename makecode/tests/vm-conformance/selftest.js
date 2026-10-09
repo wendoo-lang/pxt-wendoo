@@ -35,7 +35,9 @@
  * unresolved-asset lines in `EXPECTED_ARCADE_ASSET_LINES` in that order and
  * no other, the unresolved-brain lines in `EXPECTED_ARCADE_BRAIN_LINES` in
  * that order and no other, the unusable move-smoothing lines in
- * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, no
+ * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
+ * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
+ * other, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
@@ -479,6 +481,22 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-range-pair-filtered-on-a-sprite-variable-never-written-fires-neither-rule",
   "a-rule-whose-when-is-a-sprite-variable-fires-while-its-sprite-lives",
   "a-rule-whose-when-is-a-sprite-variable-stops-for-good-once-its-sprite-is-destroyed",
+  "player-type-takes-its-atom-and-fields-from-the-manifest",
+  "a-player-value-names-its-player-and-an-empty-player-slot-names-player-one",
+  "a-read-of-player-ones-score-shows-nothing-until-a-write-sets-it-through-arcade",
+  "a-score-write-takes-arcades-whole-number-truncation",
+  "a-score-write-of-no-finite-number-changes-nothing",
+  "a-score-read-follows-the-score-game-code-sets",
+  "add-score-adds-one-to-player-one-given-nothing-and-a-negative-number-takes-away",
+  "add-score-given-no-finite-number-changes-nothing",
+  "add-score-given-a-player-changes-that-players-score-alone",
+  "a-program-adding-score-adds-one-or-the-number-it-is-given-to-player-one",
+  "a-program-adding-an-amount-that-reads-nothing-adds-nothing",
+  "a-program-reads-player-ones-score-as-game-code-sets-it",
+  "a-program-adding-score-given-a-number-and-a-player-in-either-order-changes-that-players-score",
+  "a-program-reading-player-twos-score-switches-the-game-to-arcades-multiplayer-display",
+  "a-dpad-given-player-two-follows-player-twos-controller-and-a-bare-dpad-player-ones",
+  "a-dpad-given-the-argument-buffer-of-a-program-compiled-before-its-player-slot-reads-player-one",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -516,6 +534,16 @@ const EXPECTED_ARCADE_SMOOTHING_LINES = ["WENDOO_MOVE_SMOOTHING_UNUSABLE"];
 /** The line the arcade base pack logs for a write of a sprite's move smoothing holding no usable number. */
 const SMOOTHING_LINE = "wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE";
 
+/**
+ * Every unusable score line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one for the whole run, however
+ * many score writes and additions hold no finite number.
+ */
+const EXPECTED_ARCADE_SCORE_LINES = ["WENDOO_SCORE_UNUSABLE"];
+
+/** The line the arcade base pack logs for a score write or addition holding no finite number. */
+const SCORE_LINE = "wendoo WENDOO_SCORE_UNUSABLE";
+
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
 const ARCADE_ICONED_TILES = [
   "sensor.arcade.dpad",
@@ -524,6 +552,7 @@ const ARCADE_ICONED_TILES = [
   "sensor.arcade.in-range",
   "sensor.arcade.out-of-range",
   "sensor.arcade.myself",
+  "actuator.arcade.add-score",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -584,7 +613,7 @@ const ARCADE_ICONED_CORE_TILES = [
 const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
 
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
-const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain"];
+const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain", "Player"];
 
 /** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
 const ARCADE_ICONED_ACCESSORS = [
@@ -594,6 +623,7 @@ const ARCADE_ICONED_ACCESSORS = [
   "Sprite.position",
   "Sprite.brain",
   "Sprite.moveSmoothing",
+  "Player.score",
 ];
 
 /** Width and height, in pixels, of every arcade base pack icon. */
@@ -623,10 +653,14 @@ const ARCADE_HOST_REJECTIONS = [
  * targets the move's toward and away carry, the move's wander, the
  * `Sprite` type's move smoothing, move smoothing through brain changes,
  * move smoothing from the velocity a sprite has, the equality operators'
- * overloads, the overloads over `Vector2`s, and the programs holding
- * variables.
+ * overloads, the overloads over `Vector2`s, the programs holding
+ * variables, the programs adding to and reading player one's score, the
+ * program reading player two's score, and the dpad's player.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -830,6 +864,13 @@ function reportedBrainLines(log) {
 function reportedSmoothingLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(SMOOTHING_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every unusable score line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedScoreLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(SCORE_LINE))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1143,6 +1184,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const smoothingLines = reportedSmoothingLines(log);
   if (smoothingLines.join("\n") !== EXPECTED_ARCADE_SMOOTHING_LINES.join("\n")) {
     failures.push(`unusable move smoothing logged: ${smoothingLines.join(" | ")}`);
+  }
+  const scoreLines = reportedScoreLines(log);
+  if (scoreLines.join("\n") !== EXPECTED_ARCADE_SCORE_LINES.join("\n")) {
+    failures.push(`unusable scores logged: ${scoreLines.join(" | ")}`);
   }
   const faultLines = reportedFaultLines(log);
   if (faultLines.length > 0) {
