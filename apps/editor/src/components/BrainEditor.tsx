@@ -6,6 +6,7 @@ import type { BrainEditing } from "@/brain/editing";
 import { openBrainEditing } from "@/brain/editing";
 import { buildBrainEditorConfig } from "@/brain/editor-config";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import { createTileDocsAction } from "@/docs/docs-registry";
 import type { TileKindColors } from "@/services/target-theme";
 
 interface BrainEditorSessionProps {
@@ -54,17 +55,22 @@ interface BrainEditorProps {
  * Edits one stored brain in the brain editor dialog: opens on the brain's
  * document as the store holds it when the editor mounts, and applies each
  * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
- * dialog's config follows the store's environment, its asset and brain
+ * dialog's config follows the store's environment, its asset, brain and pack
  * literals, its type icons and its page icon, and `tileColors`, rebuilt each
  * time any of them changes. Mount it keyed by `brainId` to edit another brain.
- * The dialog opens a tile's documentation, and toggles the docs sidebar,
- * through the docs sidebar context; mount it under a `DocsSidebarProvider`.
+ * The dialog opens a tile's documentation -- a pack literal's opening its
+ * type's page while the docs hold one, any other tile's its own -- and
+ * toggles the docs sidebar, through the docs sidebar context; mount it under
+ * a `DocsSidebarProvider`.
  */
 export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) {
   const store = useBrains();
-  const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
+  const { environment, assetLiterals, brainLiterals, packLiterals, typeIcons, pageIcon } = useBrainsState();
   const {
+    registry: docsRegistry,
     openDocsForTile,
+    open: openDocs,
+    navigateToEntry,
     isOpen: isDocsOpen,
     toggle: toggleDocs,
     close: closeDocs,
@@ -72,8 +78,19 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
   } = useDocsSidebar();
   const config = useMemo(
     (): BrainEditorConfig => ({
-      ...buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon, tileColors),
-      onTileDocs: openDocsForTile,
+      ...buildBrainEditorConfig(
+        environment,
+        assetLiterals,
+        brainLiterals,
+        packLiterals,
+        typeIcons,
+        pageIcon,
+        tileColors
+      ),
+      onTileDocs: createTileDocsAction(
+        { registry: docsRegistry, openDocsForTile, open: openDocs, navigateToEntry },
+        packLiterals
+      ),
       docsIntegration: { isOpen: isDocsOpen, toggle: toggleDocs, close: closeDocs, reportMode: reportEditorMode },
     }),
     [
@@ -83,7 +100,11 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
       typeIcons,
       pageIcon,
       tileColors,
+      docsRegistry,
       openDocsForTile,
+      openDocs,
+      navigateToEntry,
+      packLiterals,
       isDocsOpen,
       toggleDocs,
       closeDocs,

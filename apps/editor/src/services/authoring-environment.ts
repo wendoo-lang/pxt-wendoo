@@ -1,5 +1,11 @@
 import type { WendooEnvironment, WendooModule } from "@wendoo/core/app";
-import { coreModule, createEntropySeededRng, createWendooEnvironment } from "@wendoo/core/app";
+import {
+  coreModule,
+  createEntropySeededRng,
+  createWendooEnvironment,
+  mkLiteralTileId,
+  mkVariableFactoryTileId,
+} from "@wendoo/core/app";
 import type { NumberPrecision, StructTypeDef, TypeId } from "@wendoo/core/runtime";
 import { createProfileNumerics, mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type { MakeCodeIdManifest, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
@@ -43,6 +49,34 @@ export type CatalogDiagnostic =
   | CatalogProblem
   | PackBindingProblem;
 
+/** One literal a catalog type declares that the environment binds as a literal tile, as the UI reads it. */
+export interface PackLiteral {
+  /** The literal tile's id, derived from its type and its key. */
+  readonly tileId: string;
+  /** The id of the literal's type. */
+  readonly typeId: TypeId;
+  /** The literal's key: its identity among its type's literals. */
+  readonly key: string;
+  /** What the literal reads as: its label, else its key. */
+  readonly label: string;
+}
+
+/**
+ * The docs page of a catalog type no variable factory tile stands for: its
+ * entry's id is the id the type's variable factory tile would hold, so a
+ * type's page keeps one id whether or not a factory stands for it.
+ */
+export interface TypePage {
+  /** The page's tile id: the id of the type's variable factory tile. */
+  readonly tileId: string;
+  /** What the page is listed as: the type's label, else its name. */
+  readonly label: string;
+  /** The type's icon, or absent when it carries none. */
+  readonly iconUrl?: string;
+  /** The type's docs markdown. */
+  readonly docs: string;
+}
+
 /** An environment built from a session catalog, and what building it found. */
 export interface AuthoringEnvironment {
   /** The environment brains are read, edited and compiled in. Carries the core vocabulary and every pack it could bind. */
@@ -61,6 +95,18 @@ export interface AuthoringEnvironment {
    * a brain source is bound.
    */
   readonly brainLiterals: BrainLiterals;
+  /**
+   * The literal tiles the environment binds for the literals catalog types
+   * declare, keyed by tile id, in catalog order; the first literal declaring
+   * a tile id standing. Empty while no id allocation is held.
+   */
+  readonly packLiterals: ReadonlyMap<string, PackLiteral>;
+  /**
+   * The docs page of each catalog type the environment binds that carries
+   * docs and no variable factory tile stands for, in catalog order. Empty
+   * while no id allocation is held.
+   */
+  readonly typePages: readonly TypePage[];
   /**
    * The icon of each catalog type the environment binds that carries one,
    * the first declaration of a type name standing, and of each core type a
@@ -155,6 +201,47 @@ function boundBrainTypes(
 }
 
 /**
+ * The literal tiles `environment` binds for the literals `packs`' types
+ * declare, keyed by tile id: each literal of a type the environment
+ * registers whose tile the environment holds, the first literal declaring a
+ * tile id standing.
+ */
+function boundPackLiterals(environment: WendooEnvironment, packs: readonly CatalogPack[]): Map<string, PackLiteral> {
+  const literals = new Map<string, PackLiteral>();
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    if (environment.brainServices.runtime.types.get(typeId) === undefined) continue;
+    for (const { key, label } of type.literals) {
+      const tileId = mkLiteralTileId(typeId, key);
+      if (literals.has(tileId) || !environment.brainServices.edit.tiles.has(tileId)) continue;
+      literals.set(tileId, { tileId, typeId, key, label: label ?? key });
+    }
+  }
+  return literals;
+}
+
+/**
+ * The docs pages of `packs`' types that `environment` registers, carry docs
+ * and hold no variable factory tile in `environment`.
+ */
+function boundTypePages(environment: WendooEnvironment, packs: readonly CatalogPack[]): TypePage[] {
+  const pages: TypePage[] = [];
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    const tileId = mkVariableFactoryTileId(typeId);
+    if (type.docs === undefined || environment.brainServices.runtime.types.get(typeId) === undefined) continue;
+    if (environment.brainServices.edit.tiles.has(tileId)) continue;
+    pages.push({
+      tileId,
+      label: type.label ?? type.name,
+      ...(type.iconUrl === undefined ? {} : { iconUrl: type.iconUrl }),
+      docs: type.docs,
+    });
+  }
+  return pages;
+}
+
+/**
  * Builds a fresh environment for the session catalog `catalogText`: the core
  * module installed, numbers computed at {@link MAKECODE_VM_PRECISION}, and
  * document ids minted from an entropy-seeded stream.
@@ -171,7 +258,10 @@ function boundBrainTypes(
  *
  * The result's asset literals cover every bound type the catalog declares an
  * asset kind for, and its brain literals every bound type the catalog marks
- * as a brain type, each brain literal wearing its type's icon; its type
+ * as a brain type, each brain literal wearing its type's icon; its pack
+ * literals every literal tile bound for a literal a catalog type declares;
+ * its type pages the page of every bound type carrying docs that no variable
+ * factory tile stands for; its type
  * icons hold every bound type's icon and every core type's icon a pack gives,
  * an icon given a name that is no core type reported under
  * {@link PackBindingCode.CORE_TYPE_UNKNOWN}; and its page icon is the icon a
@@ -227,6 +317,8 @@ export function buildAuthoringEnvironment(
     diagnostics,
     assetLiterals: new AssetLiterals(environment.brainServices, assetTypes),
     brainLiterals: new BrainLiterals(environment.brainServices, brainTypes),
+    packLiterals: bound ? boundPackLiterals(environment, catalog.packs) : new Map(),
+    typePages: bound ? boundTypePages(environment, catalog.packs) : [],
     typeIcons,
     pageIcon,
   };

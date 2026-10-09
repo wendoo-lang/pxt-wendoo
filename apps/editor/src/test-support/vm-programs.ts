@@ -1348,7 +1348,7 @@ export function arcadeTypeNames(): {
   named: string | undefined;
 }[] {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
-  const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.typeIcons);
+  const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.packLiterals, built.typeIcons);
   const tiles = built.environment.brainServices.edit.tiles;
   return parseCatalog(arcadeCatalog())
     .packs.flatMap((pack) => pack.types)

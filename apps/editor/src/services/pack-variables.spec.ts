@@ -144,7 +144,7 @@ describe("binding a catalog type's variable factory", () => {
 
   it("names a type with a variable factory by its factory's label in the brain editor's config, and any other type by its name", () => {
     const built = bound();
-    const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.typeIcons);
+    const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.packLiterals, built.typeIcons);
 
     assert.equal(config.dataTypeNames.get(SPOT_TYPE), factoryFor(built.environment, SPOT_TYPE)?.metadata?.label);
     assert.equal(config.dataTypeNames.get(POINT_TYPE), carriedType("Point").name);

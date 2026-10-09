@@ -345,7 +345,14 @@ the current slice alone.
       variable types: a struct type's `TypeMeta` may set
       `variableFactory`, the catalog marking the type `variableFactory` so
       the editor offers variables of it -- the mechanism only, every
-      variable type flagged by a target's pack; and core
+      variable type flagged by a target's pack; and declared literals: a
+      struct type's `TypeMeta` may declare literals, each with a key, a
+      label and the value it holds in each field it sets, by field name,
+      the catalog carrying them on the type entry and the drain ignoring
+      them -- the mechanism only, every literal declared by a target's
+      pack; a literal's key is public identity in saved programs from the
+      first save of one placing it, append-only as tile ids are: never
+      renamed, never reused, a retired key staying reserved; and core
       tile icons: `defineCoreTileIcon` gives a core tile -- one of the
       editor's own core vocabulary, addressed by its stable tile id -- an
       icon the catalog carries under the giving pack, every icon given
@@ -613,7 +620,11 @@ the current slice alone.
     microbit-sim lists its undocumented host tiles; a struct type's docs
     ride its variable factory tile, whose page is the type's, listed under
     the Data Types heading while it carries docs and not at all while it
-    carries none; an output or accessor tile carrying docs has a page of
+    carries none, and a documented type no variable factory stands for
+    listed there the same way, its page under the id its factory would
+    hold, by the type's label and icon; a pack literal has no page of its
+    own, in no docs list, its docs action opening its type's page while the
+    type has one; an output or accessor tile carrying docs has a page of
     its own, unlisted -- in no list or search, opened by its tile id from
     the tile's docs action or a `tile:` reference -- and no page while it
     carries none; the standalone route binds no session catalog, so it
@@ -628,7 +639,10 @@ the current slice alone.
     declared accessor as an accessor tile, each type once the types its
     fields name are bound, each type the catalog marks `variableFactory`
     with its variable factory, wearing the type's label (its name when it
-    carries none) and icon, each overload a pack adds to a core operator
+    carries none) and icon, each literal a catalog type declares as a
+    literal tile of the type under the type and the literal's key, read by
+    its label (its key when it carries none) and wearing the type's icon,
+    each overload a pack adds to a core operator
     onto that operator, minting no tile -- and puts
     the icons packs give core tiles on its own core tiles, the first icon
     given a tile standing and an icon given a tile it does not hold

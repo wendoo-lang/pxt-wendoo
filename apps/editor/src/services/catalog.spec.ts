@@ -16,6 +16,17 @@ const FULL_CATALOG = JSON.stringify({
             { name: "x", type: "number" },
             { name: "y", type: "number", readOnly: true },
           ],
+          literals: [
+            {
+              key: "home",
+              label: "home beacon",
+              fields: [
+                { name: "x", value: { t: 3, v: 0 } },
+                { name: "y", value: { t: 3, v: 0 } },
+              ],
+            },
+            { key: "east", fields: [{ name: "x", value: { t: 3, v: 3 } }] },
+          ],
           label: "Beacon",
           iconUrl: "data:image/svg+xml;base64,YmVhY29u",
         },
@@ -235,6 +246,33 @@ describe("parseCatalog", () => {
     ]);
   });
 
+  it("drops a type's literal carrying no key, and a literal's field value carrying no field name or no value", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "beacon",
+          types: [
+            {
+              name: "Beacon",
+              fields: [{ name: "x", type: "number" }],
+              literals: [
+                { label: "keyless", fields: [{ name: "x", value: { t: 3, v: 1 } }] },
+                {
+                  key: "home",
+                  fields: [{ value: { t: 3, v: 1 } }, { name: "x" }, { name: "x", value: { t: 3, v: 2 } }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const [type] = parseCatalog(text).packs[0].types;
+
+    assert.deepEqual(type.literals, [{ key: "home", fields: [{ name: "x", value: { t: 3, v: 2 } }] }]);
+  });
+
   it("reads every pack's types, tiles and operators with their metadata", () => {
     const { packs, problems, errorCode } = parseCatalog(FULL_CATALOG);
 
@@ -250,6 +288,17 @@ describe("parseCatalog", () => {
             { name: "x", type: "number", readOnly: false },
             { name: "y", type: "number", readOnly: true },
           ],
+          literals: [
+            {
+              key: "home",
+              label: "home beacon",
+              fields: [
+                { name: "x", value: { t: 3, v: 0 } },
+                { name: "y", value: { t: 3, v: 0 } },
+              ],
+            },
+            { key: "east", fields: [{ name: "x", value: { t: 3, v: 3 } }] },
+          ],
           label: "Beacon",
           iconUrl: "data:image/svg+xml;base64,YmVhY29u",
           variableFactory: true,
@@ -259,12 +308,14 @@ describe("parseCatalog", () => {
           native: false,
           asset: "image",
           fields: [{ name: "asset", type: "string", readOnly: true }],
+          literals: [],
         },
         {
           name: "Roster",
           native: false,
           brain: true,
           fields: [{ name: "id", type: "string", readOnly: true }],
+          literals: [],
         },
       ],
       tiles: [

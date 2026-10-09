@@ -65,6 +65,7 @@ describe("a placed asset literal tile", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 
@@ -84,6 +85,7 @@ describe("a placed asset literal tile", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 
@@ -107,6 +109,7 @@ describe("a placed brain literal tile", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 
@@ -129,6 +132,7 @@ describe("a placed brain literal tile", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 

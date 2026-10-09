@@ -165,8 +165,8 @@ function firstRule(brain: BrainDef): BrainRuleDef {
 
 /** The dialog's config as the brain editor builds it from `store`'s current state. */
 function currentConfig(store: BrainsStore): BrainEditorConfig {
-  const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = store.getSnapshot();
-  return buildBrainEditorConfig(environment, assetLiterals, brainLiterals, typeIcons, pageIcon);
+  const { environment, assetLiterals, brainLiterals, packLiterals, typeIcons, pageIcon } = store.getSnapshot();
+  return buildBrainEditorConfig(environment, assetLiterals, brainLiterals, packLiterals, typeIcons, pageIcon);
 }
 
 /**

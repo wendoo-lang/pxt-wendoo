@@ -350,6 +350,31 @@ namespace registrationSelftest {
     );
   }
 
+  /** Key the literal builder check declares. */
+  const BUILDER_KEY = "builder key";
+
+  /**
+   * The literal builder puts the key, label and field values it is given on
+   * the literal it builds, the field builder the field name and value it is
+   * given on the field value it builds, and a type's metadata declares no
+   * literal until given some.
+   */
+  function checkLiteralBuilders(): void {
+    const value = wendoo.mkNumber(OPERAND_LEFT);
+    const field = wendoo.literalField(TYPE_FIELD_NAME, value);
+    const literal = wendoo.typeLiteral(BUILDER_KEY, BUILDER_LABEL, [field]);
+    check(
+      "literal-builders-carry-key-label-and-field-values-and-type-meta-declares-none",
+      field.name === TYPE_FIELD_NAME &&
+        field.value === value &&
+        literal.key === BUILDER_KEY &&
+        literal.label === BUILDER_LABEL &&
+        literal.fields.length === 1 &&
+        literal.fields[0] === field &&
+        new wendoo.TypeMeta().literals.length === 0
+    );
+  }
+
   /** Sentence form the language builder check declares. */
   const BUILDER_FORM = "builder form";
 
@@ -1538,6 +1563,7 @@ namespace registrationSelftest {
     checkSlotBuilderLabels();
     checkLanguageBuilders();
     checkAccessorAndSensorFlagDefaults();
+    checkLiteralBuilders();
     checkAssetType(ids, types);
     checkCompiledBrains();
     checkLoader();

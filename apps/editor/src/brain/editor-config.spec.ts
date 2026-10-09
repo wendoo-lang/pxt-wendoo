@@ -26,7 +26,7 @@ describe("buildBrainEditorConfig", () => {
   it("reads the environment's brain services, localizer and tile catalogs", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), new Map());
 
     assert.equal(config.brainServices, environment.brainServices);
     assert.equal(config.localizer?.locale(), environment.appServices.localizer.locale());
@@ -41,7 +41,7 @@ describe("buildBrainEditorConfig", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
     const types = environment.brainServices.runtime.types;
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), new Map());
 
     assert.equal(config.dataTypeNames.get(CoreTypeIds.Number), types.get(CoreTypeIds.Number)?.name);
     assert.equal(config.dataTypeNames.get(CoreTypeIds.String), types.get(CoreTypeIds.String)?.name);
@@ -54,7 +54,7 @@ describe("buildBrainEditorConfig", () => {
   it("saves and loads brain files relative to the namespace brain sources are stored in", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), new Map());
 
     assert.equal(config.projectNamespace, BRAIN_SOURCE_NAMESPACE);
   });
@@ -64,8 +64,16 @@ describe("buildBrainEditorConfig", () => {
     const tileColors = TARGET_THEMES.get("arcade")?.tileColors;
     const page = new BrainTilePageDef("page-start", "start");
 
-    const themed = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), undefined, tileColors);
-    const plain = buildBrainEditorConfig(environment, new Map(), new Map(), new Map());
+    const themed = buildBrainEditorConfig(
+      environment,
+      new Map(),
+      new Map(),
+      new Map(),
+      new Map(),
+      undefined,
+      tileColors
+    );
+    const plain = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), new Map());
 
     assert.notEqual(tileColors, undefined);
     assert.equal(themed.resolveTileVisual?.(page)?.colorDef, tileColors?.page);
@@ -76,7 +84,7 @@ describe("buildBrainEditorConfig", () => {
     const first = buildAuthoringEnvironment(undefined).environment;
     const rebuilt = buildAuthoringEnvironment('{"packs":[]}').environment;
 
-    const config = buildBrainEditorConfig(rebuilt, new Map(), new Map(), new Map());
+    const config = buildBrainEditorConfig(rebuilt, new Map(), new Map(), new Map(), new Map());
 
     assert.notEqual(first, rebuilt);
     assert.equal(config.brainServices, rebuilt.brainServices);
@@ -91,6 +99,7 @@ describe("buildBrainEditorConfig", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 
@@ -109,6 +118,7 @@ describe("buildBrainEditorConfig", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons,
       built.pageIcon
     );
@@ -129,6 +139,7 @@ describe("buildBrainEditorConfig", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
     assert.ok(sentence(before).includes("hero"));
@@ -138,6 +149,7 @@ describe("buildBrainEditorConfig", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 
@@ -150,7 +162,7 @@ describe("buildBrainEditorConfig", () => {
     const { environment } = buildAuthoringEnvironment(undefined);
     const typeIcons = new Map([[CoreTypeIds.Number, "data:image/svg+xml;base64,bnVtYmVy"]]);
 
-    const config = buildBrainEditorConfig(environment, new Map(), new Map(), typeIcons);
+    const config = buildBrainEditorConfig(environment, new Map(), new Map(), new Map(), typeIcons);
 
     assert.deepEqual([...config.dataTypeIcons], [...typeIcons]);
   });
@@ -164,6 +176,7 @@ describe("buildBrainEditorConfig", () => {
       built.environment,
       built.assetLiterals.view,
       built.brainLiterals.view,
+      built.packLiterals,
       built.typeIcons
     );
 

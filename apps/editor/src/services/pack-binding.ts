@@ -1,4 +1,5 @@
 import type { OperatorOverloadDefinition } from "@wendoo/core";
+import { Dict } from "@wendoo/core";
 import type { BrainActionCallSpec, ITileMetadata, WendooModule, WendooModuleApi } from "@wendoo/core/app";
 import {
   bag,
@@ -10,6 +11,7 @@ import {
   getCatalogFallbackLabel,
   List,
   mkCallDef,
+  mkLiteralTileId,
   mkVariableFactoryTileId,
   mod,
   NIL_VALUE,
@@ -21,6 +23,7 @@ import {
 } from "@wendoo/core/app";
 import {
   BrainTileAccessorDef,
+  BrainTileLiteralDef,
   BrainTileModifierDef,
   BrainTileOperatorDef,
   BrainTileParameterDef,
@@ -33,6 +36,7 @@ import type {
   HostAsyncFn,
   HostSyncFn,
   OpParse,
+  StructTypeDef,
   TypeId,
   UserArgIdentity,
   Value,
@@ -42,6 +46,7 @@ import {
   CoreTypeIds,
   CoreTypeNames,
   mkAnonParameterId,
+  mkClosedStructValueByName,
   mkPrivateArgId,
   mkTypeId,
   NativeType,
@@ -66,7 +71,7 @@ import type {
 export const PackBindingCode = {
   /** An entry refers to a type that is neither a core type nor one the catalog declares; the token is the type name. */
   TYPE_UNKNOWN: "CATALOG_TYPE_UNKNOWN",
-  /** A slot declares a default that is not a tagged value. */
+  /** A slot's default, or a field value a type's literal declares, is not a tagged value. */
   DEFAULT_UNREADABLE: "CATALOG_DEFAULT_UNREADABLE",
   /** A shared slot tile is declared with another type than its first declaration; the token is the slot's tile identity. */
   SHARED_TILE_CONFLICT: "CATALOG_SHARED_TILE_CONFLICT",
@@ -76,6 +81,12 @@ export const PackBindingCode = {
   TILE_REJECTED: "CATALOG_TILE_REJECTED",
   /** A core type icon names a type that is no core type; the entry's name is the type name. */
   CORE_TYPE_UNKNOWN: "CATALOG_CORE_TYPE_UNKNOWN",
+  /**
+   * A type declares a literal under a key an earlier literal of the type
+   * declares; the earlier literal stands and the later is left out. The
+   * entry's name is the type name, and the token the key.
+   */
+  LITERAL_KEY_DUPLICATE: "CATALOG_LITERAL_KEY_DUPLICATE",
 } as const;
 
 /** Union of all {@link PackBindingCode} values. */
@@ -172,8 +183,8 @@ function slotIcon(slot: CatalogArgSlot): { iconUrl?: string } {
   return slot.iconUrl === undefined ? {} : { iconUrl: slot.iconUrl };
 }
 
-/** The default `json` declares, read as a value. Throws an {@link EntryProblem} when it is not a tagged value. */
-function defaultValueOf(json: unknown): Value {
+/** The tagged value `json`, read as a value. Throws an {@link EntryProblem} when it is not a tagged value. */
+function taggedValueOf(json: unknown): Value {
   if (typeof json !== "object" || json === null || !VALUE_TAGS.has((json as { t?: unknown }).t)) {
     throw new EntryProblem(PackBindingCode.DEFAULT_UNREADABLE);
   }
@@ -183,10 +194,11 @@ function defaultValueOf(json: unknown): Value {
 /**
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type -- with the accessor tile
- * of each field declaring one, and its variable factory when it carries the
+ * of each field declaring one, its variable factory when it carries the
  * flag, the factory's display metadata carrying the type's label, icon and
- * docs -- each tile -- with the parameter and modifier
- * tiles its grammar's slots need -- each operator, and each overload a pack
+ * docs, and the literal tile of each literal it declares -- each tile --
+ * with the parameter and modifier tiles its grammar's slots need -- each
+ * operator, and each overload a pack
  * adds to a core operator, under the ids `ids` allocates. Each tile's, slot tile's and accessor tile's display metadata
  * carries the label, sentence words and icon its catalog entry carries, and
  * each output a tile declares is bound as its output tile, carrying the
@@ -225,7 +237,7 @@ class PackBinder {
       const ready = waiting.findIndex(({ type }) => this.fieldTypesRegistered(type));
       const [{ pack, type }] = waiting.splice(ready === -1 ? 0 : ready, 1);
       this.attempt(pack.name, type.name, () => {
-        this.bindType(type);
+        this.bindType(pack.name, type);
       });
     }
     let nextFunctionId = this.ids.next.operator;
@@ -302,13 +314,14 @@ class PackBinder {
   }
 
   /**
-   * Registers `type` under its allocated atom, each field at the id the
-   * allocation gives it, the accessor tile of each field declaring one,
-   * read-only when the field is, and, for a type carrying the variable factory
-   * flag, its variable factory, whose display metadata carries the type's
-   * label -- its name when it carries none -- its icon and its docs.
+   * Registers `type`, declared by the pack `pack`, under its allocated atom,
+   * each field at the id the allocation gives it, the accessor tile of each
+   * field declaring one, read-only when the field is, for a type carrying the
+   * variable factory flag its variable factory, whose display metadata
+   * carries the type's label -- its name when it carries none -- its icon and
+   * its docs, and the literal tile of each literal it declares.
    */
-  private bindType(type: CatalogType): void {
+  private bindType(pack: string, type: CatalogType): void {
     const entry = this.ids.types.find((allocated) => allocated.name === type.name);
     if (entry === undefined) throw new EntryProblem(PackBindingCode.TILE_REJECTED);
     const fields = type.fields.map((field) => ({
@@ -346,6 +359,52 @@ class PackBinder {
         },
       });
       if (!catalog.has(tile.tileId)) this.api.registerTile(tile);
+    }
+    this.bindLiterals(pack, type, typeId);
+  }
+
+  /**
+   * Registers a literal tile for each literal `type`, declared by the pack
+   * `pack` and registered under `typeId`, declares: its value the type's
+   * struct holding each field value the literal declares, by field name, and
+   * nil in every other field; its tile id {@link mkLiteralTileId} of the type
+   * and the literal's key; read by its label, else its key; wearing the
+   * type's icon; and never persisted, a brain holding only its reference. A
+   * literal whose key an earlier literal of the type declares is left out
+   * and reported under {@link PackBindingCode.LITERAL_KEY_DUPLICATE}, and one
+   * the model cannot take is left out and reported by code, the type's name
+   * and the literal's key; the rest are bound.
+   */
+  private bindLiterals(pack: string, type: CatalogType, typeId: TypeId): void {
+    const services = this.api.brainServices;
+    const typeDef = services.runtime.types.get(typeId) as StructTypeDef;
+    for (const literal of type.literals) {
+      const problem = (code: PackBindingCode) => {
+        this.report({ code, pack, name: type.name, token: literal.key });
+      };
+      if (services.edit.tiles.has(mkLiteralTileId(typeId, literal.key))) {
+        problem(PackBindingCode.LITERAL_KEY_DUPLICATE);
+        continue;
+      }
+      try {
+        const fields = new Dict<string, Value>();
+        for (const field of literal.fields) fields.set(field.name, taggedValueOf(field.value));
+        const label = literal.label ?? literal.key;
+        const tile = new BrainTileLiteralDef(
+          typeId,
+          mkClosedStructValueByName(typeDef, fields),
+          {
+            persist: false,
+            valueLabel: literal.key,
+            displayName: label,
+            ...(type.iconUrl === undefined ? {} : { metadata: { label, iconUrl: type.iconUrl } }),
+          },
+          services
+        );
+        this.api.registerTile(tile);
+      } catch (error) {
+        problem(error instanceof EntryProblem ? error.code : PackBindingCode.TILE_REJECTED);
+      }
     }
   }
 
@@ -409,7 +468,7 @@ class PackBinder {
     if (slot.name !== undefined) options.name = slot.name;
     if (slot.required !== undefined) options.required = slot.required;
     if (slot.anonymous) options.anonymous = true;
-    if (slot.default !== undefined) options.default = defaultValueOf(slot.default);
+    if (slot.default !== undefined) options.default = taggedValueOf(slot.default);
     if (slot.derived) options.derived = true;
     if (slot.range !== undefined) options.range = slot.range;
     if (slot.unit !== undefined) options.unit = slot.unit;
@@ -615,9 +674,10 @@ export function pageFamilyIcon(packs: readonly CatalogPack[]): string | undefine
 }
 
 /**
- * The module binding `packs` -- every struct type with its accessor tiles and
- * any variable factory, every tile, operator and overload of a core operator
- * a session catalog's packs declare, and every icon they give a core tile --
+ * The module binding `packs` -- every struct type with its accessor tiles,
+ * any variable factory and its declared literals, every tile, operator and
+ * overload of a core operator a session catalog's packs declare, and every
+ * icon they give a core tile --
  * into an environment, under the ids
  * `ids` allocates; `ids` must allocate every name the packs declare. Pack
  * actions run nothing in the editor: a sensor reads nil and an actuator does

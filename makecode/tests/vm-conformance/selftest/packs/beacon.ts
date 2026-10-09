@@ -10,9 +10,9 @@
  *
  * Every registration is made from this file's top-level code, which pxt runs
  * at program start, before the selftest constructs anything. The pack claims
- * the tile name `sensor.beacon.reading`, which the other pack claims too, and
- * gives the core AND tile and the core number type icons, which the other
- * pack does too.
+ * the tile name `sensor.beacon.reading`, which the other pack claims too,
+ * declares two literals of its `Beacon` type, and gives the core AND tile and
+ * the core number type icons, which the other pack does too.
  */
 namespace beacon {
   /** Position of the `Beacon` type's `x` field in its declaration, which indexes the binding's field ids. */
@@ -90,11 +90,22 @@ namespace beacon {
 
   const pack = wendoo.pack(PACK_NAME);
 
-  /** Catalog metadata of the `Beacon` type, sample values the catalog assertions pin. */
+  /**
+   * Catalog metadata of the `Beacon` type, sample values the catalog
+   * assertions pin, two declared literals among them: one labeled, setting
+   * both fields, and one declaring no label and setting `x` alone.
+   */
   const beaconMeta = new wendoo.TypeMeta();
   beaconMeta.label = "Beacon";
   beaconMeta.docs = "# Beacon\n\nA beacon at a fixed position, read through its field hooks.";
   beaconMeta.icon = "beacon";
+  beaconMeta.literals = [
+    wendoo.typeLiteral("home", "home beacon", [
+      wendoo.literalField("x", wendoo.mkNumber(0)),
+      wendoo.literalField("y", wendoo.mkNumber(0)),
+    ]),
+    wendoo.typeLiteral("east", "", [wendoo.literalField("x", wendoo.mkNumber(BEACON_X))]),
+  ];
 
   /** The `x` field, its accessor tile carrying sample metadata the catalog assertions pin. */
   const xField = wendoo.withAccessor(wendoo.field("x", wendoo.TYPE_NUMBER), "beacon x", "beacon-x");

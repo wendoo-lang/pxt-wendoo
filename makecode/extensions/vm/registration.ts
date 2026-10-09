@@ -15,7 +15,8 @@
  * kind, argument grammar (each slot with its tile's display label and icon,
  * and each modifier slot with its tile's sentence words), returns, outputs,
  * consumed WHEN result, a sensor's inline and writable-result flags, a struct
- * type's variable factory flag, label, group, docs, icon, sentence words. A
+ * type's variable factory flag and declared literals, label, group, docs,
+ * icon, sentence words. A
  * pack may also give core tiles icons, and add overloads to core operators.
  * The drain installs behavior only and
  * ignores all of it; the catalog serializer reads it through
@@ -411,6 +412,68 @@ namespace wendoo {
     constructor() {}
   }
 
+  /** One field value a declared literal holds: the field, by the name its type declares it under, and the value. */
+  export class LiteralFieldValue {
+    /** Field name, as the literal's type declares the field. */
+    name: string;
+    /** The value the literal holds in the field, of the field's type. */
+    value: Value;
+
+    constructor(name: string, value: Value) {
+      this.name = name;
+      this.value = value;
+    }
+  }
+
+  /**
+   * The value `value` held in the field `name` of a declared literal.
+   *
+   * @param name - Field name, as the literal's type declares the field.
+   * @param value - The value the literal holds in the field.
+   */
+  export function literalField(name: string, value: Value): LiteralFieldValue {
+    return new LiteralFieldValue(name, value);
+  }
+
+  /**
+   * One literal a struct type declares: a value of the type the Wendoo
+   * editor offers as a literal tile of its own. Catalog data only: the drain
+   * ignores it.
+   *
+   * The {@link TypeLiteral.key} is the literal's public identity: a saved
+   * program places the literal by it from the first save on. Keys are
+   * append-only, as tile ids are -- never renamed, and never reused for
+   * another value, a retired literal's key staying reserved.
+   */
+  export class TypeLiteral {
+    /** The literal's identity among the literals of its type: durable, append-only, never shown. */
+    key: string;
+    /** Display label of the literal's tile; `""` when undeclared, and the editor shows the key. */
+    label: string;
+    /**
+     * The value the literal holds in each field it sets, by field name; a
+     * field it sets no value in holds nil.
+     */
+    fields: LiteralFieldValue[];
+
+    constructor(key: string, label: string, fields: LiteralFieldValue[]) {
+      this.key = key;
+      this.label = label;
+      this.fields = fields;
+    }
+  }
+
+  /**
+   * A literal of a struct type, declared through {@link TypeMeta.literals}.
+   *
+   * @param key - The literal's durable identity among its type's literals; see {@link TypeLiteral.key}.
+   * @param label - Display label of the literal's tile; `""` to declare none.
+   * @param fields - The value the literal holds in each field it sets, each built with {@link literalField}.
+   */
+  export function typeLiteral(key: string, label: string, fields: LiteralFieldValue[]): TypeLiteral {
+    return new TypeLiteral(key, label, fields);
+  }
+
   /**
    * Catalog metadata of one struct type: what the Wendoo editor shows and
    * offers for it. Catalog data only, like every {@link CatalogMeta}: the
@@ -422,6 +485,13 @@ namespace wendoo {
      * a variable factory for it, minting variable tiles of the type.
      */
     variableFactory: boolean = false;
+    /**
+     * The literals the type declares, in the order the editor offers them,
+     * each built with {@link typeLiteral}; every key among them distinct.
+     * Each key is public identity from the first save of a program placing
+     * its literal: append-only, as {@link TypeLiteral.key} states.
+     */
+    literals: TypeLiteral[] = [];
 
     constructor() {
       super();
@@ -1543,7 +1613,7 @@ namespace wendoo {
      * @param name - Wendoo type name; struct values of the type carry the TypeId derived from it.
      * @param fields - Field specs, each with its accessor tile if {@link withAccessor} gave it one; the binding's `fieldIds` follow their order.
      * @param binding - Type binding carrying the type's hooks.
-     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
      */
     defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: TypeMeta): void {
       appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", false));
@@ -1558,7 +1628,7 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding, carrying the asset kind; read asset ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
      */
     defineAssetType(name: string, binding: AssetTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(ASSET_FIELD, TYPE_STRING)];
@@ -1574,7 +1644,7 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding; read document ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type, its variable factory flag included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
      */
     defineBrainType(name: string, binding: BrainTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(BRAIN_FIELD, TYPE_STRING)];

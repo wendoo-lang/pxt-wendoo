@@ -17,7 +17,10 @@
  *   variables of, for which the editor offers a variable factory), `fields`
  *   (each with `name`, `type`, `readOnly`, and `accessor` -- present exactly
  *   when the field has an accessor tile -- holding the accessor's metadata
- *   fields), and the metadata fields.
+ *   fields), `literals` (the literals the type declares, in declaration
+ *   order, each with its durable `key`, its `label`, and `fields`: each field
+ *   it sets, by `name`, with the tagged `value` it holds there), and the
+ *   metadata fields.
  * - A tile entry carries `name`, `kind`, `async`, `inline` (a sensor reading
  *   as a value inside an expression), `writableResult` (a sensor whose result
  *   a brain may write a field through), its argument grammar as either
@@ -422,6 +425,27 @@ namespace wendoo {
     return `,"operands":${jsonArray(rendered)},"returns":${jsonQuote(spec.returns)}`;
   }
 
+  /**
+   * JSON object text of one declared literal: its `key`, then its `label`
+   * when declared, then its `fields` -- each the field's `name` and the
+   * tagged `value` the literal holds in it -- when it sets any.
+   */
+  function literalText(literal: TypeLiteral): string {
+    let out = `{"key":${jsonQuote(literal.key)}`;
+    if (literal.label.length > 0) {
+      out += `,"label":${jsonQuote(literal.label)}`;
+    }
+    if (literal.fields.length > 0) {
+      const rendered: string[] = [];
+      for (let i = 0; i < literal.fields.length; i++) {
+        const field = literal.fields[i];
+        rendered.push(`{"name":${jsonQuote(field.name)},"value":${valueText(field.value)}}`);
+      }
+      out += `,"fields":${jsonArray(rendered)}`;
+    }
+    return `${out}}`;
+  }
+
   /** JSON object text of one recorded diagnostic. */
   function diagnosticText(diagnostic: RegistrationDiagnostic): string {
     let out = `{"code":${jsonQuote(diagnostic.code)},"name":${jsonQuote(diagnostic.name)},"pack":${jsonQuote(diagnostic.pack)}`;
@@ -552,7 +576,7 @@ namespace wendoo {
      * @param native - Whether the type is backed by host objects through registered hooks.
      * @param assetKind - Kind of the project assets an asset type's values name; `""` for any other type.
      * @param brain - Whether the type is a brain type, its values each naming one of the project's brains.
-     * @param meta - Catalog metadata, its variable factory flag included, or `undefined` when the registration declared none.
+     * @param meta - Catalog metadata, its variable factory flag and declared literals included, or `undefined` when the registration declared none.
      */
     struct(
       pack: string,
@@ -583,6 +607,13 @@ namespace wendoo {
           rendered.push(this.fieldText(pack, name, fields[i]));
         }
         entry += `,"fields":${jsonArray(rendered)}`;
+      }
+      if (meta && meta.literals.length > 0) {
+        const rendered: string[] = [];
+        for (let i = 0; i < meta.literals.length; i++) {
+          rendered.push(literalText(meta.literals[i]));
+        }
+        entry += `,"literals":${jsonArray(rendered)}`;
       }
       entry += this.metaText(name, pack, meta, "");
       this.typeEntries[this.packIndex(pack)].push(`${entry}}`);

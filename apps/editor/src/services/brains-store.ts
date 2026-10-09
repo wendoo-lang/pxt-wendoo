@@ -12,7 +12,7 @@ import type {
 } from "@wendoo/makecode-session";
 import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import type { AssetLiteral } from "./asset-literals";
-import type { AuthoringEnvironment, CatalogDiagnostic } from "./authoring-environment";
+import type { AuthoringEnvironment, CatalogDiagnostic, PackLiteral, TypePage } from "./authoring-environment";
 import { buildAuthoringEnvironment } from "./authoring-environment";
 import type { BrainLiteral, UnresolvedBrainReference } from "./brain-literals";
 import type { BrainSourceCompile } from "./brain-source";
@@ -158,6 +158,10 @@ export interface BrainsViewState {
   readonly typeIcons: ReadonlyMap<TypeId, string>;
   /** The environment's page icon, as {@link AuthoringEnvironment.pageIcon} holds it. */
   readonly pageIcon: string | undefined;
+  /** The environment's pack literals, keyed by tile id, as {@link AuthoringEnvironment.packLiterals} holds them. */
+  readonly packLiterals: ReadonlyMap<string, PackLiteral>;
+  /** The environment's type pages, as {@link AuthoringEnvironment.typePages} holds them. */
+  readonly typePages: readonly TypePage[];
   /**
    * The unresolved brain literals each brain references, keyed by document
    * id, for each brain referencing any, each carrying its stable code. Such
@@ -894,6 +898,8 @@ export class BrainsStore {
       brainLiterals: this._environment.brainLiterals.view,
       typeIcons: this._environment.typeIcons,
       pageIcon: this._environment.pageIcon,
+      packLiterals: this._environment.packLiterals,
+      typePages: this._environment.typePages,
       unresolvedBrains: this.unresolvedBrains(),
       pending: this._pending,
       pushesInFlight: this._pushesInFlight,

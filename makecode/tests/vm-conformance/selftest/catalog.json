@@ -22,6 +22,40 @@
               "accessor": {}
             }
           ],
+          "literals": [
+            {
+              "key": "home",
+              "label": "home beacon",
+              "fields": [
+                {
+                  "name": "x",
+                  "value": {
+                    "t": 3,
+                    "v": 0
+                  }
+                },
+                {
+                  "name": "y",
+                  "value": {
+                    "t": 3,
+                    "v": 0
+                  }
+                }
+              ]
+            },
+            {
+              "key": "east",
+              "fields": [
+                {
+                  "name": "x",
+                  "value": {
+                    "t": 3,
+                    "v": 3
+                  }
+                }
+              ]
+            }
+          ],
           "label": "Beacon",
           "docs": "# Beacon\n\nA beacon at a fixed position, read through its field hooks.",
           "icon": "img<beacon>"

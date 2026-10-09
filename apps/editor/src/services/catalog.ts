@@ -82,6 +82,31 @@ export interface CatalogField {
   readonly accessor?: CatalogMeta;
 }
 
+/** One field value a declared literal holds. */
+export interface CatalogLiteralField {
+  /** Field name, as the literal's type declares the field. */
+  readonly name: string;
+  /** The value the literal holds in the field, as its tagged JSON value. */
+  readonly value: unknown;
+}
+
+/**
+ * One literal a struct type declares: a value of the type the editor offers
+ * as a literal tile of its own.
+ */
+export interface CatalogLiteral {
+  /**
+   * The literal's identity among its type's literals. Public identity in
+   * saved brains, which place the literal by a tile id derived from its type
+   * and this key.
+   */
+  readonly key: string;
+  /** Display label of the literal's tile, or absent when undeclared. */
+  readonly label?: string;
+  /** The value the literal holds in each field it sets; a field it sets none in holds nil. */
+  readonly fields: readonly CatalogLiteralField[];
+}
+
 /** One struct type of a pack. */
 export interface CatalogType extends CatalogMeta {
   /** Type name. */
@@ -107,6 +132,8 @@ export interface CatalogType extends CatalogMeta {
    * type: the editor offers a variable factory minting variable tiles of it.
    */
   readonly variableFactory?: true;
+  /** The literals the type declares, in declaration order. */
+  readonly literals: readonly CatalogLiteral[];
 }
 
 /** What an action does with a numeric argument outside a slot's range. */
@@ -579,6 +606,21 @@ function tileOf(pack: string, entry: JsonObject & { name: string }, problems: Ca
   };
 }
 
+/**
+ * The literal `value` declares, or none when it lacks its key; a field value
+ * lacking its field name or its value is left out of it.
+ */
+function literalOf(value: unknown): CatalogLiteral[] {
+  if (!isObject(value)) return [];
+  const key = stringField(value, "key");
+  if (key === undefined) return [];
+  const label = stringField(value, "label");
+  const fields = arrayField(value, "fields").flatMap((field) =>
+    isNamed(field) && field.value !== undefined ? [{ name: field.name, value: field.value }] : []
+  );
+  return [{ key, ...(label === undefined ? {} : { label }), fields }];
+}
+
 /** The struct type `entry` declares. */
 function typeOf(entry: JsonObject & { name: string }): CatalogType {
   const fields = arrayField(entry, "fields").flatMap((field) =>
@@ -598,6 +640,7 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
     name: entry.name,
     native: entry.native === true,
     fields,
+    literals: arrayField(entry, "literals").flatMap(literalOf),
     ...metaOf(entry),
     ...(asset === undefined ? {} : { asset }),
     ...(entry.brain === true ? { brain: true as const } : {}),
@@ -658,8 +701,9 @@ function overloadOf(value: unknown): CatalogOverload[] {
  * Reads a catalog's serialized text, in the grammar the MakeCode Wendoo VM
  * extension's catalog serializer writes as the simx renders it for the
  * editor -- each icon carried as an `iconUrl` data URI -- into its packs,
- * each with its types, tiles, operators, overloads of core operators, core
- * tile icons and core type icons. An overload entry carrying no operator, a
+ * each with its types and the literals they declare, tiles, operators,
+ * overloads of core operators, core tile icons and core type icons. An
+ * overload entry carrying no operator, a literal entry carrying no key, a
  * core tile icon entry carrying no tile id or no icon, and a core type icon
  * entry carrying no type name or no icon, is dropped. A token the grammar does not have -- a tile kind, a
  * grammar construct, a range's overflow behavior, a sentence frame -- is

@@ -2,6 +2,11 @@ pack beacon
   type Beacon native icon
     field x number accessor accessor-icon
     field y number accessor
+    literal home
+      value x {"t":3,"v":0}
+      value y {"t":3,"v":0}
+    literal east
+      value x {"t":3,"v":3}
   tile sensor sensor.beacon.reading returns=string inline writableResult icon
     output position Beacon
     output anchor Beacon writableResult

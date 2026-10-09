@@ -72,6 +72,7 @@ describe("BrainEditorSession", () => {
         store.getSnapshot().environment,
         store.getSnapshot().assetLiterals,
         store.getSnapshot().brainLiterals,
+        store.getSnapshot().packLiterals,
         store.getSnapshot().typeIcons
       ),
       editing,

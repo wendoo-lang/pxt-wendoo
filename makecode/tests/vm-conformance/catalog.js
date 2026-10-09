@@ -173,13 +173,15 @@ function grammarLines(node, indent) {
  * The structural listing of the parsed catalog payload `payload`: every fact
  * that is registration structure, one entry per line, in payload order, and
  * nothing that is display. Each pack lists its types (with their fields,
- * each field's accessor by presence), tiles (with their outputs and their
- * argument grammar), operators, overloads, core tile icon entries and core
- * type icon entries; then the payload's diagnostics. Names, ids, kinds, type
- * references, flags, operands, grammar shapes and default values are listed;
- * an icon is listed by its presence alone. Labels, docs, palette groups,
- * slot units, sentence words and icon bytes are not listed, and neither is
- * any field this listing does not name.
+ * each field's accessor by presence, and their declared literals, each by
+ * its key with the value it holds in each field it sets), tiles (with their
+ * outputs and their argument grammar), operators, overloads, core tile icon
+ * entries and core type icon entries; then the payload's diagnostics. Names,
+ * ids, kinds, type references, flags, operands, grammar shapes, default
+ * values, literal keys and literal values are listed; an icon is listed by
+ * its presence alone. Labels, docs, palette groups, slot units, sentence
+ * words and icon bytes are not listed, and neither is any field this listing
+ * does not name.
  *
  * @param payload The parsed catalog payload.
  * @returns The listing's text, one line per entry, each line ending in a newline.
@@ -201,6 +203,10 @@ function structuralListing(payload) {
         const accessor =
           field.accessor === undefined ? [] : ["accessor", ...iconToken(field.accessor).map(() => "accessor-icon")];
         line(2, "field", field.name, field.type, ...fieldTokens(field, ["readOnly"]), ...accessor);
+      }
+      for (const literal of type.literals || []) {
+        line(2, "literal", literal.key);
+        for (const field of literal.fields || []) line(3, "value", field.name, structuralValue(field.value));
       }
     }
     for (const tile of pack.tiles || []) {

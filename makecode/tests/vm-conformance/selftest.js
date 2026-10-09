@@ -90,6 +90,7 @@ const EXPECTED_CHECKS = [
   "slot-builders-carry-labels",
   "language-builders-carry-words",
   "accessor-builder-carries-metadata-and-sensor-flags-default-off",
+  "literal-builders-carry-key-label-and-field-values-and-type-meta-declares-none",
   "compiled-brains-registered-in-order",
   "compiled-brain-ids-and-names-intact",
   "compiled-brain-declarations-bound-by-id",
@@ -723,8 +724,9 @@ const CATALOG_FIXTURE = path.join(__dirname, "selftest", "catalog.json");
 /**
  * The structural listing of the catalog the selftest run is expected to
  * print -- the three packs' registered vocabulary under first-wins
- * resolution, the argument grammars the packs declare, and every diagnostic
- * the run provokes -- as `catalog.structuralListing` renders it.
+ * resolution, the argument grammars and type literals the packs declare, and
+ * every diagnostic the run provokes -- as `catalog.structuralListing` renders
+ * it.
  */
 const EXPECTED_CATALOG_STRUCTURE = fs.readFileSync(path.join(__dirname, "selftest", "catalog.structure.txt"), "utf8");
 

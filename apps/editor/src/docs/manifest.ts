@@ -19,7 +19,10 @@ export const tileKindCategories: Partial<Record<BrainTileKind, string>> = {
   literal: "Literals",
 };
 
-/** Docs sidebar category of a struct type's page: the docs its variable factory tile carries. */
+/**
+ * Docs sidebar category of a struct type's page: the docs its variable
+ * factory tile carries, or the type's own page while no factory stands for it.
+ */
 export const dataTypesCategory = "Data Types";
 
 /**

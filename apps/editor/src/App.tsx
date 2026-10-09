@@ -22,10 +22,15 @@ import { resolveTarget } from "@/services/target-theme";
 export function App() {
   const { view, target } = useEditorSessionState();
   const tileColors = resolveTarget(target)?.tileColors;
-  const { environment, assetLiterals, brainLiterals, typeIcons, pageIcon } = useBrainsState();
+  const { environment, assetLiterals, brainLiterals, packLiterals, typePages, typeIcons, pageIcon } = useBrainsState();
   const docsRegistry = useMemo(
-    () => createEditorDocsRegistry(environment, new Set([...assetLiterals.keys(), ...brainLiterals.keys()])),
-    [environment, assetLiterals, brainLiterals]
+    () =>
+      createEditorDocsRegistry(
+        environment,
+        new Set([...assetLiterals.keys(), ...brainLiterals.keys(), ...packLiterals.keys()]),
+        typePages
+      ),
+    [environment, assetLiterals, brainLiterals, packLiterals, typePages]
   );
   const docsTileCatalog = useMemo(() => createDocsTileCatalog(environment), [environment]);
   const docsDataTypeNames = useMemo(() => registeredTypeNames(environment), [environment]);

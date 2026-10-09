@@ -6,6 +6,7 @@ import { getClosedStructFieldByName, NativeType } from "@wendoo/core/runtime";
 import type { CustomLiteralType, TileVisual } from "@wendoo/ui";
 import { createElement } from "react";
 import { ASSET_FIELD, type AssetLiteral } from "@/services/asset-literals";
+import type { PackLiteral } from "@/services/authoring-environment";
 import { BRAIN_FIELD, type BrainLiteral } from "@/services/brain-literals";
 import type { TileKindColors } from "@/services/target-theme";
 
@@ -170,6 +171,26 @@ function documentIdOf(types: AssetTypeRegistry, typeId: TypeId, value: unknown):
   if (typeDef === undefined || struct?.t !== NativeType.Struct) return undefined;
   const field = getClosedStructFieldByName(typeDef, struct, BRAIN_FIELD);
   return field?.t === NativeType.String ? field.v : undefined;
+}
+
+/**
+ * The brain editor's literal types for the types `packLiterals` hold
+ * literals of, one per type: each display-only, formatting a literal's value
+ * label -- its key -- as its literal's label and any other value as its
+ * text, and drawing a placed literal's value box as that text.
+ *
+ * Build new types whenever the pack literals change.
+ *
+ * @param packLiterals - The environment's pack literals, keyed by tile id.
+ */
+export function createPackLiteralTypes(packLiterals: ReadonlyMap<string, PackLiteral>): CustomLiteralType[] {
+  const typeIds = new Set<TypeId>();
+  for (const literal of packLiterals.values()) typeIds.add(literal.typeId);
+  return [...typeIds].map((typeId) => ({
+    typeId,
+    description: "",
+    formatValue: (value) => packLiterals.get(mkLiteralTileId(typeId, String(value)))?.label ?? String(value),
+  }));
 }
 
 /**
