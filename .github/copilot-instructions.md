@@ -79,23 +79,27 @@ side.
 
 ### MakeCode simx Components (`makecode/simx/*`)
 
-- One simx component per subfolder, each a webapp. `makecode/simx/bridge`
-  connects to the bridge service and joins the editor webapp to the MakeCode
-  project.
+- One simx component per subfolder, each a webapp. `makecode/simx/wendoo`
+  holds two entries: its simx entry (`src/simx`) connects to the bridge service
+  and joins the editor webapp to the MakeCode project, and its root entry
+  (`src/editor`) is the editor webapp.
 - A simx component is a messaging endpoint, not a place for product logic.
-  Brain authoring belongs in `apps/editor`; execution belongs in the extension.
+  Brain authoring belongs in the editor (`makecode/simx/wendoo/src/editor`);
+  execution belongs in the extension.
 
-### Editor Webapp (`apps/editor`)
+### Editor Webapp (`makecode/simx/wendoo/src/editor`)
 
-- `apps/editor` owns the Wendoo editor webapp: brain authoring, project
-  management, compiler integration, artifact loading, and diagnostics.
-- It reaches the MakeCode project through the bridge service and
-  `makecode/simx/bridge`. Do not add a second, direct path between the editor
-  and MakeCode.
+- The editor entry (`makecode/simx/wendoo/src/editor`) owns the Wendoo editor
+  webapp: brain authoring, project management, compiler integration, artifact
+  loading, and diagnostics.
+- It reaches the MakeCode project through the bridge service and the simx
+  entry of `makecode/simx/wendoo`. Do not add a second, direct path between the
+  editor and MakeCode.
 
 ### Bridge Service (`apps/bridge`)
 
-- `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects to.
+- `apps/bridge` owns the bridge service that the simx entry of
+  `makecode/simx/wendoo` connects to.
 - The bridge wire protocol and the session engine are upstream
   (`packages/bridge-protocol`, `packages/bridge-client`, `packages/bridge-app`,
   `packages/bridge-session`). Consume them; do not fork message shapes or

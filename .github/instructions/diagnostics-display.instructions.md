@@ -1,5 +1,5 @@
 ---
-applyTo: "{apps/editor/**,makecode/extensions/**,makecode/simx/**}"
+applyTo: "{makecode/extensions/**,makecode/simx/**}"
 ---
 
 # Diagnostics Display on Kid-Facing Surfaces

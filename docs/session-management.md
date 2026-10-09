@@ -82,7 +82,7 @@ this lane's declaration is `MakeCodeDeviceProfileNumericId` in
 
 The four-hop path assigns the session parts as follows.
 
-- `apps/editor` is the EDITOR role endpoint. It reaches the wire
+- The editor (`makecode/simx/wendoo/src/editor`) is the EDITOR role endpoint. It reaches the wire
   through the kind package's editor session object, which runs the
   app-role stack (`createAppBridge` with the editor role path) and
   binds `connectMakeCodeSession` over the payload surface. It joins
@@ -95,7 +95,7 @@ The four-hop path assigns the session parts as follows.
   codes: the join code a person enters is presented only until the
   first welcome. It is the side that ENTERS codes and displays none
   (see the editor webapp, below).
-- `makecode/simx/bridge` is the SIMX role endpoint and the session's
+- The simx (`makecode/simx/wendoo/src/simx`) is the SIMX role endpoint and the session's
   hosting side and the side that DISPLAYS codes: it connects with no
   join code, so the relay mints the session's code for it, and it
   writes that code to the console and exposes it on its handle, again
@@ -154,7 +154,7 @@ session data, declared when the kind's handshake binds:
   sender's own claim: identity and trust come from the session's
   credentials, never from it.
 - The editor presents it through its per-target record
-  (`TARGET_THEMES` in `apps/editor/src/services/target-theme.ts`),
+  (`TARGET_THEMES` in `makecode/simx/wendoo/src/editor/services/target-theme.ts`),
   which maps a target id to a display name, theme token overrides,
   and the colors its tiles are filled in. An undeclared target, or a
   declared value that is not a non-empty string, shows the Wendoo
@@ -325,7 +325,7 @@ serves exactly what the last one wrote.
   names relative to that folder, and only the files `pxt.json` lists;
   a write lists its file. The client is pxt's own
   `pxtservices/projfs.ts`, vendored byte-for-byte as
-  `makecode/simx/bridge/src/vendor/projfs.ts`; the sibling
+  `makecode/simx/wendoo/src/vendor/projfs.ts`; the sibling
   `PROVENANCE` file records the exact source (the pxt commit, or the
   file's blob until that commit lands), and the vendored
   file is kept out of this repo's lint and formatting so a re-vendor
@@ -372,7 +372,7 @@ serves exactly what the last one wrote.
   reads. The program follows as lowercase hex, 32 bytes a line (pxt's
   `hex` literal skips whitespace). The `source-hash` line binds the
   program to the source it was compiled from. `writeBrainsModule` and
-  `readBrainsModule` (`makecode/simx/bridge/src/brains-module.ts`) are
+  `readBrainsModule` (`makecode/simx/wendoo/src/simx/brains-module.ts`) are
   a writer and reader pair: the same entries always write the same
   text, which reads back to them, and an entry whose label or
   declaration name is not the one its id and name make reads as
@@ -541,7 +541,7 @@ namespace wendooIds {
   A file hand-edited while a handshake stays open is healed at the next
   handshake.
 - THE PROGRAM: `writeIdsModule` and `readIdsModule`
-  (`makecode/simx/bridge/src/ids-module.ts`) are a writer and reader pair.
+  (`makecode/simx/wendoo/src/simx/ids-module.ts`) are a writer and reader pair.
   The VM extension's registration selftest compiles the module's generated
   form in real Arcade and micro:bit projects, the allocation it declares
   made by the editor's allocator from the selftest's catalog. In the
@@ -762,7 +762,7 @@ it keys on a session id.
 
 ## The editor webapp on this object
 
-`apps/editor` consumes the session object through one store
+The editor (`makecode/simx/wendoo/src/editor`) consumes the session object through one store
 (`EditorSessionStore`), and its two views follow the state:
 
 - The CONNECT PAGE shows while the status is `none`: a join-code
@@ -860,7 +860,7 @@ it keys on a session id.
   like the entry key, let go when the tab closes or reloads; a page
   without Web Locks (outside a secure context) claims without
   excluding, and says so in the console. At boot
-  (`openTabBinding` in `apps/editor/src/services/binding-entries.ts`),
+  (`openTabBinding` in `makecode/simx/wendoo/src/editor/services/binding-entries.ts`),
   before rendering, the editor moves a token stored under its former
   single key into an entry, prunes, and resumes the binding the tab
   recorded, while its claim is free -- a duplicated tab copies the
@@ -1191,13 +1191,13 @@ browser tabs in a URL, never on the session wire.
   browser sends to no server and writes to no request log.
 - BASE URL, derived like the bridge address from the frame's own host
   (`editorUrlFor` beside `bridgeUrlFor` in
-  `makecode/simx/bridge/src/service-urls.ts`): a frame served from a
-  loopback host links to the dev editor at `http://localhost:5176`;
+  `makecode/simx/wendoo/src/simx/service-urls.ts`): a frame served from a
+  loopback host links to the dev editor at `http://localhost:5175`;
   any other frame links to the deployed editor at
   `https://makecode.playwendoo.com`.
 - ENTRY: at boot, before rendering, the editor takes a fragment that
   starts `#code=` and carries a non-empty code
-  (`takeFragmentJoinCode` in `apps/editor/src/services/fragment-entry.ts`):
+  (`takeFragmentJoinCode` in `makecode/simx/wendoo/src/editor/services/fragment-entry.ts`):
   it rewrites the URL without the fragment (`history.replaceState`,
   keeping the path, query, and history state) and only then hands the
   decoded, trimmed code to the store's `connect`, the connect page's
@@ -1305,20 +1305,20 @@ served from a loopback host connects to the local relay at
 `localhost:6465` (the relay's default dev port; the vscode-bridge
 relay's is 6464, so both Wendoo relays can run on one dev machine)
 instead of the deployed service. The rule lives with each composition
-root (`apps/editor/src/main.tsx`, `makecode/simx/bridge/src/service-urls.ts`);
+root (`makecode/simx/wendoo/src/editor/main.tsx`, `makecode/simx/wendoo/src/simx/service-urls.ts`);
 a deployed build, served from a real host, uses the deployed
 service.
 
 - The relay: `npm run dev` in `apps/bridge` (port 6465). Set
   `BRIDGE_BINDING_SECRET` to keep sessions healing across relay
   restarts; without it, every restart ends every session.
-- The simx: `npm run dev` in `makecode/simx/bridge` (port 5175, pinned
-  with `strictPort` by its dev config, matching the `devUrl` its
-  `approvedRepoLib` entry registers; `npm run dev -- --port <port>`
-  serves it elsewhere, and the registration must then name that port).
-- The editor: `npm run dev` in `apps/editor` (port 5176, pinned with
-  `strictPort` by its dev config, because a simx served from a loopback
-  host links there).
+- The editor and the simx: `npm run dev` in `makecode/simx/wendoo`
+  (port 5175, pinned with `strictPort` by its dev config, matching the
+  `devUrl` its `approvedRepoLib` entry registers; `npm run dev -- --port
+  <port>` serves it elsewhere, and the registration must then name that
+  port). The editor is served at the root, where a simx served from a
+  loopback host links, and the simx at `simx/index.html`, the `index`
+  the registration names.
 - MakeCode: `pxt serve` from a dev target checkout, with the simx
   registered by localdev URL (an `approvedRepoLib` entry carrying
   `devUrl`) and loaded via the `simxdev` URL parameter.
@@ -1328,11 +1328,11 @@ exact invocations. The harness exercises the extension's emission
 headlessly on both provisioned targets, and the composed acceptance
 tier drives the editor's service layer and the simx module against
 the engine's in-process testkit, `@wendoo/bridge-session/testing`
-(`apps/editor/src/services/editor-session-store-relay.spec.ts`), and
+(`makecode/simx/wendoo/src/editor/services/editor-session-store-relay.spec.ts`), and
 the brain sync against a scripted simx and against the real simx
 module serving an in-memory MakeCode project over the same testkit
-(`apps/editor/src/services/brains-sync-relay.spec.ts`; the project is
-`makecode/simx/bridge/src/test-support/projfs-host.ts`, which applies
+(`makecode/simx/wendoo/src/editor/services/brains-sync-relay.spec.ts`; the project is
+`makecode/simx/wendoo/src/simx/test-support/projfs-host.ts`, which applies
 MakeCode's projfs rules -- scope, visibility, quota, deferral over the
 rate, binding to the project a request arrived in, refusal of an
 unserved frame -- and plays MakeCode's text editor sharing the project:

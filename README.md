@@ -30,10 +30,9 @@ The top level splits by side of the integration.
 
 | Directory                                    | Contents                                                                                                         |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [apps/editor](apps/editor/)                  | The Wendoo editor webapp. Authors brains and talks to the MakeCode project through the bridge.                   |
 | [apps/bridge](apps/bridge/)                  | The bridge service, relaying between the editor and the simx.                                                    |
 | [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); `arcade-base` is Arcade's base vocabulary pack, and `arcade` is the extension a project adds. |
-| [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `bridge` joins the editor webapp to the MakeCode project.               |
+| [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `wendoo` holds the Wendoo editor webapp, which authors brains, and the simx that joins it to the MakeCode project through the bridge. |
 | [packages/](packages/)                       | Shared npm packages: contracts spoken by units on both sides of the integration. `protocol` carries the MakeCode session kinds. |
 | [external/wendoo-lang](external/wendoo-lang) | The upstream language, compiler, and reference VM (submodule).                                                   |
 
@@ -60,7 +59,7 @@ dependencies first.
 Run the editor webapp:
 
 ```bash
-npm --prefix apps/editor run dev
+npm --prefix makecode/simx/wendoo run dev
 ```
 
 ## Related

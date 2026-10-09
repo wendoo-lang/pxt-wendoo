@@ -19,10 +19,10 @@
   // or from a tsconfig.json inside its own project -- run it (root
   // `npm test`) after config changes.
   //
-  // makecode/simx/bridge is absent deliberately: it is post-processed, and
+  // makecode/simx/wendoo is absent deliberately: it is post-processed, and
   // no config outside it may reference into it (the post-processed-
   // references guard in external/wendoo-lang/packages/assistant-bridge).
-  // Its own solution-style tsconfig.json indexes its app and spec projects,
+  // Its own solution-style tsconfig.json indexes its entry and spec projects,
   // which the editor's nearest-config walk finds first anyway.
   //
   // makecode/extensions/** and makecode/tests/** are excluded by decision
@@ -41,8 +41,6 @@
     { "path": "./packages/protocol/tsconfig.json" },
     { "path": "./packages/protocol/tsconfig.spec.json" },
     { "path": "./apps/bridge/tsconfig.json" },
-    { "path": "./apps/bridge/tsconfig.spec.json" },
-    { "path": "./apps/editor/tsconfig.json" },
-    { "path": "./apps/editor/tsconfig.spec.json" }
+    { "path": "./apps/bridge/tsconfig.spec.json" }
   ]
 }

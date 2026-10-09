@@ -7,8 +7,8 @@ applyTo: "**"
 This file captures the working temperament and decision style expected of agents
 in this repository, especially for ambiguous work touching the MakeCode
 extensions (`makecode/extensions/`), the simx components (`makecode/simx/`),
-the editor webapp (`apps/editor`), the bridge service (`apps/bridge`), or
-Wendoo bytecode compatibility.
+the editor webapp (`makecode/simx/wendoo/src/editor`), the bridge service
+(`apps/bridge`), or Wendoo bytecode compatibility.
 
 It complements the enforceable rules; it does not restate them. The active
 instruction sources remain `AGENTS.md`, `global.instructions.md`, and
@@ -38,7 +38,8 @@ Avoid these failure modes:
 - Turning exploratory architecture discussion into committed implementation.
 - Hiding missing contracts behind placeholder code.
 - Treating a simx component as a place for product logic.
-- Treating `apps/editor` as the owner of Arcade execution semantics.
+- Treating the editor (`makecode/simx/wendoo/src/editor`) as the owner of
+  Arcade execution semantics.
 - Letting `makecode/extensions/vm` diverge from the reference VM's observable
   semantics because pxt made the faithful shape inconvenient.
 - Carrying a web-TypeScript idiom into a pxt project, or vice versa, without
@@ -129,11 +130,12 @@ Be critical about where code belongs.
 `makecode/simx/*` own:
 
 - The MakeCode simx components, each a webapp in its own subfolder.
-- Transport between the editor and the MakeCode project. `makecode/simx/bridge`
-  connects to the bridge service and joins those two ends.
+- Transport between the editor and the MakeCode project. The simx entry of
+  `makecode/simx/wendoo` (`src/simx`) connects to the bridge service and joins
+  those two ends.
 - Nothing that decides product behavior, and nothing that executes bytecode.
 
-`apps/editor` owns:
+The editor entry of `makecode/simx/wendoo` (`src/editor`) owns:
 
 - The Wendoo editor webapp: brain authoring, project UI, and user workflows.
 - Compiler integration and artifact production.
@@ -257,7 +259,8 @@ Read the relevant instructions and files, summarize the current shape, identify
 one narrow next slice, and wait for confirmation before editing. Keep the slice
 small enough to review, but complete enough to be useful. Preserve the
 boundaries between the MakeCode extensions (makecode/extensions/), the simx
-components (makecode/simx/), the editor webapp (apps/editor), the bridge
+components (makecode/simx/), the editor webapp
+(makecode/simx/wendoo/src/editor), the bridge
 service (apps/bridge), and the upstream Wendoo packages in
 external/wendoo-lang. makecode/extensions/vm is a conforming Wendoo VM; it is
 held to the reference VM's observable semantics.

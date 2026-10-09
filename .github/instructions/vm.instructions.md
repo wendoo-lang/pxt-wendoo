@@ -1,5 +1,5 @@
 ---
-applyTo: "{docs/specs/contracts/vm-contract.md,makecode/extensions/**,makecode/simx/**,apps/editor/**}"
+applyTo: "{docs/specs/contracts/vm-contract.md,makecode/extensions/**,makecode/simx/**}"
 ---
 
 <!-- Adapted from external/wendoo-lang/.github/instructions/vm.instructions.md -->
@@ -113,8 +113,9 @@ unless noted otherwise.
   `RngServices` stream handed to `registerCoreHostActions`: the
   platform's own random numbers in a program run, and any stream a test
   harness injects.
-- `apps/editor` is an authoring surface. It may compile, inspect, and
-  visualize, but the Arcade platform's execution semantics are the extension's.
+- The editor (`makecode/simx/wendoo/src/editor`) is an authoring surface. It
+  may compile, inspect, and visualize, but the Arcade platform's execution
+  semantics are the extension's.
 - `makecode/simx/*` components are messaging endpoints between the editor and
   the MakeCode project. They carry programs and state across the gap; they do
   not execute bytecode.

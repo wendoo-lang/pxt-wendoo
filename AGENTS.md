@@ -391,7 +391,7 @@ the current slice alone.
       program and the page's activation goes on, every later hook running
       and every rule spawning), and the
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
-      `empty.src.json` by `npm run gen:vm-programs` in `apps/editor`).
+      `empty.src.json` by `npm run gen:vm-programs` in `makecode/simx/wendoo`).
       NO block definitions -- the compiled-brain type's
       `//% fixedInstances` attribute is toolbox metadata on a type, which
       a target extension's block parameter turns into its dropdown --
@@ -633,8 +633,11 @@ the current slice alone.
       when a tile could plausibly go either way, raise it rather than
       deciding it in passing.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in
-    its own subfolder; `makecode/simx/bridge` connects to the bridge
-    service, joining the editor webapp to the MakeCode project. A simx is a
+    its own subfolder. `makecode/simx/wendoo` is one webapp with two
+    entries: its simx entry (`simx/index.html`, sources in `src/simx`)
+    connects to the bridge service, joining the editor webapp to the
+    MakeCode project, and its root entry (`index.html`, sources in
+    `src/editor`) is the editor webapp. A simx is a
     channel, not a store: its frame persists across sim restarts and runs
     but is reallocated on a page reload or project teardown, so no state
     may live only there. It is not product UI, but its frame is a visible panel
@@ -655,7 +658,8 @@ the current slice alone.
     upstream packages carry platform-clean mechanisms only and must stay
     greppably free of platform names; platform content inside a core package
     becomes citable precedent for more of it.
-  - `apps/editor` owns the Wendoo editor webapp: brain authoring, project
+  - The editor entry of `makecode/simx/wendoo` (`src/editor`) owns the
+    Wendoo editor webapp: brain authoring, project
     management, compiler integration, the project's id allocation,
     diagnostics, and the docs surface (the core docs pages from
     `@wendoo/docs`, in a sidebar the brain editor opens and standalone at
@@ -712,8 +716,9 @@ the current slice alone.
     flow in this editor would reintroduce target-specific ambient typings
     and must be raised as a boundary change, not slipped in. (The directory
     name predates the target-blind ruling; renaming rides F48.)
-  - `apps/bridge` owns the bridge service that `makecode/simx/bridge` connects
-    to. Also target-blind: one deployment serves every target.
+  - `apps/bridge` owns the bridge service that the simx entry of
+    `makecode/simx/wendoo` connects to. Also target-blind: one deployment
+    serves every target.
   - The complete per-target surface of this repo is: the target base pack,
     the game-facing extension, feature packs, the `approvedRepoLib`
     registration, the upstream `trg-*` platform-stack layer, a theme record
@@ -725,7 +730,8 @@ the current slice alone.
 - The shared Wendoo packages (`packages/core`, `packages/ts-compiler`,
   `packages/app-host`, `packages/bridge-app`, `packages/ui`) have several
   first-class, co-equal product consumers. Two are visible from this checkout:
-  `apps/editor` (this repo) and `external/wendoo-lang/apps/ecosim`. A change to
+  the editor in `makecode/simx/wendoo` (this repo) and
+  `external/wendoo-lang/apps/ecosim`. A change to
   a shared package or shared model is not done until both are swept and gated
   (typecheck + biome + test each); this is the one standing reason to run suites
   in the reference checkout. A third consumer, `apps/microbit-sim` in the

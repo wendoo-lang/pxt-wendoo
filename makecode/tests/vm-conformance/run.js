@@ -13,7 +13,7 @@
  * does a replay that reports a registration diagnostic -- the corpus
  * vocabulary registers cleanly -- or that does not post exactly two messages
  * on the simulator extension's channel (`SIMX_CHANNEL` in
- * `makecode/simx/bridge/src/sim-channel.ts`): the extension's startup ping,
+ * `makecode/simx/wendoo/src/simx/sim-channel.ts`): the extension's startup ping,
  * then its catalog.
  *
  * Each target also builds and captures the catalog project twice. Each
