@@ -3,7 +3,7 @@
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
 shares: the tiles a brain uses to read the controllers, notice what its
 sprite touches and what is near it, move its sprite, change how it looks,
-and keep score.
+keep score, and end the game.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -45,6 +45,13 @@ and keep score.
   move** waits for 10 points. Once a rule reads or changes the score of
   player two, three or four, the game shows scores the way Arcade does for
   several players, each in a corner of its own.
+- **game over** -- a DO tile that ends the game the way Arcade does, as a
+  loss. Add **win** to end it as a win, or give it a player to have that
+  player win. Give it one of Arcade's effects, like **confetti**, and one of
+  its sounds, like **power up**, for the ending: **WHEN player one score
+  greater than 9 DO game over win confetti** wins with confetti at 10
+  points. A game ends only once, so the first frame a **game over** rule is
+  on decides how it ends.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or

@@ -177,6 +177,439 @@
           "label": "player",
           "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Player>->1\",\n    \"tile.literal->struct:<Player>->2\",\n    \"tile.literal->struct:<Player>->3\",\n    \"tile.literal->struct:<Player>->4\"\n  ]\n}\n```\n\n# Player\n\nOne of the four players in your game.\n\n---\n\n**player one**, **player two**, **player three** and **player four** are the players of an Arcade game,\neach with a controller of its own. Give one to **dpad** to read that player's dpad, or to **add score**\nto change that player's score. Without one, both use player one.\n\n## Score\n\n`tile:tile.accessor->struct:<Player>->score` is a player's score. Put it after a player to read it, and\nuse **add score** to change it.\n\nPlayer one's score shows on the screen once it changes. Once a rule reads or changes the score of\nplayer two, three or four, the game shows scores the way Arcade does for several players: each in a\ncorner of its own.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.add-score`\n`tile:tile.sensor->sensor.arcade.dpad`\n",
           "icon": "87041000100000000000000000000000000000000080880800000000008888080000000080888808008088008088880800888808808888088088888880888808808888888088880880888888808888088088888880888808008888088088880800808800808888080000000080888808000000000088880800000000008088080000000000000000"
+        },
+        {
+          "name": "Effect",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "readOnly": true
+            }
+          ],
+          "literals": [
+            {
+              "key": "confetti",
+              "label": "confetti",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "confetti"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "hearts",
+              "label": "hearts",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "hearts"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "smiles",
+              "label": "smiles",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "smiles"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "blizzard",
+              "label": "blizzard",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "blizzard"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "bubbles",
+              "label": "bubbles",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "bubbles"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "starField",
+              "label": "star field",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "starField"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "clouds",
+              "label": "clouds",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "clouds"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "none",
+              "label": "none",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "none"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "dissolve",
+              "label": "dissolve",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "dissolve"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "melt",
+              "label": "melt",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "melt"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "slash",
+              "label": "slash",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "slash"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "splatter",
+              "label": "splatter",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "splatter"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "effect",
+          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Effect>->confetti\",\n    \"tile.literal->struct:<Effect>->hearts\",\n    \"tile.literal->struct:<Effect>->smiles\",\n    \"tile.literal->struct:<Effect>->blizzard\",\n    \"tile.literal->struct:<Effect>->bubbles\",\n    \"tile.literal->struct:<Effect>->starField\",\n    \"tile.literal->struct:<Effect>->clouds\",\n    \"tile.literal->struct:<Effect>->none\",\n    \"tile.literal->struct:<Effect>->dissolve\",\n    \"tile.literal->struct:<Effect>->melt\",\n    \"tile.literal->struct:<Effect>->slash\",\n    \"tile.literal->struct:<Effect>->splatter\"\n  ]\n}\n```\n\n# Effect\n\nA screen effect for the end of your game.\n\n---\n\nEach of these is one of Arcade's own screen effects. Give one to **game over** to show it as the game\nends: **DO game over win hearts** fills the screen with hearts for a win. **none** shows no effect at\nall.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.game-over`\n`tile:tile.var.factory->struct:<Sound>`\n",
+          "icon": "87041000100000000000005000000000000000500000000000000050000000000000005505000000000000550500000000005055550000000050555555550000505555155555550000505555555500000000505555000000000000550500000000000055050009000003005000909900303300500000090000030050000000000000000000000000"
+        },
+        {
+          "name": "Sound",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "readOnly": true
+            }
+          ],
+          "literals": [
+            {
+              "key": "baDing",
+              "label": "ba ding",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "baDing"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "wawawawaa",
+              "label": "wawawawaa",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "wawawawaa"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "jumpUp",
+              "label": "jump up",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "jumpUp"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "jumpDown",
+              "label": "jump down",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "jumpDown"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "powerUp",
+              "label": "power up",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "powerUp"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "powerDown",
+              "label": "power down",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "powerDown"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "magicWand",
+              "label": "magic wand",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "magicWand"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "siren",
+              "label": "siren",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "siren"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "pewPew",
+              "label": "pew pew",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "pewPew"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "knock",
+              "label": "knock",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "knock"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "footstep",
+              "label": "footstep",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "footstep"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "thump",
+              "label": "thump",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "thump"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "smallCrash",
+              "label": "small crash",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "smallCrash"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "bigCrash",
+              "label": "big crash",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "bigCrash"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "zapped",
+              "label": "zapped",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "zapped"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "buzzer",
+              "label": "buzzer",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "buzzer"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "sonar",
+              "label": "sonar",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "sonar"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "spooky",
+              "label": "spooky",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "spooky"
+                  }
+                }
+              ]
+            },
+            {
+              "key": "beamUp",
+              "label": "beam up",
+              "fields": [
+                {
+                  "name": "name",
+                  "value": {
+                    "t": 4,
+                    "v": "beamUp"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "sound",
+          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Sound>->baDing\",\n    \"tile.literal->struct:<Sound>->wawawawaa\",\n    \"tile.literal->struct:<Sound>->jumpUp\",\n    \"tile.literal->struct:<Sound>->jumpDown\",\n    \"tile.literal->struct:<Sound>->powerUp\",\n    \"tile.literal->struct:<Sound>->powerDown\",\n    \"tile.literal->struct:<Sound>->magicWand\",\n    \"tile.literal->struct:<Sound>->siren\",\n    \"tile.literal->struct:<Sound>->pewPew\",\n    \"tile.literal->struct:<Sound>->knock\",\n    \"tile.literal->struct:<Sound>->footstep\",\n    \"tile.literal->struct:<Sound>->thump\",\n    \"tile.literal->struct:<Sound>->smallCrash\",\n    \"tile.literal->struct:<Sound>->bigCrash\",\n    \"tile.literal->struct:<Sound>->zapped\",\n    \"tile.literal->struct:<Sound>->buzzer\",\n    \"tile.literal->struct:<Sound>->sonar\",\n    \"tile.literal->struct:<Sound>->spooky\",\n    \"tile.literal->struct:<Sound>->beamUp\"\n  ]\n}\n```\n\n# Sound\n\nA sound for the end of your game.\n\n---\n\nEach of these is one of Arcade's own sounds. Give one to **game over** to play it as the game ends:\n**DO game over win power up** plays power up for a win.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.game-over`\n`tile:tile.var.factory->struct:<Effect>`\n",
+          "icon": "87041000100000000000000000000000000000000000660000000000006066060000000000666606000000000066660600000000006666060000000000666606606666666666660060666666666606000006000000000000006600000000000000600000000000000060066006000000000066660000000000000000000000000000000000000000"
         }
       ],
       "tiles": [
@@ -825,6 +1258,77 @@
           "label": "add score",
           "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Add Score\n\nAdds to a player's score.\n\n---\n\nPlace **add score** on the **DO** side of a rule to add 1 to player one's score. Give it a number to add\nthat much instead -- a negative number takes points away -- and a player to change that player's\nscore: **DO add score 5 player two** gives player two 5 points.\n\nLike every DO tile, it acts on every frame its rule is on, so **WHEN dpad DO add score** keeps adding\nwhile the dpad is held. **WHEN this page starts DO add score** adds just once.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->on-page-entered\"],\n      \"do\": [\n        \"tile.actuator->actuator.arcade.add-score\",\n        \"tile.literal->number:<number>->5\",\n        \"tile.literal->struct:<Player>->2\"\n      ],\n      \"children\": [],\n      \"comment\": \"Give player two 5 points as the page starts.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->number:<number>->5\",\n      \"valueType\": \"number:<number>\",\n      \"value\": 5,\n      \"valueLabel\": \"5\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of add score, as the editor offers it:\n- An optional number and an optional Player, each at most once, in either order. Nothing else: no\n  modifier, no named parameter, no output tile.\n- No number adds 1. A number adds that much, a negative number subtracting.\n- No Player changes player one's score. [player one] .. [player four] change that player's.\n- A number or Player placed as anything but a literal tile -- a variable, an accessor, an operator --\n  that reads as nothing leaves the action undone for that frame. A number holding no finite value\n  changes nothing either.\n\nWhat it does:\n- It runs on every frame its rule fires, adding again each time: a rule that should score once needs a\n  WHEN that fires once, such as [this page starts].\n- The score is Arcade's own: [player one] is the score game code's info.score() reads. Arcade keeps\n  whole numbers, so a fraction is dropped toward zero when the score is stored: adding 2.5 to 0 stores\n  2.\n- Player one's score appears on the screen at its first change. Changing the score of player two,\n  three or four switches the game to Arcade's display for several players, for the rest of the scene.\n- [player one] [score] [gets] <number> is refused: a player tile is not a variable. Read a score with\n  [player one] [score].\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Player>`\n`tile:tile.accessor->struct:<Player>->score`\n",
           "icon": "87041000100000000000000000000000000000700700000000000070070000000000707777070000000070777707000000000070070000000000007007000000000000000000000000000000000000000000070000007700007007000000770000777777777777000077777777777700000000000000770000000000000077000000000000000000"
+        },
+        {
+          "name": "actuator.arcade.game-over",
+          "kind": "actuator",
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.outcome.win",
+                              "modifier": true,
+                              "label": "win",
+                              "icon": "87041000100000000055050000000000000550000000000050555505000000005055555500000000505555550500500550555555050055055055555555005505505555555555550550555555555555055055555555005505505555550500550550555555050050055055555500000000505555050000000000055000000000000055050000000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.outcome.lose",
+                              "modifier": true,
+                              "label": "lose",
+                              "icon": "870410001000000000000022220000000000222222220000002022222222020000222222222222000022f22f22ff22002022f22ff222220220222222f222220220222222f222220220222222f222220220222222f22222022022f22ff22222020022f22f22ff22000022222222222200002022222222020000002222222200000000002222000000"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.Player",
+                          "type": "Player",
+                          "anonymous": true
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.Effect",
+                          "type": "Effect",
+                          "anonymous": true
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.Sound",
+                          "type": "Sound",
+                          "anonymous": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "game over",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Game Over\n\nEnds the game.\n\n---\n\nPlace **game over** on the **DO** side of a rule to end the game the way Arcade does: the game stops,\nshows how it ended, and starts again at the next button press. On its own, **game over** ends the game\nas a loss. Add **win** to end it as a win, or give it a player to end it with that player winning: **DO\ngame over player two** says player two won.\n\nGive it an effect and a sound for the ending: **DO game over win hearts power up**. Without them, the\ngame ends with Arcade's own: confetti and power up for a win, melt and wawawawaa for a loss.\n\nA game ends only once, so the first frame a **game over** rule is on is the one that counts.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\n        \"tile.literal->struct:<Player>->1\",\n        \"tile.accessor->struct:<Player>->score\",\n        \"tile.op->gt\",\n        \"tile.literal->number:<number>->9\"\n      ],\n      \"do\": [\n        \"tile.actuator->actuator.arcade.game-over\",\n        \"tile.modifier->modifier.outcome.win\",\n        \"tile.literal->struct:<Effect>->confetti\"\n      ],\n      \"children\": [],\n      \"comment\": \"Win with confetti once player one has scored 10.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->number:<number>->9\",\n      \"valueType\": \"number:<number>\",\n      \"value\": 9,\n      \"valueLabel\": \"9\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of game over, as the editor offers it:\n- In any order, each at most once: an optional [win] or [lose] (one of the two at most), an optional\n  Player, an optional Effect and an optional Sound. Nothing else: no named parameter, no output tile.\n- No [win] and no Player: the game ends as a loss. [lose] says the same thing.\n- [win]: the game ends as a win.\n- A Player: that player wins, as Arcade's game.gameOverPlayerWin ends a game. [win] or [lose] beside a\n  Player changes nothing: [game over] [lose] [player two] still ends with player two winning.\n- An Effect and a Sound are shown and played as the game ends with the outcome this tile gives it; a\n  Player winning is a win. Without one, that outcome keeps its own: Arcade's confetti and power up for a\n  win, melt and wawawawaa for a loss, unless the game's code set others.\n- A Player, Effect or Sound placed as anything but a literal tile that reads as nothing leaves the action\n  undone for that frame. An Effect or Sound naming nothing Arcade holds is read as none.\n\nWhat it does:\n- It is Arcade's own game over: the game stops, shows the effect, plays the sound, shows the result and\n  restarts at the next button press. When the game's code handles game over itself (game.onGameOver),\n  that code runs instead and the game goes on.\n- Arcade ends a game once and ignores every later game over, so unlike add score it does NOT act again\n  on later frames: the first frame its rule fires decides how the game ends. To compose an ending, give\n  it a WHEN that fires at the ending moment, such as [player one] [score] [greater than] 9 or [bump]\n  with a filter; when two game over rules fire on the same frame, the one running first wins.\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Player>`\n`tile:tile.var.factory->struct:<Effect>`\n`tile:tile.var.factory->struct:<Sound>`\n`tile:tile.actuator->actuator.arcade.add-score`\n",
+          "icon": "8704100010000000000000000000000000000000000000e0e0eeeeeeeeeeeeeef01ff11f010000e0f01ff11f0100000010f11ff10f00000010f11ff10f000000f01ff11f01000000f01ff11f0100000010f11ff10f00000010f11ff10f000000f01ff11f01000000f01ff11f0100000010f11ff10f00000010f11ff10f0000000000000000000000"
         }
       ],
       "overloads": [

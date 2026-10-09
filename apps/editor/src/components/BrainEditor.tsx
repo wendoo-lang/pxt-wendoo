@@ -65,7 +65,7 @@ interface BrainEditorProps {
  */
 export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) {
   const store = useBrains();
-  const { environment, assetLiterals, brainLiterals, packLiterals, typeIcons, pageIcon } = useBrainsState();
+  const { environment, assetLiterals, brainLiterals, packLiterals, typeIcons, typeLabels, pageIcon } = useBrainsState();
   const {
     registry: docsRegistry,
     openDocsForTile,
@@ -84,6 +84,7 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
         brainLiterals,
         packLiterals,
         typeIcons,
+        typeLabels,
         pageIcon,
         tileColors
       ),
@@ -98,6 +99,7 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
       assetLiterals,
       brainLiterals,
       typeIcons,
+      typeLabels,
       pageIcon,
       tileColors,
       docsRegistry,

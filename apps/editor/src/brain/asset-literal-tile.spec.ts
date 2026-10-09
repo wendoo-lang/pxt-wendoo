@@ -66,7 +66,8 @@ describe("a placed asset literal tile", () => {
       built.assetLiterals.view,
       built.brainLiterals.view,
       built.packLiterals,
-      built.typeIcons
+      built.typeIcons,
+      built.typeLabels
     );
 
     for (const def of defs) {
@@ -86,7 +87,8 @@ describe("a placed asset literal tile", () => {
       built.assetLiterals.view,
       built.brainLiterals.view,
       built.packLiterals,
-      built.typeIcons
+      built.typeIcons,
+      built.typeLabels
     );
 
     for (const def of defs) {
@@ -110,7 +112,8 @@ describe("a placed brain literal tile", () => {
       built.assetLiterals.view,
       built.brainLiterals.view,
       built.packLiterals,
-      built.typeIcons
+      built.typeIcons,
+      built.typeLabels
     );
 
     for (const def of [minted, placed]) {
@@ -133,7 +136,8 @@ describe("a placed brain literal tile", () => {
       built.assetLiterals.view,
       built.brainLiterals.view,
       built.packLiterals,
-      built.typeIcons
+      built.typeIcons,
+      built.typeLabels
     );
 
     for (const def of [minted, placed]) {

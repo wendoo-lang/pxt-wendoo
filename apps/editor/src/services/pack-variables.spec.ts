@@ -37,11 +37,15 @@ const POINT_TYPE = mkTypeId(NativeType.Struct, "Point");
 /** Type id of {@link VARIABLE_CATALOG}'s `Plain` type. */
 const PLAIN_TYPE = mkTypeId(NativeType.Struct, "Plain");
 
+/** Type id of {@link VARIABLE_CATALOG}'s `Badge` type. */
+const BADGE_TYPE = mkTypeId(NativeType.Struct, "Badge");
+
 /**
  * A catalog in the rendered form the simx publishes: a native `Spot` type
  * brains may hold variables of, carrying a label, an icon and docs; a `Point`
  * type brains may hold variables of, carrying none of them; a `Plain` type carrying no
- * variable factory flag; and an inline sensor reading a `Spot`.
+ * variable factory flag; a `Badge` type carrying a label and no variable
+ * factory flag; and an inline sensor reading a `Spot`.
  */
 const VARIABLE_CATALOG = JSON.stringify({
   packs: [
@@ -59,6 +63,7 @@ const VARIABLE_CATALOG = JSON.stringify({
         },
         { name: "Point", variableFactory: true, fields: [{ name: "x", type: "number", readOnly: true }] },
         { name: "Plain", fields: [{ name: "x", type: "number" }] },
+        { name: "Badge", fields: [{ name: "x", type: "number" }], label: "badge" },
       ],
       tiles: [{ name: HERE, kind: "sensor", inline: true, returns: "Spot", label: "here" }],
     },
@@ -142,13 +147,21 @@ describe("binding a catalog type's variable factory", () => {
     assert.ok(!offered.includes(mkVariableFactoryTileId(PLAIN_TYPE)));
   });
 
-  it("names a type with a variable factory by its factory's label in the brain editor's config, and any other type by its name", () => {
+  it("names a type with a variable factory by its factory's label in the brain editor's config, any other type by its label, and one carrying none by its name", () => {
     const built = bound();
-    const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.packLiterals, built.typeIcons);
+    const config = buildBrainEditorConfig(
+      built.environment,
+      new Map(),
+      new Map(),
+      built.packLiterals,
+      built.typeIcons,
+      built.typeLabels
+    );
 
     assert.equal(config.dataTypeNames.get(SPOT_TYPE), factoryFor(built.environment, SPOT_TYPE)?.metadata?.label);
     assert.equal(config.dataTypeNames.get(POINT_TYPE), carriedType("Point").name);
     assert.equal(config.dataTypeNames.get(PLAIN_TYPE), carriedType("Plain").name);
+    assert.equal(config.dataTypeNames.get(BADGE_TYPE), carriedType("Badge").label);
   });
 
   it("compiles a minted variable assigned the inline sensor's result, its slot starting with no value", () => {

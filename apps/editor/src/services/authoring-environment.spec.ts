@@ -304,6 +304,29 @@ const TYPE_ICON_CATALOG = JSON.stringify({
   ],
 });
 
+/**
+ * A catalog in the rendered form the simx publishes whose types carry
+ * labels: `Bell` in the first pack and again in the second, under another
+ * label, `Broken`, whose field names a type no pack declares, and `Plain`,
+ * carrying no label.
+ */
+const TYPE_LABEL_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "bells",
+      types: [
+        { name: "Bell", fields: [{ name: "pitch", type: "number" }], label: "bell" },
+        { name: "Broken", fields: [{ name: "part", type: "Nowhere" }], label: "broken" },
+        { name: "Plain", fields: [{ name: "n", type: "number" }] },
+      ],
+    },
+    {
+      name: "chimes",
+      types: [{ name: "Bell", fields: [{ name: "pitch", type: "number" }], label: "chime" }],
+    },
+  ],
+});
+
 /** Icons the core type icon catalog's packs give core types, each a distinct data URI. */
 const CORE_TYPE_ICONS = {
   number: "data:image/svg+xml;base64,bnVtYmVy",
@@ -556,6 +579,16 @@ describe("buildAuthoringEnvironment", () => {
 
   it("binds no type icon while no allocation is held", () => {
     assert.equal(buildAuthoringEnvironment(TYPE_ICON_CATALOG, undefined).typeIcons.size, 0);
+  });
+
+  it("binds each bound type's label to the type, the first declaration of a name standing, an unbound type's label to nothing", () => {
+    const { typeLabels } = buildAuthoringEnvironment(TYPE_LABEL_CATALOG, emptyIdManifest());
+
+    assert.deepEqual([...typeLabels], [[mkTypeId(NativeType.Struct, "Bell"), "bell"]]);
+  });
+
+  it("binds no type label while no allocation is held", () => {
+    assert.equal(buildAuthoringEnvironment(TYPE_LABEL_CATALOG, undefined).typeLabels.size, 0);
   });
 
   it("binds each core type icon to the core type, the first icon given a type standing across packs", () => {

@@ -264,6 +264,9 @@ const ARCADE_SOURCES = [
   "score-watch.src.json",
   "score-watch-two.src.json",
   "dpad-two.src.json",
+  "game-over-unset.src.json",
+  "ending-lose.src.json",
+  "ending-player.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -292,6 +295,17 @@ const UNMAPPED_ATOM_PROGRAM_ID = "unmappedType0001";
 
 /** First id the allocations of the unmapped-id programs hand out: beyond every id the arcade selftest's allocation holds. */
 const UNMAPPED_ID_BASE = 1100;
+
+/**
+ * The arcade selftest's program source compiled against the arcade
+ * selftest's catalog with its `Effect` and `Sound` literals holding the names
+ * in {@link UNHELD_CHOICE_NAMES}, as a program compiled against a pack
+ * declaring effects and sounds this pack does not hold would be.
+ */
+const UNHELD_CHOICE_SOURCE = "ending-win.src.json";
+
+/** The name each literal of the type keyed holds in the catalog {@link UNHELD_CHOICE_SOURCE} is compiled against: one Arcade holds no effect or melody under. */
+const UNHELD_CHOICE_NAMES: Readonly<Record<string, string>> = { Effect: "sparkle", Sound: "fanfare" };
 
 /**
  * The project allocation the arcade selftest's catalog is allocated against:
@@ -496,8 +510,9 @@ function arcadeEnvironment(): ReturnType<typeof buildAuthoringEnvironment>["envi
 /**
  * The arcade selftest's programs: the registration selftest's ticker and
  * twins, the arcade selftest's own programs, each asset and brain literal
- * they place bound from its reference, the two programs the loader refuses, and the two
- * programs referencing ids the arcade selftest's allocation does not hold.
+ * they place bound from its reference, the two programs the loader refuses, the two
+ * programs referencing ids the arcade selftest's allocation does not hold,
+ * and the program whose effect and sound literals name nothing Arcade holds.
  */
 function arcadePrograms(): SelftestProgram[] {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
@@ -513,7 +528,37 @@ function arcadePrograms(): SelftestProgram[] {
     ...paths.map((path) => compiledProgram(built.environment, path)),
     ...refusedPrograms(),
     ...unmappedIdPrograms(),
+    unheldChoiceProgram(),
   ];
+}
+
+/**
+ * The arcade selftest's catalog with every field value of every literal of a
+ * type {@link UNHELD_CHOICE_NAMES} keys replaced by the name it gives that
+ * type.
+ */
+function unheldChoiceCatalog(): string {
+  const catalog = JSON.parse(arcadeCatalog()) as {
+    packs: { types?: { name: string; literals?: { fields?: { value: object }[] }[] }[] }[];
+  };
+  for (const type of catalog.packs.flatMap((pack) => pack.types ?? [])) {
+    const name = UNHELD_CHOICE_NAMES[type.name];
+    if (name === undefined) continue;
+    for (const field of (type.literals ?? []).flatMap((literal) => literal.fields ?? [])) {
+      field.value = { ...field.value, v: name };
+    }
+  }
+  return JSON.stringify(catalog);
+}
+
+/**
+ * The program compiled from {@link UNHELD_CHOICE_SOURCE} in the environment
+ * binding {@link unheldChoiceCatalog} under the arcade selftest's allocation.
+ * Throws when the source does not compile clean.
+ */
+function unheldChoiceProgram(): SelftestProgram {
+  const { environment } = buildAuthoringEnvironment(unheldChoiceCatalog(), arcadeIds());
+  return compiledProgram(environment, `${ARCADE_SOURCES_DIR}/${UNHELD_CHOICE_SOURCE}`);
 }
 
 /**
@@ -1358,29 +1403,39 @@ export function arcadeVariableFaces(): {
 }
 
 /**
- * Each type of the arcade selftest's catalog carrying a label and marked
- * `variableFactory`, beside that label, the label of the variable factory the
- * environment binding the catalog under its allocation binds for it, and the
- * name the brain editor's config built from that environment calls it by.
+ * Each type of the arcade selftest's catalog carrying a label, beside that
+ * label, whether the catalog marks it `variableFactory`, the label of the
+ * variable factory the environment binding the catalog under its allocation
+ * binds for it -- `undefined` where it binds none -- and the name the brain
+ * editor's config built from that environment calls it by.
  */
 export function arcadeTypeNames(): {
   name: string;
   carried: string;
+  variableFactory: boolean;
   factoryLabel: string | undefined;
   named: string | undefined;
 }[] {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
-  const config = buildBrainEditorConfig(built.environment, new Map(), new Map(), built.packLiterals, built.typeIcons);
+  const config = buildBrainEditorConfig(
+    built.environment,
+    new Map(),
+    new Map(),
+    built.packLiterals,
+    built.typeIcons,
+    built.typeLabels
+  );
   const tiles = built.environment.brainServices.edit.tiles;
   return parseCatalog(arcadeCatalog())
     .packs.flatMap((pack) => pack.types)
     .flatMap((type) => {
-      if (type.label === undefined || !type.variableFactory) return [];
+      if (type.label === undefined) return [];
       const typeId = mkTypeId(NativeType.Struct, type.name);
       return [
         {
           name: type.name,
           carried: type.label,
+          variableFactory: type.variableFactory === true,
           factoryLabel: tiles.get(mkVariableFactoryTileId(typeId))?.metadata?.label,
           named: config.dataTypeNames.get(typeId),
         },

@@ -274,7 +274,8 @@ describe("pack literals", () => {
       built.assetLiterals.view,
       built.brainLiterals.view,
       built.packLiterals,
-      built.typeIcons
+      built.typeIcons,
+      built.typeLabels
     );
 
     for (const tileId of [RED, GREEN]) {

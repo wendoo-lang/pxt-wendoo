@@ -73,7 +73,8 @@ describe("BrainEditorSession", () => {
         store.getSnapshot().assetLiterals,
         store.getSnapshot().brainLiterals,
         store.getSnapshot().packLiterals,
-        store.getSnapshot().typeIcons
+        store.getSnapshot().typeIcons,
+        store.getSnapshot().typeLabels
       ),
       editing,
       isOpen: true,

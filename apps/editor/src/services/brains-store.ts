@@ -156,6 +156,8 @@ export interface BrainsViewState {
   readonly brainLiterals: ReadonlyMap<string, BrainLiteral>;
   /** The environment's type icons, keyed by type id, as {@link AuthoringEnvironment.typeIcons} holds them. */
   readonly typeIcons: ReadonlyMap<TypeId, string>;
+  /** The environment's type labels, keyed by type id, as {@link AuthoringEnvironment.typeLabels} holds them. */
+  readonly typeLabels: ReadonlyMap<TypeId, string>;
   /** The environment's page icon, as {@link AuthoringEnvironment.pageIcon} holds it. */
   readonly pageIcon: string | undefined;
   /** The environment's pack literals, keyed by tile id, as {@link AuthoringEnvironment.packLiterals} holds them. */
@@ -897,6 +899,7 @@ export class BrainsStore {
       unresolvedAssets: this.unresolvedAssets(),
       brainLiterals: this._environment.brainLiterals.view,
       typeIcons: this._environment.typeIcons,
+      typeLabels: this._environment.typeLabels,
       pageIcon: this._environment.pageIcon,
       packLiterals: this._environment.packLiterals,
       typePages: this._environment.typePages,

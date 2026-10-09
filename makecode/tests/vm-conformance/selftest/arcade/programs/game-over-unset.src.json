@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "id": "gameOverUnset001",
+  "name": "Unset ending",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0gameOverUnst",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "winner",
+      "varType": "struct:<Player>",
+      "uniqueId": "fVr0endPlayer000"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "flourish",
+      "varType": "struct:<Effect>",
+      "uniqueId": "fVr0endEffect000"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "jingle",
+      "varType": "struct:<Sound>",
+      "uniqueId": "fVr0endSound0000"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0gameOverUnst",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.modifier->modifier.outcome.win",
+            "tile.var->fVr0endPlayer000"
+          ],
+          "children": [],
+          "ruleId": "fRu0gameOverUns0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.var->fVr0endEffect000"
+          ],
+          "children": [],
+          "ruleId": "fRu0gameOverUns1"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.var->fVr0endSound0000"
+          ],
+          "children": [],
+          "ruleId": "fRu0gameOverUns2"
+        }
+      ]
+    }
+  ]
+}

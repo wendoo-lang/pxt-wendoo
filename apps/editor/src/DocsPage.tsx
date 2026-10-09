@@ -15,7 +15,7 @@ export function DocsPage() {
   const environment = useMemo(() => buildAuthoringEnvironment(undefined).environment, []);
   const docsRegistry = useMemo(() => createEditorDocsRegistry(environment, new Set()), [environment]);
   const docsTileCatalog = useMemo(() => createDocsTileCatalog(environment), [environment]);
-  const docsDataTypeNames = useMemo(() => registeredTypeNames(environment), [environment]);
+  const docsDataTypeNames = useMemo(() => registeredTypeNames(environment, new Map()), [environment]);
   const resolveTileVisual = useMemo(
     () => createTileVisualProvider(environment.tileCatalogs(), new Map(), new Map()),
     [environment]

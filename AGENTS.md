@@ -435,7 +435,8 @@ the current slice alone.
       a sprite's image instead wraps that image object itself, its asset id
       reading empty), the pack's docs pages (one markdown page per
       documented tile or output under `docs/content/en/tiles/`, per
-      documented struct type -- `Vector2`, `Sprite` and `Player` -- under
+      documented struct type -- `Vector2`, `Sprite`, `Player`, `Effect` and
+      `Sound` -- under
       `docs/content/en/types/`, and per documented accessor under
       `docs/content/en/accessors/`, each named `<key>.md` by its key -- a
       tile's or type's name, `output.<name>` for an output, and
@@ -465,7 +466,15 @@ the current slice alone.
       nothing until a write sets it, and any read or write of player two's,
       three's or four's switches to the multiplayer display; a write of a
       finite number takes Arcade's whole-number truncation, and one holding
-      no finite number changes nothing and is logged once per run), the core equality and
+      no finite number changes nothing and is logged once per run), the
+      `Effect` and `Sound` types (plain structs each naming one of Arcade's
+      own screen effects or built-in melodies by the name Arcade's API gives
+      it, in one read-only string `name` field, looked up when a tile uses
+      the value and never baked into a program; the effects Arcade's
+      game-over blocks offer and the melodies its sound blocks offer each a
+      declared literal keyed by that name and labelled in Arcade's block
+      wording, and no variable factory; a value naming nothing Arcade holds
+      reads as none and is logged once per run), the core equality and
       inequality operators' overloads over two images (equal when they have
       the same pixels, whichever image objects they are; an image no
       factory holds, or a value naming no image, equals nothing), two
@@ -484,7 +493,7 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite`, `Brain` and `Player` types, the variable factory flag and editor
+      `Sprite`, `Brain`, `Player`, `Effect` and `Sound` types, the variable factory flag and editor
       label (`position`, `sprite`) of its `Vector2` and `Sprite` types (a
       `Vector2` variable holds the point written to it -- the store's
       deep copy is the snapshot; a `Sprite` variable holds the sprite
@@ -511,12 +520,20 @@ the current slice alone.
       wandering move's random on-screen destination, kept per call site in
       the sprite's attachment, its re-picks on arrival or deadline, and the random
       source picking it), the `dpad`, `bump`, `in range`, `out of range`
-      and `myself` sensors and the `move` and `add score` actuators (dpad
+      and `myself` sensors and the `move`, `add score` and `game over`
+      actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
       reading player one's too; add score adds its optional anonymous
       number, else 1, to the score of its optional anonymous `Player`, else
-      player one's, the two in either order; `myself` reads the
+      player one's, the two in either order; game over ends the game through
+      Arcade's own game over -- as a loss, as a win given its `win` modifier,
+      and as that player's win given its optional anonymous `Player`, whatever
+      `win` or `lose` says -- first making its optional anonymous `Effect` and
+      `Sound` those of the outcome it ends the game with, an absent one or one
+      naming nothing leaving that outcome's own, its modifier and three values
+      in any order; Arcade ends a game once, so only the first frame its rule
+      fires ends anything; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,
@@ -669,8 +686,9 @@ the current slice alone.
     type to that core type, the first icon given standing and an icon
     given a name that is no core type reported; every type icon bound is
     the brain editor's data-type icon for that type, which every variable
-    tile of the type carrying no icon of its own wears; a type's variable
-    factory label is the brain editor's name for that type; the one
+    tile of the type carrying no icon of its own wears; the brain editor
+    names a type by its variable factory's label, else by the label its
+    catalog entry carries, else by its name; the one
     target-aware residue is the per-target theme
     record (the target's display name, theme token overrides and tile
     colors), keyed by the target id carried in the session hello. Tripwire: this holds because

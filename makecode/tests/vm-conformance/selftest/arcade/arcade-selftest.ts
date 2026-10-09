@@ -8,14 +8,15 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * bump, in-range, out-of-range, myself, move and add-score tiles, its player
- * literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
+ * bump, in-range, out-of-range, myself, move, add-score and game-over tiles,
+ * its player literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
  * pressing the controllers' buttons, placing and moving sprites and setting
  * scores from game code, and programs updated while the game runs, through
  * the messages the Wendoo simulator extension posts. It also calls the
  * bump, in-range, out-of-range, myself, dpad and add-score tiles' bodies and
  * the `Sprite` and `Player` types' field hooks directly with image asset,
- * sprite, brain and player values, images resolved through an image factory
+ * sprite, brain and player values, the `Effect` and `Sound` types' bindings
+ * with each of their literals, images resolved through an image factory
  * registered the way a project's images module registers one, and the move
  * tile's body with sprite and point targets and with wander destinations
  * picked from random sources it scripts.
@@ -4300,6 +4301,201 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** Wendoo type name of the `Effect` type. */
+  const EFFECT_TYPE = "Effect";
+
+  /** Wendoo type name of the `Sound` type. */
+  const SOUND_TYPE = "Sound";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Effect` type. */
+  const EFFECT_ATOM = 1029;
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Sound` type. */
+  const SOUND_ATOM = 1030;
+
+  /** The names Arcade's API gives the screen effects its game-over blocks offer, in the order they offer them. */
+  const ARCADE_EFFECT_NAMES = [
+    "confetti",
+    "hearts",
+    "smiles",
+    "blizzard",
+    "bubbles",
+    "starField",
+    "clouds",
+    "none",
+    "dissolve",
+    "melt",
+    "slash",
+    "splatter",
+  ];
+
+  /** Arcade's screen effect each name in {@link ARCADE_EFFECT_NAMES} names, at its position. */
+  function arcadeEffects(): effects.BackgroundEffect[] {
+    return [
+      effects.confetti,
+      effects.hearts,
+      effects.smiles,
+      effects.blizzard,
+      effects.bubbles,
+      effects.starField,
+      effects.clouds,
+      effects.none,
+      effects.dissolve,
+      effects.melt,
+      effects.slash,
+      effects.splatter,
+    ];
+  }
+
+  /** The names Arcade's API gives the built-in melodies its sound blocks offer, in the order they offer them. */
+  const ARCADE_MELODY_NAMES = [
+    "baDing",
+    "wawawawaa",
+    "jumpUp",
+    "jumpDown",
+    "powerUp",
+    "powerDown",
+    "magicWand",
+    "siren",
+    "pewPew",
+    "knock",
+    "footstep",
+    "thump",
+    "smallCrash",
+    "bigCrash",
+    "zapped",
+    "buzzer",
+    "sonar",
+    "spooky",
+    "beamUp",
+  ];
+
+  /** Arcade's built-in melody each name in {@link ARCADE_MELODY_NAMES} names, at its position. */
+  function arcadeMelodies(): music.Melody[] {
+    return [
+      music.baDing,
+      music.wawawawaa,
+      music.jumpUp,
+      music.jumpDown,
+      music.powerUp,
+      music.powerDown,
+      music.magicWand,
+      music.siren,
+      music.pewPew,
+      music.knock,
+      music.footstep,
+      music.thump,
+      music.smallCrash,
+      music.bigCrash,
+      music.zapped,
+      music.buzzer,
+      music.sonar,
+      music.spooky,
+      music.beamUp,
+    ];
+  }
+
+  /** The value of the type `type` a program compiled with the literal `literal` holds: its field values at the ids the project's ids module gives them. */
+  function literalValue(type: string, literal: wendoo.TypeLiteral): wendoo.Value {
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i < literal.fields.length; i++) {
+      const fieldId = wendoo.projectIds().fieldId(type, literal.fields[i].name);
+      while (slots.length <= fieldId) {
+        slots.push(wendoo.NIL_VALUE);
+      }
+      slots[fieldId] = literal.fields[i].value;
+    }
+    return wendoo.mkStruct(wendoo.structTypeId(type), slots);
+  }
+
+  /** Whether `literals` are keyed by `names`, in order, and each holds its key in its `name` field alone. */
+  function keyedByName(literals: wendoo.TypeLiteral[], names: string[]): boolean {
+    if (literals.length !== names.length) {
+      return false;
+    }
+    for (let i = 0; i < literals.length; i++) {
+      const fields = literals[i].fields;
+      const holds = fields.length === 1 && fields[0].name === "name" && fields[0].value.str === names[i];
+      if (literals[i].key !== names[i] || !holds) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Check the `Effect` and `Sound` types through their bindings: each takes
+   * its atom and its one field from the project's ids module; the `Effect`
+   * type declares one literal per screen effect Arcade's game-over blocks
+   * offer and the `Sound` type one per melody its sound blocks offer, each
+   * keyed by the name Arcade's API gives it and holding that name; each
+   * literal's value names the Arcade object of that name; and an empty slot
+   * names nothing. None of it logs a value naming nothing.
+   */
+  function checkEndingChoices(): void {
+    const ids = wendoo.projectIds();
+    check(
+      "effect-and-sound-types-take-their-atoms-and-fields-from-the-manifest",
+      wendoo.effectBinding.atomId === EFFECT_ATOM &&
+        wendoo.effectBinding.typeId === wendoo.structTypeId(EFFECT_TYPE) &&
+        wendoo.effectBinding.fieldIds.length === 1 &&
+        wendoo.effectBinding.fieldIds[0] === ids.fieldId(EFFECT_TYPE, "name") &&
+        wendoo.soundBinding.atomId === SOUND_ATOM &&
+        wendoo.soundBinding.typeId === wendoo.structTypeId(SOUND_TYPE) &&
+        wendoo.soundBinding.fieldIds.length === 1 &&
+        wendoo.soundBinding.fieldIds[0] === ids.fieldId(SOUND_TYPE, "name")
+    );
+
+    const effectLiterals = wendoo.effectLiterals();
+    const expectedEffects = arcadeEffects();
+    let effectsNamed = keyedByName(effectLiterals, ARCADE_EFFECT_NAMES);
+    for (let i = 0; effectsNamed && i < effectLiterals.length; i++) {
+      effectsNamed = wendoo.effectBinding.effectOf(literalValue(EFFECT_TYPE, effectLiterals[i])) === expectedEffects[i];
+    }
+    check(
+      "each-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-effect-slot-names-none",
+      effectsNamed &&
+        wendoo.effectBinding.effectOf(wendoo.NIL_VALUE) === undefined &&
+        wendoo.effectBinding.effectOf(undefined) === undefined
+    );
+
+    const soundLiterals = wendoo.soundLiterals();
+    const expectedMelodies = arcadeMelodies();
+    let soundsNamed = keyedByName(soundLiterals, ARCADE_MELODY_NAMES);
+    for (let i = 0; soundsNamed && i < soundLiterals.length; i++) {
+      soundsNamed = wendoo.soundBinding.melodyOf(literalValue(SOUND_TYPE, soundLiterals[i])) === expectedMelodies[i];
+    }
+    check(
+      "each-sound-literal-names-the-arcade-melody-of-its-key-and-an-empty-sound-slot-names-none",
+      soundsNamed &&
+        wendoo.soundBinding.melodyOf(wendoo.NIL_VALUE) === undefined &&
+        wendoo.soundBinding.melodyOf(undefined) === undefined
+    );
+  }
+
+  /**
+   * In a scene of its own, with game code handling game over, check that a
+   * program whose game-over rules each place a player, an effect or a sound
+   * that reads nothing -- a variable never written -- runs, and ends no
+   * game and sets no effect or sound: placing a value that reads nothing
+   * leaves the action undone.
+   */
+  function checkGameOverGates(): void {
+    game.pushScene();
+    let endings = 0;
+    game.onGameOver((win: boolean) => {
+      endings++;
+    });
+    const unset = spriteRunning(wendooBrains.p_gameOverUnset001);
+    pause(FRAMES_MS);
+    const config = game.gameOverConfig();
+    check(
+      "a-game-over-given-a-player-effect-or-sound-that-reads-nothing-does-not-run",
+      ticksOf(unset) > 0 && endings === 0 && !config.effectSetByUser && !config.soundSetByUser
+    );
+    game.popScene();
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -4575,7 +4771,8 @@ namespace arcadeSelftest {
    * the move's toward and away carry, the move's wander, its speed limit,
    * move smoothing, non-finite motion, the equality operators, the operators
    * over `Vector2`s, programs holding variables, players' scores and dpads,
-   * and the arcade icon encoder.
+   * the effects and sounds a game over takes, the game over's gate on a
+   * placed value reading nothing, and the arcade icon encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -4655,6 +4852,8 @@ namespace arcadeSelftest {
     checkPlayerScores();
     checkScorePrograms();
     checkPlayerDpad();
+    checkEndingChoices();
+    checkGameOverGates();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

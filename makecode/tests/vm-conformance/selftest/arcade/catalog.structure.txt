@@ -22,6 +22,72 @@ pack arcade
       value number {"t":3,"v":3}
     literal 4
       value number {"t":3,"v":4}
+  type Effect icon
+    field name string readOnly
+    literal confetti
+      value name {"t":4,"v":"confetti"}
+    literal hearts
+      value name {"t":4,"v":"hearts"}
+    literal smiles
+      value name {"t":4,"v":"smiles"}
+    literal blizzard
+      value name {"t":4,"v":"blizzard"}
+    literal bubbles
+      value name {"t":4,"v":"bubbles"}
+    literal starField
+      value name {"t":4,"v":"starField"}
+    literal clouds
+      value name {"t":4,"v":"clouds"}
+    literal none
+      value name {"t":4,"v":"none"}
+    literal dissolve
+      value name {"t":4,"v":"dissolve"}
+    literal melt
+      value name {"t":4,"v":"melt"}
+    literal slash
+      value name {"t":4,"v":"slash"}
+    literal splatter
+      value name {"t":4,"v":"splatter"}
+  type Sound icon
+    field name string readOnly
+    literal baDing
+      value name {"t":4,"v":"baDing"}
+    literal wawawawaa
+      value name {"t":4,"v":"wawawawaa"}
+    literal jumpUp
+      value name {"t":4,"v":"jumpUp"}
+    literal jumpDown
+      value name {"t":4,"v":"jumpDown"}
+    literal powerUp
+      value name {"t":4,"v":"powerUp"}
+    literal powerDown
+      value name {"t":4,"v":"powerDown"}
+    literal magicWand
+      value name {"t":4,"v":"magicWand"}
+    literal siren
+      value name {"t":4,"v":"siren"}
+    literal pewPew
+      value name {"t":4,"v":"pewPew"}
+    literal knock
+      value name {"t":4,"v":"knock"}
+    literal footstep
+      value name {"t":4,"v":"footstep"}
+    literal thump
+      value name {"t":4,"v":"thump"}
+    literal smallCrash
+      value name {"t":4,"v":"smallCrash"}
+    literal bigCrash
+      value name {"t":4,"v":"bigCrash"}
+    literal zapped
+      value name {"t":4,"v":"zapped"}
+    literal buzzer
+      value name {"t":4,"v":"buzzer"}
+    literal sonar
+      value name {"t":4,"v":"sonar"}
+    literal spooky
+      value name {"t":4,"v":"spooky"}
+    literal beamUp
+      value name {"t":4,"v":"beamUp"}
   tile sensor sensor.arcade.dpad returns=Vector2 icon
     args
       arg modifier.direction.up optional modifier icon
@@ -135,6 +201,21 @@ pack arcade
               arg anon.number type=number anonymous
             optional
               arg anon.Player type=Player anonymous
+  tile actuator actuator.arcade.game-over icon
+    call
+      optional
+        choice
+          bag
+            optional
+              choice
+                arg modifier.outcome.win modifier icon
+                arg modifier.outcome.lose modifier icon
+            optional
+              arg anon.Player type=Player anonymous
+            optional
+              arg anon.Effect type=Effect anonymous
+            optional
+              arg anon.Sound type=Sound anonymous
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

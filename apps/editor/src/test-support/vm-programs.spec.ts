@@ -307,7 +307,9 @@ describe("the MakeCode VM extension's compiled programs", () => {
 
     assert.deepEqual(icons.map((icon) => icon.name).sort(), [
       "Brain",
+      "Effect",
       "Player",
+      "Sound",
       "Sprite",
       "Vector2",
       "boolean",
@@ -634,6 +636,8 @@ describe("the MakeCode VM extension's compiled programs", () => {
       { name: "Image", produces: undefined },
       { name: "Brain", produces: undefined },
       { name: "Player", produces: undefined },
+      { name: "Effect", produces: undefined },
+      { name: "Sound", produces: undefined },
     ]);
   });
 
@@ -659,15 +663,21 @@ describe("the MakeCode VM extension's compiled programs", () => {
     }
   });
 
-  it("names the Sprite and Vector2 types by the labels their catalog entries carry, on their factories and in the editor's config", () => {
+  it("names each labelled type by the label its catalog entry carries in the editor's config, and on its factory where it has one", () => {
     const names = arcadeTypeNames();
 
     assert.deepEqual(
-      names.map((entry) => entry.name),
-      ["Vector2", "Sprite"]
+      names.map((entry) => [entry.name, entry.variableFactory]),
+      [
+        ["Vector2", true],
+        ["Sprite", true],
+        ["Player", false],
+        ["Effect", false],
+        ["Sound", false],
+      ]
     );
     for (const entry of names) {
-      assert.equal(entry.factoryLabel, entry.carried, entry.name);
+      assert.equal(entry.factoryLabel, entry.variableFactory ? entry.carried : undefined, entry.name);
       assert.equal(entry.named, entry.carried, entry.name);
     }
   });
@@ -775,5 +785,47 @@ describe("the MakeCode VM extension's compiled programs", () => {
         ParseDiagCode.ReadOnlyResultFieldAssignment
       )
     );
+  });
+
+  const gameOver = "actuator.arcade.game-over";
+  const win = `${MODIFIER_ENTRY_PREFIX}outcome.win`;
+  const lose = `${MODIFIER_ENTRY_PREFIX}outcome.lose`;
+  const confetti = `${LITERAL_ENTRY_PREFIX}Effect.confetti`;
+  const hearts = `${LITERAL_ENTRY_PREFIX}Effect.hearts`;
+  const powerUp = `${LITERAL_ENTRY_PREFIX}Sound.powerUp`;
+  const jumpUp = `${LITERAL_ENTRY_PREFIX}Sound.jumpUp`;
+
+  it("offers an effect, a sound and a player at game over, and a sound after an effect and win", () => {
+    assert.ok(arcadeOffersLiteral(confetti, [], [gameOver]));
+    assert.ok(arcadeOffersLiteral(powerUp, [], [gameOver]));
+    assert.ok(arcadeOffersLiteral(playerTwo, [], [gameOver]));
+    assert.ok(arcadeOffersLiteral(powerUp, [], [gameOver, confetti, win]));
+  });
+
+  for (const [sentence, act] of [
+    ["a bare game over", [gameOver]],
+    ["game over given win", [gameOver, win]],
+    ["game over given lose, a player, an effect and a sound", [gameOver, lose, playerTwo, confetti, powerUp]],
+    ["game over given a sound, win, then an effect", [gameOver, powerUp, win, confetti]],
+    ["game over given an effect, a player, then lose", [gameOver, confetti, playerTwo, lose]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [...act]), []);
+    });
+  }
+
+  it("refuses game over given both win and lose, two effects, two sounds or two players", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [gameOver, win, lose],
+      [gameOver, confetti, hearts],
+      [gameOver, powerUp, jumpUp],
+      [gameOver, playerTwo, playerOne],
+    ]) {
+      assert.ok(
+        arcadeImageRuleDiagnosticCodes([], act).includes(ParseDiagCode.UnexpectedExpressionAfterExpression),
+        act.join(" ")
+      );
+    }
   });
 });

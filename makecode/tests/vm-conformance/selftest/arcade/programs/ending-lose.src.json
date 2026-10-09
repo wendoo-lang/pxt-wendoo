@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "endingLoseBare01",
+  "name": "Lose",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0endingLose01",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0endingLose01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over"
+          ],
+          "children": [],
+          "ruleId": "fRu0endingLose01"
+        }
+      ]
+    }
+  ]
+}

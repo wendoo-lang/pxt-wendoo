@@ -3,8 +3,9 @@
  * read-only accessors, the `Sprite` type, its `image`, `position`,
  * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain`
  * type, the `Player` type with its four literals and its `score` accessor,
- * the `dpad`, `bump`, `in range`, `out of range` and `myself` sensors, the
- * `move` and `add score` actuators, the core equality and inequality
+ * the `Effect` and `Sound` types with their literals, the `dpad`, `bump`,
+ * `in range`, `out of range` and `myself` sensors, the `move`, `add score`
+ * and `game over` actuators, the core equality and inequality
  * operators' overloads over two images, two sprites, two brains and two
  * `Vector2`s, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
@@ -12,8 +13,8 @@
  * this file's top-level code at program start, `Vector2` and `Sprite` each
  * with the label the editor calls it by and a variable factory. In the
  * simulator only, {@link attachArcadeBaseIcons} gives each tile, modifier
- * tile, output and accessor its icon and the `Vector2`, `Sprite`, `Brain`
- * and `Player` types theirs, and gives icons to the core tiles (the page
+ * tile, output and accessor its icon and the `Vector2`, `Sprite`, `Brain`,
+ * `Player`, `Effect` and `Sound` types theirs, and gives icons to the core tiles (the page
  * tiles, the
  * timer, AND, OR, NOT, the six comparisons, the arithmetic operators, gets,
  * the parentheses, random number, true, false, nil, and the variable and
@@ -118,6 +119,12 @@
  * - `DO [add score]` adds 1 to player one's score; given a number, it adds
  *   that number, a negative number taking it away, and given a player, it
  *   changes that player's score: `DO [add score] 5 [player two]`.
+ * - `DO [game over]` ends the game through Arcade's own game over, as a loss;
+ *   given `win`, as a win; and given a player, as that player's win, whatever
+ *   `win` or `lose` says. Given an effect, such as `[confetti]`, or a sound,
+ *   such as `[power up]`, the outcome it ends the game with shows that effect
+ *   and plays that sound, and otherwise keeps the ones it has. Arcade ends a
+ *   game once: `DO [game over] [win] [hearts]` ends it as a win with hearts.
  * - A brain may hold variables of the `Vector2` and `Sprite` types. A
  *   variable never written reads nil. A `Vector2` variable holds the point
  *   written to it, whatever happens after: `DO [$home] [=] [myself][position]`
@@ -158,6 +165,10 @@ namespace wendoo {
   /** Tile name of the add-score actuator. */
   //% hidden
   export const ADD_SCORE_TILE = "actuator.arcade.add-score";
+
+  /** Tile name of the game-over actuator. */
+  //% hidden
+  export const GAME_OVER_TILE = "actuator.arcade.game-over";
 
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
@@ -207,6 +218,17 @@ namespace wendoo {
   /** Argument-buffer positions of the add-score actuator's amount and player. */
   const ADD_SCORE_SLOT_AMOUNT = 0;
   const ADD_SCORE_SLOT_PLAYER = 1;
+
+  /**
+   * Argument-buffer positions of the game-over actuator's `win` modifier, its
+   * player, its effect and its sound. Its `lose` modifier fills the position
+   * between `win` and the player, which the actuator does not read: a game
+   * over not won is lost.
+   */
+  const GAME_OVER_SLOT_WIN = 0;
+  const GAME_OVER_SLOT_PLAYER = 2;
+  const GAME_OVER_SLOT_EFFECT = 3;
+  const GAME_OVER_SLOT_SOUND = 4;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -554,6 +576,43 @@ namespace wendoo {
     }
   }
 
+  /**
+   * `actuator.arcade.game-over`: ends the game through Arcade's own game
+   * over. Given a player, that player wins, as `game.gameOverPlayerWin` ends
+   * the game, whatever its `win` or `lose` says; else the game is won given
+   * `win`, as `game.gameOver(true)` ends it, and lost otherwise, as
+   * `game.gameOver(false)` does. Given an effect or a sound naming one of
+   * Arcade's, it first makes it the effect or sound of the outcome it ends
+   * the game with; given none, or one naming nothing, as
+   * {@link EffectBinding.effectOf} and {@link SoundBinding.melodyOf} read
+   * them, that outcome keeps the one it has. Arcade ends a game once: a game
+   * over after the first sets the effect and sound and ends nothing.
+   */
+  class GameOverActuator extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const player = playerNumberOf(args[GAME_OVER_SLOT_PLAYER]);
+      const win = player > 0 || isFilled(args, GAME_OVER_SLOT_WIN);
+      const effect = effectBinding.effectOf(args[GAME_OVER_SLOT_EFFECT]);
+      const melody = soundBinding.melodyOf(args[GAME_OVER_SLOT_SOUND]);
+      if (effect) {
+        game.setGameOverEffect(win, effect);
+      }
+      if (melody) {
+        game.setGameOverPlayable(win, music.melodyPlayable(melody), false);
+      }
+      if (player > 0) {
+        game.gameOverPlayerWin(player);
+      } else {
+        game.gameOver(win);
+      }
+      return VOID_VALUE;
+    }
+  }
+
   /** `sensor.arcade.myself`: the `Sprite` value standing for the program's own sprite. */
   class MyselfSensor extends HostActionBinding {
     constructor() {
@@ -811,6 +870,27 @@ namespace wendoo {
     return [optional(choice([bag([optional(anonymousArg(TYPE_NUMBER)), optional(anonymousArg(TYPE_PLAYER))])]))];
   }
 
+  /**
+   * The argument grammar the game-over actuator declares: an optional choice
+   * of `win` or `lose`, an optional player, an optional effect and an
+   * optional sound, in any order, each anonymous value filling the slot of
+   * its type.
+   */
+  function gameOverArgs(): TileArgSpec[] {
+    return [
+      optional(
+        choice([
+          bag([
+            optional(choice([modifier("modifier.outcome.win", "win"), modifier("modifier.outcome.lose", "lose")])),
+            optional(anonymousArg(TYPE_PLAYER)),
+            optional(anonymousArg(TYPE_EFFECT)),
+            optional(anonymousArg(TYPE_SOUND)),
+          ]),
+        ])
+      ),
+    ];
+  }
+
   /** The four optional direction modifier slots, up, down, left then right. */
   function directionModifiers(): TileArgSpec[] {
     return [
@@ -819,6 +899,17 @@ namespace wendoo {
       optional(modifier("modifier.direction.left")),
       optional(modifier("modifier.direction.right")),
     ];
+  }
+
+  /**
+   * Type metadata declaring the display label `label` the editor calls the
+   * type by, and the literals `literals`, in the order the editor offers them.
+   */
+  function literalTypeMeta(label: string, literals: TypeLiteral[]): TypeMeta {
+    const meta = new TypeMeta();
+    meta.label = label;
+    meta.literals = literals;
+    return meta;
   }
 
   /**
@@ -843,11 +934,13 @@ namespace wendoo {
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
   const brainMeta = new TypeMeta();
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);
-  const playerMeta = new TypeMeta();
-  playerMeta.label = "player";
-  playerMeta.literals = playerLiterals();
+  const playerMeta = literalTypeMeta("player", playerLiterals());
   const playerFieldSpecs = playerFields();
   arcadePack.defineStruct(TYPE_PLAYER, playerFieldSpecs, playerBinding, playerMeta);
+  const effectMeta = literalTypeMeta("effect", effectLiterals());
+  arcadePack.defineStruct(TYPE_EFFECT, namedChoiceFields(), effectBinding, effectMeta);
+  const soundMeta = literalTypeMeta("sound", soundLiterals());
+  arcadePack.defineStruct(TYPE_SOUND, namedChoiceFields(), soundBinding, soundMeta);
 
   const dpadSpec = new TileSpec(
     TILE_KIND_SENSOR,
@@ -924,6 +1017,10 @@ namespace wendoo {
   addScoreSpec.label = "add score";
   arcadePack.bind(ADD_SCORE_TILE, new AddScoreActuator(), addScoreSpec);
 
+  const gameOverSpec = new TileSpec(TILE_KIND_ACTUATOR, gameOverArgs(), "");
+  gameOverSpec.label = "game over";
+  arcadePack.bind(GAME_OVER_TILE, new GameOverActuator(), gameOverSpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -993,8 +1090,8 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, the modifier tiles filling their slots,
-   * its sensors' outputs, its `Vector2`, `Sprite`, `Brain` and `Player` types
-   * and their accessor tiles their icons, and give the core tiles and the core number,
+   * its sensors' outputs, its `Vector2`, `Sprite`, `Brain`, `Player`, `Effect`
+   * and `Sound` types and their accessor tiles their icons, and give the core tiles and the core number,
    * text and switch types the pack's icons for them. Call it once, after the
    * pack's registrations and before the catalog is first published. Does
    * nothing on hardware.
@@ -1012,6 +1109,8 @@ namespace wendoo {
     brainMeta.icon = brainTypeIcon();
     playerMeta.icon = playerTypeIcon();
     attachAccessorIcon(playerFieldSpecs, "score", scoreAccessorIcon());
+    effectMeta.icon = effectTypeIcon();
+    soundMeta.icon = soundTypeIcon();
     dpadSpec.icon = dpadIcon();
     moveSpec.icon = moveIcon();
     bumpSpec.icon = bumpIcon();
@@ -1022,7 +1121,8 @@ namespace wendoo {
     outOfRangeSpec.outputs[0].icon = outOfRangeIcon();
     myselfSpec.icon = myselfIcon();
     addScoreSpec.icon = addScoreIcon();
-    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec, addScoreSpec];
+    gameOverSpec.icon = gameOverIcon();
+    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec, addScoreSpec, gameOverSpec];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
     attachSlotIcon(tiles, "modifier.direction.left", leftIcon());
@@ -1036,6 +1136,8 @@ namespace wendoo {
     attachSlotIcon(tiles, "modifier.position.below", belowIcon());
     attachSlotIcon(tiles, "modifier.position.left", leftOfIcon());
     attachSlotIcon(tiles, "modifier.position.right", rightOfIcon());
+    attachSlotIcon(tiles, "modifier.outcome.win", winIcon());
+    attachSlotIcon(tiles, "modifier.outcome.lose", loseIcon());
 
     arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", coreOnPageEnteredIcon());
     arcadePack.defineCoreTileIcon("tile.actuator->switch-page", coreSwitchPageIcon());
@@ -1090,7 +1192,7 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, its sensors' outputs, its `Vector2`,
-   * `Sprite` and `Player` types and their accessor tiles the docs page {@link arcadeBaseDocs}
+   * `Sprite`, `Player`, `Effect` and `Sound` types and their accessor tiles the docs page {@link arcadeBaseDocs}
    * holds under the key it is wired to: a tile's or type's name, and
    * `output.<name>` or `accessor.<field>` for an output or an accessor, one
    * accessor page serving every field wired to it. Call it once, after the
@@ -1109,6 +1211,8 @@ namespace wendoo {
     attachAccessorDocs(spriteFieldSpecs, "moveSmoothing", "accessor.moveSmoothing");
     playerMeta.docs = arcadeBaseDocs(TYPE_PLAYER);
     attachAccessorDocs(playerFieldSpecs, "score", "accessor.score");
+    effectMeta.docs = arcadeBaseDocs(TYPE_EFFECT);
+    soundMeta.docs = arcadeBaseDocs(TYPE_SOUND);
     dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
     moveSpec.docs = arcadeBaseDocs(MOVE_TILE);
     bumpSpec.docs = arcadeBaseDocs(BUMP_TILE);
@@ -1119,6 +1223,7 @@ namespace wendoo {
     outOfRangeSpec.outputs[0].docs = arcadeBaseDocs("output.outOfRange");
     myselfSpec.docs = arcadeBaseDocs(MYSELF_TILE);
     addScoreSpec.docs = arcadeBaseDocs(ADD_SCORE_TILE);
+    gameOverSpec.docs = arcadeBaseDocs(GAME_OVER_TILE);
   }
 
   attachArcadeBaseIcons();

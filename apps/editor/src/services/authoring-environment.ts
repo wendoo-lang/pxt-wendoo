@@ -115,6 +115,12 @@ export interface AuthoringEnvironment {
    */
   readonly typeIcons: ReadonlyMap<TypeId, string>;
   /**
+   * The label of each catalog type the environment binds that carries one,
+   * the first declaration of a type name standing, keyed by type id. Empty
+   * while no id allocation is held.
+   */
+  readonly typeLabels: ReadonlyMap<TypeId, string>;
+  /**
    * The icon every page's own tile wears: the one packs give the page family
    * id, the first given standing. `undefined` while no pack gives one or no
    * id allocation is held.
@@ -135,6 +141,21 @@ function boundTypeIcons(environment: WendooEnvironment, packs: readonly CatalogP
     icons.set(typeId, type.iconUrl);
   }
   return icons;
+}
+
+/**
+ * The labels of `packs`' types that `environment` registers, keyed by type
+ * id, the first declaration of a type name carrying a label standing.
+ */
+function boundTypeLabels(environment: WendooEnvironment, packs: readonly CatalogPack[]): Map<TypeId, string> {
+  const labels = new Map<TypeId, string>();
+  for (const type of packs.flatMap((pack) => pack.types)) {
+    const typeId = mkTypeId(NativeType.Struct, type.name);
+    if (type.label === undefined || labels.has(typeId)) continue;
+    if (environment.brainServices.runtime.types.get(typeId) === undefined) continue;
+    labels.set(typeId, type.label);
+  }
+  return labels;
 }
 
 /**
@@ -261,7 +282,7 @@ function boundTypePages(environment: WendooEnvironment, packs: readonly CatalogP
  * as a brain type, each brain literal wearing its type's icon; its pack
  * literals every literal tile bound for a literal a catalog type declares;
  * its type pages the page of every bound type carrying docs that no variable
- * factory tile stands for; its type
+ * factory tile stands for; its type labels every bound type's label; its type
  * icons hold every bound type's icon and every core type's icon a pack gives,
  * an icon given a name that is no core type reported under
  * {@link PackBindingCode.CORE_TYPE_UNKNOWN}; and its page icon is the icon a
@@ -320,6 +341,7 @@ export function buildAuthoringEnvironment(
     packLiterals: bound ? boundPackLiterals(environment, catalog.packs) : new Map(),
     typePages: bound ? boundTypePages(environment, catalog.packs) : [],
     typeIcons,
+    typeLabels: bound ? boundTypeLabels(environment, catalog.packs) : new Map(),
     pageIcon,
   };
 }

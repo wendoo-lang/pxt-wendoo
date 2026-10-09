@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "endingWinUnheld1",
+  "name": "Win",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0endingWin001",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0endingWin001",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.literal->struct:<Sound>->powerUp",
+            "tile.modifier->modifier.outcome.win",
+            "tile.literal->struct:<Effect>->confetti"
+          ],
+          "children": [],
+          "ruleId": "fRu0endingWin001"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "endingPlayerTwo1",
+  "name": "Player two wins",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0endingPlyr01",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0endingPlyr01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.modifier->modifier.outcome.lose",
+            "tile.literal->struct:<Player>->2",
+            "tile.literal->struct:<Effect>->hearts",
+            "tile.literal->struct:<Sound>->jumpUp"
+          ],
+          "children": [],
+          "ruleId": "fRu0endingPlyr01"
+        }
+      ]
+    }
+  ]
+}

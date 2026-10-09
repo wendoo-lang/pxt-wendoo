@@ -8,6 +8,41 @@ namespace wendoo {
      */
     //% hidden
     export function arcadeBaseDocs(name: string): string {
+        if (name === "Effect") {
+            return "```brain noframe\n" +
+                "{\n" +
+                "  \"tiles\": [\n" +
+                "    \"tile.literal->struct:<Effect>->confetti\",\n" +
+                "    \"tile.literal->struct:<Effect>->hearts\",\n" +
+                "    \"tile.literal->struct:<Effect>->smiles\",\n" +
+                "    \"tile.literal->struct:<Effect>->blizzard\",\n" +
+                "    \"tile.literal->struct:<Effect>->bubbles\",\n" +
+                "    \"tile.literal->struct:<Effect>->starField\",\n" +
+                "    \"tile.literal->struct:<Effect>->clouds\",\n" +
+                "    \"tile.literal->struct:<Effect>->none\",\n" +
+                "    \"tile.literal->struct:<Effect>->dissolve\",\n" +
+                "    \"tile.literal->struct:<Effect>->melt\",\n" +
+                "    \"tile.literal->struct:<Effect>->slash\",\n" +
+                "    \"tile.literal->struct:<Effect>->splatter\"\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "# Effect\n" +
+                "\n" +
+                "A screen effect for the end of your game.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Each of these is one of Arcade's own screen effects. Give one to **game over** to show it as the game\n" +
+                "ends: **DO game over win hearts** fills the screen with hearts for a win. **none** shows no effect at\n" +
+                "all.\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.game-over`\n" +
+                "`tile:tile.var.factory->struct:<Sound>`\n";
+        }
         if (name === "Player") {
             return "```brain noframe\n" +
                 "{\n" +
@@ -43,6 +78,47 @@ namespace wendoo {
                 "\n" +
                 "`tile:tile.actuator->actuator.arcade.add-score`\n" +
                 "`tile:tile.sensor->sensor.arcade.dpad`\n";
+        }
+        if (name === "Sound") {
+            return "```brain noframe\n" +
+                "{\n" +
+                "  \"tiles\": [\n" +
+                "    \"tile.literal->struct:<Sound>->baDing\",\n" +
+                "    \"tile.literal->struct:<Sound>->wawawawaa\",\n" +
+                "    \"tile.literal->struct:<Sound>->jumpUp\",\n" +
+                "    \"tile.literal->struct:<Sound>->jumpDown\",\n" +
+                "    \"tile.literal->struct:<Sound>->powerUp\",\n" +
+                "    \"tile.literal->struct:<Sound>->powerDown\",\n" +
+                "    \"tile.literal->struct:<Sound>->magicWand\",\n" +
+                "    \"tile.literal->struct:<Sound>->siren\",\n" +
+                "    \"tile.literal->struct:<Sound>->pewPew\",\n" +
+                "    \"tile.literal->struct:<Sound>->knock\",\n" +
+                "    \"tile.literal->struct:<Sound>->footstep\",\n" +
+                "    \"tile.literal->struct:<Sound>->thump\",\n" +
+                "    \"tile.literal->struct:<Sound>->smallCrash\",\n" +
+                "    \"tile.literal->struct:<Sound>->bigCrash\",\n" +
+                "    \"tile.literal->struct:<Sound>->zapped\",\n" +
+                "    \"tile.literal->struct:<Sound>->buzzer\",\n" +
+                "    \"tile.literal->struct:<Sound>->sonar\",\n" +
+                "    \"tile.literal->struct:<Sound>->spooky\",\n" +
+                "    \"tile.literal->struct:<Sound>->beamUp\"\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "# Sound\n" +
+                "\n" +
+                "A sound for the end of your game.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Each of these is one of Arcade's own sounds. Give one to **game over** to play it as the game ends:\n" +
+                "**DO game over win power up** plays power up for a win.\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.game-over`\n" +
+                "`tile:tile.var.factory->struct:<Effect>`\n";
         }
         if (name === "Sprite") {
             return "```brain noframe\n" +
@@ -647,6 +723,94 @@ namespace wendoo {
                 "\n" +
                 "`tile:tile.var.factory->struct:<Player>`\n" +
                 "`tile:tile.accessor->struct:<Player>->score`\n";
+        }
+        if (name === "actuator.arcade.game-over") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Game Over\n" +
+                "\n" +
+                "Ends the game.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **game over** on the **DO** side of a rule to end the game the way Arcade does: the game stops,\n" +
+                "shows how it ended, and starts again at the next button press. On its own, **game over** ends the game\n" +
+                "as a loss. Add **win** to end it as a win, or give it a player to end it with that player winning: **DO\n" +
+                "game over player two** says player two won.\n" +
+                "\n" +
+                "Give it an effect and a sound for the ending: **DO game over win hearts power up**. Without them, the\n" +
+                "game ends with Arcade's own: confetti and power up for a win, melt and wawawawaa for a loss.\n" +
+                "\n" +
+                "A game ends only once, so the first frame a **game over** rule is on is the one that counts.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\n" +
+                "        \"tile.literal->struct:<Player>->1\",\n" +
+                "        \"tile.accessor->struct:<Player>->score\",\n" +
+                "        \"tile.op->gt\",\n" +
+                "        \"tile.literal->number:<number>->9\"\n" +
+                "      ],\n" +
+                "      \"do\": [\n" +
+                "        \"tile.actuator->actuator.arcade.game-over\",\n" +
+                "        \"tile.modifier->modifier.outcome.win\",\n" +
+                "        \"tile.literal->struct:<Effect>->confetti\"\n" +
+                "      ],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Win with confetti once player one has scored 10.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->9\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 9,\n" +
+                "      \"valueLabel\": \"9\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of game over, as the editor offers it:\n" +
+                "- In any order, each at most once: an optional [win] or [lose] (one of the two at most), an optional\n" +
+                "  Player, an optional Effect and an optional Sound. Nothing else: no named parameter, no output tile.\n" +
+                "- No [win] and no Player: the game ends as a loss. [lose] says the same thing.\n" +
+                "- [win]: the game ends as a win.\n" +
+                "- A Player: that player wins, as Arcade's game.gameOverPlayerWin ends a game. [win] or [lose] beside a\n" +
+                "  Player changes nothing: [game over] [lose] [player two] still ends with player two winning.\n" +
+                "- An Effect and a Sound are shown and played as the game ends with the outcome this tile gives it; a\n" +
+                "  Player winning is a win. Without one, that outcome keeps its own: Arcade's confetti and power up for a\n" +
+                "  win, melt and wawawawaa for a loss, unless the game's code set others.\n" +
+                "- A Player, Effect or Sound placed as anything but a literal tile that reads as nothing leaves the action\n" +
+                "  undone for that frame. An Effect or Sound naming nothing Arcade holds is read as none.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It is Arcade's own game over: the game stops, shows the effect, plays the sound, shows the result and\n" +
+                "  restarts at the next button press. When the game's code handles game over itself (game.onGameOver),\n" +
+                "  that code runs instead and the game goes on.\n" +
+                "- Arcade ends a game once and ignores every later game over, so unlike add score it does NOT act again\n" +
+                "  on later frames: the first frame its rule fires decides how the game ends. To compose an ending, give\n" +
+                "  it a WHEN that fires at the ending moment, such as [player one] [score] [greater than] 9 or [bump]\n" +
+                "  with a filter; when two game over rules fire on the same frame, the one running first wins.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.var.factory->struct:<Player>`\n" +
+                "`tile:tile.var.factory->struct:<Effect>`\n" +
+                "`tile:tile.var.factory->struct:<Sound>`\n" +
+                "`tile:tile.actuator->actuator.arcade.add-score`\n";
         }
         if (name === "actuator.arcade.move") {
             return "```brain noframe do\n" +

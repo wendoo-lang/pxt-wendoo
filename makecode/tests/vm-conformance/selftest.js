@@ -37,7 +37,7 @@
  * that order and no other, the unusable move-smoothing lines in
  * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
- * other, no
+ * other, no unusable effect or sound line, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
@@ -46,6 +46,15 @@
  * fixture, its types, accessors, tiles, modifier
  * slots, core tile icon entries and core type icon entries carrying icons,
  * and every icon it carries a 16 by 16 image with at least one pixel drawn.
+ *
+ * It then builds and captures each arcade ending project, whose capture must
+ * carry one `CHECK <name> ok` line per name its ending lists in
+ * `EXPECTED_ARCADE_ENDING_CHECKS` and no other check line, the program
+ * refusals in `ARCADE_HOST_REJECTIONS` in that order, the unusable effect and
+ * sound lines its ending lists in `EXPECTED_ARCADE_ENDING_CHOICE_LINES` in
+ * that order and no other, no program-fault line, a `DEBUG ON` line no line
+ * the Wendoo extensions log precedes, `CHECKS failed 0`, and its `SIMCAP
+ * PASS` verdict.
  *
  * Before any target runs, each catalog fixture -- the full catalog the
  * editor's golden-program tooling reads as a session catalog -- must have its
@@ -497,6 +506,10 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-program-reading-player-twos-score-switches-the-game-to-arcades-multiplayer-display",
   "a-dpad-given-player-two-follows-player-twos-controller-and-a-bare-dpad-player-ones",
   "a-dpad-given-the-argument-buffer-of-a-program-compiled-before-its-player-slot-reads-player-one",
+  "effect-and-sound-types-take-their-atoms-and-fields-from-the-manifest",
+  "each-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-effect-slot-names-none",
+  "each-sound-literal-names-the-arcade-melody-of-its-key-and-an-empty-sound-slot-names-none",
+  "a-game-over-given-a-player-effect-or-sound-that-reads-nothing-does-not-run",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -543,6 +556,40 @@ const EXPECTED_ARCADE_SCORE_LINES = ["WENDOO_SCORE_UNUSABLE"];
 
 /** The line the arcade base pack logs for a score write or addition holding no finite number. */
 const SCORE_LINE = "wendoo WENDOO_SCORE_UNUSABLE";
+
+/** The lines the arcade base pack logs for an effect and for a sound naming nothing Arcade holds. */
+const CHOICE_LINES = ["wendoo WENDOO_EFFECT_UNUSABLE", "wendoo WENDOO_SOUND_UNUSABLE"];
+
+/**
+ * Every check each arcade ending project is expected to report, by the
+ * ending its `main.ts` names.
+ */
+const EXPECTED_ARCADE_ENDING_CHECKS = {
+  lose: [
+    "a-bare-game-over-ends-the-game-once-as-a-loss-and-its-program-runs-on",
+    "a-game-over-given-no-effect-or-sound-leaves-the-loss-with-arcades-own",
+  ],
+  win: [
+    "a-game-over-given-win-ends-the-game-once-as-a-win-and-its-program-runs-on",
+    "a-game-over-given-an-effect-and-a-sound-naming-nothing-leaves-the-win-with-arcades-own",
+  ],
+  player: [
+    "a-game-over-given-a-player-ends-the-game-once-as-a-win-even-given-lose-and-its-program-runs-on",
+    "a-game-over-given-an-effect-and-a-sound-sets-them-for-the-win-it-ends-the-game-with",
+  ],
+};
+
+/**
+ * Every unusable effect and sound line each arcade ending project is
+ * expected to log, in order, each without its `wendoo ` prefix, by ending:
+ * one each for the whole win run, however many frames its game over is given
+ * an effect and a sound naming nothing, and none for the other endings.
+ */
+const EXPECTED_ARCADE_ENDING_CHOICE_LINES = {
+  lose: [],
+  win: ["WENDOO_EFFECT_UNUSABLE", "WENDOO_SOUND_UNUSABLE"],
+  player: [],
+};
 
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
 const ARCADE_ICONED_TILES = [
@@ -655,9 +702,11 @@ const ARCADE_HOST_REJECTIONS = [
  * move smoothing from the velocity a sprite has, the equality operators'
  * overloads, the overloads over `Vector2`s, the programs holding
  * variables, the programs adding to and reading player one's score, the
- * program reading player two's score, and the dpad's player.
+ * program reading player two's score, the dpad's player, and the game over's
+ * gate on a placed value reading nothing.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -871,6 +920,13 @@ function reportedSmoothingLines(log) {
 function reportedScoreLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(SCORE_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every unusable effect and sound line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedChoiceLines(log) {
+  return linesOf(log)
+    .filter((line) => CHOICE_LINES.includes(line))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1189,6 +1245,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   if (scoreLines.join("\n") !== EXPECTED_ARCADE_SCORE_LINES.join("\n")) {
     failures.push(`unusable scores logged: ${scoreLines.join(" | ")}`);
   }
+  const choiceLines = reportedChoiceLines(log);
+  if (choiceLines.length > 0) {
+    failures.push(`unusable effects or sounds logged: ${choiceLines.join(" | ")}`);
+  }
   const faultLines = reportedFaultLines(log);
   if (faultLines.length > 0) {
     failures.push(`program faults logged: ${faultLines.join(" | ")}`);
@@ -1215,6 +1275,76 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   }
   failures.push(...debugLoggingFailures(log));
   if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
+  return failures;
+}
+
+/**
+ * Holds one capture of the arcade ending project of the ending `ending` to
+ * its contract and reports what failed.
+ *
+ * @param ending The ending the project's `main.ts` names.
+ * @param exitCode Exit code of the capture.
+ * @param log The captured bytes.
+ * @returns The reasons the capture failed the contract; empty when it passed.
+ */
+function arcadeEndingContractFailures(ending, exitCode, log) {
+  const failures = [];
+  if (exitCode !== 0) failures.push(`capture exited ${exitCode}`);
+  const checks = reportedChecks(log);
+  if (checks.failed.length) failures.push(`checks failed: ${checks.failed.join(", ")}`);
+  if (!sameEntries(checks.ok, EXPECTED_ARCADE_ENDING_CHECKS[ending])) {
+    failures.push(`checks reported ok: ${[...checks.ok].sort().join(", ")}`);
+  }
+  const rejections = reportedRejections(log);
+  if (rejections.join("\n") !== ARCADE_HOST_REJECTIONS.join("\n")) {
+    failures.push(`program refusals logged: ${rejections.join(" | ")}`);
+  }
+  const choiceLines = reportedChoiceLines(log);
+  if (choiceLines.join("\n") !== EXPECTED_ARCADE_ENDING_CHOICE_LINES[ending].join("\n")) {
+    failures.push(`unusable effects or sounds logged: ${choiceLines.join(" | ")}`);
+  }
+  const faultLines = reportedFaultLines(log);
+  if (faultLines.length > 0) {
+    failures.push(`program faults logged: ${faultLines.join(" | ")}`);
+  }
+  failures.push(...debugLoggingFailures(log));
+  if (!linesOf(log).includes(FAILED_CHECKS_LINE)) failures.push(`no "${FAILED_CHECKS_LINE}" line`);
+  return failures;
+}
+
+/**
+ * Builds and captures each arcade ending project in `endings` --
+ * `{ ending, id, dir }` each -- `options.runs` times.
+ *
+ * @returns How many captures failed, a failed build counting as one.
+ */
+function runArcadeEndings(targetDir, targetName, endings, options) {
+  let failures = 0;
+  for (const project of endings) {
+    if (!options.skipBuild) {
+      const built = build(targetDir, project.dir);
+      if (!built.ok) {
+        process.stdout.write(`${targetName}/${project.id}: BUILD FAILED\n${built.output}\n`);
+        failures++;
+        continue;
+      }
+    }
+    const binary = path.join(project.dir, "built", "debug", "binary.js");
+    for (let r = 1; r <= options.runs; r++) {
+      const logPath = path.join(project.dir, "built", `capture-run${r}.log`);
+      const captured = capture.capture(binary, logPath, { expect: project.id, timeoutSec: 120 });
+      const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+      const reasons = arcadeEndingContractFailures(project.ending, captured.code, log);
+      process.stdout.write(`${targetName}/${project.id} run ${r}: ${reasons.length ? "FAILED" : "PASS"}\n`);
+      for (const line of linesOf(log)) {
+        process.stdout.write(`    ${line}\n`);
+      }
+      for (const reason of reasons) {
+        process.stdout.write(`    reason: ${reason}\n`);
+      }
+      if (reasons.length) failures++;
+    }
+  }
   return failures;
 }
 
@@ -1302,7 +1432,10 @@ function main() {
     }
 
     const arcade = gen.generateArcade(targetDir);
-    if (arcade) failures += runArcadeSelftest(targetDir, targetName, arcade, options);
+    if (arcade) {
+      failures += runArcadeSelftest(targetDir, targetName, arcade, options);
+      failures += runArcadeEndings(targetDir, targetName, arcade.endings, options);
+    }
   }
 
   process.exit(failures === 0 ? 0 : 1);
