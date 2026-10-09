@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SimxStatusView } from "./status-model.js";
-import { copyText, followLink, type OpenedTab, renderStatusPanel as renderWithEditor } from "./status-panel.js";
+import {
+  copyText,
+  followLink,
+  mountBrandStrip,
+  type OpenedTab,
+  renderBrandStrip,
+  renderStatusPanel as renderWithEditor,
+} from "./status-panel.js";
 
 /** The editor base URL the specs render with. */
 const EDITOR_URL = "http://localhost:5176";
@@ -160,6 +167,58 @@ describe("simx status panel", () => {
     const markup = renderStatusPanel(viewOf("code", { joinCode: 'a b&"<#' }));
 
     assert.equal(href(link(markup, "editor")), "http://localhost:5176/#code=a%20b%26%22%3C%23");
+  });
+});
+
+describe("simx brand strip", () => {
+  it("shows the logotype, linking to the Wendoo homepage in a new tab, and the open editor button alone", () => {
+    const markup = renderBrandStrip();
+    const home = link(markup, "home");
+
+    assert.match(markup, /^<section [^>]*data-testid="simx-strip"/);
+    assert.equal(href(home), "https://wendoo.com");
+    assert.match(home ?? "", /target="_blank"/);
+    assert.match(home ?? "", /rel="noopener noreferrer"/);
+    assert.deepEqual(actions(markup), ["open-editor"]);
+    assert.equal((markup.match(/<a /g) ?? []).length, 1);
+    for (const button of markup.match(/<button [^>]*>/g) ?? []) {
+      assert.match(button, /type="button"/);
+      assert.match(button, /aria-label="[^"]+"/);
+    }
+  });
+
+  it("shows no session status and no join code", () => {
+    const markup = renderBrandStrip();
+
+    assert.doesNotMatch(markup, /data-state=/);
+    assert.equal(tone(markup), undefined);
+    assert.doesNotMatch(markup, /data-testid="join-code"/);
+  });
+
+  it("calls its open editor action when the button is clicked, and nothing once unmounted", () => {
+    let listener: ((event: MouseEvent) => void) | undefined;
+    const root = {
+      innerHTML: "",
+      addEventListener(_type: "click", added: (event: MouseEvent) => void) {
+        listener = added;
+      },
+      removeEventListener(_type: "click", removed: (event: MouseEvent) => void) {
+        if (listener === removed) listener = undefined;
+      },
+    };
+    let opened = 0;
+    const unmount = mountBrandStrip(root as unknown as HTMLElement, () => {
+      opened += 1;
+    });
+    const button = { dataset: { action: "open-editor" } };
+    const target = { closest: (selector: string) => (selector === "[data-action]" ? button : null) };
+
+    assert.equal(root.innerHTML, renderBrandStrip());
+    listener?.({ target } as unknown as MouseEvent);
+    assert.equal(opened, 1);
+
+    unmount();
+    assert.equal(listener, undefined);
   });
 });
 

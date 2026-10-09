@@ -176,6 +176,18 @@ export function followLink(link: FollowedLink, open: OpenTab): boolean {
 }
 
 /**
+ * Follow `link`, a link of the panel rendered into `root`, through
+ * {@link followLink}; when the frame may not open it, selects the URL that
+ * replaced it, for the person to copy.
+ */
+function followInPanel(root: HTMLElement, link: HTMLAnchorElement): void {
+  const open: OpenTab = (url, target) => root.ownerDocument.defaultView?.open(url, target) ?? null;
+  if (followLink(link, open)) return;
+  const revealed = root.querySelector<HTMLElement>(`[data-testid="link-url"][data-link="${link.dataset.link}"]`);
+  if (revealed !== null) root.ownerDocument.getSelection()?.selectAllChildren(revealed);
+}
+
+/**
  * Render `model` into `root`, again at each change of its view, and route
  * the panel's controls to the model's actions. The copy control writes the
  * join code to `clipboard` and briefly shows it was copied; when nothing
@@ -196,12 +208,6 @@ export function mountStatusPanel(
     clearTimeout(copyTimer);
     root.innerHTML = renderStatusPanel(model.getSnapshot(), editorUrl);
   };
-  const open: OpenTab = (url, target) => root.ownerDocument.defaultView?.open(url, target) ?? null;
-  const follow = (link: HTMLAnchorElement): void => {
-    if (followLink(link, open)) return;
-    const revealed = root.querySelector<HTMLElement>(`[data-testid="link-url"][data-link="${link.dataset.link}"]`);
-    if (revealed !== null) root.ownerDocument.getSelection()?.selectAllChildren(revealed);
-  };
   const copy = async (button: HTMLElement): Promise<void> => {
     const code = root.querySelector<HTMLElement>('[data-testid="join-code"]');
     if (code === null) return;
@@ -219,7 +225,7 @@ export function mountStatusPanel(
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>("a[data-link]");
     if (link) {
       event.preventDefault();
-      follow(link);
+      followInPanel(root, link);
       return;
     }
     const control = (event.target as Element | null)?.closest<HTMLElement>("[data-action]");
@@ -247,6 +253,47 @@ export function mountStatusPanel(
   return () => {
     unsubscribe();
     clearTimeout(copyTimer);
+    root.removeEventListener("click", click);
+  };
+}
+
+/**
+ * The markup of the brand strip a simulator extension frame shows while
+ * MakeCode offers its editor tab: a section carrying
+ * `data-testid="simx-strip"` whose one row holds the logotype, linking to
+ * the Wendoo homepage and carrying `data-link="home"`, and the button
+ * carrying `data-action="open-editor"`.
+ */
+export function renderBrandStrip(): string {
+  return (
+    '<section class="panel strip" data-testid="simx-strip">' +
+    `<header class="head"><a class="mark" href="${HOMEPAGE_URL}" target="_blank" rel="noopener noreferrer"` +
+    ` aria-label="Wendoo homepage" data-link="home">${LOGOTYPE}</a>` +
+    '<button type="button" class="open-editor" aria-label="Open the Wendoo editor" data-action="open-editor">' +
+    "Open editor</button></header></section>"
+  );
+}
+
+/**
+ * Render the brand strip into `root` and route its controls: the button
+ * calls `openEditor`, and the logotype link follows through
+ * {@link followLink}, replaced by its URL, then selected, when the frame may
+ * not open it. Returns a function that stops routing.
+ */
+export function mountBrandStrip(root: HTMLElement, openEditor: () => void): () => void {
+  const click = (event: MouseEvent): void => {
+    const link = (event.target as Element | null)?.closest<HTMLAnchorElement>("a[data-link]");
+    if (link) {
+      event.preventDefault();
+      followInPanel(root, link);
+      return;
+    }
+    const control = (event.target as Element | null)?.closest<HTMLElement>("[data-action]");
+    if (control?.dataset.action === "open-editor") openEditor();
+  };
+  root.addEventListener("click", click);
+  root.innerHTML = renderBrandStrip();
+  return () => {
     root.removeEventListener("click", click);
   };
 }

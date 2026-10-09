@@ -21,6 +21,10 @@ body {
   border-radius: 10px;
 }
 
+.strip {
+  min-height: 0;
+}
+
 .head {
   display: flex;
   justify-content: space-between;
@@ -207,7 +211,8 @@ button {
 }
 
 .end,
-.start-new {
+.start-new,
+.open-editor {
   padding: 4px 10px;
   font-size: 11px;
   background: #ffffff;
@@ -219,7 +224,8 @@ button {
   color: #991b1b;
 }
 
-.start-new {
+.start-new,
+.open-editor {
   border: 1px solid #0f766e;
   color: #0f766e;
 }

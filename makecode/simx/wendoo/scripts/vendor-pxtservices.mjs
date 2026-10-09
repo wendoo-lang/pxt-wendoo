@@ -1,8 +1,8 @@
-// Re-vendors the pxtservices clients this simulator extension uses: copies
-// each of pxt's pxtservices/projfs.ts and pxtservices/projassets.ts
-// byte-for-byte into src/vendor/ and rewrites its PROVENANCE line with the
-// source commit, or with the source blob when the file is uncommitted in the
-// pxt checkout. Run via `npm run vendor:pxtservices`.
+// Re-vendors the pxtservices modules this simulator extension uses: copies
+// each of pxt's pxtservices/projfs.ts, pxtservices/projassets.ts and
+// pxtservices/simxeditor.ts byte-for-byte into src/vendor/ and rewrites its
+// PROVENANCE line with the source commit, or with the source blob when the
+// file is uncommitted in the pxt checkout. Run via `npm run vendor:pxtservices`.
 // The pxt checkout is read from the PXT_DIR environment variable,
 // defaulting to ~/code/microsoft/pxt.
 
@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const pxtDir = process.env.PXT_DIR ?? join(homedir(), "code", "microsoft", "pxt");
-const vendored = ["projfs.ts", "projassets.ts"];
+const vendored = ["projfs.ts", "projassets.ts", "simxeditor.ts"];
 const vendorDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "vendor");
 const provenance = join(vendorDir, "PROVENANCE");
 
@@ -49,12 +49,19 @@ function vendor(file) {
   if (clean) {
     const commit = git("log", "-1", "--format=%h", "--", srcRel);
     // cite the per-PR branch (humanapp/feat/* or humanapp/bugfix/*) holding
-    // the commit when one exists, else the current branch
-    const prBranch = git(
+    // the commit when one exists -- of several, the one the fewest commits
+    // past it, which is the commit's own when PR branches stack -- else the
+    // current branch
+    const prBranches = git(
       "branch", "--contains", commit,
       "--list", "humanapp/feat/*", "humanapp/bugfix/*",
       "--format=%(refname:short)"
-    ).split("\n")[0];
+    ).split("\n").filter(Boolean);
+    const past = (candidate) => Number(git("rev-list", "--count", `${commit}..${candidate}`));
+    const prBranch = prBranches.reduce(
+      (best, candidate) => (best === undefined || past(candidate) < past(best) ? candidate : best),
+      undefined
+    );
     const branch = prBranch || git("branch", "--show-current");
     cite = `at commit ${commit} (branch ${branch})`;
   } else {
