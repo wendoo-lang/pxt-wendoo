@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "originToward0001",
+  "name": "Origin toward",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0originTowd00",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0originTowd00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.literal->struct:<Vector2>->origin"
+          ],
+          "children": [],
+          "ruleId": "fRu0originTowd00"
+        }
+      ]
+    }
+  ]
+}

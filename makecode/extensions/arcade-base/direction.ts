@@ -28,14 +28,35 @@ namespace wendoo {
 
   /**
    * The `Vector2` type's declared fields: `x` then `y`, both numbers, at
-   * their `VECTOR2_FIELD_*` positions, each read-only with an accessor tile.
+   * their `VECTOR2_FIELD_*` positions, each writable with an accessor tile.
    * As on the screen, `x` grows rightward and `y` grows downward, in pixels,
    * so a `Vector2` pointing down holds a positive `y` and one pointing up a
-   * negative `y`.
+   * negative `y`. A write stores into the value's own field slot.
    */
   //% hidden
   export function vector2Fields(): StructFieldSpec[] {
-    return [withAccessor(readOnlyField("x", TYPE_NUMBER), "x"), withAccessor(readOnlyField("y", TYPE_NUMBER), "y")];
+    return [withAccessor(field("x", TYPE_NUMBER), "x"), withAccessor(field("y", TYPE_NUMBER), "y")];
+  }
+
+  /**
+   * Key of the `Vector2` type's `origin` literal, holding 0 in both `x` and
+   * `y` -- the screen's top-left corner -- and the type's variable initial,
+   * so every position variable starts there. Public identity in saved
+   * programs: never rename or reuse it.
+   */
+  //% hidden
+  export const VECTOR2_ORIGIN_KEY = "origin";
+
+  /**
+   * The `Vector2` type's declared literals: one, key
+   * {@link VECTOR2_ORIGIN_KEY}, labelled `origin`, holding 0 in both `x` and
+   * `y` -- the screen's top-left corner.
+   */
+  //% hidden
+  export function vector2Literals(): TypeLiteral[] {
+    return [
+      typeLiteral(VECTOR2_ORIGIN_KEY, "origin", [literalField("x", mkNumber(0)), literalField("y", mkNumber(0))]),
+    ];
   }
 
   /**

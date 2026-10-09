@@ -182,7 +182,13 @@ namespace wendoo {
         }
         if (name === "Vector2") {
             return "```brain noframe\n" +
-                "{ \"tiles\": [\"tile.accessor->struct:<Vector2>->x\", \"tile.accessor->struct:<Vector2>->y\"] }\n" +
+                "{\n" +
+                "  \"tiles\": [\n" +
+                "    \"tile.literal->struct:<Vector2>->origin\",\n" +
+                "    \"tile.accessor->struct:<Vector2>->x\",\n" +
+                "    \"tile.accessor->struct:<Vector2>->y\"\n" +
+                "  ]\n" +
+                "}\n" +
                 "```\n" +
                 "\n" +
                 "# Position\n" +
@@ -192,20 +198,31 @@ namespace wendoo {
                 "---\n" +
                 "\n" +
                 "A sprite's **position** is the spot its center is at, and **dpad** carries the direction it points as\n" +
-                "a position too. A **position** variable remembers one.\n" +
+                "a position too. A **position** variable remembers one. **origin** is the top-left corner of the screen,\n" +
+                "where **x** and **y** are both 0.\n" +
                 "\n" +
                 "## X and Y\n" +
                 "\n" +
                 "`tile:tile.accessor->struct:<Vector2>->x` reads how far across a position is, and\n" +
-                "`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels. A brain reads them one number at a\n" +
-                "time; to change where something is, give it a whole new position. Open either to see how.\n" +
+                "`tile:tile.accessor->struct:<Vector2>->y` how far down, both in pixels, one number at a time.\n" +
+                "\n" +
+                "To change where something is, give it a whole new position with **gets**, or change just one of its\n" +
+                "numbers: **DO myself position x gets 80** moves your sprite across to 80, and **DO home y gets 20**\n" +
+                "changes the spot a position variable named **home** remembers. Open either to see how.\n" +
+                "\n" +
+                "## Starting From Origin\n" +
+                "\n" +
+                "A position variable starts at **origin**, so you can change its numbers right away: **DO home x gets\n" +
+                "80** and **DO home y gets 60**, and **DO move toward home** heads for the spot 80 across and 60 down.\n" +
+                "**origin** is a position of its own too: **DO move toward origin** heads for the top-left corner, and\n" +
+                "**DO home gets origin** sends **home** back there.\n" +
                 "\n" +
                 "## A Snapshot\n" +
                 "\n" +
-                "A position stays as it was made. **myself position** is where your sprite stood the moment it was read:\n" +
-                "with a position variable named **home**, **WHEN this page starts DO home gets myself position**\n" +
-                "remembers where your sprite began, and **DO move toward home** goes back there later, wherever the\n" +
-                "sprite has wandered since.\n" +
+                "A position keeps the spot it was given until a rule changes it. **myself position** is where your\n" +
+                "sprite stood the moment it was read: with a position variable named **home**, **WHEN this page starts\n" +
+                "DO home gets myself position** remembers where your sprite began, and **DO move toward home** goes back\n" +
+                "there later, wherever the sprite has wandered since.\n" +
                 "\n" +
                 "## Working Out New Positions\n" +
                 "\n" +
@@ -479,7 +496,8 @@ namespace wendoo {
                 "Put **score** after a player to read that player's score: **WHEN player one score greater than 9 DO\n" +
                 "move** moves your sprite once player one has scored 10. A score is always a whole number.\n" +
                 "\n" +
-                "**add score** changes it.\n" +
+                "**add score** adds to it, and **gets** sets it: **DO player one score gets 0** puts player one's score\n" +
+                "back to 0.\n" +
                 "\n" +
                 "## Example\n" +
                 "\n" +
@@ -517,8 +535,10 @@ namespace wendoo {
                 "- [player one] .. [player four] [score] reads that player's score, a whole number, 0 before anything\n" +
                 "  changes it. Arcade's own score is player one's: game code's info.setScore and info.changeScoreBy\n" +
                 "  change what [player one] [score] reads.\n" +
-                "- The editor offers no gets after score: a player tile is a literal, not a variable or a writable\n" +
-                "  result, so [player one] [score] [gets] <number> is refused. Change a score with [add score].\n" +
+                "- [player one] .. [player four] [score] [gets] <number> sets that player's score outright, though a\n" +
+                "  player tile is a fixed value: the write goes to Arcade's own score. Arcade keeps whole numbers, so a\n" +
+                "  fraction is dropped toward zero, and a value holding no finite number changes nothing. [add score]\n" +
+                "  adds to a score instead.\n" +
                 "- Reading player one's score shows nothing on the screen. Reading or changing the score of player two,\n" +
                 "  three or four switches the game to Arcade's display for several players, for the rest of the scene.\n" +
                 "```\n" +
@@ -543,7 +563,12 @@ namespace wendoo {
                 "---\n" +
                 "\n" +
                 "Put **x** after a position to read the first of its two numbers, in pixels. **x** grows to the right:\n" +
-                "a sprite farther right on the screen has a bigger **x**. A brain reads **x** but cannot change it.\n" +
+                "a sprite farther right on the screen has a bigger **x**.\n" +
+                "\n" +
+                "Add **gets** to change just that number. **DO myself position x gets 80** moves your sprite across to\n" +
+                "80, keeping its height, and with a position variable named **home**, **DO home x gets 80** changes the\n" +
+                "spot **home** remembers. A new position variable starts at **origin**, so you can change its **x**\n" +
+                "right away.\n" +
                 "\n" +
                 "Tucked under **WHEN in range**, the rule **WHEN sprite in range position x greater than myself position\n" +
                 "x DO move right** follows that sprite to the right while it is farther right than yours.\n" +
@@ -601,8 +626,12 @@ namespace wendoo {
                 "---\n" +
                 "\n" +
                 "Put **y** after a position to read the second of its two numbers, in pixels. **y** grows downward, the\n" +
-                "same way **down** points on **move**: a sprite higher up the screen has a smaller **y**. A brain reads\n" +
-                "**y** but cannot change it.\n" +
+                "same way **down** points on **move**: a sprite higher up the screen has a smaller **y**.\n" +
+                "\n" +
+                "Add **gets** to change just that number. **DO myself position y gets 20** moves your sprite up or down\n" +
+                "to 20 from the top of the screen, keeping how far across it is, and with a position variable named\n" +
+                "**home**, **DO home y gets 20** changes the spot **home** remembers. A new position variable starts at\n" +
+                "**origin**, so you can change its **y** right away.\n" +
                 "\n" +
                 "Tucked under **WHEN in range**, the rule **WHEN sprite in range position y less than myself position y\n" +
                 "DO move up** climbs while that sprite is higher up the screen than yours.\n" +
@@ -715,7 +744,7 @@ namespace wendoo {
                 "  2.\n" +
                 "- Player one's score appears on the screen at its first change. Changing the score of player two,\n" +
                 "  three or four switches the game to Arcade's display for several players, for the rest of the scene.\n" +
-                "- [player one] [score] [gets] <number> is refused: a player tile is not a variable. Read a score with\n" +
+                "- [player one] [score] [gets] <number> sets a score outright; add score adds to it. Read a score with\n" +
                 "  [player one] [score].\n" +
                 "```\n" +
                 "\n" +
@@ -981,7 +1010,8 @@ namespace wendoo {
                 "- Written every time bump runs: the sprite read, or nothing. Placeable on the DO side of bump's rule and\n" +
                 "  anywhere in the rules under it.\n" +
                 "- Writable: [bumped sprite] [image | position | brain | move smoothing] [gets] <value> changes that\n" +
-                "  sprite. Holding nothing, a write through it changes nothing.\n" +
+                "  sprite, and [bumped sprite] [position] [x | y] [gets] <number> moves it along one axis. Holding\n" +
+                "  nothing, a write through it changes nothing.\n" +
                 "- On bump's DO side it holds the same sprite as the WHEN result, so move toward or away from with no\n" +
                 "  target placed chases or flees it.\n" +
                 "```\n" +
@@ -1455,8 +1485,9 @@ namespace wendoo {
                 "Writing through it:\n" +
                 "- Its result is writable: [myself] [image | position | brain | move smoothing] [gets] <value> changes\n" +
                 "  the program's own sprite. Each accessor's own page holds when and how the write lands.\n" +
-                "- [myself] [gets] is never a write, since only a variable or a field is written, and the x and y of\n" +
-                "  [myself] [position] are read-only.\n" +
+                "- [myself] [position] [x | y] [gets] <number> writes one number of the sprite's center: the sprite\n" +
+                "  moves along that axis at once, keeping the other.\n" +
+                "- [myself] [gets] is never a write, since only a variable or a field is written.\n" +
                 "\n" +
                 "As the filter of bump, in range or out of range:\n" +
                 "- [myself] alone admits nothing: the program's own sprite is never read, so the sensor stays off and its\n" +

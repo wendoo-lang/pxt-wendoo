@@ -75,6 +75,11 @@ export interface CatalogField {
   /** Whether brains can only read the field. */
   readonly readOnly: boolean;
   /**
+   * Present on a writable field whose writes the type's field setter takes to
+   * host state rather than the value's own storage; absent on any other.
+   */
+  readonly routed?: true;
+  /**
    * The metadata of the field's accessor tile -- the tile placed after a
    * value of the type to read the field, and to write it unless the field is
    * read-only -- or absent when the field has no accessor tile.
@@ -134,6 +139,11 @@ export interface CatalogType extends CatalogMeta {
   readonly variableFactory?: true;
   /** The literals the type declares, in declaration order. */
   readonly literals: readonly CatalogLiteral[];
+  /**
+   * Key of the declared literal every variable of the type starts holding, or
+   * absent when the type declares none and its variables start nil.
+   */
+  readonly variableInitial?: string;
 }
 
 /** What an action does with a numeric argument outside a slot's range. */
@@ -630,12 +640,14 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
             name: field.name,
             type: field.type,
             readOnly: field.readOnly === true,
+            ...(field.routed === true ? { routed: true as const } : {}),
             ...(isObject(field.accessor) ? { accessor: metaOf(field.accessor) } : {}),
           },
         ]
       : []
   );
   const asset = stringField(entry, "asset");
+  const variableInitial = stringField(entry, "variableInitial");
   return {
     name: entry.name,
     native: entry.native === true,
@@ -645,6 +657,7 @@ function typeOf(entry: JsonObject & { name: string }): CatalogType {
     ...(asset === undefined ? {} : { asset }),
     ...(entry.brain === true ? { brain: true as const } : {}),
     ...(entry.variableFactory === true ? { variableFactory: true as const } : {}),
+    ...(variableInitial === undefined ? {} : { variableInitial }),
   };
 }
 

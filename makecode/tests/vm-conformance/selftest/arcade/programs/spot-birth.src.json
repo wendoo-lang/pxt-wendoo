@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "spotBirthWhen001",
+  "name": "Spot birth",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0spotBirth000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "position",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0spotBirth000"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0spotBirth000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0spotBirth000"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.right"
+          ],
+          "children": [],
+          "ruleId": "fRu0spotBirth000"
+        }
+      ]
+    }
+  ]
+}

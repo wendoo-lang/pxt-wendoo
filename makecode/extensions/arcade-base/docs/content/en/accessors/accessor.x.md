@@ -9,7 +9,12 @@ How far across a position is.
 ---
 
 Put **x** after a position to read the first of its two numbers, in pixels. **x** grows to the right:
-a sprite farther right on the screen has a bigger **x**. A brain reads **x** but cannot change it.
+a sprite farther right on the screen has a bigger **x**.
+
+Add **gets** to change just that number. **DO myself position x gets 80** moves your sprite across to
+80, keeping its height, and with a position variable named **home**, **DO home x gets 80** changes the
+spot **home** remembers. A new position variable starts at **origin**, so you can change its **x**
+right away.
 
 Tucked under **WHEN in range**, the rule **WHEN sprite in range position x greater than myself position
 x DO move right** follows that sprite to the right while it is farther right than yours.

@@ -275,9 +275,29 @@ namespace wendoo {
   }
 
   /**
+   * A fresh copy of the pooled starting value `constant` for storing in a
+   * variable slot: a struct copies into a new struct cell, field by field
+   * and recursively; any other value is immutable and returned as is.
+   *
+   * @param constant - A value from the program's constant pool.
+   */
+  function freshSeed(constant: Value): Value {
+    if (constant.t !== ValueTag.Struct) {
+      return constant;
+    }
+    const fields: Value[] = [];
+    for (let i = 0; i < constant.fields.length; i++) {
+      fields.push(freshSeed(constant.fields[i]));
+    }
+    return mkStruct(constant.typeId, fields);
+  }
+
+  /**
    * Brain-global variable storage, indexed by the compiler-assigned slot id
    * that `LOAD_VAR_SLOT` and `STORE_VAR_SLOT` carry. Each slot is seeded at
-   * program load with the starting value the program declares for it. A
+   * program load with a fresh copy of the starting value the program
+   * declares for it, so no slot holds the program's pooled constant or shares
+   * a struct cell with another slot or another store over the same program. A
    * variable is also reachable by name: the program's own variables by the
    * names it declares for their slots, and a name it declares none for by a
    * slot of its own, allocated on first write, that no bytecode addresses.
@@ -291,7 +311,7 @@ namespace wendoo {
 
     /**
      * Allocate one slot per entry in `program.variableNames` and seed it
-     * from the program's declared starting values.
+     * with a fresh copy of the program's declared starting value for it.
      *
      * @param program - The loaded program.
      */
@@ -303,7 +323,7 @@ namespace wendoo {
         const seed =
           initIdx === NO_VARIABLE_INIT || initIdx >= program.constValues.length
             ? NIL_VALUE
-            : program.constValues[initIdx];
+            : freshSeed(program.constValues[initIdx]);
         this.values.push(seed);
       }
     }

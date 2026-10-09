@@ -1,6 +1,6 @@
 /**
- * The arcade base pack's vocabulary: the `Vector2` type, its `x` and `y`
- * read-only accessors, the `Sprite` type, its `image`, `position`,
+ * The arcade base pack's vocabulary: the `Vector2` type with its `origin`
+ * literal, its `x` and `y` accessors, the `Sprite` type, its `image`, `position`,
  * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain`
  * type, the `Player` type with its four literals and its `score` accessor,
  * the `Effect` and `Sound` types with their literals, the `dpad`, `bump`,
@@ -106,13 +106,19 @@
  *   `Vector2` of its center at every read; its `image`, the image it wears;
  *   its `brain`, the brain it runs, or nil while it runs none; its
  *   `move smoothing`, the seconds its moves ease over, 0 while they do not;
- *   and a `Vector2`'s `x` and `y`, which a brain only reads. Writing a
+ *   and a `Vector2`'s `x` and `y`. Writing a
  *   sprite's `position` puts its center there at once, its `image` dresses
  *   it, its `brain` runs that brain from the next frame, nil ending the one
  *   it runs, and its `move smoothing` gives it smoothing of its own, in
  *   place of the project's: `DO [myself][move smoothing] [=] 0.15` eases
  *   its own sprite's moves, and `DO [bumped sprite][move smoothing] [=] 0`
- *   turns smoothing off for the sprite it bumps.
+ *   turns smoothing off for the sprite it bumps. Writing a `Vector2`'s `x`
+ *   or `y` changes that one number of the point it reads from: of a
+ *   `Vector2` variable, the point it holds, `DO [$home] [x] [=] 5` keeping
+ *   the change for every later read; of a sprite's `position`, the sprite's
+ *   center, `DO [myself] [position] [x] [=] 5` moving the sprite across. A
+ *   variable never written holds no point, and a write of its `x` or `y`
+ *   changes nothing.
  * - `[player one]` to `[player four]` name Arcade's four players, and a
  *   player's `score` reads that player's score: `WHEN [player one] [score]
  *   [greater than] 9 DO [move]` moves once player one scores 10.
@@ -926,6 +932,8 @@ namespace wendoo {
   const arcadePack = pack(ARCADE_PACK_NAME);
 
   const vector2Meta = variableTypeMeta("position");
+  vector2Meta.literals = vector2Literals();
+  vector2Meta.variableInitial = VECTOR2_ORIGIN_KEY;
   const vector2FieldSpecs = vector2Fields();
   arcadePack.defineStruct(TYPE_VECTOR2, vector2FieldSpecs, vector2Binding, vector2Meta);
   const spriteMeta = variableTypeMeta("sprite");

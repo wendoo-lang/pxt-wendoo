@@ -305,6 +305,44 @@ describe("pack literals", () => {
   });
 });
 
+/** {@link LITERAL_CATALOG}, the `Dock` type declaring `key` as its variable initial. */
+function catalogStartingDockAt(key: string): string {
+  const catalog = JSON.parse(LITERAL_CATALOG) as { packs: { types: { name: string; variableInitial?: string }[] }[] };
+  const dock = catalog.packs[0].types.find((type) => type.name === "Dock");
+  assert.ok(dock);
+  dock.variableInitial = key;
+  return JSON.stringify(catalog);
+}
+
+describe("pack variable initials", () => {
+  it("binds a type's variable initial as its starting value: the value of the literal it names", () => {
+    const built = bound(catalogStartingDockAt("north"));
+    const typeDef = built.environment.brainServices.runtime.types.get(DOCK_TYPE) as StructTypeDef;
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.ok(typeDef.zero);
+    assert.deepEqual(getClosedStructFieldByName(typeDef, typeDef.zero as StructValue, "x"), mkNumberValue(3));
+    assert.deepEqual(typeDef.zero, literalTile(built, NORTH).value);
+    assert.notEqual(typeDef.zero, literalTile(built, NORTH).value, "the starting value is a value of its own");
+  });
+
+  it("leaves a type declaring no variable initial with no starting value", () => {
+    const built = bound();
+
+    assert.equal(built.environment.brainServices.runtime.types.get(DOCK_TYPE)?.zero, undefined);
+  });
+
+  it("reports a variable initial naming no literal of its type by type and key, and binds the type with no starting value", () => {
+    const built = bound(catalogStartingDockAt("south"));
+
+    assert.deepEqual(built.diagnostics, [
+      { code: PackBindingCode.VARIABLE_INITIAL_UNBOUND, pack: "harbor", name: "Dock", token: "south" },
+    ]);
+    assert.equal(built.environment.brainServices.runtime.types.get(DOCK_TYPE)?.zero, undefined);
+    assert.ok(built.packLiterals.has(NORTH), "the type and its literals still bind");
+  });
+});
+
 /** A docs sidebar recording what a docs action asks of it, over `built`'s registry. */
 function recordingSidebar(built: AuthoringEnvironment) {
   const calls: string[] = [];

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "scoreSetLiteral1",
+  "name": "Score set",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0scoreSetLit0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 3,
+      "valueLabel": "3",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0scoreSetLit0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.literal->struct:<Player>->1",
+            "tile.accessor->struct:<Player>->score",
+            "tile.op->assign",
+            "tile.literal->number:<number>->3"
+          ],
+          "children": [],
+          "ruleId": "fRu0scoreSetLit0"
+        }
+      ]
+    }
+  ]
+}

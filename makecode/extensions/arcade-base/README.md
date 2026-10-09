@@ -91,7 +91,9 @@ keep score, and end the game.
   **up** and **down** point on **move**. Compare them with **less than**
   and **greater than**: tucked under **WHEN in range**, a rule **WHEN
   sprite in range position y less than myself position y DO move up**
-  climbs while that sprite is higher up the screen than yours.
+  climbs while that sprite is higher up the screen than yours. Add
+  **gets** to change just that number: **DO myself position x gets 80**
+  moves your sprite across to 80, keeping its height.
 - **equal to** and **not equal to** -- put one between two images, two
   sprites, two brains or two positions to compare them. Two images are
   equal when they have the same pixels, wherever each one came from; two
@@ -102,20 +104,26 @@ keep score, and end the game.
   when **equal to** is not. **WHEN myself image equal to** one of your
   project's images **DO move wander** strolls while your sprite wears that
   picture, however it came to wear it.
-- **position** and **sprite** variables -- make a variable of either kind
-  to have your brain remember a spot or hold on to a sprite. Until a rule
-  gives it one, the variable holds nothing. A position variable keeps the
-  spot it was given, even after the sprite it came from moves on: with a
-  position variable named **home**, **WHEN this page starts DO home gets
-  myself position** remembers where your sprite began, and **WHEN in range
-  DO move toward home** sends it back there whenever another sprite comes
-  near. A sprite variable holds the sprite itself, wherever it goes: with a
-  sprite variable named **target**, **WHEN bump DO target gets bumped
-  sprite** picks the sprite yours touches, and **WHEN target DO move toward
-  target** keeps chasing it. Once that sprite is destroyed, the variable
-  reads as nothing: **WHEN target** stops firing, reading a part of it gives
-  nothing, changing a part of it changes nothing, and a move toward it does
-  not run.
+- **position** and **sprite** variables -- make a variable of either kind to
+  have your brain remember a spot or hold on to a sprite. A position
+  variable starts at **origin**; a sprite variable holds nothing until a
+  rule gives it a sprite. A position variable keeps the spot it was given,
+  even after the sprite it came from moves on: with a position variable
+  named **home**, **WHEN this page starts DO home gets myself position**
+  remembers where your sprite began, and **WHEN in range DO move toward
+  home** sends it back there whenever another sprite comes near. Change one
+  of its numbers to move the spot it keeps: **DO home x gets 80** shifts
+  **home** across to 80. A sprite variable holds the sprite itself, wherever
+  it goes: with a sprite variable named **target**, **WHEN bump DO target
+  gets bumped sprite** picks the sprite yours touches, and **WHEN target DO
+  move toward target** keeps chasing it. Once that sprite is destroyed, the
+  variable reads as nothing: **WHEN target** stops firing, reading a part of
+  it gives nothing, changing a part of it changes nothing, and a move toward
+  it does not run.
+- **origin** -- the top-left corner of the screen, a position whose **x**
+  and **y** are both 0, and where every position variable starts. Pick a
+  spot by its numbers: **DO home x gets 80** and **DO home y gets 60**, and
+  **DO move toward home** heads for the spot 80 across and 60 down.
 - **plus**, **minus** and **multiplied by** -- work out a new position from
   others. **plus** adds two positions and **minus** takes one from another,
   **x** with **x** and **y** with **y**; a position **multiplied by** a

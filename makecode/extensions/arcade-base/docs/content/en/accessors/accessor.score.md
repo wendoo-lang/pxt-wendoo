@@ -11,7 +11,8 @@ A player's score.
 Put **score** after a player to read that player's score: **WHEN player one score greater than 9 DO
 move** moves your sprite once player one has scored 10. A score is always a whole number.
 
-**add score** changes it.
+**add score** adds to it, and **gets** sets it: **DO player one score gets 0** puts player one's score
+back to 0.
 
 ## Example
 
@@ -49,8 +50,10 @@ move** moves your sprite once player one has scored 10. A score is always a whol
 - [player one] .. [player four] [score] reads that player's score, a whole number, 0 before anything
   changes it. Arcade's own score is player one's: game code's info.setScore and info.changeScoreBy
   change what [player one] [score] reads.
-- The editor offers no gets after score: a player tile is a literal, not a variable or a writable
-  result, so [player one] [score] [gets] <number> is refused. Change a score with [add score].
+- [player one] .. [player four] [score] [gets] <number> sets that player's score outright, though a
+  player tile is a fixed value: the write goes to Arcade's own score. Arcade keeps whole numbers, so a
+  fraction is dropped toward zero, and a value holding no finite number changes nothing. [add score]
+  adds to a score instead.
 - Reading player one's score shows nothing on the screen. Reading or changing the score of player two,
   three or four switches the game to Arcade's display for several players, for the rest of the scene.
 ```

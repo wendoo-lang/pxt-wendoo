@@ -273,6 +273,30 @@ describe("parseCatalog", () => {
     assert.deepEqual(type.literals, [{ key: "home", fields: [{ name: "x", value: { t: 3, v: 2 } }] }]);
   });
 
+  it("reads a type's variable initial key, and none from a type declaring none", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "beacon",
+          types: [
+            {
+              name: "Beacon",
+              fields: [{ name: "x", type: "number" }],
+              literals: [{ key: "home", fields: [{ name: "x", value: { t: 3, v: 0 } }] }],
+              variableInitial: "home",
+            },
+            { name: "Plain", fields: [{ name: "x", type: "number" }] },
+          ],
+        },
+      ],
+    });
+
+    const [beacon, plain] = parseCatalog(text).packs[0].types;
+
+    assert.equal(beacon.variableInitial, "home");
+    assert.equal("variableInitial" in plain, false);
+  });
+
   it("reads every pack's types, tiles and operators with their metadata", () => {
     const { packs, problems, errorCode } = parseCatalog(FULL_CATALOG);
 
@@ -389,6 +413,36 @@ describe("parseCatalog", () => {
       },
       { name: "x", type: "number", readOnly: true, accessor: {} },
       { name: "id", type: "number", readOnly: true },
+      { name: "odd", type: "number", readOnly: false },
+    ]);
+  });
+
+  it("reads a field's routed flag when true, and none otherwise", () => {
+    const text = JSON.stringify({
+      packs: [
+        {
+          name: "lookout",
+          types: [
+            {
+              name: "Gauge",
+              native: true,
+              fields: [
+                { name: "level", type: "number", routed: true },
+                { name: "index", type: "number", readOnly: true },
+                { name: "odd", type: "number", routed: "yes" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const { packs, problems } = parseCatalog(text);
+
+    assert.deepEqual(problems, []);
+    assert.deepEqual(packs[0]?.types[0]?.fields, [
+      { name: "level", type: "number", readOnly: false, routed: true },
+      { name: "index", type: "number", readOnly: true },
       { name: "odd", type: "number", readOnly: false },
     ]);
   });

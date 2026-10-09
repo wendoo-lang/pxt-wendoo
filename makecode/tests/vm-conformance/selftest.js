@@ -490,6 +490,14 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-range-pair-filtered-on-a-sprite-variable-never-written-fires-neither-rule",
   "a-rule-whose-when-is-a-sprite-variable-fires-while-its-sprite-lives",
   "a-rule-whose-when-is-a-sprite-variable-stops-for-good-once-its-sprite-is-destroyed",
+  "a-position-variables-x-written-holds-the-changed-point-for-every-later-rule",
+  "writes-of-its-own-sprites-position-x-then-y-move-the-sprite-along-each-axis",
+  "a-write-of-the-bumped-sprites-position-y-moves-that-sprite-alone-along-that-axis",
+  "a-rule-whose-when-is-a-position-variable-nothing-wrote-fires-from-the-start",
+  "a-move-toward-origin-heads-for-the-top-left-corner-and-lands-there",
+  "a-position-variable-given-origin-then-an-x-and-a-y-holds-that-point",
+  "a-position-variable-nothing-wrote-given-an-x-alone-holds-that-x-at-the-top",
+  "two-sprites-running-one-program-each-start-its-position-variable-at-origin",
   "player-type-takes-its-atom-and-fields-from-the-manifest",
   "a-player-value-names-its-player-and-an-empty-player-slot-names-player-one",
   "a-read-of-player-ones-score-shows-nothing-until-a-write-sets-it-through-arcade",
@@ -503,6 +511,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-program-adding-an-amount-that-reads-nothing-adds-nothing",
   "a-program-reads-player-ones-score-as-game-code-sets-it",
   "a-program-adding-score-given-a-number-and-a-player-in-either-order-changes-that-players-score",
+  "a-program-writing-player-ones-score-sets-it-through-arcade",
   "a-program-reading-player-twos-score-switches-the-game-to-arcades-multiplayer-display",
   "a-dpad-given-player-two-follows-player-twos-controller-and-a-bare-dpad-player-ones",
   "a-dpad-given-the-argument-buffer-of-a-program-compiled-before-its-player-slot-reads-player-one",
@@ -701,11 +710,13 @@ const ARCADE_HOST_REJECTIONS = [
  * `Sprite` type's move smoothing, move smoothing through brain changes,
  * move smoothing from the velocity a sprite has, the equality operators'
  * overloads, the overloads over `Vector2`s, the programs holding
- * variables, the programs adding to and reading player one's score, the
- * program reading player two's score, the dpad's player, and the game over's
- * gate on a placed value reading nothing.
+ * variables, the programs writing one number of a position, the programs
+ * adding to and reading player one's score, the program reading player
+ * two's score, the dpad's player, and the game over's gate on a placed value
+ * reading nothing.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,

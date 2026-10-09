@@ -15,8 +15,8 @@
  * kind, argument grammar (each slot with its tile's display label and icon,
  * and each modifier slot with its tile's sentence words), returns, outputs,
  * consumed WHEN result, a sensor's inline and writable-result flags, a struct
- * type's variable factory flag and declared literals, label, group, docs,
- * icon, sentence words. A
+ * type's variable factory flag, declared literals and variable initial,
+ * label, group, docs, icon, sentence words. A
  * pack may also give core tiles icons, and add overloads to core operators.
  * The drain installs behavior only and
  * ignores all of it; the catalog serializer reads it through
@@ -492,6 +492,13 @@ namespace wendoo {
      * its literal: append-only, as {@link TypeLiteral.key} states.
      */
     literals: TypeLiteral[] = [];
+    /**
+     * Key of the declared literal every variable of the type starts holding,
+     * from program start and at every reseed, each variable its own fresh
+     * copy; `""` when the type declares none, so its variables start nil
+     * until a brain writes them. Must name one of {@link literals}.
+     */
+    variableInitial: string = "";
 
     constructor() {
       super();
@@ -1431,7 +1438,16 @@ namespace wendoo {
 
     writeCatalog(catalog: CatalogWriter): void {
       const native = this.binding.hasFieldGetter || this.binding.hasFieldSetter || this.binding.hasSnapshotNative;
-      catalog.struct(this.pack, this.name, this.fields, native, this.assetKind, this.brain, this.meta);
+      catalog.struct(
+        this.pack,
+        this.name,
+        this.fields,
+        native,
+        this.binding.hasFieldSetter,
+        this.assetKind,
+        this.brain,
+        this.meta
+      );
     }
   }
 
@@ -1613,7 +1629,7 @@ namespace wendoo {
      * @param name - Wendoo type name; struct values of the type carry the TypeId derived from it.
      * @param fields - Field specs, each with its accessor tile if {@link withAccessor} gave it one; the binding's `fieldIds` follow their order.
      * @param binding - Type binding carrying the type's hooks.
-     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag, declared literals and variable initial included; the drain ignores it.
      */
     defineStruct(name: string, fields: StructFieldSpec[], binding: StructTypeBinding, meta?: TypeMeta): void {
       appendPending(new PendingStructType(name, this.name, fields, binding, meta, "", false));
@@ -1628,7 +1644,7 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding, carrying the asset kind; read asset ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag, declared literals and variable initial included; the drain ignores it.
      */
     defineAssetType(name: string, binding: AssetTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(ASSET_FIELD, TYPE_STRING)];
@@ -1644,7 +1660,7 @@ namespace wendoo {
      *
      * @param name - Wendoo type name; values of the type carry the TypeId {@link structTypeId} derives from it.
      * @param binding - The type's binding; read document ids through it once the drain has run.
-     * @param meta - Catalog metadata of the type, its variable factory flag and declared literals included; the drain ignores it.
+     * @param meta - Catalog metadata of the type, its variable factory flag, declared literals and variable initial included; the drain ignores it.
      */
     defineBrainType(name: string, binding: BrainTypeBinding, meta?: TypeMeta): void {
       const fields = [readOnlyField(BRAIN_FIELD, TYPE_STRING)];

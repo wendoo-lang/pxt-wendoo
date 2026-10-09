@@ -64,7 +64,7 @@ What it does:
   2.
 - Player one's score appears on the screen at its first change. Changing the score of player two,
   three or four switches the game to Arcade's display for several players, for the rest of the scene.
-- [player one] [score] [gets] <number> is refused: a player tile is not a variable. Read a score with
+- [player one] [score] [gets] <number> sets a score outright; add score adds to it. Read a score with
   [player one] [score].
 ```
 

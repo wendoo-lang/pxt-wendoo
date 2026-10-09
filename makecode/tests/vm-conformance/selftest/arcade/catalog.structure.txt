@@ -1,19 +1,22 @@
 pack arcade
-  type Vector2 variableFactory icon
-    field x number readOnly accessor accessor-icon
-    field y number readOnly accessor accessor-icon
+  type Vector2 variableFactory variableInitial=origin icon
+    field x number accessor accessor-icon
+    field y number accessor accessor-icon
+    literal origin
+      value x {"t":3,"v":0}
+      value y {"t":3,"v":0}
   type Sprite native variableFactory icon
-    field image Image accessor accessor-icon
-    field position Vector2 accessor accessor-icon
-    field brain Brain accessor accessor-icon
-    field moveSmoothing number accessor accessor-icon
+    field image Image routed accessor accessor-icon
+    field position Vector2 routed accessor accessor-icon
+    field brain Brain routed accessor accessor-icon
+    field moveSmoothing number routed accessor accessor-icon
   type Image asset=image
     field asset string readOnly
   type Brain brain icon
     field id string readOnly
   type Player native icon
     field number number readOnly
-    field score number accessor accessor-icon
+    field score number routed accessor accessor-icon
     literal 1
       value number {"t":3,"v":1}
     literal 2

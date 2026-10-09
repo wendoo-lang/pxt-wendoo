@@ -193,8 +193,9 @@ const EXPECTED_CATALOG_ENTRIES = {
       name: "Anchor",
       native: true,
       fields: [
-        { name: "x", type: "number" },
-        { name: "y", type: "number" },
+        { name: "x", type: "number", routed: true },
+        { name: "y", type: "number", routed: true },
+        { name: "at", type: "Point", routed: true },
       ],
     },
     Target: { name: "Target", native: true, fields: [{ name: "value", type: "number", readOnly: true }] },

@@ -46,8 +46,9 @@ program's own sprite.
 Writing through it:
 - Its result is writable: [myself] [image | position | brain | move smoothing] [gets] <value> changes
   the program's own sprite. Each accessor's own page holds when and how the write lands.
-- [myself] [gets] is never a write, since only a variable or a field is written, and the x and y of
-  [myself] [position] are read-only.
+- [myself] [position] [x | y] [gets] <number> writes one number of the sprite's center: the sprite
+  moves along that axis at once, keeping the other.
+- [myself] [gets] is never a write, since only a variable or a field is written.
 
 As the filter of bump, in range or out of range:
 - [myself] alone admits nothing: the program's own sprite is never read, so the sensor stays off and its

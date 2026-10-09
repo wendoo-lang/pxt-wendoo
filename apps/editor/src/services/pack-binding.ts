@@ -1,5 +1,4 @@
 import type { OperatorOverloadDefinition } from "@wendoo/core";
-import { Dict } from "@wendoo/core";
 import type { BrainActionCallSpec, ITileMetadata, WendooModule, WendooModuleApi } from "@wendoo/core/app";
 import {
   bag,
@@ -36,7 +35,7 @@ import type {
   HostAsyncFn,
   HostSyncFn,
   OpParse,
-  StructTypeDef,
+  StructValue,
   TypeId,
   UserArgIdentity,
   Value,
@@ -46,7 +45,7 @@ import {
   CoreTypeIds,
   CoreTypeNames,
   mkAnonParameterId,
-  mkClosedStructValueByName,
+  mkClosedStructValue,
   mkPrivateArgId,
   mkTypeId,
   NativeType,
@@ -56,6 +55,7 @@ import type {
   CatalogArgNode,
   CatalogArgSlot,
   CatalogLanguage,
+  CatalogLiteral,
   CatalogOperator,
   CatalogOverload,
   CatalogPack,
@@ -87,6 +87,12 @@ export const PackBindingCode = {
    * entry's name is the type name, and the token the key.
    */
   LITERAL_KEY_DUPLICATE: "CATALOG_LITERAL_KEY_DUPLICATE",
+  /**
+   * A type's variable initial names no literal of the type, or one the model
+   * cannot take; the type is bound with no starting value, so its variables
+   * start nil. The entry's name is the type name, and the token the key.
+   */
+  VARIABLE_INITIAL_UNBOUND: "CATALOG_VARIABLE_INITIAL_UNBOUND",
 } as const;
 
 /** Union of all {@link PackBindingCode} values. */
@@ -192,11 +198,35 @@ function taggedValueOf(json: unknown): Value {
 }
 
 /**
+ * The value of `literal`, a literal of the struct type `typeId` whose fields
+ * number `fieldCount`: the type's struct holding each field value the literal
+ * declares at the id `fieldIds` gives the field's name, and nil in every
+ * other field. Throws an {@link EntryProblem} when a field value is not a
+ * tagged value, or names a field `fieldIds` holds no id for.
+ */
+function literalValueOf(
+  typeId: TypeId,
+  literal: CatalogLiteral,
+  fieldIds: ReadonlyMap<string, number>,
+  fieldCount: number
+): StructValue {
+  const slots = List.empty<Value>();
+  for (let i = 0; i < fieldCount; i++) slots.push(NIL_VALUE);
+  for (const field of literal.fields) {
+    const fieldIndex = fieldIds.get(field.name);
+    if (fieldIndex === undefined || fieldIndex < 0) throw new EntryProblem(PackBindingCode.TILE_REJECTED);
+    slots.set(fieldIndex, taggedValueOf(field.value));
+  }
+  return mkClosedStructValue(typeId, slots);
+}
+
+/**
  * Binds a session catalog's packs into an authoring environment, through the
  * language model's own builders: each struct type -- with the accessor tile
  * of each field declaring one, its variable factory when it carries the
  * flag, the factory's display metadata carrying the type's label, icon and
- * docs, and the literal tile of each literal it declares -- each tile --
+ * docs, its starting value when it declares a variable initial, and the
+ * literal tile of each literal it declares -- each tile --
  * with the parameter and modifier tiles its grammar's slots need -- each
  * operator, and each overload a pack
  * adds to a core operator, under the ids `ids` allocates. Each tile's, slot tile's and accessor tile's display metadata
@@ -316,10 +346,13 @@ class PackBinder {
   /**
    * Registers `type`, declared by the pack `pack`, under its allocated atom,
    * each field at the id the allocation gives it, the accessor tile of each
-   * field declaring one, read-only when the field is, for a type carrying the
+   * field declaring one, read-only when the field is and routed when the
+   * catalog marks the field routed, for a type carrying the
    * variable factory flag its variable factory, whose display metadata
    * carries the type's label -- its name when it carries none -- its icon and
-   * its docs, and the literal tile of each literal it declares.
+   * its docs, for a type declaring a variable initial the value of that
+   * literal as the starting value every variable of the type is seeded with,
+   * and the literal tile of each literal it declares.
    */
   private bindType(pack: string, type: CatalogType): void {
     const entry = this.ids.types.find((allocated) => allocated.name === type.name);
@@ -331,6 +364,8 @@ class PackBinder {
       ...(field.readOnly ? { readOnly: true } : {}),
     }));
     const typeId = mkTypeId(NativeType.Struct, type.name);
+    const fieldIds = new Map(fields.map((field) => [field.name, field.fieldIndex]));
+    const zero = this.variableInitialOf(pack, type, typeId, fieldIds);
     this.api.defineType({
       coreType: NativeType.Struct,
       typeId,
@@ -338,6 +373,7 @@ class PackBinder {
       atomId: entry.atom,
       fields: List.from(fields),
       ...(type.variableFactory ? { variableFactory: true } : {}),
+      ...(zero === undefined ? {} : { zero }),
     });
     const catalog = this.api.brainServices.edit.tiles;
     const factory = type.variableFactory ? catalog.get(mkVariableFactoryTileId(typeId)) : undefined;
@@ -352,6 +388,7 @@ class PackBinder {
       if (field.accessor === undefined) continue;
       const tile = new BrainTileAccessorDef(typeId, field.name, this.typeOf(field.type), {
         ...(field.readOnly ? { readOnly: true } : {}),
+        ...(field.routed ? { routed: true } : {}),
         metadata: {
           label: field.accessor.label ?? field.name,
           ...(field.accessor.docs === undefined ? {} : { docsMarkdown: field.accessor.docs }),
@@ -360,14 +397,41 @@ class PackBinder {
       });
       if (!catalog.has(tile.tileId)) this.api.registerTile(tile);
     }
-    this.bindLiterals(pack, type, typeId);
+    this.bindLiterals(pack, type, typeId, fieldIds);
+  }
+
+  /**
+   * The starting value of a variable of `type`, declared by the pack `pack`
+   * and registered under `typeId` with the field ids `fieldIds`: the value of
+   * the first literal of the type whose key is the type's variable initial.
+   * Undefined when the type declares no variable initial; undefined, and
+   * reported under {@link PackBindingCode.VARIABLE_INITIAL_UNBOUND}, when it
+   * names no literal of the type or one whose value cannot be built.
+   */
+  private variableInitialOf(
+    pack: string,
+    type: CatalogType,
+    typeId: TypeId,
+    fieldIds: ReadonlyMap<string, number>
+  ): Value | undefined {
+    const key = type.variableInitial;
+    if (key === undefined) return undefined;
+    const literal = type.literals.find((candidate) => candidate.key === key);
+    try {
+      if (literal !== undefined) return literalValueOf(typeId, literal, fieldIds, type.fields.length);
+    } catch (error) {
+      if (!(error instanceof EntryProblem)) throw error;
+    }
+    this.report({ code: PackBindingCode.VARIABLE_INITIAL_UNBOUND, pack, name: type.name, token: key });
+    return undefined;
   }
 
   /**
    * Registers a literal tile for each literal `type`, declared by the pack
-   * `pack` and registered under `typeId`, declares: its value the type's
-   * struct holding each field value the literal declares, by field name, and
-   * nil in every other field; its tile id {@link mkLiteralTileId} of the type
+   * `pack` and registered under `typeId` with the field ids `fieldIds`,
+   * declares: its value the type's struct holding each field value the
+   * literal declares, at the id of the field it names, and nil in every
+   * other field; its tile id {@link mkLiteralTileId} of the type
    * and the literal's key; read by its label, else its key; wearing the
    * type's icon; and never persisted, a brain holding only its reference. A
    * literal whose key an earlier literal of the type declares is left out
@@ -375,9 +439,8 @@ class PackBinder {
    * the model cannot take is left out and reported by code, the type's name
    * and the literal's key; the rest are bound.
    */
-  private bindLiterals(pack: string, type: CatalogType, typeId: TypeId): void {
+  private bindLiterals(pack: string, type: CatalogType, typeId: TypeId, fieldIds: ReadonlyMap<string, number>): void {
     const services = this.api.brainServices;
-    const typeDef = services.runtime.types.get(typeId) as StructTypeDef;
     for (const literal of type.literals) {
       const problem = (code: PackBindingCode) => {
         this.report({ code, pack, name: type.name, token: literal.key });
@@ -387,12 +450,10 @@ class PackBinder {
         continue;
       }
       try {
-        const fields = new Dict<string, Value>();
-        for (const field of literal.fields) fields.set(field.name, taggedValueOf(field.value));
         const label = literal.label ?? literal.key;
         const tile = new BrainTileLiteralDef(
           typeId,
-          mkClosedStructValueByName(typeDef, fields),
+          literalValueOf(typeId, literal, fieldIds, type.fields.length),
           {
             persist: false,
             valueLabel: literal.key,
@@ -675,7 +736,8 @@ export function pageFamilyIcon(packs: readonly CatalogPack[]): string | undefine
 
 /**
  * The module binding `packs` -- every struct type with its accessor tiles,
- * any variable factory and its declared literals, every tile, operator and
+ * any variable factory, its declared literals and any starting value its
+ * variable initial names, every tile, operator and
  * overload of a core operator a session catalog's packs declare, and every
  * icon they give a core tile --
  * into an environment, under the ids

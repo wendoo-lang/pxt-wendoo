@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "id": "shiftMyselfXY001",
+  "name": "Shift",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0shiftMyself0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 100,
+      "valueLabel": "100",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 30,
+      "valueLabel": "30",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0shiftMyself0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.accessor->struct:<Vector2>->x",
+            "tile.op->assign",
+            "tile.literal->number:<number>->100"
+          ],
+          "children": [],
+          "ruleId": "fRu0shiftMyself0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.accessor->struct:<Vector2>->y",
+            "tile.op->assign",
+            "tile.literal->number:<number>->30"
+          ],
+          "children": [],
+          "ruleId": "fRu0shiftMyself1"
+        }
+      ]
+    }
+  ]
+}

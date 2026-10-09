@@ -267,6 +267,15 @@ const ARCADE_SOURCES = [
   "game-over-unset.src.json",
   "ending-lose.src.json",
   "ending-player.src.json",
+  "spot-x.src.json",
+  "shift.src.json",
+  "lift.src.json",
+  "spot-birth.src.json",
+  "score-set.src.json",
+  "origin-toward.src.json",
+  "origin-home.src.json",
+  "fresh-toward.src.json",
+  "fresh-step.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

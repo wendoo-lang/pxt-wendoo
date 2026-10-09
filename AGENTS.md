@@ -352,7 +352,14 @@ the current slice alone.
       them -- the mechanism only, every literal declared by a target's
       pack; a literal's key is public identity in saved programs from the
       first save of one placing it, append-only as tile ids are: never
-      renamed, never reused, a retired key staying reserved; and core
+      renamed, never reused, a retired key staying reserved; and variable
+      initials: a struct type's `TypeMeta` may set `variableInitial` to the
+      key of one of its declared literals, the catalog carrying the key on
+      the type entry and the editor's binding compiling that literal's value
+      into each program as the type's starting value, so every variable of
+      the type starts holding a fresh copy of it, and the VM seeding each
+      slot with a fresh copy, never the program's pooled constant -- the
+      mechanism only, every initial chosen by a target's pack; and core
       tile icons: `defineCoreTileIcon` gives a core tile -- one of the
       editor's own core vocabulary, addressed by its stable tile id -- an
       icon the catalog carries under the giving pack, every icon given
@@ -406,8 +413,13 @@ the current slice alone.
       Arcade's `device` library. It owns the sprite's program attachment (the
       `SpriteAttachment` every arcade pack's host-bound tile reaches its sprite
       through), the `Vector2` type (a direction, or a point in a slot naming
-      a place to head for; its `x` and `y` read-only accessors, `y` growing
-      downward as the move's direction modifiers do; one holding an
+      a place to head for; its `x` and `y` writable plain fields with
+      accessors, `y` growing downward as the move's direction modifiers do,
+      a write reaching a sprite's center through the write-back of the
+      `position` it was read from; one declared literal, key `origin`,
+      labelled `origin`, holding 0 in both fields -- the screen's top-left
+      corner -- and the type's variable initial, so every position variable
+      starts there; a `Vector2` holding an
       infinity or a not-a-number reads to the pack's tiles as no `Vector2`
       at all), the `Sprite` type (a
       host value backed by the sprite it stands for, its fields read from
@@ -495,9 +507,10 @@ the current slice alone.
       the pack's tile and accessor icons, the icons of its `Vector2`,
       `Sprite`, `Brain`, `Player`, `Effect` and `Sound` types, the variable factory flag and editor
       label (`position`, `sprite`) of its `Vector2` and `Sprite` types (a
-      `Vector2` variable holds the point written to it -- the store's
-      deep copy is the snapshot; a `Sprite` variable holds the sprite
-      itself, its native backing copied by reference with no snapshot
+      `Vector2` variable starts at `origin` and holds the point written to
+      it -- the store's deep copy is the snapshot; a `Sprite` variable
+      declares no initial, holding nothing until a brain writes it, and
+      holds the sprite itself, its native backing copied by reference with no snapshot
       hook, so once that sprite is destroyed the variable reads as nothing:
       a WHEN holding it does not fire, its fields read nil, writes through
       it change nothing, and an action it is placed in does not run), the icons it gives the core tiles (the page tiles,
@@ -675,6 +688,9 @@ the current slice alone.
     carries none) and icon, each literal a catalog type declares as a
     literal tile of the type under the type and the literal's key, read by
     its label (its key when it carries none) and wearing the type's icon,
+    each type's variable initial as the type's starting value -- the value
+    of the first literal of the type under that key, an initial naming no
+    literal it can take reported and the type bound with none --
     each overload a pack adds to a core operator
     onto that operator, minting no tile -- and puts
     the icons packs give core tiles on its own core tiles, the first icon

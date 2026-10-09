@@ -4054,6 +4054,113 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /**
+   * In a scene of its own, check compiled programs writing one number of a
+   * position: a position variable given its sprite's position, then an `x` of
+   * 5, holds the changed point for every later rule, so a move toward it
+   * heads for it and lands there; a program writing its own sprite's
+   * position's `x`, then its `y`, moves the sprite along each axis in turn,
+   * the second write keeping the first; a program writing the bumped
+   * sprite's position's `y` moves that sprite alone, along that axis alone;
+   * a position variable nothing wrote holds `origin` from the program's
+   * start, so a rule whose WHEN is that variable fires from the first frame;
+   * a move toward the `origin` literal heads for the screen's top-left
+   * corner, (0, 0), and lands there; a position variable given `origin`,
+   * then an `x` of 80 and a `y` of 30, holds (80, 30), so a move toward it
+   * heads there and lands there; a position variable nothing wrote, given an
+   * `x` of 5 alone, holds (5, 0), so a move toward it lands there; and two
+   * sprites running one program that adds 40 to its position variable's `x`
+   * once each start from `origin` alike, the second started after the first
+   * has written its own, so both land at (40, 0).
+   */
+  function checkComponentWrites(): void {
+    game.pushScene();
+    const walker = solidSprite(8, 40, 60);
+    wendoo.runBrain(walker, wendooBrains.p_spotComponentX01);
+    pause(FRAMES_MS);
+    const headed = movesAt(walker, -DEFAULT_MOVE_SPEED, 0);
+    pause(CLOSING_MS);
+    check(
+      "a-position-variables-x-written-holds-the-changed-point-for-every-later-rule",
+      headed && near(walker.x, 5, 0.5) && near(walker.y, 60, 0.5) && movesAt(walker, 0, 0)
+    );
+    clearScene();
+
+    const shifter = solidSprite(8, 40, 60);
+    wendoo.runBrain(shifter, wendooBrains.p_shiftMyselfXY001);
+    pause(FRAMES_MS);
+    check(
+      "writes-of-its-own-sprites-position-x-then-y-move-the-sprite-along-each-axis",
+      shifter.x === 100 && shifter.y === 30 && movesAt(shifter, 0, 0)
+    );
+    clearScene();
+
+    const lifter = solidSprite(8, 40, 60);
+    const lifted = solidSprite(8, 46, 62);
+    wendoo.runBrain(lifter, wendooBrains.p_liftBumpedY00001);
+    pause(FRAMES_MS);
+    check(
+      "a-write-of-the-bumped-sprites-position-y-moves-that-sprite-alone-along-that-axis",
+      lifted.x === 46 && lifted.y === 10 && lifter.x === 40 && lifter.y === 60
+    );
+    clearScene();
+
+    const newborn = solidSprite(8, 40, 60);
+    wendoo.runBrain(newborn, wendooBrains.p_spotBirthWhen001);
+    pause(FRAMES_MS);
+    check(
+      "a-rule-whose-when-is-a-position-variable-nothing-wrote-fires-from-the-start",
+      movesAt(newborn, DEFAULT_MOVE_SPEED, 0) && programOf(newborn) === "spotBirthWhen001"
+    );
+    clearScene();
+
+    const homer = solidSprite(8, 40, 30);
+    wendoo.runBrain(homer, wendooBrains.p_originToward0001);
+    pause(FRAMES_MS);
+    const cornered = movesAt(homer, -80, -60);
+    pause(CLOSING_MS);
+    check(
+      "a-move-toward-origin-heads-for-the-top-left-corner-and-lands-there",
+      cornered && near(homer.x, 0, 0.5) && near(homer.y, 0, 0.5) && movesAt(homer, 0, 0)
+    );
+    clearScene();
+
+    const seeder = solidSprite(8, 40, 60);
+    wendoo.runBrain(seeder, wendooBrains.p_originHomeSeed01);
+    pause(FRAMES_MS);
+    const bound = movesAt(seeder, 80, -60);
+    pause(CLOSING_MS);
+    check(
+      "a-position-variable-given-origin-then-an-x-and-a-y-holds-that-point",
+      bound && near(seeder.x, 80, 0.5) && near(seeder.y, 30, 0.5) && movesAt(seeder, 0, 0)
+    );
+    clearScene();
+
+    const fresh = solidSprite(8, 40, 30);
+    wendoo.runBrain(fresh, wendooBrains.p_freshTowardX0001);
+    pause(CLOSING_MS);
+    check(
+      "a-position-variable-nothing-wrote-given-an-x-alone-holds-that-x-at-the-top",
+      near(fresh.x, 5, 0.5) && near(fresh.y, 0, 0.5) && movesAt(fresh, 0, 0)
+    );
+    clearScene();
+
+    const firstStepper = solidSprite(8, 40, 30);
+    wendoo.runBrain(firstStepper, wendooBrains.p_freshStepShared1);
+    pause(FRAMES_MS);
+    const secondStepper = solidSprite(8, 60, 30);
+    wendoo.runBrain(secondStepper, wendooBrains.p_freshStepShared1);
+    pause(CLOSING_MS);
+    check(
+      "two-sprites-running-one-program-each-start-its-position-variable-at-origin",
+      near(firstStepper.x, 40, 0.5) &&
+        near(firstStepper.y, 0, 0.5) &&
+        near(secondStepper.x, 40, 0.5) &&
+        near(secondStepper.y, 0, 0.5)
+    );
+    game.popScene();
+  }
+
   /** Destroy every sprite in the current scene, and let the game run until the scene's programs have ended. */
   function clearScene(): void {
     const placed = game.currentScene().allSprites;
@@ -4213,11 +4320,12 @@ namespace arcadeSelftest {
    * scores: a bare add score adds 1 to player one, one given a negative
    * number takes that many away, and one given an amount that reads nothing
    * adds nothing; a program reading player one's score moves once game code
-   * sets it past the program's mark; and programs given a number and a
-   * player, in either order, change that player's score. Then, in a fresh
-   * scene, a program reading player two's score switches the game to
-   * Arcade's multiplayer display, its corner drawn though no score was ever
-   * set.
+   * sets it past the program's mark; programs given a number and a
+   * player, in either order, change that player's score; and a program
+   * writing player one's score through its literal sets that score alone.
+   * Then, in a fresh scene, a program reading player two's score switches
+   * the game to Arcade's multiplayer display, its corner drawn though no
+   * score was ever set.
    */
   function checkScorePrograms(): void {
     game.pushScene();
@@ -4245,6 +4353,13 @@ namespace arcadeSelftest {
     check(
       "a-program-adding-score-given-a-number-and-a-player-in-either-order-changes-that-players-score",
       info.player2.impl.score() === 5 && info.player3.impl.score() === 2 && info.score() === 10
+    );
+
+    spriteRunning(wendooBrains.p_scoreSetLiteral1);
+    pause(FRAMES_MS);
+    check(
+      "a-program-writing-player-ones-score-sets-it-through-arcade",
+      info.score() === 3 && info.player2.impl.score() === 5
     );
     game.popScene();
 
@@ -4849,6 +4964,7 @@ namespace arcadeSelftest {
     checkEqualityOperators();
     checkVector2Operators();
     checkVariables();
+    checkComponentWrites();
     checkPlayerScores();
     checkScorePrograms();
     checkPlayerDpad();

@@ -44,8 +44,8 @@ const POINT_TYPE = mkTypeId(NativeType.Struct, "Point");
 
 /**
  * A catalog in the rendered form the simx publishes: a native `Spot` type
- * whose writable `place` field -- of the `Point` type declared after it --
- * carries an accessor with a label, docs and an icon, and whose read-only `id`
+ * whose writable, routed `place` field -- of the `Point` type declared after
+ * it -- carries an accessor with a label, docs and an icon, and whose read-only `id`
  * carries none; a `Point` type whose read-only `x` carries a labeled accessor
  * and whose read-only `y` an empty one; two inline sensors reading a `Spot`,
  * the first's result writable; and an actuator taking a number.
@@ -59,7 +59,12 @@ const ACCESSOR_CATALOG = JSON.stringify({
           name: "Spot",
           native: true,
           fields: [
-            { name: "place", type: "Point", accessor: { label: "place", docs: "# Place", iconUrl: PLACE_ICON } },
+            {
+              name: "place",
+              type: "Point",
+              routed: true,
+              accessor: { label: "place", docs: "# Place", iconUrl: PLACE_ICON },
+            },
             { name: "id", type: "number", readOnly: true },
           ],
         },
@@ -173,6 +178,13 @@ describe("pack type accessors", () => {
     assert.equal(accessor(built, POINT_TYPE, "y").metadata?.label, "y");
     assert.equal(accessor(built, POINT_TYPE, "y").metadata?.iconUrl, undefined);
     assert.throws(() => accessor(built, SPOT_TYPE, "id"));
+  });
+
+  it("makes a routed field's accessor routed, and any other field's not", () => {
+    const built = environment();
+
+    assert.equal(accessor(built, SPOT_TYPE, "place").routed, true);
+    assert.equal(accessor(built, POINT_TYPE, "x").routed, false);
   });
 
   it("binds a type whose field is of a type declared after it", () => {

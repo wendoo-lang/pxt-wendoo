@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "liftBumpedY00001",
+  "name": "Lift",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0liftBumped00",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 10,
+      "valueLabel": "10",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0liftBumped00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.accessor->struct:<Sprite>->position",
+            "tile.accessor->struct:<Vector2>->y",
+            "tile.op->assign",
+            "tile.literal->number:<number>->10"
+          ],
+          "children": [],
+          "ruleId": "fRu0liftBumped00"
+        }
+      ]
+    }
+  ]
+}

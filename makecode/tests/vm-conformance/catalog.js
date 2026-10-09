@@ -172,9 +172,10 @@ function grammarLines(node, indent) {
 /**
  * The structural listing of the parsed catalog payload `payload`: every fact
  * that is registration structure, one entry per line, in payload order, and
- * nothing that is display. Each pack lists its types (with their fields,
- * each field's accessor by presence, and their declared literals, each by
- * its key with the value it holds in each field it sets), tiles (with their
+ * nothing that is display. Each pack lists its types (with their variable
+ * initial's literal key, their fields, each field's accessor by presence,
+ * and their declared literals, each by its key with the value it holds in
+ * each field it sets), tiles (with their
  * outputs and their argument grammar), operators, overloads, core tile icon
  * entries and core type icon entries; then the payload's diagnostics. Names,
  * ids, kinds, type references, flags, operands, grammar shapes, default
@@ -196,13 +197,13 @@ function structuralListing(payload) {
         1,
         "type",
         type.name,
-        ...fieldTokens(type, ["native", "asset", "brain", "variableFactory"]),
+        ...fieldTokens(type, ["native", "asset", "brain", "variableFactory", "variableInitial"]),
         ...iconToken(type)
       );
       for (const field of type.fields || []) {
         const accessor =
           field.accessor === undefined ? [] : ["accessor", ...iconToken(field.accessor).map(() => "accessor-icon")];
-        line(2, "field", field.name, field.type, ...fieldTokens(field, ["readOnly"]), ...accessor);
+        line(2, "field", field.name, field.type, ...fieldTokens(field, ["readOnly", "routed"]), ...accessor);
       }
       for (const literal of type.literals || []) {
         line(2, "literal", literal.key);

@@ -15,12 +15,15 @@
  *   assets its values name), `brain` (on a brain type, whose values each name
  *   one of the project's brains), `variableFactory` (on a type brains may hold
  *   variables of, for which the editor offers a variable factory), `fields`
- *   (each with `name`, `type`, `readOnly`, and `accessor` -- present exactly
- *   when the field has an accessor tile -- holding the accessor's metadata
- *   fields), `literals` (the literals the type declares, in declaration
+ *   (each with `name`, `type`, `readOnly`, `routed` -- on a writable field
+ *   of a type whose field setter takes every write to it -- and `accessor`
+ *   -- present exactly when the field has an accessor tile -- holding the
+ *   accessor's metadata fields), `literals` (the literals the type declares, in declaration
  *   order, each with its durable `key`, its `label`, and `fields`: each field
- *   it sets, by `name`, with the tagged `value` it holds there), and the
- *   metadata fields.
+ *   it sets, by `name`, with the tagged `value` it holds there),
+ *   `variableInitial` (the key of the declared literal every variable of the
+ *   type starts holding, when the type declares one), and the metadata
+ *   fields.
  * - A tile entry carries `name`, `kind`, `async`, `inline` (a sensor reading
  *   as a value inside an expression), `writableResult` (a sensor whose result
  *   a brain may write a field through), its argument grammar as either
@@ -552,14 +555,18 @@ namespace wendoo {
 
     /**
      * JSON object text of one declared field of the struct type `typeName`
-     * under `pack`, its accessor's metadata rendered as the metadata fields
-     * are; an accessor icon the encoder cannot render is left out and
-     * recorded against the type, naming the field as its spec.
+     * under `pack`, marked routed when it is writable and `routed` says the
+     * type's field setter takes every write, its accessor's metadata rendered
+     * as the metadata fields are; an accessor icon the encoder cannot render
+     * is left out and recorded against the type, naming the field as its
+     * spec.
      */
-    private fieldText(pack: string, typeName: string, spec: StructFieldSpec): string {
+    private fieldText(pack: string, typeName: string, spec: StructFieldSpec, routed: boolean): string {
       let out = `{"name":${jsonQuote(spec.name)},"type":${jsonQuote(spec.type)}`;
       if (spec.readOnly) {
         out += ',"readOnly":true';
+      } else if (routed) {
+        out += ',"routed":true';
       }
       if (spec.accessor) {
         out += `,"accessor":{${this.metaText(typeName, pack, spec.accessor, spec.name).substr(1)}}`;
@@ -574,15 +581,17 @@ namespace wendoo {
      * @param name - Wendoo type name.
      * @param fields - Declared fields, in declaration order.
      * @param native - Whether the type is backed by host objects through registered hooks.
+     * @param routed - Whether the type's registered field setter takes every write to a field of it.
      * @param assetKind - Kind of the project assets an asset type's values name; `""` for any other type.
      * @param brain - Whether the type is a brain type, its values each naming one of the project's brains.
-     * @param meta - Catalog metadata, its variable factory flag and declared literals included, or `undefined` when the registration declared none.
+     * @param meta - Catalog metadata, its variable factory flag, declared literals and variable initial included, or `undefined` when the registration declared none.
      */
     struct(
       pack: string,
       name: string,
       fields: StructFieldSpec[],
       native: boolean,
+      routed: boolean,
       assetKind: string,
       brain: boolean,
       meta: TypeMeta
@@ -604,7 +613,7 @@ namespace wendoo {
       if (fields.length > 0) {
         const rendered: string[] = [];
         for (let i = 0; i < fields.length; i++) {
-          rendered.push(this.fieldText(pack, name, fields[i]));
+          rendered.push(this.fieldText(pack, name, fields[i], routed));
         }
         entry += `,"fields":${jsonArray(rendered)}`;
       }
@@ -614,6 +623,9 @@ namespace wendoo {
           rendered.push(literalText(meta.literals[i]));
         }
         entry += `,"literals":${jsonArray(rendered)}`;
+      }
+      if (meta && meta.variableInitial.length > 0) {
+        entry += `,"variableInitial":${jsonQuote(meta.variableInitial)}`;
       }
       entry += this.metaText(name, pack, meta, "");
       this.typeEntries[this.packIndex(pack)].push(`${entry}}`);

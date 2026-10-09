@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { CoreOpId, CoreTypeIds } from "@wendoo/core/app";
 import { CompilationDiagCode, ParseDiagCode, TypeDiagCode } from "@wendoo/core/brain/compiler";
-import { mkTypeId, NativeType } from "@wendoo/core/runtime";
+import { mkNumberValue, mkTypeId, NativeType } from "@wendoo/core/runtime";
 import {
   ACCESSOR_ENTRY_PREFIX,
   ARCADE_REFUSED_SOURCE,
@@ -515,17 +515,11 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.ok(arcadeOffersLiteral(ASSIGN, ["sensor.arcade.out-of-range"], [spriteOutOfRange, position]));
   });
 
-  it("refuses an assignment to a Vector2's x or y, through an output tile as through myself", () => {
-    assert.ok(
-      arcadeImageRuleDiagnosticCodes([bump], [bumped, position, yOf, ASSIGN, NUMBER_LITERAL]).includes(
-        ParseDiagCode.ReadOnlyFieldAssignment
-      )
-    );
-    assert.ok(
-      arcadeImageRuleDiagnosticCodes([], [myself, position, yOf, ASSIGN, NUMBER_LITERAL]).includes(
-        ParseDiagCode.ReadOnlyFieldAssignment
-      )
-    );
+  it("offers and takes an assignment to a sprite's position's y, through an output tile as through myself", () => {
+    assert.ok(arcadeOffersLiteral(ASSIGN, [bump], [bumped, position, yOf]));
+    assert.ok(arcadeOffersLiteral(ASSIGN, [], [myself, position, yOf]));
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([bump], [bumped, position, yOf, ASSIGN, NUMBER_LITERAL]), []);
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [myself, position, yOf, ASSIGN, NUMBER_LITERAL]), []);
   });
 
   const equalTo = `${OPERATOR_ENTRY_PREFIX}${CoreOpId.EqualTo}`;
@@ -689,6 +683,8 @@ describe("the MakeCode VM extension's compiled programs", () => {
     ["move toward $held", [move, toward, held]],
     ["$held's image = myself's image", [held, imageOf, ASSIGN, myself, imageOf]],
     ["$home = $home plus myself's position", [home, ASSIGN, home, add, myself, position]],
+    ["$home's x = a number", [home, xOf, ASSIGN, NUMBER_LITERAL]],
+    ["$held's position's x = a number", [held, position, xOf, ASSIGN, NUMBER_LITERAL]],
   ] as const) {
     it(`compiles ${sentence}`, () => {
       assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [...act]), []);
@@ -702,26 +698,92 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.notEqual(bytecode, undefined);
   });
 
-  it("reads a position or sprite variable nothing wrote as nil, through accessor chains and a WHEN, without a fault", () => {
+  it("reads a position variable nothing wrote as origin, its own copy, through accessor chains, without a fault", () => {
     const { values, faults } = arcadeVariableRun(
       [
         { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.x`, ASSIGN, home, xOf] },
-        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}Vector2.copy`, ASSIGN, home] },
-        { when: [], act: [held, position, ASSIGN, home] },
-        { when: [held, position, xOf], act: [`${VARIABLE_ENTRY_PREFIX}number.fired`, ASSIGN, NUMBER_LITERAL] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.y`, ASSIGN, home, yOf] },
+        { when: [home], act: [`${VARIABLE_ENTRY_PREFIX}number.fired`, ASSIGN, NUMBER_LITERAL] },
       ],
-      ["x", "copy", "fired", "home", "held"],
+      ["x", "y", "fired", "home"],
       2
     );
-    const [x, copy, fired, unwritten, unheld] = values;
+    const [x, y, fired, start] = values;
 
     assert.equal(faults, 0);
-    assert.equal(x?.t, NativeType.Nil);
+    assert.deepEqual([x, y], [mkNumberValue(0), mkNumberValue(0)]);
+    assert.deepEqual(fired, mkNumberValue(40), "a WHEN holding the position variable fires from the first think");
+    assert.equal(start?.t, NativeType.Struct);
+  });
+
+  it("reads a sprite variable nothing wrote as nil, through accessor chains and a WHEN, without a fault", () => {
+    const { values, faults } = arcadeVariableRun(
+      [
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}Vector2.copy`, ASSIGN, held, position] },
+        { when: [held, position, xOf], act: [`${VARIABLE_ENTRY_PREFIX}number.fired`, ASSIGN, NUMBER_LITERAL] },
+      ],
+      ["copy", "fired", "held"],
+      2
+    );
+    const [copy, fired, unheld] = values;
+
+    assert.equal(faults, 0);
     assert.equal(copy?.t, NativeType.Nil);
-    assert.equal(fired?.t, NativeType.Number, "the gated rule never wrote its number variable past its starting 0");
-    assert.equal((fired as { v: number } | undefined)?.v, 0);
-    assert.equal(unwritten, undefined);
+    assert.deepEqual(fired, mkNumberValue(0), "the gated rule never wrote its number variable past its starting 0");
     assert.equal(unheld, undefined);
+  });
+
+  it("offers the assignment after a position variable's x", () => {
+    assert.ok(arcadeOffersLiteral(ASSIGN, [], [home, xOf]));
+  });
+
+  it("writes the x of a position variable nothing wrote, from origin, with no assignment first", () => {
+    const { values, faults } = arcadeVariableRun(
+      [
+        { when: [], act: [home, xOf, ASSIGN, NUMBER_LITERAL] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.homeX`, ASSIGN, home, xOf] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.homeY`, ASSIGN, home, yOf] },
+      ],
+      ["homeX", "homeY"],
+      2
+    );
+
+    assert.equal(faults, 0);
+    assert.deepEqual(values, [mkNumberValue(40), mkNumberValue(0)]);
+  });
+
+  const origin = `${LITERAL_ENTRY_PREFIX}Vector2.origin`;
+
+  it("offers origin as a move's target and as a position variable's whole new position", () => {
+    assert.ok(arcadeOffersLiteral(origin, [], [move, toward]));
+    assert.ok(arcadeOffersLiteral(origin, [], [home, ASSIGN]));
+  });
+
+  it("starts a position variable from origin, its writes leaving origin itself at 0 on every later think", () => {
+    const { values, faults } = arcadeVariableRun(
+      [
+        { when: [], act: [home, ASSIGN, origin] },
+        { when: [], act: [home, xOf, ASSIGN, NUMBER_LITERAL] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.originX`, ASSIGN, origin, xOf] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.homeX`, ASSIGN, home, xOf] },
+        { when: [], act: [`${VARIABLE_ENTRY_PREFIX}number.homeY`, ASSIGN, home, yOf] },
+      ],
+      ["originX", "homeX", "homeY"],
+      2
+    );
+
+    assert.equal(faults, 0);
+    assert.deepEqual(values, [mkNumberValue(0), mkNumberValue(40), mkNumberValue(0)]);
+  });
+
+  it("neither offers nor takes an assignment to origin's x, its root a literal and its field plain", (t) => {
+    t.mock.method(console, "warn", () => {});
+    assert.equal(arcadeOffersLiteral(ASSIGN, [], [origin, xOf]), false);
+    assert.ok(
+      arcadeImageRuleDiagnosticCodes([], [origin, xOf, ASSIGN, NUMBER_LITERAL]).includes(
+        ParseDiagCode.ReadOnlyResultFieldAssignment
+      )
+    );
   });
 
   it("writes a created variable into the brain's own source by name and type, and reads it back alike", () => {
@@ -777,14 +839,9 @@ describe("the MakeCode VM extension's compiled programs", () => {
     }
   });
 
-  it("neither offers nor takes an assignment to a player's score, its player being a literal", (t) => {
-    t.mock.method(console, "warn", () => {});
-    assert.equal(arcadeOffersLiteral(ASSIGN, [], [playerOne, scoreOf]), false);
-    assert.ok(
-      arcadeImageRuleDiagnosticCodes([], [playerOne, scoreOf, ASSIGN, NUMBER_LITERAL]).includes(
-        ParseDiagCode.ReadOnlyResultFieldAssignment
-      )
-    );
+  it("offers and takes an assignment to a player's score, its field routed though its player is a literal", () => {
+    assert.equal(arcadeOffersLiteral(ASSIGN, [], [playerOne, scoreOf]), true);
+    assert.deepEqual(arcadeImageRuleDiagnosticCodes([], [playerOne, scoreOf, ASSIGN, NUMBER_LITERAL]), []);
   });
 
   const gameOver = "actuator.arcade.game-over";

@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "id": "spotComponentX01",
+  "name": "Spot x",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0spotCompX000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "position",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0spotPoint000"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 5,
+      "valueLabel": "5",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0spotCompX000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0spotPoint000",
+            "tile.op->assign",
+            "tile.sensor->sensor.arcade.myself",
+            "tile.accessor->struct:<Sprite>->position"
+          ],
+          "children": [],
+          "ruleId": "fRu0spotCompX000"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0spotPoint000",
+            "tile.accessor->struct:<Vector2>->x",
+            "tile.op->assign",
+            "tile.literal->number:<number>->5"
+          ],
+          "children": [],
+          "ruleId": "fRu0spotCompX001"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0spotPoint000"
+          ],
+          "children": [],
+          "ruleId": "fRu0spotCompX002"
+        }
+      ]
+    }
+  ]
+}

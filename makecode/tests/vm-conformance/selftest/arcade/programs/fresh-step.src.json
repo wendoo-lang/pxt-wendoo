@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "id": "freshStepShared1",
+  "name": "Fresh step",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0freshStep000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "position",
+      "varType": "struct:<Vector2>",
+      "uniqueId": "fVr0freshStep000"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 40,
+      "valueLabel": "40",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0freshStep000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->on-page-entered"
+          ],
+          "do": [
+            "tile.var->fVr0freshStep000",
+            "tile.accessor->struct:<Vector2>->x",
+            "tile.op->assign",
+            "tile.var->fVr0freshStep000",
+            "tile.accessor->struct:<Vector2>->x",
+            "tile.op->add",
+            "tile.literal->number:<number>->40"
+          ],
+          "children": [],
+          "ruleId": "fRu0freshStep000"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.movement.toward",
+            "tile.var->fVr0freshStep000"
+          ],
+          "children": [],
+          "ruleId": "fRu0freshStep001"
+        }
+      ]
+    }
+  ]
+}

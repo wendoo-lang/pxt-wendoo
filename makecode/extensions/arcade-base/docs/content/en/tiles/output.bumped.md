@@ -49,7 +49,8 @@ The bumped sprite output, tile.out->struct:<Sprite>.bumped:
 - Written every time bump runs: the sprite read, or nothing. Placeable on the DO side of bump's rule and
   anywhere in the rules under it.
 - Writable: [bumped sprite] [image | position | brain | move smoothing] [gets] <value> changes that
-  sprite. Holding nothing, a write through it changes nothing.
+  sprite, and [bumped sprite] [position] [x | y] [gets] <number> moves it along one axis. Holding
+  nothing, a write through it changes nothing.
 - On bump's DO side it holds the same sprite as the WHEN result, so move toward or away from with no
   target placed chases or flees it.
 ```

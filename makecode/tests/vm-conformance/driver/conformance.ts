@@ -63,7 +63,9 @@
  *   `Anchor` value one tick after its dispatch, constructed at settle time
  *   over the world's one anchor host object. `Anchor` is native-backed: its
  *   field getter and setter read and write that host object, and a deep copy
- *   shares it by reference, so every copy aliases one anchor.
+ *   shares it by reference, so every copy aliases one anchor. Its `at` field
+ *   reads a fresh `Point` snapshot of the object's `x` and `y`, and a `Point`
+ *   written to it sets both.
  * - `destroy anchor()` -- synchronous actuator returning void, destroying the
  *   world's one anchor host object. Every `Anchor` value handed out before the
  *   call keeps fronting that object, and from then on the type's field hooks
@@ -96,11 +98,17 @@
  *   falsy. Its field getter reads `x` off the object whether or not it was
  *   destroyed.
  *
- * The profile also registers its four struct types -- `Point` (closed),
- * `Anchor`, `Target`, and `Marker` -- so every corpus program's TYPS atom entries
- * resolve at load. The profile's `Mode` enum type is program-local: its
- * symbols travel in each program's own type table, so the replay registers
- * nothing for it.
+ * `Gauge` values reach a program only as literal constants: a `Gauge` keeps
+ * its read-only `index` in its own storage, and its field getter and setter
+ * route `level` to the world's level of the gauge that index names, every
+ * gauge starting at 0, so a write to `level` changes world state and never
+ * the value's storage.
+ *
+ * The profile also registers its five struct types -- `Point` (closed),
+ * `Anchor`, `Target`, `Marker`, and `Gauge` -- so every corpus program's TYPS
+ * atom entries resolve at load. The profile's `Mode` enum type and `Rig`
+ * struct type are program-local: their symbols and fields travel in each
+ * program's own type table, so the replay registers nothing for them.
  *
  * Every registration above is made by name from this file's top-level code,
  * through the pack surface, and the ids the corpus pins are recorded in the
@@ -258,8 +266,8 @@ namespace wendoo {
 
   /**
    * The deterministic world the conformance host actions run against: the
-   * pending deferred settlements, the anchor host object, and the
-   * call-counting target resolution.
+   * pending deferred settlements, the anchor host object, the call-counting
+   * target resolution, and the gauge levels.
    *
    * Attach an instance as the brain runtime's context data, and call
    * {@link ConformanceWorld.settleDue} with the ordinal of the think that is
@@ -271,6 +279,8 @@ namespace wendoo {
     private firstTarget: ConformanceTarget;
     private laterTarget: ConformanceTarget;
     private targetResolutions: number;
+    private gaugeIndices: number[];
+    private gaugeLevels: number[];
 
     constructor() {
       super();
@@ -278,6 +288,28 @@ namespace wendoo {
       this.firstTarget = new ConformanceTarget(CONFORMANCE_TARGET_FIRST_VALUE);
       this.laterTarget = new ConformanceTarget(CONFORMANCE_TARGET_LATER_VALUE);
       this.targetResolutions = 0;
+      this.gaugeIndices = [];
+      this.gaugeLevels = [];
+    }
+
+    /**
+     * The level of the gauge of index `index`: the last level written to it,
+     * or {@link CONFORMANCE_GAUGE_START_LEVEL} before any write.
+     */
+    gaugeLevel(index: number): number {
+      const at = this.gaugeIndices.indexOf(index);
+      return at < 0 ? CONFORMANCE_GAUGE_START_LEVEL : this.gaugeLevels[at];
+    }
+
+    /** Set the level of the gauge of index `index`. */
+    setGaugeLevel(index: number, level: number): void {
+      const at = this.gaugeIndices.indexOf(index);
+      if (at < 0) {
+        this.gaugeIndices.push(index);
+        this.gaugeLevels.push(level);
+      } else {
+        this.gaugeLevels[at] = level;
+      }
     }
 
     /** The world's one `Anchor` host object; every `defer anchor` reading is backed by it. */
@@ -613,11 +645,20 @@ namespace wendoo {
   /** Stable type-atom id of the `Marker` struct type; corpus TYPS entries record it verbatim. */
   const CONFORMANCE_MARKER_ATOM_ID = 1027;
 
+  /** Wendoo type name of the conformance profile's storage-backed struct type with a routed field. */
+  const GAUGE_TYPE_NAME = "Gauge";
+
+  /** Stable type-atom id of the `Gauge` struct type; corpus TYPS entries record it verbatim. */
+  const CONFORMANCE_GAUGE_ATOM_ID = 1028;
+
+  /** Level every gauge of a world holds until a write sets it; exactly representable at f32. */
+  const CONFORMANCE_GAUGE_START_LEVEL = 0;
+
   /** Field specs of the `Point` type, in declaration order. */
   const POINT_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
 
   /** Field specs of the `Anchor` type, in declaration order. */
-  const ANCHOR_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER)];
+  const ANCHOR_FIELDS = [field("x", TYPE_NUMBER), field("y", TYPE_NUMBER), field("at", POINT_TYPE_NAME)];
 
   /** Field specs of the `Target` type, in declaration order. */
   const TARGET_FIELDS = [readOnlyField("value", TYPE_NUMBER)];
@@ -625,11 +666,14 @@ namespace wendoo {
   /** Field specs of the `Marker` type, in declaration order. */
   const MARKER_FIELDS = [readOnlyField("x", TYPE_NUMBER)];
 
+  /** Field specs of the `Gauge` type, in declaration order. */
+  const GAUGE_FIELDS = [readOnlyField("index", TYPE_NUMBER), field("level", TYPE_NUMBER)];
+
   /** Hand-assigned field ids of the `Point` type, parallel to {@link POINT_FIELDS}; corpus programs record them verbatim. */
   const POINT_FIELD_IDS = [0, 1];
 
   /** Hand-assigned field ids of the `Anchor` type, parallel to {@link ANCHOR_FIELDS}; corpus programs record them verbatim. */
-  const ANCHOR_FIELD_IDS = [0, 1];
+  const ANCHOR_FIELD_IDS = [0, 1, 2];
 
   /** Hand-assigned field ids of the `Target` type, parallel to {@link TARGET_FIELDS}; corpus programs record them verbatim. */
   const TARGET_FIELD_IDS = [0];
@@ -637,11 +681,23 @@ namespace wendoo {
   /** Hand-assigned field ids of the `Marker` type, parallel to {@link MARKER_FIELDS}; corpus programs record them verbatim. */
   const MARKER_FIELD_IDS = [0];
 
+  /** Hand-assigned field ids of the `Gauge` type, parallel to {@link GAUGE_FIELDS}; corpus programs record them verbatim. */
+  const GAUGE_FIELD_IDS = [0, 1];
+
   /** Position of the `Anchor` type's `x` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_ANCHOR_FIELD_X = 0;
 
   /** Position of the `Anchor` type's `y` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_ANCHOR_FIELD_Y = 1;
+
+  /** Position of the `Anchor` type's `at` field in its declaration, which indexes the binding's field ids. */
+  const CONFORMANCE_ANCHOR_FIELD_AT = 2;
+
+  /** Position of the `Gauge` type's `index` field in its declaration, which indexes the binding's field ids. */
+  const CONFORMANCE_GAUGE_FIELD_INDEX = 0;
+
+  /** Position of the `Gauge` type's `level` field in its declaration, which indexes the binding's field ids. */
+  const CONFORMANCE_GAUGE_FIELD_LEVEL = 1;
 
   /** Position of the `Target` type's `value` field in its declaration, which indexes the binding's field ids. */
   const CONFORMANCE_TARGET_FIELD_VALUE = 0;
@@ -697,7 +753,11 @@ namespace wendoo {
     return anchor.destroyed ? undefined : anchor;
   }
 
-  /** The `Anchor` type: field hooks into the world's anchor host object, native shared by reference. */
+  /**
+   * The `Anchor` type: field hooks into the world's anchor host object, native
+   * shared by reference, its `at` field a fresh `Point` snapshot of the
+   * object's `x` and `y`.
+   */
   class AnchorTypeBinding extends StructTypeBinding {
     constructor() {
       super();
@@ -716,12 +776,28 @@ namespace wendoo {
       if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_Y]) {
         return mkNumber(anchor.y);
       }
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_AT]) {
+        return mkStruct(CONFORMANCE_POINT_TYPE_ID, [mkNumber(anchor.x), mkNumber(anchor.y)]);
+      }
       return undefined;
     }
 
     fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
       const anchor = resolveConformanceAnchor(source.native);
-      if (!anchor || value.t !== ValueTag.Number) {
+      if (!anchor) {
+        return false;
+      }
+      if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_AT]) {
+        const x = pointFieldNumber(value, CONFORMANCE_POINT_FIELD_X);
+        const y = pointFieldNumber(value, CONFORMANCE_POINT_FIELD_Y);
+        if (!x || !y) {
+          return false;
+        }
+        anchor.x = x.num;
+        anchor.y = y.num;
+        return true;
+      }
+      if (value.t !== ValueTag.Number) {
         return false;
       }
       if (fieldId === this.fieldIds[CONFORMANCE_ANCHOR_FIELD_X]) {
@@ -792,6 +868,56 @@ namespace wendoo {
 
     exists(source: Value, ctx: ExecutionContext): boolean {
       return resolveConformanceAnchor(source.native) !== undefined;
+    }
+  }
+
+  /**
+   * The `Gauge` type: `index` read from the value's own storage, and `level`
+   * routed by its field getter and setter to the world's level of the gauge
+   * the value's index names.
+   */
+  class GaugeTypeBinding extends StructTypeBinding {
+    constructor() {
+      super();
+      this.hasFieldGetter = true;
+      this.hasFieldSetter = true;
+    }
+
+    /** The index `source` names, or undefined when its `index` slot holds no number. */
+    private indexOf(source: Value): number {
+      const slot = this.fieldIds[CONFORMANCE_GAUGE_FIELD_INDEX];
+      if (slot >= source.fields.length) {
+        return undefined;
+      }
+      const index = source.fields[slot];
+      return index.t === ValueTag.Number ? index.num : undefined;
+    }
+
+    fieldGetter(source: Value, fieldId: number, ctx: ExecutionContext): Value {
+      if (fieldId === this.fieldIds[CONFORMANCE_GAUGE_FIELD_INDEX]) {
+        return fieldId < source.fields.length ? source.fields[fieldId] : undefined;
+      }
+      const index = this.indexOf(source);
+      const world = ctx.data as ConformanceWorld;
+      if (fieldId !== this.fieldIds[CONFORMANCE_GAUGE_FIELD_LEVEL] || index === undefined || !world) {
+        return undefined;
+      }
+      return mkNumber(world.gaugeLevel(index));
+    }
+
+    fieldSetter(source: Value, fieldId: number, value: Value, ctx: ExecutionContext): boolean {
+      const index = this.indexOf(source);
+      const world = ctx.data as ConformanceWorld;
+      if (
+        fieldId !== this.fieldIds[CONFORMANCE_GAUGE_FIELD_LEVEL] ||
+        index === undefined ||
+        !world ||
+        value.t !== ValueTag.Number
+      ) {
+        return false;
+      }
+      world.setGaugeLevel(index, value.num);
+      return true;
     }
   }
 
@@ -1195,6 +1321,13 @@ namespace wendoo {
     MARKER_FIELDS,
     MARKER_FIELD_IDS,
     new MarkerTypeBinding()
+  );
+  defineConformanceStruct(
+    GAUGE_TYPE_NAME,
+    CONFORMANCE_GAUGE_ATOM_ID,
+    GAUGE_FIELDS,
+    GAUGE_FIELD_IDS,
+    new GaugeTypeBinding()
   );
 
   bindConformanceAction(
