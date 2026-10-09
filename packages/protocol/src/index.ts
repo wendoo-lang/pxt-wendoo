@@ -65,6 +65,8 @@ export {
   MakeCodeManifestErrorCode,
   MakeCodeManifestProblemCode,
 } from "./makecode-manifest.js";
+export type { MakeCodeMessagePort, MakeCodePortEditorSession } from "./makecode-port-editor-session.js";
+export { createMakeCodePortEditorSession, messagePortSessionPort } from "./makecode-port-editor-session.js";
 export type { MakeCodeProjectInfo, MakeCodeProjectInfoMessage } from "./makecode-project-info.js";
 export type {
   MakeCodeCatalogMessage,

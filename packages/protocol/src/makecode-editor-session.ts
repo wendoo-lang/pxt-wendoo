@@ -1,14 +1,10 @@
 import type { AppBridge, AppBridgeOptions, PeerSessionErrorCode } from "@wendoo/bridge-app";
-import {
-  BridgeSessionErrorCode,
-  createAppBridge,
-  createInMemoryProjectFileSystem,
-  PeerSessionError,
-} from "@wendoo/bridge-app";
+import { BridgeSessionErrorCode, createAppBridge, createInMemoryProjectFileSystem } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
+import { CounterpartSession } from "./makecode-counterpart.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
-import { connectMakeCodeSession, MAKECODE_SESSION_ROLE_PATHS } from "./makecode-session.js";
+import { MAKECODE_SESSION_ROLE_PATHS } from "./makecode-session.js";
 
 /**
  * Address of the MakeCode bridge service a session connects to when none is
@@ -221,78 +217,21 @@ export function createEditorSessionOver(
 }
 
 /**
- * The makecode handshake with the counterpart of one welcome, carried over
- * the bridge's payload messages. Reports the established session once the
- * handshake completes, then the catalogs, asset snapshots and project facts
- * the counterpart publishes.
+ * The bridge's payload messages as a makecode-session port. The makecode
+ * kind is the only session kind on the editor role path, so every payload
+ * message on the bridge is a makecode-session message.
  */
-class CounterpartSession {
-  private readonly _unsubscribes = new Set<() => void>();
-  private _session: MakeCodeSession | undefined;
-  private _closed = false;
-
-  /**
-   * @param bridge - The bridge connection, just welcomed.
-   * @param onEstablished - Receives the established session once the handshake completes.
-   * @param onCatalog - Receives each catalog the counterpart publishes.
-   * @param onAssets - Receives each asset snapshot the counterpart publishes.
-   * @param onProjectInfo - Receives each reading of the project's facts the counterpart publishes.
-   * @param onRejected - Receives the code of a failed handshake.
-   */
-  constructor(
-    bridge: AppBridge,
-    onEstablished: (session: MakeCodeSession) => void,
-    onCatalog: (content: string) => void,
-    onAssets: (assets: MakeCodeAsset[]) => void,
-    onProjectInfo: (info: MakeCodeProjectInfo) => void,
-    onRejected: (code: PeerSessionErrorCode) => void
-  ) {
-    const port: MakeCodeSessionPort = {
-      postMessage(message) {
-        bridge.sendPayload(message);
-      },
-      onMessage: (listener) => {
-        // The makecode kind is the only session kind on the editor role path, so
-        // every payload message on this bridge is a makecode-session message.
-        const unsubscribe = bridge.onPayload((message) => {
-          listener(message as MakeCodeSessionMessage);
-        });
-        this._unsubscribes.add(unsubscribe);
-        return () => {
-          this._unsubscribes.delete(unsubscribe);
-          unsubscribe();
-        };
-      },
-    };
-    connectMakeCodeSession({ port }).then(
-      (session) => {
-        if (this._closed) {
-          session.dispose();
-          return;
-        }
-        this._session = session;
-        onEstablished(session);
-        session.onCatalog(onCatalog);
-        session.onAssets(onAssets);
-        session.onProjectInfo(onProjectInfo);
-      },
-      (error: unknown) => {
-        if (!this._closed && error instanceof PeerSessionError) {
-          onRejected(error.code);
-        }
-      }
-    );
-  }
-
-  /** Detach from the bridge, whether or not the handshake completed. */
-  close(): void {
-    this._closed = true;
-    this._session?.dispose();
-    for (const unsubscribe of this._unsubscribes) {
-      unsubscribe();
-    }
-    this._unsubscribes.clear();
-  }
+function bridgePayloadPort(bridge: AppBridge): MakeCodeSessionPort {
+  return {
+    postMessage(message) {
+      bridge.sendPayload(message);
+    },
+    onMessage(listener) {
+      return bridge.onPayload((message) => {
+        listener(message as MakeCodeSessionMessage);
+      });
+    },
+  };
 }
 
 class EditorSession implements MakeCodeEditorSession {
@@ -454,33 +393,25 @@ class EditorSession implements MakeCodeEditorSession {
       this._saveBindingToken?.(token);
     }
     this._counterpart?.close();
-    this._counterpart = new CounterpartSession(
-      bridge,
-      (session) => {
-        this._target = session.peerTarget;
+    this._counterpart = new CounterpartSession(bridgePayloadPort(bridge), {
+      established: (target, channel) => {
+        this._target = target;
         this.update();
-        const channel: MakeCodeBrainsChannel = {
-          listBrains: () => session.listBrains(),
-          pullBrains: (ids) => session.pullBrains(ids),
-          pushBrain: (push) => session.pushBrain(push),
-          readManifest: () => session.readManifest(),
-          writeManifest: (manifest) => session.writeManifest(manifest),
-        };
         for (const listener of this._brainsChannelListeners) listener(channel);
       },
-      (content) => {
+      catalog: (content) => {
         for (const listener of this._catalogListeners) listener(content);
       },
-      (assets) => {
+      assets: (assets) => {
         for (const listener of this._assetsListeners) listener(assets);
       },
-      (info) => {
+      projectInfo: (info) => {
         for (const listener of this._projectInfoListeners) listener(info);
       },
-      (code) => {
+      rejected: (code) => {
         this.fail(code);
-      }
-    );
+      },
+    });
     this._welcomed = true;
     this._errorCode = undefined;
     this.update();
