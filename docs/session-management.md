@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Session Management in pxt-wendoo
@@ -42,7 +42,10 @@ session wire surface:
   receives the catalog (`publishCatalog`, `onCatalog`) and the asset
   snapshot (`publishAssets`, `onAssets`);
 - `createMakeCodeEditorSession`, the editor role's session object
-  (described below);
+  (described below), and `createMakeCodePortEditorSession`, the same
+  object over ports the page hosting the editor tab brokers, with
+  `messagePortSessionPort` wrapping a `MessagePort` as a session port
+  (see "The editor tab's in-page session", below);
 - the id manifest's shape, `MakeCodeIdManifest` (see "The manifest
   payload family", below);
 - the brain contracts both sides of the family must agree on:
@@ -1217,6 +1220,67 @@ browser tabs in a URL, never on the session wire.
 - The link opens through the panel's click probe (see "The simx
   status panel", above): inside a MakeCode frame that may not open
   tabs, it reveals its URL for the person to copy into a new tab.
+
+## The editor tab's in-page session
+
+When MakeCode offers the extension's editor tab, the editor runs as that
+tab and reaches the project without the bridge service: MakeCode brokers a
+`MessageChannel` between the tab frame and the simx frame (the column
+frame), and the two speak the same `makecode:*` session over it -- the
+hello with the target declaration, the catalog, the asset snapshot, the
+project info, and the brains and manifest request-reply families. No wire
+message differs from the relay session's. The editor-tab messages
+themselves (`simxeditor`, `simxeditorport`) are MakeCode's, vendored from
+pxt's `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
+
+- MODE AT BOOT: MakeCode adds `editor=1` to the simx frame's URL when its
+  registration offers the tab. With it, the simx starts no relay session,
+  opens no binding token store, and renders the BRAND STRIP: the status
+  panel's logotype row alone, linking to the Wendoo homepage, with one
+  button (`data-action="open-editor"`) that posts the open request
+  `{ type: "simxeditor", subtype: "open", id }` to MakeCode; a refusal is
+  logged by its code (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+  `INVALID_REQUEST`). The strip shows no status and no code. Without
+  `editor=1` the simx runs the relay session and status panel described
+  above. The editor entry boots the tab alone: it reads `parentOrigin` and
+  `project` from its frame URL, posts `{ type: "simxeditor", event:
+  "ready" }` to `parentOrigin`, and takes each `simxeditorport` MakeCode
+  then posts from that origin. A URL naming no valid `parentOrigin` is
+  logged as `TAB_PARENT_ORIGIN_INVALID`, and the editor hears nothing.
+- BINDING BY CONTAINMENT: the tab frame lives inside the project's page,
+  so the binding is the frame itself -- one binding for the frame's life,
+  named by the `project` id in its URL. The editor's session is the
+  kind's port-backed session object (`createMakeCodePortEditorSession`),
+  which holds no token and no join code and is never `none`; the session
+  store opens it through a binding persistence that names the project and
+  writes nothing to storage. Every brains channel therefore belongs to the
+  same binding, so brains and pends survive every port.
+- STATUS BY PORT LIVENESS: the session is `connected` once the makecode
+  handshake over the current port has completed, and `disconnected` while
+  no port is attached or the handshake is pending. Its one error code is
+  `PEER_SESSION_PROTOCOL_VERSION_NEWER`, for a counterpart hello declaring
+  a newer version, held until a later handshake completes; on the simx
+  side the same rejection is logged by its code and nothing is served over
+  that port.
+- THE BROKERED RECONNECTION: MakeCode posts a new port pair whenever the
+  tab becomes ready while the simx frame is loaded and whenever a simx
+  frame finishes loading while the tab is ready. Each new port replaces
+  the previous one on both sides, exactly as a reconnection does on the
+  relay: the old handshake ends, its requests reject with their family's
+  `CLOSED` code, and the brains store reconciles over the new handshake's
+  brains channel, pushing its pends. The simx accepts a port only from
+  `parentOrigin`.
+- ONE WRITER: the tab gains no write path. It requests brains and the
+  manifest over its session, and the simx frame answers through projfs,
+  writes the project's files, and posts live program updates on the sim
+  channel, as it does for the relay session.
+- CLOSE PATH: on MakeCode's `closing` event, and when the page is hidden
+  for good, the editor flushes every open brain editor's unflushed edit at
+  once, so the push leaves before the frame goes.
+- The header in the tab shows the logotype, the project name, the docs
+  toggle, the save status, and the connection status as its dot alone;
+  there is no connect page, join code, recent-projects list, or End
+  session.
 
 ## The extension channel
 

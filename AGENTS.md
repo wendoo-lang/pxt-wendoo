@@ -635,15 +635,18 @@ the current slice alone.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in
     its own subfolder. `makecode/simx/wendoo` is one webapp with two
     entries: its simx entry (`simx/index.html`, sources in `src/simx`)
-    connects to the bridge service, joining the editor webapp to the
-    MakeCode project, and its root entry (`index.html`, sources in
-    `src/editor`) is the editor webapp. A simx is a
+    joins the editor webapp to the MakeCode project -- over the port
+    MakeCode brokers to the editor tab when the frame URL carries
+    `editor=1`, through the bridge service otherwise -- and its root entry
+    (`index.html`, sources in `src/editor`) is the editor webapp, booting
+    as that editor tab. A simx is a
     channel, not a store: its frame persists across sim restarts and runs
     but is reallocated on a page reload or project teardown, so no state
     may live only there. It is not product UI, but its frame is a visible panel
     and renders a minimal session-status surface -- the join code while the
-    editor seat is vacant, and basic connection state; no authoring, no
-    catalog display. One shared artifact serves every target, bound by an
+    editor seat is vacant, and basic connection state; under `editor=1`, a
+    brand strip instead: the logotype and an open-editor button; no
+    authoring, no catalog display. One shared artifact serves every target, bound by an
     `approvedRepoLib` entry in each target's own `targetconfig.json`
     (`owner/repo` key, hosting URL); it knows its hosting target from the
     `target` frame URL param and may carry target-keyed behavior (asset
@@ -682,7 +685,7 @@ the current slice alone.
     links to no standalone page).
     The editor is
     TARGET-BLIND: the tile vocabulary is injected from the MakeCode side
-    over the bridge, so the catalog is session data, never build
+    over the session, so the catalog is session data, never build
     configuration -- the editor binds the catalog's packs into its
     authoring environment through the language model's own builders, under
     the ids it allocates and keeps in the project's id manifest -- each
