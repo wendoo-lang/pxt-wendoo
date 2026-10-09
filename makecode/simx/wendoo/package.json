@@ -1,6 +1,6 @@
 {
-  "name": "@wendoo/makecode-simx-bridge",
-  "description": "MakeCode simulator extension joining a running MakeCode project to the Wendoo editor through the bridge service",
+  "name": "@wendoo/makecode-simx",
+  "description": "MakeCode simulator extension for Wendoo, and the Wendoo editor it hosts in the MakeCode editor tab",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,34 +16,49 @@
   "scripts": {
     "predev": "npm run build:deps",
     "dev": "vite --config vite/config.dev.mjs --force",
-    "prebuild": "npm run build:deps",
-    "build": "vite build --config vite/config.prod.mjs",
+    "prebuild": "npm_config_audit=false npm_config_fund=false npm run install:packages --prefix ../../../external/wendoo-lang && npm run build:deps",
+    "build": "WENDOO_PROD_ENTRY=editor vite build --config vite/config.prod.mjs && WENDOO_PROD_ENTRY=simx vite build --config vite/config.prod.mjs",
     "build:prod": "wireit",
     "build:deps": "node ../../../external/wendoo-lang/scripts/build-packages.js .",
+    "clean": "rm -rf dist && rm -rf node_modules/.vite",
     "vendor:pxtservices": "node scripts/vendor-pxtservices.mjs",
     "check:only": "biome check ./src",
     "check": "biome check ./src --write",
     "pretypecheck": "npm run build:deps",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json",
+    "typecheck": "tsc --noEmit -p tsconfig.simx.json && tsc --noEmit -p tsconfig.editor.json && tsc --noEmit -p tsconfig.spec.json",
     "pretest": "npm run build:deps",
-    "test": "tsx --disable-warning=ExperimentalWarning --tsconfig tsconfig.spec.json --test $(find src -name '*.spec.ts')"
+    "test": "tsx --disable-warning=ExperimentalWarning --tsconfig tsconfig.spec.json --import ./src/editor/test-support/single-react.ts --test $(find src -name '*.spec.ts')",
+    "gen:vm-programs": "tsx --tsconfig tsconfig.spec.json src/editor/test-support/gen-vm-programs.ts"
   },
   "wireit": {
     "build:prod": {
-      "command": "vite build --config vite/config.prod.mjs",
+      "command": "WENDOO_PROD_ENTRY=editor vite build --config vite/config.prod.mjs && WENDOO_PROD_ENTRY=simx vite build --config vite/config.prod.mjs",
       "dependencies": [
         "../../../packages/protocol:build:prod",
+        "../../../external/wendoo-lang/packages/core:build:prod",
+        "../../../external/wendoo-lang/packages/bridge-app:build:prod",
         "../../../external/wendoo-lang/packages/bridge-client:build:prod"
       ],
       "files": [
         "src/**",
         "!src/**/*.spec.ts",
-        "!src/test-support/**",
+        "!src/editor/test-support/**",
+        "!src/simx/test-support/**",
         "index.html",
+        "simx/index.html",
+        "public/**",
+        "postcss.config.js",
         "vite/config.prod.mjs",
+        "vite/editor-ui-plugin.mjs",
         "tsconfig.json",
-        "tsconfig.app.json",
-        "package-lock.json"
+        "tsconfig.simx.json",
+        "tsconfig.editor.json",
+        "tsconfig.spec.json",
+        "package-lock.json",
+        "../../../external/wendoo-lang/packages/ui/package.json",
+        "../../../external/wendoo-lang/packages/ui/src/**",
+        "../../../external/wendoo-lang/packages/docs/package.json",
+        "../../../external/wendoo-lang/packages/docs/src/**"
       ],
       "output": [
         "dist/**"
@@ -53,14 +68,28 @@
     }
   },
   "dependencies": {
+    "@wendoo/bridge-app": "file:../../../external/wendoo-lang/packages/bridge-app",
     "@wendoo/bridge-client": "file:../../../external/wendoo-lang/packages/bridge-client",
     "@wendoo/bridge-protocol": "file:../../../external/wendoo-lang/packages/bridge-protocol",
-    "@wendoo/makecode-session": "file:../../../packages/protocol"
+    "@wendoo/core": "file:../../../external/wendoo-lang/packages/core",
+    "@wendoo/docs": "file:../../../external/wendoo-lang/packages/docs",
+    "@wendoo/makecode-session": "file:../../../packages/protocol",
+    "@wendoo/ui": "file:../../../external/wendoo-lang/packages/ui",
+    "lucide-react": "^0.561.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.15",
+    "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^25.3.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
     "@wendoo/bridge-session": "file:../../../external/wendoo-lang/packages/bridge-session",
+    "@wendoo/conformance": "file:../../../external/wendoo-lang/packages/conformance",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "vite": "^6.3.1",

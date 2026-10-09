@@ -1,8 +1,46 @@
 {
-  "extends": "./tsconfig.app.json",
+  "extends": "./tsconfig.editor.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "composite": false,
+    "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.spec.ts", "src/test-support"],
-  "exclude": ["node_modules", "dist"]
+  /* A spec's JSX is transformed under these options only where the file is included, so every
+     source a spec renders is listed, the shared UI package's included. */
+  "include": [
+    "src/editor/vite-env.d.ts",
+    "src/**/*.spec.ts",
+    "src/simx/test-support",
+    "src/editor/test-support/element-tree.ts",
+    "src/editor/test-support/gen-vm-programs.ts",
+    "src/editor/test-support/single-react.ts",
+    "src/editor/components/AppHeader.tsx",
+    "src/editor/components/BrainDiagnostics.tsx",
+    "src/editor/components/BrainEditor.tsx",
+    "src/editor/components/BrainList.tsx",
+    "src/editor/components/CatalogDiagnosticsNotice.tsx",
+    "src/editor/components/ConfirmDialog.tsx",
+    "src/editor/components/ConnectPage.tsx",
+    "src/editor/components/ConnectionStatus.tsx",
+    "src/editor/components/DocsButton.tsx",
+    "src/editor/components/EndSession.tsx",
+    "src/editor/components/Modal.tsx",
+    "src/editor/components/NameInputDialog.tsx",
+    "src/editor/components/SaveStatus.tsx",
+    "src/editor/components/SessionView.tsx",
+    "src/editor/components/VersionNotice.tsx",
+    "src/editor/components/WendooLogo.tsx",
+    "src/editor/contexts/brains.tsx",
+    "src/editor/contexts/editor-session.tsx",
+    "../../../external/wendoo-lang/packages/ui/src/**/*.tsx",
+    "../../../external/wendoo-lang/packages/docs/src/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../../../external/wendoo-lang/packages/ui/src/**/*.spec.tsx",
+    "../../../external/wendoo-lang/packages/docs/src/**/*.spec.tsx"
+  ]
 }

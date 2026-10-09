@@ -12,7 +12,32 @@
       "**/*.jsonc",
       "!**/pxt.json",
       "!**/*.g.ts",
+      "!**/*.g.json",
+      "!**/*.src.json",
       "!src/vendor"
     ]
+  },
+  "css": {
+    "parser": {
+      "allowWrongLineComments": false,
+      "cssModules": false,
+      "tailwindDirectives": true
+    }
+  },
+  "formatter": {
+    "useEditorconfig": true
+  },
+  "linter": {
+    "rules": {
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn"
+      },
+      "complexity": {
+        "noImportantStyles": "off"
+      }
+    }
   }
 }

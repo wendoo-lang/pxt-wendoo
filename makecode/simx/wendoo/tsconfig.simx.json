@@ -9,8 +9,20 @@
     "isolatedModules": true,
     "noEmit": true,
     "strict": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* Every source file the simx entry compiles is in its include list, so importing the editor tree is an error. */
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.simx.tsbuildinfo",
+
+    /* React resolves to its untyped package, so importing it is an error. */
+    "paths": {
+      "react": ["./node_modules/react"],
+      "react/*": ["./node_modules/react/*"],
+      "react-dom": ["./node_modules/react-dom"],
+      "react-dom/*": ["./node_modules/react-dom/*"]
+    }
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.spec.ts", "src/test-support"]
+  "include": ["src/simx", "src/vendor"],
+  "exclude": ["src/**/*.spec.ts", "src/simx/test-support"]
 }
