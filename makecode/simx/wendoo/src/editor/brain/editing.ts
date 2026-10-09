@@ -67,3 +67,25 @@ export function openBrainEditing(store: Pick<BrainsStore, "getBrain" | "applyBra
     close: flush,
   };
 }
+
+/** The brain editings open in one page, each tracked from its opening until its dialog goes. */
+export class OpenEditings {
+  private readonly _editings = new Set<Pick<BrainEditing, "close">>();
+
+  /** Tracks `editing` until the returned function is called. */
+  track(editing: Pick<BrainEditing, "close">): () => void {
+    this._editings.add(editing);
+    return () => {
+      this._editings.delete(editing);
+    };
+  }
+
+  /**
+   * Flushes every tracked editing's latest edit at once, through its
+   * `close`, when it has not been flushed yet. The editings stay open and
+   * tracked, and take later edits as before.
+   */
+  flushAll(): void {
+    for (const editing of this._editings) editing.close();
+  }
+}

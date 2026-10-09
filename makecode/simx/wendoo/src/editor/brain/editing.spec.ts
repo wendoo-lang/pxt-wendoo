@@ -5,7 +5,7 @@ import { CoreHostActions, logger, mkActuatorTileId, mkSensorTileId } from "@wend
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
-import { BRAIN_FLUSH_FAILED, FLUSH_DEBOUNCE_MS, openBrainEditing } from "./editing.js";
+import { BRAIN_FLUSH_FAILED, FLUSH_DEBOUNCE_MS, OpenEditings, openBrainEditing } from "./editing.js";
 
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
@@ -220,5 +220,62 @@ describe("openBrainEditing", () => {
     editing.close();
 
     assert.equal(editing.srcBrainDef, opened);
+  });
+});
+
+describe("OpenEditings", () => {
+  let store: BrainsStore;
+
+  beforeEach(() => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    store = new BrainsStore(SESSION);
+  });
+
+  afterEach(() => {
+    mock.timers.reset();
+  });
+
+  /** Opens brain `id` for editing and records an unflushed edit authoring a rule into it; returns the editing and its snapshot reader. */
+  function editWithUnflushed(id: string): {
+    editing: ReturnType<typeof openBrainEditing>;
+    snapshot: ReturnType<typeof snapshotOf>;
+  } {
+    const editing = openBrainEditing(store, id);
+    const definition = editing.srcBrainDef;
+    assert.ok(definition);
+    authorRule(store.getSnapshot().environment, definition);
+    const snapshot = snapshotOf(definition);
+    editing.change(snapshot.read);
+    return { editing, snapshot };
+  }
+
+  it("flushes the unflushed edit of every tracked editing at once, and none of an untracked one", () => {
+    const editings = new OpenEditings();
+    const first = editWithUnflushed(store.addBrain("Chaser"));
+    const second = editWithUnflushed(store.addBrain("Runner"));
+    const untracked = editWithUnflushed(store.addBrain("Sleeper"));
+    editings.track(first.editing);
+    const untrack = editings.track(second.editing);
+    editings.track(untracked.editing)();
+
+    editings.flushAll();
+
+    assert.equal(first.snapshot.reads(), 1);
+    assert.equal(second.snapshot.reads(), 1);
+    assert.equal(untracked.snapshot.reads(), 0);
+    untrack();
+  });
+
+  it("keeps a flushed editing tracked and taking edits, flushing its next unflushed edit again", () => {
+    const editings = new OpenEditings();
+    const { editing, snapshot } = editWithUnflushed(store.addBrain("Chaser"));
+    editings.track(editing);
+    editings.flushAll();
+
+    editing.change(snapshot.read);
+    editings.flushAll();
+    editings.flushAll();
+
+    assert.equal(snapshot.reads(), 2);
   });
 });

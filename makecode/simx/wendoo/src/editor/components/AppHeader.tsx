@@ -1,31 +1,26 @@
 import { useDocsSidebar } from "@wendoo/docs";
 import { useBrainsState } from "@/contexts/brains";
 import { useEditorSessionState } from "@/contexts/editor-session";
-import { resolveTarget } from "@/services/target-theme";
-import { ConnectionStatus, connectionStatus } from "./ConnectionStatus";
+import { connectionStatus, StatusDot } from "./ConnectionStatus";
 import { DocsButton } from "./DocsButton";
-import { EndSession } from "./EndSession";
 import { SaveStatus } from "./SaveStatus";
 import { WendooLogotype } from "./WendooLogo";
 
 /**
  * The app header of the session view: the identity strip -- a path of the
- * Wendoo logotype, linking to the Wendoo homepage in a new tab; when the
- * MakeCode side declared a target, its display name, carrying the target id
- * as `data-target`; and when the MakeCode side published a project name
- * that is a non-empty string, that name, following the store as the project
- * is renamed, cut short with an ellipsis past a fixed width or the width the
- * header leaves it, and carrying the whole name as its `title` -- and the Docs
- * toggle, the brains' save status and the connection status, followed by the
- * End session action while the status is `connected` or `reconnecting`. Mount
- * it under a `DocsSidebarProvider`; the Docs toggle opens and closes that
- * provider's sidebar.
+ * Wendoo logotype, linking to the Wendoo homepage in a new tab, and when the
+ * MakeCode side published a project name that is a non-empty string, that
+ * name, following the store as the project is renamed, cut short with an
+ * ellipsis past a fixed width or the width the header leaves it, and
+ * carrying the whole name as its `title` -- and the Docs toggle, the brains'
+ * save status and the connection status dot. Mount it under a
+ * `DocsSidebarProvider`; the Docs toggle opens and closes that provider's
+ * sidebar.
  */
 export function AppHeader() {
   const state = useEditorSessionState();
   const brains = useBrainsState();
   const { toggle: toggleDocs, isOpen: isDocsOpen } = useDocsSidebar();
-  const target = resolveTarget(state.target);
   const projectName = typeof state.projectName === "string" && state.projectName !== "" ? state.projectName : undefined;
   const status = connectionStatus(state);
 
@@ -38,16 +33,6 @@ export function AppHeader() {
         <a href="https://wendoo.com" target="_blank" rel="noopener noreferrer" aria-label="Wendoo homepage">
           <WendooLogotype className="h-5 w-auto translate-y-[10.5%]" />
         </a>
-        {target !== undefined && (
-          <>
-            <span aria-hidden="true" className="text-header-muted-foreground">
-              /
-            </span>
-            <span data-testid="target-name" data-target={target.id}>
-              MakeCode {target.displayName}
-            </span>
-          </>
-        )}
         {projectName !== undefined && (
           <>
             <span aria-hidden="true" className="text-header-muted-foreground">
@@ -62,8 +47,7 @@ export function AppHeader() {
       <div className="flex items-center gap-3">
         <DocsButton isOpen={isDocsOpen} onToggle={toggleDocs} />
         <SaveStatus facts={brains} />
-        {status !== undefined && <ConnectionStatus status={status} />}
-        {(status === "connected" || status === "reconnecting") && <EndSession />}
+        {status !== undefined && <StatusDot status={status} />}
       </div>
     </header>
   );

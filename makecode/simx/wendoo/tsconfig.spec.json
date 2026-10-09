@@ -34,6 +34,7 @@
     "src/editor/components/WendooLogo.tsx",
     "src/editor/contexts/brains.tsx",
     "src/editor/contexts/editor-session.tsx",
+    "src/editor/contexts/open-editings.tsx",
     "../../../external/wendoo-lang/packages/ui/src/**/*.tsx",
     "../../../external/wendoo-lang/packages/docs/src/**/*.tsx"
   ],

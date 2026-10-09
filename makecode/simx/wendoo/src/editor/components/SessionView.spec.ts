@@ -71,26 +71,25 @@ describe("SessionView", () => {
     assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
   });
 
-  it("renders the app header, naming the declared target and showing the connection status", () => {
+  it("renders the app header, showing the connection status", () => {
     const markup = render(stateWith({ target: "arcade" }));
 
     assert.match(markup, /data-testid="app-header"/);
-    assert.match(markup, /data-testid="target-name" data-target="arcade"/);
-    assert.match(markup, /data-testid="connection-status" data-status="connected"/);
+    assert.match(markup, /data-testid="status-dot" data-status="connected"/);
   });
 
   it("stays quiet about a disconnection within the grace, keeping the session view rendered", () => {
     const markup = render(stateWith({ status: "disconnected" }), ["Chaser"]);
 
-    assert.match(markup, /data-testid="connection-status" data-status="connected"/);
+    assert.match(markup, /data-testid="status-dot" data-status="connected"/);
     assert.match(markup, /data-testid="brain-list"/);
   });
 
-  it("states a disconnection past the grace in the header alone, offering End session there and no away card", () => {
+  it("states a disconnection past the grace in the header alone, with no away card", () => {
     const markup = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }), ["Chaser"]);
 
-    assert.match(markup, /data-testid="connection-status" data-status="reconnecting"/);
-    assert.match(markup, /data-testid="end-session-button"/);
+    assert.match(markup, /data-testid="status-dot" data-status="reconnecting"/);
+    assert.doesNotMatch(markup, /data-testid="end-session-button"/);
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
     assert.doesNotMatch(markup, /data-testid="forget-button"/);
     assert.match(markup, /data-testid="brain-list"/);
@@ -136,7 +135,7 @@ describe("SessionView", () => {
 
     assert.match(markup, /data-testid="code-unknown-notice"/);
     assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.JOIN_CODE_UNKNOWN}"`));
-    assert.match(markup, /data-testid="connection-status" data-status="connecting"/);
+    assert.match(markup, /data-testid="status-dot" data-status="connecting"/);
     assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
   });
 

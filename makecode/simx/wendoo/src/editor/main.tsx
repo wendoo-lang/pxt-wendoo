@@ -1,18 +1,18 @@
-import { DEFAULT_MAKECODE_BRIDGE_URL } from "@wendoo/makecode-session";
+import { logger } from "@wendoo/core/app";
+import { createMakeCodePortEditorSession, messagePortSessionPort } from "@wendoo/makecode-session";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { OpenEditings } from "./brain/editing";
 import { BrainsProvider } from "./contexts/brains";
 import { EditorSessionProvider } from "./contexts/editor-session";
-import { RecentBindingsProvider } from "./contexts/recent-bindings";
+import { OpenEditingsProvider } from "./contexts/open-editings";
 import { DocsPage } from "./DocsPage";
-import { bindingClaimsFor } from "./services/binding-claims";
-import { deferredStorage, openTabBinding, type TabBinding } from "./services/binding-entries";
 import { BrainsStore } from "./services/brains-store";
 import { bindDocumentTitle } from "./services/document-title";
 import { EditorSessionStore } from "./services/editor-session-store";
-import { enterSession } from "./services/fragment-entry";
-import { RecentBindings } from "./services/recent-bindings";
+import { connectSimxEditorClient, readParentOrigin, TAB_PARENT_ORIGIN_INVALID } from "./services/simx-editor-client";
+import { readTabProject, tabBinding } from "./services/tab-binding";
 import { bindTargetTheme } from "./services/target-theme";
 import "./globals.css";
 
@@ -22,37 +22,45 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 /**
- * The bridge service this page connects to: the local relay's dev address
- * when the page itself is served from a loopback host, the deployed service
- * otherwise.
+ * Renders the editor tab into `mount` over a session with the MakeCode
+ * project carried by the ports MakeCode brokers: the session store over a
+ * port-backed session bound to the project the frame URL names, the brains
+ * store over it, the target theme and the document title bound to it. Once
+ * listening, tells MakeCode the tab is ready; every port MakeCode brokers
+ * from `parentOrigin` replaces the session's port. MakeCode closing the tab,
+ * and the page being hidden for good, flush every open brain editor's
+ * unflushed edit; the page being hidden for good also stops the session.
+ * With no valid `parentOrigin`, logs {@link TAB_PARENT_ORIGIN_INVALID} and
+ * hears nothing from MakeCode.
  */
-function bridgeUrlFor(hostname: string): string {
-  const loopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-  return loopback ? "localhost:6465" : DEFAULT_MAKECODE_BRIDGE_URL;
-}
-
-/**
- * Opens the page's session over `binding`, the binding this tab holds, and
- * renders the editor over it into `mount`: the session store, the recent
- * projects the connect page lists, the brains store over the session store,
- * the target theme bound to the document, and the session stopped as the
- * page is hidden for good.
- */
-function mountEditor(mount: HTMLElement, binding: TabBinding): void {
+function mountEditorTab(mount: HTMLElement, parentOrigin: string | undefined): void {
+  const session = createMakeCodePortEditorSession();
   const store = new EditorSessionStore({
-    bridgeUrl: bridgeUrlFor(window.location.hostname),
-    persistence: binding,
+    persistence: tabBinding(readTabProject(window.location.search)),
+    createSession: () => session,
   });
-  binding.track(store);
-  const recent = new RecentBindings(binding, store);
-  recent.followStorage(window);
   const brains = new BrainsStore(store, store);
+  const editings = new OpenEditings();
   bindTargetTheme(store, document.documentElement);
   bindDocumentTitle(store, document);
-  enterSession(store, window);
+  store.resume();
+
+  if (parentOrigin === undefined) {
+    logger.error(TAB_PARENT_ORIGIN_INVALID, { search: window.location.search });
+  } else {
+    const client = connectSimxEditorClient(window, parentOrigin);
+    client.onPort((port) => {
+      session.attachPort(messagePortSessionPort(port));
+    });
+    client.onEvent((event) => {
+      if (event.event === "closing") editings.flushAll();
+    });
+    client.ready();
+  }
   window.addEventListener(
     "pagehide",
     () => {
+      editings.flushAll();
       store.stop();
     },
     { once: true }
@@ -61,11 +69,11 @@ function mountEditor(mount: HTMLElement, binding: TabBinding): void {
   createRoot(mount).render(
     <StrictMode>
       <EditorSessionProvider value={store}>
-        <RecentBindingsProvider value={recent}>
-          <BrainsProvider value={brains}>
+        <BrainsProvider value={brains}>
+          <OpenEditingsProvider value={editings}>
             <App />
-          </BrainsProvider>
-        </RecentBindingsProvider>
+          </OpenEditingsProvider>
+        </BrainsProvider>
       </EditorSessionProvider>
     </StrictMode>
   );
@@ -83,11 +91,5 @@ if (window.location.pathname.startsWith("/docs")) {
     </StrictMode>
   );
 } else {
-  void openTabBinding({
-    local: deferredStorage(() => localStorage),
-    session: deferredStorage(() => sessionStorage),
-    claims: bindingClaimsFor("locks" in navigator ? navigator.locks : undefined),
-  }).then((binding) => {
-    mountEditor(root, binding);
-  });
+  mountEditorTab(root, readParentOrigin(window.location.search));
 }

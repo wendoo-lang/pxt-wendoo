@@ -3,7 +3,6 @@ import { Toaster } from "@wendoo/ui";
 import { useMemo } from "react";
 import { registeredTypeNames } from "@/brain/editor-config";
 import { createTileVisualProvider } from "@/brain/visual-provider";
-import { ConnectPage } from "@/components/ConnectPage";
 import { SessionView } from "@/components/SessionView";
 import { useBrainsState } from "@/contexts/brains";
 import { useEditorSessionState } from "@/contexts/editor-session";
@@ -11,16 +10,15 @@ import { createDocsTileCatalog, createEditorDocsRegistry } from "@/docs/docs-reg
 import { resolveTarget } from "@/services/target-theme";
 
 /**
- * Root view: the join-code entry while no session exists, and the session --
- * status, brains, catalog -- once one does; the toast region the shared
- * components announce through; and the docs sidebar, over a docs registry
+ * Root view: the session -- status, brains, catalog; the toast region the
+ * shared components announce through; and the docs sidebar, over a docs registry
  * and tile visuals rebuilt from the brains store's environment each time it
  * changes, its entries and pages opening in the sidebar with no link to the
  * standalone docs pages. Tiles, in the docs and the brain editor alike, are
  * filled in the declared target's tile colors where its theme gives them.
  */
 export function App() {
-  const { view, target } = useEditorSessionState();
+  const { target } = useEditorSessionState();
   const tileColors = resolveTarget(target)?.tileColors;
   const { environment, assetLiterals, brainLiterals, packLiterals, typePages, typeIcons, typeLabels, pageIcon } =
     useBrainsState();
@@ -50,7 +48,7 @@ export function App() {
       resolveTileVisual={docsResolveTileVisual}
       showDocsPageLinks={false}
     >
-      {view === "connect" ? <ConnectPage /> : <SessionView tileColors={tileColors} />}
+      <SessionView tileColors={tileColors} />
       <Toaster />
       <DocsSidebar />
     </DocsSidebarProvider>

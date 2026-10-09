@@ -6,6 +6,7 @@ import type { BrainEditing } from "@/brain/editing";
 import { openBrainEditing } from "@/brain/editing";
 import { buildBrainEditorConfig } from "@/brain/editor-config";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import { useTrackedEditing } from "@/contexts/open-editings";
 import { createTileDocsAction } from "@/docs/docs-registry";
 import type { TileKindColors } from "@/services/target-theme";
 
@@ -61,7 +62,8 @@ interface BrainEditorProps {
  * The dialog opens a tile's documentation -- a pack literal's opening its
  * type's page while the docs hold one, any other tile's its own -- and
  * toggles the docs sidebar, through the docs sidebar context; mount it under
- * a `DocsSidebarProvider`.
+ * a `DocsSidebarProvider`. Its editing is tracked in the open editings
+ * provided above it, if any, while it is mounted.
  */
 export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) {
   const store = useBrains();
@@ -114,6 +116,7 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
     ]
   );
   const [editing] = useState(() => openBrainEditing(store, brainId));
+  useTrackedEditing(editing);
   const [isOpen, setIsOpen] = useState(true);
 
   return (

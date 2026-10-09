@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { BridgeSessionErrorCode } from "@wendoo/bridge-app";
+import { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import { DocsSidebarProvider } from "@wendoo/docs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -59,56 +59,26 @@ function render(state: EditorSessionViewState, brains: Partial<BrainsViewState> 
 }
 
 describe("AppHeader", () => {
-  it("names a declared, recognized target by its display name, carrying the id", () => {
-    const markup = render(stateWith({ target: "microbit" }));
+  it("shows no target segment, whatever target the session declares", () => {
+    for (const target of ["arcade", "microbit", "gameboy", undefined]) {
+      const markup = render(stateWith({ target }));
 
-    assert.match(markup, /data-testid="app-header"/);
-    assert.match(markup, /data-testid="target-name" data-target="microbit"/);
+      assert.match(markup, /data-testid="app-header"/);
+      assert.doesNotMatch(markup, /data-testid="target-name"/);
+    }
   });
 
-  it("shows the logotype alone, with no target segment, while no target is declared", () => {
-    const markup = render(stateWith({ target: undefined }));
-
-    assert.match(markup, /data-testid="app-header"/);
-    assert.doesNotMatch(markup, /data-testid="target-name"/);
-  });
-
-  it("shows an unrecognized target's raw id", () => {
-    const markup = render(stateWith({ target: "gameboy" }));
-
-    assert.match(markup, /data-testid="target-name" data-target="gameboy">[^<]*gameboy/);
-  });
-
-  it("treats a non-string declaration as undeclared", () => {
-    const markup = render(stateWith({ target: 42 as unknown as string }));
-
-    assert.doesNotMatch(markup, /data-testid="target-name"/);
-  });
-
-  it("shows the project name as the path element after the target's", () => {
+  it("shows the project name as the path element after the logotype", () => {
     const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
 
-    assert.match(markup, /data-testid="project-name"[^>]*>My Platformer</);
-    assert.ok(markup.indexOf('data-testid="target-name"') < markup.indexOf('data-testid="project-name"'));
-    const between = markup.slice(
-      markup.indexOf('data-testid="target-name"'),
-      markup.indexOf('data-testid="project-name"')
-    );
-    assert.match(between, /<span aria-hidden="true"/);
-  });
-
-  it("shows the project name as the path element after the logotype while no target is declared", () => {
-    const markup = render(stateWith({ target: undefined, projectName: "My Platformer" }));
-
-    assert.doesNotMatch(markup, /data-testid="target-name"/);
     assert.match(
       markup,
-      /<span aria-hidden="true"[^>]*>[^<]*<\/span><span data-testid="project-name"[^>]*>My Platformer</
+      /<\/a><span aria-hidden="true"[^>]*>[^<]*<\/span><span data-testid="project-name"[^>]*>My Platformer</
     );
   });
 
   it("cuts a long project name short with an ellipsis, carrying the whole name on hover", () => {
-    const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
+    const markup = render(stateWith({ projectName: "My Platformer" }));
     const tag = /<span [^>]*data-testid="project-name"[^>]*>/.exec(markup)?.[0];
 
     assert.ok(tag, "expected the project name");
@@ -119,74 +89,47 @@ describe("AppHeader", () => {
 
   it("shows the header it shows without a project name while none is known", () => {
     for (const projectName of [undefined, "", 42 as unknown as string]) {
-      const named = render(stateWith({ target: "arcade", projectName }));
+      const named = render(stateWith({ projectName }));
 
       assert.doesNotMatch(named, /data-testid="project-name"/);
-      assert.equal(named, render(stateWith({ target: "arcade" })));
+      assert.equal(named, render(stateWith({})));
     }
   });
 
-  it("shows the session's connection status", () => {
-    assert.match(render(stateWith({})), /data-testid="connection-status" data-status="connected"/);
-    assert.match(
-      render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true })),
-      /data-testid="connection-status" data-status="reconnecting"/
-    );
-    assert.match(
-      render(stateWith({ status: "disconnected", errorCode: BridgeSessionErrorCode.SESSION_REPLACED })),
-      /data-testid="connection-status" data-status="replaced"/
-    );
+  it("shows the session's connection status as the status dot alone", () => {
+    const cases: [Partial<EditorSessionViewState>, string][] = [
+      [{}, "connected"],
+      [{ status: "disconnected" }, "connected"],
+      [{ status: "disconnected", connectedSinceOpen: false }, "connecting"],
+      [{ status: "disconnected", disconnectedBeyondGrace: true }, "reconnecting"],
+      [{ status: "disconnected", errorCode: PeerSessionErrorCode.PROTOCOL_VERSION_NEWER }, "update"],
+    ];
+    for (const [fields, status] of cases) {
+      const markup = render(stateWith(fields));
+
+      assert.match(markup, new RegExp(`data-testid="status-dot" data-status="${status}"`));
+      assert.doesNotMatch(markup, /data-testid="connection-status"/);
+    }
   });
 
-  it("offers End session beside the status while a session is connected or reconnecting", () => {
-    const connected = render(stateWith({}));
-    assert.match(connected, /data-testid="end-session-button"/);
-    assert.ok(
-      connected.indexOf('data-testid="connection-status"') < connected.indexOf('data-testid="end-session-button"')
-    );
-
-    const withinGrace = render(stateWith({ status: "disconnected" }));
-    assert.match(withinGrace, /data-testid="connection-status" data-status="connected"/);
-    assert.match(withinGrace, /data-testid="end-session-button"/);
-
-    const reconnecting = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }));
-    assert.match(reconnecting, /data-testid="connection-status" data-status="reconnecting"/);
-    assert.match(reconnecting, /data-testid="end-session-button"/);
+  it("offers no End session in any status", () => {
+    for (const fields of [
+      {},
+      { status: "disconnected" as const },
+      { status: "disconnected" as const, disconnectedBeyondGrace: true },
+      { status: "disconnected" as const, connectedSinceOpen: false },
+    ]) {
+      assert.doesNotMatch(render(stateWith(fields)), /data-testid="end-session-button"/);
+    }
   });
 
-  it("offers no End session while connecting, taken over, or needing an update", () => {
-    const connecting = render(stateWith({ status: "disconnected", connectedSinceOpen: false }));
-    assert.match(connecting, /data-testid="connection-status" data-status="connecting"/);
-    assert.doesNotMatch(connecting, /data-testid="end-session-button"/);
-
-    const replaced = render(
-      stateWith({
-        status: "disconnected",
-        errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
-        disconnectedBeyondGrace: true,
-      })
-    );
-    assert.match(replaced, /data-testid="connection-status" data-status="replaced"/);
-    assert.doesNotMatch(replaced, /data-testid="end-session-button"/);
-
-    const update = render(
-      stateWith({
-        status: "disconnected",
-        errorCode: BridgeSessionErrorCode.PROTOCOL_VERSION_MISMATCH,
-        disconnectedBeyondGrace: true,
-      })
-    );
-    assert.match(update, /data-testid="connection-status" data-status="update"/);
-    assert.doesNotMatch(update, /data-testid="end-session-button"/);
-  });
-
-  it("shows the brains store's save status beside the connection status, in every status", () => {
+  it("shows the brains store's save status before the status dot, in every status", () => {
     const unsaved = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }), {
       pending: new Set(["a"]),
       reconciled: false,
     });
     assert.match(unsaved, /data-testid="save-status" data-save-state="unsaved" data-pending="1"/);
-    assert.ok(unsaved.indexOf('data-testid="save-status"') < unsaved.indexOf('data-testid="connection-status"'));
+    assert.ok(unsaved.indexOf('data-testid="save-status"') < unsaved.indexOf('data-testid="status-dot"'));
 
     const saving = render(stateWith({}), { pending: new Set(["a"]), pushesInFlight: 1, reconciled: true });
     assert.match(saving, /data-testid="save-status" data-save-state="saving"/);
@@ -195,7 +138,7 @@ describe("AppHeader", () => {
   });
 
   it("offers the Docs toggle first in the controls, before the save status, collapsed while the sidebar is closed", () => {
-    const markup = render(stateWith({ target: "arcade", projectName: "My Platformer" }));
+    const markup = render(stateWith({ projectName: "My Platformer" }));
     const tag = /<button [^>]*data-testid="docs-button"[^>]*>/.exec(markup)?.[0];
 
     assert.ok(tag, "expected the docs button");
@@ -206,7 +149,7 @@ describe("AppHeader", () => {
   });
 
   it("links the logotype to the Wendoo homepage in a new tab", () => {
-    const markup = render(stateWith({ target: "arcade" }));
+    const markup = render(stateWith({}));
     const link = /<a [^>]*href="https:\/\/wendoo.com"[^>]*>/.exec(markup)?.[0];
 
     assert.ok(link, "expected a homepage link");
@@ -214,6 +157,5 @@ describe("AppHeader", () => {
     assert.match(link, /rel="noopener noreferrer"/);
     assert.match(link, /aria-label="[^"]+"/);
     assert.match(markup, /href="https:\/\/wendoo.com"[^>]*><svg [^>]*aria-hidden="true"/);
-    assert.match(markup, /data-testid="target-name" data-target="arcade"/);
   });
 });
