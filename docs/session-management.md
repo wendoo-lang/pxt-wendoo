@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-09
+updated: 2026-10-10
 ---
 
 # Session Management in pxt-wendoo
@@ -683,11 +683,13 @@ it always shows the session view.
   connected earlier and is disconnected now, carried at once), and
   `update` (a version rejection). Below the corner the session view
   holds the version notice while it applies (see RECOVERY, below), then
-  the BRAIN LIST (the brains store's brains, below), then the catalog's
-  diagnostics. The store keeps the latest catalog while disconnected --
-  status gates delivery, never what is already held -- and holds the
-  latest ASSET SNAPSHOT and project name the same way: each one the
-  session delivers replaces the last, and it is kept while disconnected.
+  the BRAIN LIST (the brains store's brains, below), then, in one slot,
+  the catalog pending notice (see CATALOG PENDING, below) and the
+  catalog's diagnostics. The store keeps the latest catalog while
+  disconnected -- status gates delivery, never what is already held --
+  and holds the latest ASSET SNAPSHOT and project name the same way:
+  each one the session delivers replaces the last, and it is kept while
+  disconnected.
 - RECOVERY: a version rejection shows its remedy -- reload the editor --
   below the docs button and above the brain list, carrying its code as
   `data-code`, and only while it applies.
@@ -745,8 +747,9 @@ it always shows the session view.
   either changes.
   The row's badge counts the compile's errors and warnings (carrying
   the compile state -- `current`, `stale`, or `none` -- as
-  `data-compile`). Rows also rename and remove brains; adding a brain
-  names it and opens the editor on it.
+  `data-compile`), and shows on no brain placing unresolved pack tiles
+  while the catalog is pending (below). Rows also rename and remove
+  brains; adding a brain names it and opens the editor on it.
 - CONTINUOUS EDITING: the brain editor has no OK or Cancel. Every edit
   the dialog reports -- a command, an undo, a redo, a load -- reaches
   the store through the editing's debounced flush: once
@@ -801,6 +804,22 @@ it always shows the session view.
   such tile on the brain under `BRAIN_TILE_UNRESOLVED`, beside the
   compile's diagnostics. The state is machine-layer only: the view
   shows no notice for it.
+- CATALOG PENDING: the brains store's `catalogPending` holds while the
+  session has delivered no catalog, so every pack tile a brain places
+  reads as unresolved until the game runs and publishes its catalog on
+  its first frame. It holds whatever the status, connected or not,
+  reconciled or not, and ends with the first catalog, which the editor
+  keeps for the life of its tab. It is derived from the store's state
+  and stored nowhere. While it holds, a brain placing unresolved pack
+  tiles shows no badge on its row, its compile's diagnostics and its
+  `BRAIN_TILE_UNRESOLVED` tiles still recorded in the store, and the
+  slot below the brain list shows one notice at the default tier,
+  worded for the kid -- run the game once to load its tiles -- with
+  `CATALOG_PENDING` as `data-code`. No catalog was read, so the
+  catalog's diagnostics then hold at most the line of a manifest of a
+  newer format. Once a catalog is held the notice is gone and every
+  badge shows: a pack tile a held catalog leaves unresolved is a
+  problem in the project.
 - The CATALOG DIAGNOSTICS the store reports while building its
   environment render as one coded line each below the brain list,
   each carrying its code as `data-code` and, where it names them, the pack

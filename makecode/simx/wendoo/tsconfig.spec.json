@@ -20,6 +20,7 @@
     "src/editor/components/BrainEditor.tsx",
     "src/editor/components/BrainList.tsx",
     "src/editor/components/CatalogDiagnosticsNotice.tsx",
+    "src/editor/components/CatalogPendingNotice.tsx",
     "src/editor/components/ConfirmDialog.tsx",
     "src/editor/components/DocsButton.tsx",
     "src/editor/components/Modal.tsx",

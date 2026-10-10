@@ -8,7 +8,7 @@ import { BrainsProvider } from "../contexts/brains.js";
 import { EditorSessionProvider } from "../contexts/editor-session.js";
 import { CATALOG_PACK_UNBOUND } from "../services/authoring-environment.js";
 import type { BrainsViewState } from "../services/brains-store.js";
-import { BrainsStore } from "../services/brains-store.js";
+import { BrainsStore, CATALOG_PENDING } from "../services/brains-store.js";
 import { CATALOG_UNREADABLE } from "../services/catalog.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
 import { SessionView } from "./SessionView.js";
@@ -181,6 +181,27 @@ describe("SessionView", () => {
       markup,
       new RegExp(`data-testid="catalog-diagnostic" data-code="${CATALOG_PACK_UNBOUND}" data-pack="motion"`)
     );
+  });
+
+  it("shows the catalog pending notice by its stable code while no catalog is held, connected or not, below the brain list", () => {
+    for (const fields of [
+      { catalogText: undefined },
+      { status: "disconnected", catalogText: undefined },
+      { status: "disconnected", connectedSinceOpen: false, catalogText: undefined },
+    ] as Partial<EditorSessionViewState>[]) {
+      const markup = render(stateWith(fields), ["Chaser"]);
+
+      assert.match(markup, new RegExp(`data-testid="catalog-pending-notice" data-code="${CATALOG_PENDING}"`));
+      assert.ok(markup.indexOf('data-testid="brain-list"') < markup.indexOf('data-testid="catalog-pending-notice"'));
+    }
+  });
+
+  it("shows no catalog pending notice while a catalog is held, connected or not", () => {
+    for (const fields of [{}, { status: "disconnected" }] as Partial<EditorSessionViewState>[]) {
+      const markup = render(stateWith(fields), ["Chaser"]);
+
+      assert.doesNotMatch(markup, /data-testid="catalog-pending-notice"/);
+    }
   });
 
   it("shows an unreadable catalog's diagnostic by its stable code", () => {

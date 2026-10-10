@@ -913,6 +913,61 @@ describe("brains sync", () => {
     });
   });
 
+  describe("catalog pending", () => {
+    /** A catalog declaring no packs. */
+    const EMPTY_CATALOG = '{"packs":[]}';
+
+    it("reports the catalog pending while no catalog is held, before any connection and while a handshake reconciles", async () => {
+      const store = syncedStore();
+      assert.equal(store.getSnapshot().catalogPending, true);
+      session.setStatus("connected");
+
+      const channel = sync.open(projectOf(projectBrain("Remote")), true);
+      await settle();
+      assert.equal(store.getSnapshot().reconciled, false);
+      assert.equal(store.getSnapshot().catalogPending, true);
+      channel.release();
+      await settle();
+
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.equal(store.getSnapshot().catalogPending, true);
+    });
+
+    it("keeps reporting the catalog pending through a disconnection and the next handshake while no catalog is held", async () => {
+      const store = syncedStore();
+      const first = await handshake(projectOf());
+      assert.equal(store.getSnapshot().catalogPending, true);
+
+      first.close();
+      session.setStatus("disconnected");
+      assert.equal(store.getSnapshot().reconciled, false);
+      assert.equal(store.getSnapshot().catalogPending, true);
+      await handshake(first.project);
+
+      assert.equal(store.getSnapshot().catalogPending, true);
+    });
+
+    it("does not report the catalog pending while reconciled with a catalog held before the handshake", async () => {
+      session.setCatalog(EMPTY_CATALOG);
+      const store = syncedStore();
+      await handshake(projectOf());
+
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.equal(store.getSnapshot().catalogPending, false);
+    });
+
+    it("stops reporting the catalog pending once a catalog arrives", async () => {
+      const store = syncedStore();
+      await handshake(projectOf());
+      assert.equal(store.getSnapshot().catalogPending, true);
+
+      session.setCatalog(EMPTY_CATALOG);
+
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.equal(store.getSnapshot().catalogPending, false);
+    });
+  });
+
   describe("two brains", () => {
     it("flushes two pends independently: a failed write stays pending while the other clears", async () => {
       const store = syncedStore();

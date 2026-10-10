@@ -5,6 +5,7 @@ import { ParseDiagCode, TypeDiagCode } from "@wendoo/core/brain/compiler";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrainEntry } from "../services/brains-store.js";
+import { BRAIN_TILE_UNRESOLVED } from "../services/brains-store.js";
 import {
   BrainDiagnosticsList,
   BrainErrorBadge,
@@ -48,7 +49,21 @@ describe("brainCompileState", () => {
 
 describe("listedDiagnostics", () => {
   it("lists errors and warnings in reported order, leaving informational diagnostics out", () => {
-    assert.deepEqual(listedDiagnostics(entryWith({ diagnostics: [WARNING, INFO, ERROR] })), [WARNING, ERROR]);
+    assert.deepEqual(listedDiagnostics(entryWith({ diagnostics: [WARNING, INFO, ERROR] }), false), [WARNING, ERROR]);
+  });
+
+  it("lists none for an entry placing unresolved tiles while the catalog is pending, and its errors once a catalog is held", () => {
+    const unresolved = entryWith({
+      diagnostics: [ERROR],
+      unresolvedTiles: [{ tileId: "actuator.chime.ring", code: BRAIN_TILE_UNRESOLVED }],
+    });
+
+    assert.deepEqual(listedDiagnostics(unresolved, true), []);
+    assert.deepEqual(listedDiagnostics(unresolved, false), [ERROR]);
+  });
+
+  it("lists the errors of an entry whose tiles all resolve while the catalog is pending", () => {
+    assert.deepEqual(listedDiagnostics(entryWith({ diagnostics: [ERROR] }), true), [ERROR]);
   });
 });
 

@@ -120,12 +120,14 @@ type BrainDialog =
  * project is damaged shows a {@link BrainDamageNotice} below its row, offering Restore while the store
  * is reconciled with the project. A damaged brain
  * the store holds no copy of is listed after the held brains under the name
- * the project gave it, with the notice alone and no other controls. The brain
- * editor it opens fills tiles in `tileColors` where they are given.
+ * the project gave it, with the notice alone and no other controls. While the
+ * store's catalog is pending, a brain placing unresolved tiles shows no
+ * diagnostics badge. The brain editor it opens fills tiles in `tileColors`
+ * where they are given.
  */
 export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   const store = useBrains();
-  const { brains, damaged, reconciled, unresolvedAssets } = useBrainsState();
+  const { brains, damaged, reconciled, unresolvedAssets, catalogPending } = useBrainsState();
   const uncopied = [...damaged].filter(([id]) => !brains.has(id));
   const [dialog, setDialog] = useState<BrainDialog>(null);
   const [editingBrainId, setEditingBrainId] = useState<string | null>(null);
@@ -184,7 +186,7 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
         <div className="mt-3 overflow-hidden rounded-lg border border-border">
           <ul className="divide-y divide-border">
             {[...brains].map(([id, brain]) => {
-              const diagnostics = listedDiagnostics(brain);
+              const diagnostics = listedDiagnostics(brain, catalogPending);
               const diagnosticsExpanded = expandedDiagnostics.has(id) && diagnostics.length > 0;
               const damage = damaged.get(id);
               const unresolved = unresolvedAssets.get(id);

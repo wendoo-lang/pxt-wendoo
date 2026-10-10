@@ -7,9 +7,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
 import { BRAIN_ASSET_UNRESOLVED } from "../services/asset-literals.js";
+import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../services/brain-source.js";
 import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
-import { BrainsStore } from "../services/brains-store.js";
+import { BRAIN_TILE_UNRESOLVED, BrainsStore } from "../services/brains-store.js";
+import { parseCatalog } from "../services/catalog.js";
+import { allocateIds, emptyIdManifest } from "../services/id-allocation.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
 import { BrainDamageNotice, BrainList } from "./BrainList.js";
@@ -53,6 +56,30 @@ function applyFailingBrain(store: BrainsStore, id: string): void {
     .when()
     .appendTile(tile(environment, mkActuatorTileId(CoreHostActions.SwitchPage.key)));
   store.applyBrain(definition);
+}
+
+/** A catalog whose one pack declares the ring actuator. */
+const CHIME_CATALOG = JSON.stringify({
+  packs: [{ name: "chime", tiles: [{ name: "actuator.chime.ring", kind: "actuator" }] }],
+});
+
+/** The ring actuator's tile id. */
+const RING_TILE = mkActuatorTileId("actuator.chime.ring");
+
+/**
+ * Stores a brain named `name` whose first rule places the ring actuator,
+ * authored in an environment binding {@link CHIME_CATALOG}. Returns its
+ * document id.
+ */
+function applyRingingBrain(store: BrainsStore, name: string): string {
+  const { environment } = buildAuthoringEnvironment(
+    CHIME_CATALOG,
+    allocateIds(emptyIdManifest(), parseCatalog(CHIME_CATALOG))
+  );
+  const definition = BrainDef.emptyBrainDef(environment.brainServices, name);
+  firstRule(definition).do().appendTile(tile(environment, RING_TILE));
+  store.applyBrain(definition);
+  return definition.id();
 }
 
 /** Renders the brain list over `store`. */
@@ -153,7 +180,7 @@ describe("BrainList", () => {
     applyFailingBrain(store, failing);
     const entry = store.getSnapshot().brains.get(failing);
     assert.ok(entry);
-    const count = listedDiagnostics(entry).length;
+    const count = listedDiagnostics(entry, store.getSnapshot().catalogPending).length;
     assert.ok(count > 0);
 
     const markup = render(store);
@@ -282,6 +309,39 @@ describe("BrainList", () => {
       );
       assert.doesNotMatch(rowMarkup(markup, other), /data-testid="brain-asset-notice"/);
       assert.doesNotMatch(renderUnresolved(new Map()), /data-testid="brain-asset-notice"/);
+    });
+  });
+
+  describe("pending catalog", () => {
+    it("shows no badge on a brain placing unresolved tiles while no catalog is held, keeping its diagnostics in the store", () => {
+      const ringer = applyRingingBrain(store, "Ringer");
+      const failing = store.addBrain("Chaser");
+      applyFailingBrain(store, failing);
+      assert.equal(store.getSnapshot().catalogPending, true);
+      const entry = store.getSnapshot().brains.get(ringer);
+      assert.deepEqual(entry?.unresolvedTiles, [{ tileId: RING_TILE, code: BRAIN_TILE_UNRESOLVED }]);
+      assert.ok((entry?.diagnostics.length ?? 0) > 0);
+
+      const markup = render(store);
+
+      assert.doesNotMatch(rowMarkup(markup, ringer), /data-testid="brain-error-badge"/);
+      assert.match(rowMarkup(markup, failing), /data-testid="brain-error-badge"/);
+    });
+
+    it("badges a brain placing a tile the held catalog does not declare", () => {
+      const held = new BrainsStore({
+        subscribe: () => () => {},
+        getSnapshot: (): BrainsSessionState => ({
+          status: "connected",
+          catalogText: '{"packs":[]}',
+          assets: undefined,
+        }),
+      });
+      const ringer = applyRingingBrain(held, "Ringer");
+      assert.equal(held.getSnapshot().catalogPending, false);
+      assert.equal(held.getSnapshot().brains.get(ringer)?.unresolvedTiles.length, 1);
+
+      assert.match(rowMarkup(render(held), ringer), /data-testid="brain-error-badge"/);
     });
   });
 

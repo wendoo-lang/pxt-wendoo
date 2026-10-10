@@ -49,6 +49,12 @@ function retryDelay(attempt: number): number {
  */
 export const BRAIN_TILE_UNRESOLVED = "BRAIN_TILE_UNRESOLVED";
 
+/**
+ * Stable code of the catalog pending state, {@link BrainsViewState.catalogPending}:
+ * the session has delivered no catalog.
+ */
+export const CATALOG_PENDING = "CATALOG_PENDING";
+
 /** A tile a brain's source places that the store's environment holds no tile for. */
 export interface UnresolvedTile {
   /** The tile's id, as the source places it. */
@@ -196,6 +202,15 @@ export interface BrainsViewState {
    * handshake is reconciling.
    */
   readonly reconciled: boolean;
+  /**
+   * `true` while the session has delivered no catalog, reported under
+   * {@link CATALOG_PENDING}: every pack tile a brain places reads as
+   * unresolved until the game publishes its catalog on its first frame.
+   * Holds whatever the session's status and the store's {@link reconciled},
+   * and is `false` from the first catalog on, a catalog once delivered being
+   * kept.
+   */
+  readonly catalogPending: boolean;
 }
 
 /**
@@ -904,6 +919,7 @@ export class BrainsStore {
       pushesInFlight: this._pushesInFlight,
       damaged: this._damaged,
       reconciled: this._reconciled,
+      catalogPending: this._catalogText === undefined,
     };
   }
 

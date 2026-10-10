@@ -6,15 +6,17 @@ import { saveState } from "@/services/save-state";
 import type { TileKindColors } from "@/services/target-theme";
 import { BrainList } from "./BrainList";
 import { CatalogDiagnosticsNotice } from "./CatalogDiagnosticsNotice";
+import { CatalogPendingNotice } from "./CatalogPendingNotice";
 import { DocsButton } from "./DocsButton";
 import { VersionNotice } from "./VersionNotice";
 
 /**
  * The session: the Docs toggle in the page's upper right corner, then the
- * version notice, the brain list, and the catalog's diagnostics. The root
- * element carries the session's state as data -- the
- * {@link connectionStatus} as `data-status`, the {@link saveState} as
- * `data-save-state`, the brains store's pend count as `data-pending`, its
+ * version notice, the brain list, and below it the catalog pending notice and
+ * the catalog's diagnostics. The root element carries the session's state as
+ * data -- the {@link connectionStatus} as `data-status`, the
+ * {@link saveState} as `data-save-state`, the brains store's pend count as
+ * `data-pending`, its
  * pushes in flight as `data-in-flight`, and its reconciled flag as
  * `data-reconciled`. Mount it under a `DocsSidebarProvider`; the Docs toggle
  * opens and closes that provider's sidebar. The brain editor fills tiles in
@@ -22,7 +24,7 @@ import { VersionNotice } from "./VersionNotice";
  */
 export function SessionView({ tileColors }: { tileColors?: TileKindColors }) {
   const state = useEditorSessionState();
-  const { catalogDiagnostics, pending, pushesInFlight, reconciled } = useBrainsState();
+  const { catalogDiagnostics, catalogPending, pending, pushesInFlight, reconciled } = useBrainsState();
   const { toggle: toggleDocs, isOpen: isDocsOpen } = useDocsSidebar();
 
   return (
@@ -41,6 +43,8 @@ export function SessionView({ tileColors }: { tileColors?: TileKindColors }) {
       <main className="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto p-6">
         <VersionNotice errorCode={state.errorCode} />
         <BrainList tileColors={tileColors} />
+        {/* While the catalog is pending no catalog was read, so the catalog's diagnostics hold at most the newer-format manifest's line. */}
+        <CatalogPendingNotice pending={catalogPending} />
         <CatalogDiagnosticsNotice diagnostics={catalogDiagnostics} />
       </main>
     </div>

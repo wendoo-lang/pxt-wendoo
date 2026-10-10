@@ -18,8 +18,16 @@ export function brainCompileState(entry: BrainEntry): BrainCompileState {
   return entry.compiled.sourceHash === entry.sourceHash ? "current" : "stale";
 }
 
-/** The diagnostics a brain row badges and lists: `entry`'s errors and warnings, in reported order. */
-export function listedDiagnostics(entry: BrainEntry): readonly BrainBuildDiagnostic[] {
+/**
+ * The diagnostics a brain row badges and lists: `entry`'s errors and
+ * warnings, in reported order. None while `catalogPending` holds for an entry
+ * placing unresolved tiles, whose compile read its pack tiles as missing.
+ *
+ * @param entry - The brain the row shows.
+ * @param catalogPending - The brains store's `catalogPending`: no catalog delivered yet.
+ */
+export function listedDiagnostics(entry: BrainEntry, catalogPending: boolean): readonly BrainBuildDiagnostic[] {
+  if (catalogPending && entry.unresolvedTiles.length > 0) return [];
   return entry.diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
 }
 
