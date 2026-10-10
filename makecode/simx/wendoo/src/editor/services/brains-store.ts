@@ -36,13 +36,6 @@ import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "
  */
 export const PUSH_RETRY_DELAYS_MS: readonly number[] = [500, 1000, 2000, 4000, 8000];
 
-/**
- * How long, in milliseconds, a push may go unanswered before the store
- * treats it as failed and retries it (see {@link PUSH_RETRY_DELAYS_MS}). Its
- * brain stays pending, and an answer arriving later still counts.
- */
-export const PUSH_LIVENESS_DEADLINE_MS = 30_000;
-
 /** The delay before retry number `attempt + 1`: {@link PUSH_RETRY_DELAYS_MS} at `attempt`, or its last delay past the end. */
 function retryDelay(attempt: number): number {
   return PUSH_RETRY_DELAYS_MS[Math.min(attempt, PUSH_RETRY_DELAYS_MS.length - 1)] ?? 0;
@@ -147,8 +140,9 @@ export interface BrainsViewState {
    */
   readonly pending: ReadonlySet<string>;
   /**
-   * How many pushes have gone out and await the project's answer, not
-   * counting those unanswered past {@link PUSH_LIVENESS_DEADLINE_MS}.
+   * How many pushes have gone out and await the project's answer: each
+   * counts from its departure until the project acknowledges or fails it, or
+   * the handshake it went out on ends, however long that takes.
    */
   readonly pushesInFlight: number;
   /**
@@ -226,12 +220,13 @@ export interface BrainsViewState {
  * lacks (`allocateIds`), and writes the whole allocation to the project
  * whenever it differs from what the project holds -- never over a manifest of
  * a newer format, which leaves every pack unbound. A catalog arriving with
- * new vocabulary is allocated and written the same way. A failed manifest
- * write, or one unanswered for {@link PUSH_LIVENESS_DEADLINE_MS}, is retried
- * after each of {@link PUSH_RETRY_DELAYS_MS} in turn, then after the last of
- * them again and again, while its handshake stays connected. Whenever the
- * environment is rebuilt, every brain is recompiled in it; one whose
- * compiled form changes is recorded as edited, and pushed.
+ * new vocabulary is allocated and written the same way. A manifest write
+ * awaits the project's answer however long it takes, until its handshake
+ * ends; a failed one is retried after each of {@link PUSH_RETRY_DELAYS_MS} in
+ * turn, then after the last of them again and again, while its handshake
+ * stays connected. Whenever the environment is rebuilt, every brain is
+ * recompiled in it; one whose compiled form changes is recorded as edited,
+ * and pushed.
  *
  * The environment's asset literals follow the session's asset snapshot: a
  * literal per listed asset of a catalog asset type, and a literal per such
@@ -264,13 +259,14 @@ export interface BrainsViewState {
  * or whose compile now makes another program, is recompiled and, when that
  * compile is a good one, pushed. Once reconciled, each
  * edit is pushed as it is made, pending until the project acknowledges it.
- * A push left unanswered for {@link PUSH_LIVENESS_DEADLINE_MS} counts as
- * failed. A failed push of a brain's latest edit is retried, unless the brain
- * is listed damaged, after each of {@link PUSH_RETRY_DELAYS_MS} in turn and
- * then after the last of them, again and again, while the handshake it went
- * out on stays reconciled and connected; every pend is pushed when the next
- * handshake has reconciled. A push carries the brain as the store holds it:
- * its source and the compiled form and hash of one compile.
+ * A push awaits the project's answer however long it takes, and fails only
+ * on a failure answer or when its handshake ends. A failed push of a brain's
+ * latest edit is retried, unless the brain is listed damaged, after each of
+ * {@link PUSH_RETRY_DELAYS_MS} in turn and then after the last of them, again
+ * and again, while the handshake it went out on stays reconciled and
+ * connected; every pend is pushed when the next handshake has reconciled. A
+ * push carries the brain as the store holds it: its source and the compiled
+ * form and hash of one compile.
  */
 export class BrainsStore {
   private readonly _session: BrainsSessionSource;
@@ -500,10 +496,9 @@ export class BrainsStore {
   /**
    * Pushes the store's latest state of the brain `id` over `channel`: its
    * entry, or its removal when the store holds none. Records the brain
-   * pending, counts the push in flight until it is answered or
-   * {@link PUSH_LIVENESS_DEADLINE_MS} passes, whichever comes first, and
-   * cancels any retry scheduled for the brain. An acknowledgment counts
-   * whenever it arrives; a failure, or the deadline passing, counts once.
+   * pending, counts the push in flight until the project answers it or the
+   * handshake `channel` belongs to ends, however long that takes, and cancels
+   * any retry scheduled for the brain.
    *
    * @param attempt - How many failed pushes of the same state precede this one: 0 for a first push.
    */
@@ -518,25 +513,14 @@ export class BrainsStore {
     this.recordPending(id);
     this._pushesInFlight += 1;
     this.publish();
-    let live = true;
-    /** Stops counting the push in flight; returns whether it was still counted. */
-    const land = (): boolean => {
-      if (!live) return false;
-      live = false;
-      clearTimeout(deadline);
-      this._pushesInFlight -= 1;
-      return true;
-    };
-    const deadline = setTimeout(() => {
-      if (land()) this.pushFailed(channel, id, entry, attempt);
-    }, PUSH_LIVENESS_DEADLINE_MS);
     channel.pushBrain(push).then(
       () => {
-        land();
+        this._pushesInFlight -= 1;
         this.pushAcknowledged(id, entry);
       },
       () => {
-        if (land()) this.pushFailed(channel, id, entry, attempt);
+        this._pushesInFlight -= 1;
+        this.pushFailed(channel, id, entry, attempt);
       }
     );
   }
@@ -754,8 +738,9 @@ export class BrainsStore {
   /**
    * Writes the allocation held to the project over `channel` when it differs
    * from what the project holds, one write at a time: a write asked while
-   * one is awaiting its answer goes out once that one is answered. A failed
-   * write, or one unanswered for {@link PUSH_LIVENESS_DEADLINE_MS}, is
+   * one is awaiting its answer goes out once that one is answered. A write
+   * awaits its answer until the project answers it or the handshake
+   * `channel` belongs to ends, however long that takes. A failed write is
    * retried after the delay {@link PUSH_RETRY_DELAYS_MS} holds at `attempt`,
    * or its last delay past the end, while `channel` is the latest handshake's
    * and the session is connected.
@@ -769,33 +754,19 @@ export class BrainsStore {
     clearTimeout(this._manifestRetry);
     this._manifestRetry = undefined;
     this._manifestWriting = true;
-    let live = true;
-    /** Ends the write's wait; returns whether it was still waiting. */
-    const land = (): boolean => {
-      if (!live) return false;
-      live = false;
-      clearTimeout(deadline);
-      this._manifestWriting = false;
-      return true;
-    };
-    const failed = (): void => {
-      if (!this.reconcilesOver(channel)) return;
-      this._manifestRetry = setTimeout(() => {
-        this._manifestRetry = undefined;
-        this.writeManifest(channel, attempt + 1);
-      }, retryDelay(attempt));
-    };
-    const deadline = setTimeout(() => {
-      if (land()) failed();
-    }, PUSH_LIVENESS_DEADLINE_MS);
     channel.writeManifest(ids).then(
       () => {
-        if (!land()) return;
+        this._manifestWriting = false;
         if (this._channel === channel) this._projectIds = ids;
         this.writeManifest(channel);
       },
       () => {
-        if (land()) failed();
+        this._manifestWriting = false;
+        if (!this.reconcilesOver(channel)) return;
+        this._manifestRetry = setTimeout(() => {
+          this._manifestRetry = undefined;
+          this.writeManifest(channel, attempt + 1);
+        }, retryDelay(attempt));
       }
     );
   }

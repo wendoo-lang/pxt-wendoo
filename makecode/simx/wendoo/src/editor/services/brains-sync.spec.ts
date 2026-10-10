@@ -28,7 +28,10 @@ import {
   serializeBrainSource,
 } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
-import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
+import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
+
+/** A wait far past every retry delay: ten minutes. */
+const LONG_WAIT_MS = 10 * 60_000;
 
 /** The session readings a brains store follows, driven by the spec. */
 class FakeSessionSource {
@@ -380,6 +383,15 @@ describe("brains sync", () => {
   async function elapse(ms: number): Promise<void> {
     mock.timers.tick(ms);
     await settle();
+  }
+
+  /**
+   * Advances the clock through {@link LONG_WAIT_MS} in one-second steps,
+   * letting every timer each step fires, and every answer it triggers, run
+   * before the next.
+   */
+  async function waitLong(): Promise<void> {
+    for (let waited = 0; waited < LONG_WAIT_MS; waited += 1000) await elapse(1000);
   }
 
   describe("push on apply", () => {
@@ -1153,7 +1165,7 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
-    it("pushes again, through the retry delays, a push the project leaves unanswered past the liveness deadline", async () => {
+    it("keeps a push the project leaves unanswered in flight and pending, pushing it again never, however long it waits", async () => {
       const store = syncedStore();
       const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
@@ -1163,57 +1175,34 @@ describe("brains sync", () => {
       await settle();
       const pushes = channel.pushes.length;
 
-      await elapse(PUSH_LIVENESS_DEADLINE_MS - 1);
-      assert.equal(store.getSnapshot().pushesInFlight, 1);
-      await elapse(1);
-      assert.equal(store.getSnapshot().pushesInFlight, 0);
-      assert.deepEqual([...store.getSnapshot().pending], [id]);
-      channel.unansweredWrites.delete(id);
-      await elapse((PUSH_RETRY_DELAYS_MS[0] ?? 0) - 1);
-      assert.equal(channel.pushes.length, pushes);
-      await elapse(1);
+      await waitLong();
 
-      assert.equal(channel.pushes.length, pushes + 1);
-      assert.equal(channel.project.get(id)?.name, "Runner");
-      assert.equal(store.getSnapshot().pending.size, 0);
+      assert.equal(channel.pushes.length, pushes);
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      assert.deepEqual([...store.getSnapshot().pending], [id]);
+      assert.equal(channel.project.get(id)?.name, "Chaser");
     });
 
-    it("keeps the pend of a push past its liveness deadline until it is acknowledged late, then retries nothing", async () => {
+    it("clears the pend of a push the project acknowledges late, however late, and schedules nothing after it", async () => {
       const store = syncedStore();
       const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.held = true;
       store.renameBrain(id, "Runner");
-      await elapse(PUSH_LIVENESS_DEADLINE_MS);
+      await waitLong();
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
       assert.deepEqual([...store.getSnapshot().pending], [id]);
+      const pushes = channel.pushes.length;
 
       channel.release();
       await settle();
       assert.equal(store.getSnapshot().pending.size, 0);
-      const pushes = channel.pushes.length;
-      await elapse(60_000);
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      await waitLong();
 
       assert.equal(channel.pushes.length, pushes);
-      assert.equal(store.getSnapshot().pending.size, 0);
-    });
-
-    it("ignores the failure of a push past its deadline once a later push of the same edit has landed", async () => {
-      const store = syncedStore();
-      const channel = await handshake(projectOf());
-      const id = store.addBrain("Chaser");
-      await settle();
-      channel.unansweredWrites.add(id);
-      store.renameBrain(id, "Runner");
-      await elapse(PUSH_LIVENESS_DEADLINE_MS);
-      channel.unansweredWrites.delete(id);
-      await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
-      assert.equal(store.getSnapshot().pending.size, 0);
-
-      channel.close();
-      session.setStatus("disconnected");
-      await settle();
-
+      assert.equal(channel.project.get(id)?.name, "Runner");
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
@@ -1319,18 +1308,30 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
-    it("stops counting the pushes of a closed handshake in flight, keeping their pends", async () => {
+    it("stops counting an unanswered push in flight when its handshake ends, retrying nothing on it, and the next handshake's flush lands it", async () => {
       const store = syncedStore();
       const channel = await handshake(projectOf());
-      channel.held = true;
       const id = store.addBrain("Chaser");
+      await settle();
+      channel.unansweredWrites.add(id);
+      store.renameBrain(id, "Runner");
+      await settle();
+      assert.equal(store.getSnapshot().pushesInFlight, 1);
+      const pushes = channel.pushes.length;
 
       channel.close();
       session.setStatus("disconnected");
       await settle();
-
       assert.equal(store.getSnapshot().pushesInFlight, 0);
       assert.deepEqual([...store.getSnapshot().pending], [id]);
+      await waitLong();
+      assert.equal(channel.pushes.length, pushes);
+      const second = await handshake(channel.project);
+
+      assert.deepEqual(writtenIds(second), [id]);
+      assert.equal(second.project.get(id)?.name, "Runner");
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      assert.equal(store.getSnapshot().pending.size, 0);
     });
   });
 
@@ -1526,6 +1527,34 @@ describe("brains sync", () => {
 
       assert.equal(file.writes.length, 2);
       assert.deepEqual(file.reading.manifest, CHIME_IDS);
+    });
+
+    it("keeps a manifest write the project leaves unanswered in flight, writing nothing more until it is answered, however long it waits", async () => {
+      session.setCatalog(CHIME_CATALOG);
+      const store = syncedStore();
+      const file = new FakeManifestFile();
+      session.setStatus("connected");
+      const channel = sync.open(projectOf(), true, true, file);
+      channel.releaseAt(0);
+      channel.releaseAt(0);
+      await settle();
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.deepEqual(file.writes, [CHIME_IDS]);
+
+      await waitLong();
+      session.setCatalog(GROWN_CATALOG);
+      await settle();
+      assert.deepEqual(file.writes, [CHIME_IDS]);
+      assert.equal(file.reading.manifest, null);
+      channel.release();
+      await settle();
+
+      assert.equal(file.writes.length, 2);
+      assert.deepEqual(file.writes[1]?.actions, [
+        { name: "actuator.chime.ring", id: 1024 },
+        { name: "actuator.chime.hush", id: 1025 },
+      ]);
+      assert.deepEqual(file.reading.manifest, file.writes[1]);
     });
 
     it("re-runs the reconciliation when the manifest read fails", async () => {

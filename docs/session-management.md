@@ -548,12 +548,16 @@ namespace wendooIds {
   reordering its fields changes nothing, a new field appends, and a removed
   field keeps its id.
 - WRITE: a write replaces `ids.g.ts`, skipped when its text would not
-  change, as an ARTIFACT (never `dirty`); a refused write fails with
-  `MAKECODE_MANIFEST_WRITE_FAILED`, the projfs code leading the message,
-  and the editor retries it after each of `PUSH_RETRY_DELAYS_MS`, then at
-  the last delay, while its handshake stays connected. A manifest of a newer
-  format is never rewritten: writes fail with its code leading the message,
-  and the editor binds no pack while it stands.
+  change, as an ARTIFACT (never `dirty`), and is acknowledged once it has
+  landed. The editor has one write out at a time and waits for its answer
+  however long MakeCode's write rate holds it, until its handshake ends; an
+  allocation that changes meanwhile is written once that answer arrives. A
+  refused write fails with `MAKECODE_MANIFEST_WRITE_FAILED`, the projfs code
+  leading the message, and the editor retries it after each of
+  `PUSH_RETRY_DELAYS_MS`, then at the last delay, while its handshake stays
+  connected. A manifest of a newer format is never rewritten: writes fail
+  with its code leading the message, and the editor binds no pack while it
+  stands.
 - READING A DAMAGED MANIFEST: the reader never throws. A file declaring no
   format reads as no manifest (`MAKECODE_MANIFEST_UNREADABLE`); an
   allocation line that does not follow the format, a second line naming
@@ -884,16 +888,18 @@ channel, then pushes each edit as it is made:
   push carries the last good compiled form, never that compile's
   program. A push records its brain pending as it goes out, and the
   project's acknowledgment of it clears the pend only while it carries
-  the brain's latest state, however late it arrives. A push to a column
-  frame that has gone rejects with `CLOSED` once the heartbeat ends its
-  handshake, its pend standing; a push the live frame leaves unanswered
-  for `PUSH_LIVENESS_DEADLINE_MS` (30 s) counts as failed, its pend
-  standing too. A failed push of a brain's latest state is retried after
-  each of `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then
-  every 8 s for as long as the push keeps failing, while the handshake
-  stays reconciled and connected and the brain is not damaged; a newer
-  edit's push takes over from the retries. Pends flush on the next
-  reconciled handshake; until acknowledged they survive every status.
+  the brain's latest state, however late it arrives. A push is in flight
+  until the column frame answers it -- once projfs has landed it, however
+  long MakeCode's write rate holds it -- or its handshake ends: a push to
+  a column frame that has gone rejects with `CLOSED` once the heartbeat
+  ends its handshake, its pend standing for the next reconciled
+  handshake's flush. A push the project refuses fails, and a failed push
+  of a brain's latest state is retried after each of
+  `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then every 8 s
+  for as long as the push keeps failing, while the handshake stays
+  reconciled and connected and the brain is not damaged; a newer edit's
+  push takes over from the retries. Pends flush on the next reconciled
+  handshake; until acknowledged they survive every status.
 - STALENESS: a pulled brain whose compiled form is absent, was
   compiled from other source (its `sourceHash` differs from the
   source's hash -- someone edited the source out of band), or differs
