@@ -36,8 +36,7 @@
       "dependencies": [
         "../../../packages/protocol:build:prod",
         "../../../external/wendoo-lang/packages/core:build:prod",
-        "../../../external/wendoo-lang/packages/bridge-app:build:prod",
-        "../../../external/wendoo-lang/packages/bridge-client:build:prod"
+        "../../../external/wendoo-lang/packages/bridge-app:build:prod"
       ],
       "files": [
         "src/**",
@@ -69,8 +68,6 @@
   },
   "dependencies": {
     "@wendoo/bridge-app": "file:../../../external/wendoo-lang/packages/bridge-app",
-    "@wendoo/bridge-client": "file:../../../external/wendoo-lang/packages/bridge-client",
-    "@wendoo/bridge-protocol": "file:../../../external/wendoo-lang/packages/bridge-protocol",
     "@wendoo/core": "file:../../../external/wendoo-lang/packages/core",
     "@wendoo/docs": "file:../../../external/wendoo-lang/packages/docs",
     "@wendoo/makecode-session": "file:../../../packages/protocol",
@@ -86,7 +83,6 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
-    "@wendoo/bridge-session": "file:../../../external/wendoo-lang/packages/bridge-session",
     "@wendoo/conformance": "file:../../../external/wendoo-lang/packages/conformance",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
