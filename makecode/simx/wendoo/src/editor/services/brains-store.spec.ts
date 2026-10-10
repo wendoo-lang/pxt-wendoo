@@ -10,7 +10,6 @@ import type {
   MakeCodeAsset,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
-  MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
 } from "@wendoo/makecode-session";
@@ -498,11 +497,8 @@ describe("brains store", () => {
 
     it("follows the live session's catalog and connectivity", () => {
       const live = new LiveSession();
-      const sessionStore = new EditorSessionStore({
-        persistence: { load: () => undefined, save: () => {}, clear: () => {}, has: () => false },
-        createSession: (_options: MakeCodeEditorSessionOptions) => live,
-      });
-      sessionStore.connect("ABCD");
+      const sessionStore = new EditorSessionStore(live);
+      sessionStore.start();
       live.setStatus("connected");
       const store = new BrainsStore(sessionStore);
 
@@ -517,11 +513,8 @@ describe("brains store", () => {
 
     it("follows the live session's asset snapshots into its asset literals", async () => {
       const live = new LiveSession();
-      const sessionStore = new EditorSessionStore({
-        persistence: { load: () => undefined, save: () => {}, clear: () => {}, has: () => false },
-        createSession: (_options: MakeCodeEditorSessionOptions) => live,
-      });
-      sessionStore.connect("ABCD");
+      const sessionStore = new EditorSessionStore(live);
+      sessionStore.start();
       live.setStatus("connected");
       const store = new BrainsStore(sessionStore, sessionStore);
       live.deliver(ASSET_CATALOG);

@@ -40,12 +40,6 @@ export const THEME_TOKENS = [
   "--color-border",
   "--color-input",
   "--color-ring",
-  "--color-header",
-  "--color-header-foreground",
-  "--color-header-muted-foreground",
-  "--color-header-wash",
-  "--color-header-edge",
-  "--color-header-dot-connected",
   "--color-brain-desk-from",
   "--color-brain-desk-to",
   "--color-brain-desk-glow",
@@ -101,10 +95,8 @@ export type ThemeTokenOverrides = Readonly<Partial<Record<ThemeToken, string>>>;
  */
 export type TileKindColors = Readonly<Record<BrainTileKind, TileColorDef>>;
 
-/** What the editor knows about one MakeCode target: how it names the target, and how it themes for it. */
+/** How the editor themes for one MakeCode target. */
 export interface TargetTheme {
-  /** The target's name as the app header shows it, for example `micro:bit`. */
-  readonly displayName: string;
   /** The token overrides applied while this target is declared; empty for the default theme. */
   readonly tokens: ThemeTokenOverrides;
   /** The tile fills worn while this target is declared; absent where tiles keep the brain editor's default hue. */
@@ -117,20 +109,15 @@ function bothSides(hue: string): TileColorDef {
 }
 
 /**
- * Arcade's theme: MakeCode's arcade-light chrome -- a teal header under white
- * ink, purple accents -- over a teal-tinted paper desk of white rule cards,
- * teal capsules and teal-cast shadows, and tiles filled in light pastels under
- * dark ink. Tokens it leaves out take the editor's default light theme.
+ * Arcade's theme: MakeCode's arcade-light purple accents over a teal-tinted
+ * paper desk of white rule cards, teal capsules and teal-cast shadows, and
+ * tiles filled in light pastels under dark ink. Tokens it leaves out take the
+ * editor's default light theme.
  */
 const ARCADE_THEME: TargetTheme = {
-  displayName: "Arcade",
   tokens: {
     "--color-primary": "#5d4fba",
     "--color-border": "#d4e0e3",
-    "--color-header": "#116e79",
-    "--color-header-foreground": "#ffffff",
-    "--color-header-muted-foreground": "#dbe9eb",
-    "--color-header-dot-connected": "#4ade80",
     "--color-brain-desk-from": "#eef4f6",
     "--color-brain-desk-to": "#e2ecef",
     "--color-brain-desk-shade": "rgba(17, 110, 121, 0.09)",
@@ -171,15 +158,13 @@ const ARCADE_THEME: TargetTheme = {
  */
 export const TARGET_THEMES: ReadonlyMap<string, TargetTheme> = new Map<string, TargetTheme>([
   ["arcade", ARCADE_THEME],
-  ["microbit", { displayName: "micro:bit", tokens: {} }],
+  ["microbit", { tokens: {} }],
 ]);
 
 /** A declared target as the editor presents it. */
 export interface ResolvedTarget {
   /** The target id exactly as declared. */
   readonly id: string;
-  /** The record's display name, or the raw id for a target the record does not know. */
-  readonly displayName: string;
   /** The record's token overrides; empty for a target the record does not know. */
   readonly tokens: ThemeTokenOverrides;
   /** The record's tile fills; `undefined` for a target the record gives none, or does not know. */
@@ -190,8 +175,7 @@ export interface ResolvedTarget {
  * Resolves the target the MakeCode side declared against `themes` (defaults
  * to {@link TARGET_THEMES}). Returns `undefined` when no target is declared:
  * for `undefined`, the empty string, and any value that is not a string. An
- * id `themes` does not know resolves to itself as the display name, with no
- * overrides and no tile fills.
+ * id `themes` does not know resolves with no overrides and no tile fills.
  */
 export function resolveTarget(
   declared: unknown,
@@ -201,7 +185,6 @@ export function resolveTarget(
   const theme = themes.get(declared);
   return {
     id: declared,
-    displayName: theme?.displayName ?? declared,
     tokens: theme?.tokens ?? {},
     tileColors: theme?.tileColors,
   };

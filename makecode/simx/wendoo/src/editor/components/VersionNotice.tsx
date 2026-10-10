@@ -1,12 +1,5 @@
-import { BridgeSessionErrorCode, PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeEditorSessionErrorCode } from "@wendoo/makecode-session";
-
-/** Whether `code` reports that this editor and its counterpart speak no common version. */
-export function isVersionCode(code: MakeCodeEditorSessionErrorCode | undefined): boolean {
-  return (
-    code === BridgeSessionErrorCode.PROTOCOL_VERSION_MISMATCH || code === PeerSessionErrorCode.PROTOCOL_VERSION_NEWER
-  );
-}
+import { isVersionCode } from "@/services/connection-status";
 
 /**
  * The remedy for a version rejection: reloading the editor, which updates

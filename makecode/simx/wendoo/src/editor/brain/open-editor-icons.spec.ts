@@ -24,6 +24,7 @@ import type {
   MakeCodeBrain,
   MakeCodeBrainPush,
   MakeCodeBrainSummary,
+  MakeCodeBrainsChannel,
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import type { BrainEditorConfig } from "@wendoo/ui";
@@ -33,7 +34,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
-import type { EditorBrainsChannel } from "../services/editor-session-store.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
 import { openBrainEditing } from "./editing.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
@@ -129,9 +129,7 @@ class FakeSessionSource {
 }
 
 /** One handshake's brains channel over a project holding no brain and no manifest, answering every request at once. */
-class EmptyProjectChannel implements EditorBrainsChannel {
-  readonly binding = "binding-1";
-
+class EmptyProjectChannel implements MakeCodeBrainsChannel {
   readManifest(): Promise<MakeCodeManifestReading> {
     return Promise.resolve({ manifest: null });
   }
@@ -187,7 +185,7 @@ function currentConfig(store: BrainsStore): BrainEditorConfig {
  */
 async function openEditor() {
   const session = new FakeSessionSource(paintCatalog("before"));
-  let handshake: ((channel: EditorBrainsChannel) => void) | undefined;
+  let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;

@@ -7,6 +7,7 @@ import type {
   MakeCodeBrain,
   MakeCodeBrainPush,
   MakeCodeBrainSummary,
+  MakeCodeBrainsChannel,
   MakeCodeIdManifest,
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
@@ -24,7 +25,7 @@ import {
   serializeBrainSource,
 } from "./brain-source";
 import { parseCatalog } from "./catalog";
-import type { EditorBrainsChannel, EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
+import type { EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
 import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "./id-allocation";
 
 /**
@@ -249,9 +250,7 @@ export interface BrainsViewState {
  *
  * Given a sync source, the store keeps its brains in step with the MakeCode
  * project over each makecode handshake. When a handshake completes, the
- * store reconciles: a handshake of a different binding than the previous
- * one first replaces the brains, discarding every local brain and pend and
- * the id allocation; it reads the project's manifest and lists the
+ * store reconciles: it reads the project's manifest and lists the
  * project's brains, pulls those whose source differs from the
  * store's or whose compiled form the list reports missing or compiled from
  * other source, adopts each pulled brain it holds no pending edit of, drops
@@ -297,7 +296,7 @@ export class BrainsStore {
         readonly found: ReadonlyMap<string, readonly UnresolvedBrainReference[]>;
       }
     | undefined;
-  /** The id allocation held for the current binding, or `undefined` until a handshake has read the project's manifest. */
+  /** The id allocation held for the project, or `undefined` until a handshake has read the project's manifest. */
   private _ids: MakeCodeIdManifest | undefined;
   /**
    * The allocation the project holds as far as the store knows: from the
@@ -317,7 +316,7 @@ export class BrainsStore {
   private _pending: ReadonlySet<string> = new Set();
   private _damaged: ReadonlyMap<string, BrainDamage> = new Map();
   /** The channel of the latest handshake, or `undefined` before the first. */
-  private _channel: EditorBrainsChannel | undefined;
+  private _channel: MakeCodeBrainsChannel | undefined;
   /** Whether the latest handshake's reconciliation has finished and the session has stayed connected since. */
   private _reconciled = false;
   /** The scheduled retry of each brain whose latest push failed, by document id. */
@@ -489,12 +488,12 @@ export class BrainsStore {
   }
 
   /** Whether a reconciliation over `channel` can reach the project now: it is the latest handshake's, and the session is connected. */
-  private reconcilesOver(channel: EditorBrainsChannel): boolean {
+  private reconcilesOver(channel: MakeCodeBrainsChannel): boolean {
     return this._channel === channel && this._session.getSnapshot().status === "connected";
   }
 
   /** Whether edits reach the project over `channel` now: it is the latest handshake's, reconciled, and the session is connected. */
-  private pushesOver(channel: EditorBrainsChannel): boolean {
+  private pushesOver(channel: MakeCodeBrainsChannel): boolean {
     return this._channel === channel && this._reconciled && this._session.getSnapshot().status === "connected";
   }
 
@@ -508,7 +507,7 @@ export class BrainsStore {
    *
    * @param attempt - How many failed pushes of the same state precede this one: 0 for a first push.
    */
-  private push(channel: EditorBrainsChannel, id: string, attempt = 0): void {
+  private push(channel: MakeCodeBrainsChannel, id: string, attempt = 0): void {
     clearTimeout(this._retries.get(id));
     this._retries.delete(id);
     const entry = this._brains.get(id);
@@ -573,7 +572,12 @@ export class BrainsStore {
    * its last delay past the end, provided edits still reach the project over
    * `channel` then.
    */
-  private pushFailed(channel: EditorBrainsChannel, id: string, pushed: BrainEntry | undefined, attempt: number): void {
+  private pushFailed(
+    channel: MakeCodeBrainsChannel,
+    id: string,
+    pushed: BrainEntry | undefined,
+    attempt: number
+  ): void {
     this.publish();
     if (this._brains.get(id) !== pushed || this._damaged.has(id) || !this.pushesOver(channel)) return;
     const retry = setTimeout(() => {
@@ -584,34 +588,18 @@ export class BrainsStore {
   }
 
   /** Pushes every pending brain that is not damaged over `channel`. */
-  private flush(channel: EditorBrainsChannel): void {
+  private flush(channel: MakeCodeBrainsChannel): void {
     for (const id of this._pending) {
       if (!this._damaged.has(id)) this.push(channel, id);
     }
   }
 
-  /**
-   * Adopts `channel` as the latest handshake's, replacing the brains when
-   * it belongs to a different binding than the previous handshake, and
-   * reconciles over it.
-   */
-  private handshakeCompleted(channel: EditorBrainsChannel): void {
-    const previous = this._channel;
+  /** Adopts `channel` as the latest handshake's and reconciles over it. */
+  private handshakeCompleted(channel: MakeCodeBrainsChannel): void {
     const wasReconciled = this._reconciled;
     this._channel = channel;
     this._reconciled = false;
-    if (previous !== undefined && previous.binding !== channel.binding) {
-      this._brains = new Map();
-      this._pending = new Set();
-      this._damaged = new Map();
-      this._ids = undefined;
-      this._projectIds = undefined;
-      this._manifestNewer = false;
-      this._environment = this.buildEnvironment();
-      this.publish();
-    } else if (wasReconciled) {
-      this.publish();
-    }
+    if (wasReconciled) this.publish();
     void this.reconcile(channel);
   }
 
@@ -626,7 +614,7 @@ export class BrainsStore {
    *
    * @param attempt - How many failed reconciliations over `channel` precede this one: 0 for the first.
    */
-  private async reconcile(channel: EditorBrainsChannel, attempt = 0): Promise<void> {
+  private async reconcile(channel: MakeCodeBrainsChannel, attempt = 0): Promise<void> {
     let listed: MakeCodeBrainSummary[];
     let wanted: string[];
     let pulled: MakeCodeBrain[];
@@ -774,7 +762,7 @@ export class BrainsStore {
    *
    * @param attempt - How many failed writes precede this one: 0 for a first write.
    */
-  private writeManifest(channel: EditorBrainsChannel, attempt = 0): void {
+  private writeManifest(channel: MakeCodeBrainsChannel, attempt = 0): void {
     const ids = this._ids;
     if (ids === undefined || this._manifestNewer || this._manifestWriting || !this.reconcilesOver(channel)) return;
     if (this._projectIds !== undefined && sameIdManifest(this._projectIds, ids)) return;

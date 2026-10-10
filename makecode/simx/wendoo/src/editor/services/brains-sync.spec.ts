@@ -7,6 +7,7 @@ import type {
   MakeCodeBrain,
   MakeCodeBrainPush,
   MakeCodeBrainSummary,
+  MakeCodeBrainsChannel,
   MakeCodeIdManifest,
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
@@ -28,7 +29,6 @@ import {
 } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
-import type { EditorBrainsChannel } from "./editor-session-store.js";
 
 /** The session readings a brains store follows, driven by the spec. */
 class FakeSessionSource {
@@ -82,8 +82,7 @@ class FakeManifestFile {
  * answers until released. Closing it rejects every unanswered request and
  * every later one with `CLOSED`.
  */
-class FakeChannel implements EditorBrainsChannel {
-  readonly binding: string | undefined;
+class FakeChannel implements MakeCodeBrainsChannel {
   readonly project: Map<string, MakeCodeBrain>;
   /** Every push received, in order. */
   readonly pushes: MakeCodeBrainPush[] = [];
@@ -109,8 +108,7 @@ class FakeChannel implements EditorBrainsChannel {
   private readonly _rejects = new Set<(error: Error) => void>();
   private _closed = false;
 
-  constructor(binding: string | undefined, project: Map<string, MakeCodeBrain>, manifestFile: FakeManifestFile) {
-    this.binding = binding;
+  constructor(project: Map<string, MakeCodeBrain>, manifestFile: FakeManifestFile) {
     this.project = project;
     this.manifestFile = manifestFile;
   }
@@ -228,9 +226,9 @@ class FakeChannel implements EditorBrainsChannel {
 
 /** The sync source a brains store follows: hands out the spec's channels. */
 class FakeSync {
-  private readonly _listeners = new Set<(channel: EditorBrainsChannel) => void>();
+  private readonly _listeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
-  onBrainsChannel = (listener: (channel: EditorBrainsChannel) => void): (() => void) => {
+  onBrainsChannel = (listener: (channel: MakeCodeBrainsChannel) => void): (() => void) => {
     this._listeners.add(listener);
     return () => {
       this._listeners.delete(listener);
@@ -238,18 +236,17 @@ class FakeSync {
   };
 
   /**
-   * A handshake of `binding` completing over `project`, whose id manifest is
+   * A handshake completing over `project`, whose id manifest is
    * `manifestFile`, handing out its channel; `reportsCompiled` set as
    * {@link FakeChannel.reportsCompiled}.
    */
   open(
-    binding: string | undefined,
     project: Map<string, MakeCodeBrain>,
     held = false,
     reportsCompiled = true,
     manifestFile = new FakeManifestFile()
   ): FakeChannel {
-    const channel = new FakeChannel(binding, project, manifestFile);
+    const channel = new FakeChannel(project, manifestFile);
     channel.held = held;
     channel.reportsCompiled = reportsCompiled;
     for (const listener of this._listeners) listener(channel);
@@ -371,10 +368,10 @@ describe("brains sync", () => {
     return new BrainsStore(session, sync);
   }
 
-  /** Connects the session and opens a handshake of `binding` over `project`, resolving once it has reconciled. */
-  async function handshake(binding: string, project: Map<string, MakeCodeBrain>): Promise<FakeChannel> {
+  /** Connects the session and opens a handshake over `project`, resolving once it has reconciled. */
+  async function handshake(project: Map<string, MakeCodeBrain>): Promise<FakeChannel> {
     session.setStatus("connected");
-    const channel = sync.open(binding, project);
+    const channel = sync.open(project);
     await settle();
     return channel;
   }
@@ -388,7 +385,7 @@ describe("brains sync", () => {
   describe("push on apply", () => {
     it("pushes each brain applied while connected: the source, compiled form and hash of one compile", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
 
       const id = store.addBrain("Chaser");
       const edited = store.getBrain(id);
@@ -408,7 +405,7 @@ describe("brains sync", () => {
 
     it("pushes a removal of a brain removed while connected", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
 
@@ -422,7 +419,7 @@ describe("brains sync", () => {
 
     it("records an edit pending when its push fails, keeping it until a later push is acknowledged", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       first.failingWrites.add(id);
       store.renameBrain(id, "Runner");
@@ -431,7 +428,7 @@ describe("brains sync", () => {
 
       first.close();
       session.setStatus("disconnected");
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.equal(second.project.get(id)?.name, "Runner");
       assert.equal(store.getSnapshot().pending.size, 0);
@@ -439,9 +436,9 @@ describe("brains sync", () => {
   });
 
   describe("reconnect flush", () => {
-    it("flushes every pend on the next handshake of the binding, deletions included, clearing each on its ack", async () => {
+    it("flushes every pend on the next handshake, deletions included, clearing each on its ack", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       const kept = store.addBrain("Chaser");
       const removed = store.addBrain("Runner");
       await settle();
@@ -452,7 +449,7 @@ describe("brains sync", () => {
       store.removeBrain(removed);
       const added = store.addBrain("Seeker");
       assert.deepEqual([...store.getSnapshot().pending].sort(), [kept, removed, added].sort());
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.equal(store.getSnapshot().pending.size, 0);
       assert.deepEqual([...second.project.keys()].sort(), [kept, added].sort());
@@ -462,19 +459,19 @@ describe("brains sync", () => {
 
     it("keeps pends through a handshake that closes before reconciling, flushing them on the next", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       first.close();
       session.setStatus("disconnected");
       const id = store.addBrain("Chaser");
 
       session.setStatus("connected");
-      const stalled = sync.open("token-1", first.project, true);
+      const stalled = sync.open(first.project, true);
       await settle();
       stalled.close();
       await settle();
       assert.deepEqual([...store.getSnapshot().pending], [id]);
 
-      const third = sync.open("token-1", first.project);
+      const third = sync.open(first.project);
       await settle();
       assert.equal(store.getSnapshot().pending.size, 0);
       assert.equal(third.project.has(id), true);
@@ -482,7 +479,7 @@ describe("brains sync", () => {
 
     it("keeps an edit made while a pull is in flight over the pulled copy, and flushes it after", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       first.close();
@@ -492,7 +489,7 @@ describe("brains sync", () => {
       first.project.set(id, { ...synced, name: "Remote", source: renamedSource(store, id, "Remote") });
 
       session.setStatus("connected");
-      const second = sync.open("token-1", first.project, true);
+      const second = sync.open(first.project, true);
       second.release();
       second.held = true;
       await settle();
@@ -508,13 +505,13 @@ describe("brains sync", () => {
     });
   });
 
-  describe("binding lifecycle", () => {
-    it("merges on the first binding: brains authored with no binding push to it, and its brains are pulled", async () => {
+  describe("handshake lifecycle", () => {
+    it("merges on the first handshake: brains authored before it push to the project, and its brains are pulled", async () => {
       const store = syncedStore();
       const local = store.addBrain("Local");
       const remote = projectBrain("Remote");
 
-      const channel = await handshake("token-1", projectOf(remote));
+      const channel = await handshake(projectOf(remote));
 
       assert.deepEqual([...store.getSnapshot().brains.keys()], [local, remote.id]);
       assert.equal(entryOf(store, remote.id).source, remote.source);
@@ -522,15 +519,15 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
-    it("keeps brains and pends through the same binding's next handshake", async () => {
+    it("keeps brains and pends through the next handshake", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf(projectBrain("Remote")));
+      const first = await handshake(projectOf(projectBrain("Remote")));
       const synced = [...store.getSnapshot().brains.keys()];
       first.close();
       session.setStatus("disconnected");
       const pending = store.addBrain("Offline");
 
-      const second = sync.open("token-1", first.project, true);
+      const second = sync.open(first.project, true);
       session.setStatus("connected");
       assert.deepEqual([...store.getSnapshot().brains.keys()], [...synced, pending]);
       assert.deepEqual([...store.getSnapshot().pending], [pending]);
@@ -541,49 +538,16 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
-    it("replaces brains with a different binding's set, discarding locals and pends, and pushing none of them", async () => {
-      const store = syncedStore();
-      const first = await handshake("token-1", projectOf(projectBrain("First project")));
-      first.close();
-      session.setStatus("none");
-      const orphan = store.addBrain("Offline");
-      const other = projectBrain("Other project");
-
-      const second = await handshake("token-2", projectOf(other));
-
-      assert.deepEqual([...store.getSnapshot().brains.keys()], [other.id]);
-      assert.equal(store.getSnapshot().pending.size, 0);
-      assert.deepEqual(second.pushes, []);
-      assert.equal(second.project.has(orphan), false);
-    });
-
-    it("discards an edit whose push the earlier binding's handshake failed when a different binding replaces the brains", async () => {
-      const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
-      first.held = true;
-      store.addBrain("Chaser");
-      first.close();
-      session.setStatus("disconnected");
-      await settle();
-      assert.equal(store.getSnapshot().pending.size, 1);
-
-      const second = await handshake("token-2", projectOf());
-
-      assert.equal(store.getSnapshot().brains.size, 0);
-      assert.equal(store.getSnapshot().pending.size, 0);
-      assert.deepEqual(second.pushes, []);
-    });
-
     it("removes a synced brain the project deletes between listing and pulling it", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: sourceWith(remote, authorCompilingRule) });
 
       session.setStatus("connected");
-      const second = sync.open("token-1", first.project, true);
+      const second = sync.open(first.project, true);
       second.release();
       second.held = true;
       await settle();
@@ -600,13 +564,13 @@ describe("brains sync", () => {
       const store = syncedStore();
       const gone = projectBrain("Gone");
       const kept = projectBrain("Kept");
-      const first = await handshake("token-1", projectOf(gone, kept));
+      const first = await handshake(projectOf(gone, kept));
       first.close();
       session.setStatus("disconnected");
       store.renameBrain(kept.id, "Renamed");
       first.project.clear();
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual([...store.getSnapshot().brains.keys()], [kept.id]);
       assert.equal(second.project.get(kept.id)?.name, "Renamed");
@@ -618,7 +582,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const remote = projectBrain("Remote", authorCompilingRule);
 
-      const channel = await handshake("token-1", projectOf(remote));
+      const channel = await handshake(projectOf(remote));
 
       const entry = entryOf(store, remote.id);
       assert.equal(entry.source, remote.source);
@@ -631,7 +595,7 @@ describe("brains sync", () => {
       const original = projectBrain("Remote");
       const edited = { ...original, source: sourceWith(original, authorCompilingRule) };
 
-      const channel = await handshake("token-1", projectOf(edited));
+      const channel = await handshake(projectOf(edited));
 
       const entry = entryOf(store, edited.id);
       assert.equal(entry.source, edited.source);
@@ -650,7 +614,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const { compiled: _compiled, ...sourceOnly } = projectBrain("Remote");
 
-      const channel = await handshake("token-1", projectOf(sourceOnly));
+      const channel = await handshake(projectOf(sourceOnly));
 
       assert.equal(entryOf(store, sourceOnly.id).compiled?.sourceHash, brainSourceHash(sourceOnly.source));
       assert.deepEqual(writtenIds(channel), [sourceOnly.id]);
@@ -661,7 +625,7 @@ describe("brains sync", () => {
       const original = projectBrain("Remote");
       const broken = { ...original, source: sourceWith(original, authorMisplacedTile) };
 
-      const channel = await handshake("token-1", projectOf(broken));
+      const channel = await handshake(projectOf(broken));
 
       const entry = entryOf(store, broken.id);
       assert.equal(entry.source, broken.source);
@@ -673,13 +637,13 @@ describe("brains sync", () => {
     it("pulls a held brain whose project copy lists no compiled form, recompiling it and pushing the fresh pair", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote", authorCompilingRule);
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       const { compiled: _compiled, ...sourceOnly } = remote;
       first.project.set(remote.id, sourceOnly);
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual(second.pulls, [[remote.id]]);
       const pushed = lastPush(second);
@@ -692,13 +656,13 @@ describe("brains sync", () => {
     it("pulls a held brain whose project copy lists a compiled form of other source, and pushes the fresh pair", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote", authorCompilingRule);
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       const other = projectBrain("Other");
       first.project.set(remote.id, { ...remote, compiled: other.compiled });
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual(second.pulls, [[remote.id]]);
       assert.deepEqual(writtenIds(second), [remote.id]);
@@ -710,13 +674,13 @@ describe("brains sync", () => {
       const store = syncedStore();
       const healthy = projectBrain("Healthy", authorCompilingRule);
       const missing = projectBrain("Missing", authorCompilingRule);
-      const first = await handshake("token-1", projectOf(healthy, missing));
+      const first = await handshake(projectOf(healthy, missing));
       first.close();
       session.setStatus("disconnected");
       const { compiled: _compiled, ...sourceOnly } = missing;
       first.project.set(missing.id, sourceOnly);
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual(second.pulls, [[missing.id]]);
       assert.deepEqual(writtenIds(second), [missing.id]);
@@ -727,7 +691,7 @@ describe("brains sync", () => {
     it("takes no action on a list that carries no compiled source hashes, however many handshakes reconcile", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote", authorCompilingRule);
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       const { compiled: _compiled, ...sourceOnly } = remote;
       first.project.set(remote.id, sourceOnly);
 
@@ -735,7 +699,7 @@ describe("brains sync", () => {
         first.close();
         session.setStatus("disconnected");
         session.setStatus("connected");
-        const legacy = sync.open("token-1", first.project, false, false);
+        const legacy = sync.open(first.project, false, false);
         await settle();
 
         assert.equal(store.getSnapshot().reconciled, true);
@@ -750,11 +714,11 @@ describe("brains sync", () => {
       const store = syncedStore();
       const original = projectBrain("Remote");
       const broken = { ...original, source: sourceWith(original, authorMisplacedTile) };
-      const first = await handshake("token-1", projectOf(broken));
+      const first = await handshake(projectOf(broken));
       first.close();
       session.setStatus("disconnected");
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual(second.pulls, [[broken.id]]);
       assert.deepEqual(second.pushes, []);
@@ -766,13 +730,13 @@ describe("brains sync", () => {
     it("lists a brain whose source is not a brain document as damaged, keeping the held copy and never pushing it", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       const held = entryOf(store, remote.id);
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: "not json {" });
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.equal(store.getSnapshot().damaged.get(remote.id)?.code, BRAIN_SOURCE_INVALID);
       assert.equal(entryOf(store, remote.id), held);
@@ -783,11 +747,11 @@ describe("brains sync", () => {
     it("holds an edit to a damaged brain pending rather than pushing over the damaged source", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: '{"version":1}' });
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       store.renameBrain(remote.id, "Renamed");
       await settle();
@@ -799,13 +763,13 @@ describe("brains sync", () => {
     it("holds a pending removal of a brain whose source is damaged rather than deleting the damaged source", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       store.removeBrain(remote.id);
       first.project.set(remote.id, { ...remote, source: "not json {" });
 
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.equal(store.getSnapshot().damaged.get(remote.id)?.code, BRAIN_SOURCE_INVALID);
       assert.deepEqual([...store.getSnapshot().pending], [remote.id]);
@@ -815,12 +779,12 @@ describe("brains sync", () => {
     it("re-pushes the held copy over a damaged source on request, clearing the damage and the pend on the ack", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       store.renameBrain(remote.id, "Renamed");
       first.project.set(remote.id, { ...remote, source: "not json {" });
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
 
       store.repushBrain(remote.id);
@@ -835,7 +799,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const remote = { ...projectBrain("Remote"), source: "[]" };
 
-      const channel = await handshake("token-1", projectOf(remote));
+      const channel = await handshake(projectOf(remote));
       store.repushBrain(remote.id);
       await settle();
 
@@ -850,7 +814,7 @@ describe("brains sync", () => {
       const embedded = projectBrain("Embedded");
       const mismatched = { ...addressed, source: embedded.source };
 
-      const channel = await handshake("token-1", projectOf(mismatched));
+      const channel = await handshake(projectOf(mismatched));
 
       assert.equal(store.getSnapshot().damaged.get(addressed.id)?.code, BRAIN_SOURCE_ID_MISMATCH);
       assert.equal(store.getSnapshot().brains.size, 0);
@@ -860,13 +824,13 @@ describe("brains sync", () => {
     it("clears the damage once the project no longer holds the damaged source", async () => {
       const store = syncedStore();
       const remote = { ...projectBrain("Remote"), source: "not json {" };
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
       first.close();
       session.setStatus("disconnected");
       first.project.delete(remote.id);
 
-      await handshake("token-1", first.project);
+      await handshake(first.project);
 
       assert.equal(store.getSnapshot().damaged.size, 0);
       assert.equal(store.getSnapshot().brains.size, 0);
@@ -875,13 +839,13 @@ describe("brains sync", () => {
     it("clears the damage once the project's source is repaired", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf({ ...remote, source: "not json {" }));
+      const first = await handshake(projectOf({ ...remote, source: "not json {" }));
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, remote);
 
-      await handshake("token-1", first.project);
+      await handshake(first.project);
 
       assert.equal(store.getSnapshot().damaged.size, 0);
       assert.equal(entryOf(store, remote.id).source, remote.source);
@@ -894,7 +858,7 @@ describe("brains sync", () => {
       assert.equal(store.getSnapshot().reconciled, false);
       session.setStatus("connected");
 
-      const channel = sync.open("token-1", projectOf(projectBrain("Remote")), true);
+      const channel = sync.open(projectOf(projectBrain("Remote")), true);
       await settle();
       assert.equal(store.getSnapshot().reconciled, false);
       channel.release();
@@ -905,13 +869,13 @@ describe("brains sync", () => {
 
     it("stops reporting reconciled when the session disconnects, until the next handshake reconciles", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       assert.equal(store.getSnapshot().reconciled, true);
 
       first.close();
       session.setStatus("disconnected");
       assert.equal(store.getSnapshot().reconciled, false);
-      await handshake("token-1", first.project);
+      await handshake(first.project);
 
       assert.equal(store.getSnapshot().reconciled, true);
     });
@@ -919,11 +883,11 @@ describe("brains sync", () => {
     it("pushes nothing for a re-push asked while disconnected, keeping the damage", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: "not json {" });
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
       second.close();
       session.setStatus("disconnected");
@@ -940,14 +904,14 @@ describe("brains sync", () => {
   describe("two brains", () => {
     it("flushes two pends independently: a failed write stays pending while the other clears", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       first.close();
       session.setStatus("disconnected");
       const failing = store.addBrain("Failing");
       const passing = store.addBrain("Passing");
 
       session.setStatus("connected");
-      const second = sync.open("token-1", first.project, true);
+      const second = sync.open(first.project, true);
       second.failingWrites.add(failing);
       second.release();
       await settle();
@@ -960,7 +924,7 @@ describe("brains sync", () => {
   describe("identical applies", () => {
     it("records no edit for an apply of the source the store holds: no push, no pend, no new snapshot", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       const edited = store.getBrain(id);
       assert.ok(edited);
@@ -982,7 +946,7 @@ describe("brains sync", () => {
 
     it("records no pend for an identical apply made while disconnected, and the next handshake pushes nothing", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       first.close();
@@ -992,14 +956,14 @@ describe("brains sync", () => {
       assert.ok(reread);
       store.applyBrain(reread);
       assert.equal(store.getSnapshot().pending.size, 0);
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.deepEqual(second.pushes, []);
     });
 
     it("keeps a failing brain's diagnostics and last good compile through an identical apply, pushing nothing", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       const broken = store.getBrain(id);
       assert.ok(broken);
@@ -1021,11 +985,11 @@ describe("brains sync", () => {
     it("records no pend for an identical apply of a damaged brain, so a repaired project copy is adopted", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: "not json {" });
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
 
       const reread = store.getBrain(remote.id);
@@ -1044,7 +1008,7 @@ describe("brains sync", () => {
         compiled: { bytecode, sourceHash: brainSourceHash(repairedSource) },
       };
       second.project.set(remote.id, repaired);
-      const third = await handshake("token-1", second.project);
+      const third = await handshake(second.project);
 
       assert.equal(entryOf(store, remote.id).source, repaired.source);
       assert.equal(store.getSnapshot().damaged.size, 0);
@@ -1053,7 +1017,7 @@ describe("brains sync", () => {
 
     it("pushes the next edit after an identical apply as usual", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       const reread = store.getBrain(id);
@@ -1071,7 +1035,7 @@ describe("brains sync", () => {
   describe("acknowledgment order", () => {
     it("keeps the pend of a newer edit whose push failed when an older push of the brain is acknowledged after it", async () => {
       const store = syncedStore();
-      const first = await handshake("token-1", projectOf());
+      const first = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       first.held = true;
@@ -1089,7 +1053,7 @@ describe("brains sync", () => {
       assert.deepEqual([...store.getSnapshot().pending], [id]);
       first.close();
       session.setStatus("disconnected");
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
 
       assert.equal(entryOf(store, id).name, "Newer");
       assert.equal(second.project.get(id)?.name, "Newer");
@@ -1098,7 +1062,7 @@ describe("brains sync", () => {
 
     it("keeps the pend when an older push carrying the same source as the failed newest edit is acknowledged after it", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.held = true;
@@ -1122,7 +1086,7 @@ describe("brains sync", () => {
     /** A store, reconciled over a handshake, holding one brain whose pushes `channel` fails until told otherwise. */
     async function failingBrain(): Promise<{ store: BrainsStore; channel: FakeChannel; id: string }> {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.failingWrites.add(id);
@@ -1183,7 +1147,7 @@ describe("brains sync", () => {
 
       await elapse(60_000);
       assert.equal(channel.pushes.length, pushes);
-      const second = await handshake("token-1", channel.project);
+      const second = await handshake(channel.project);
 
       assert.equal(second.project.get(id)?.name, "Runner");
       assert.equal(store.getSnapshot().pending.size, 0);
@@ -1191,7 +1155,7 @@ describe("brains sync", () => {
 
     it("pushes again, through the retry delays, a push the project leaves unanswered past the liveness deadline", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.unansweredWrites.add(id);
@@ -1216,7 +1180,7 @@ describe("brains sync", () => {
 
     it("keeps the pend of a push past its liveness deadline until it is acknowledged late, then retries nothing", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.held = true;
@@ -1236,7 +1200,7 @@ describe("brains sync", () => {
 
     it("ignores the failure of a push past its deadline once a later push of the same edit has landed", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.unansweredWrites.add(id);
@@ -1275,7 +1239,7 @@ describe("brains sync", () => {
 
       await elapse(60_000);
       assert.equal(channel.pushes.length, pushes);
-      const second = await handshake("token-1", channel.project);
+      const second = await handshake(channel.project);
       await elapse(60_000);
 
       assert.deepEqual(writtenIds(second), [id]);
@@ -1286,11 +1250,11 @@ describe("brains sync", () => {
     it("never retries a failed re-push of a damaged brain", async () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
-      const first = await handshake("token-1", projectOf(remote));
+      const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
       first.project.set(remote.id, { ...remote, source: "not json {" });
-      const second = await handshake("token-1", first.project);
+      const second = await handshake(first.project);
       second.failingWrites.add(remote.id);
 
       store.repushBrain(remote.id);
@@ -1306,7 +1270,7 @@ describe("brains sync", () => {
   describe("pushes in flight", () => {
     it("records a push pending from its departure, counting it in flight, until the project acknowledges it", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       channel.held = true;
 
       const id = store.addBrain("Chaser");
@@ -1321,7 +1285,7 @@ describe("brains sync", () => {
 
     it("keeps a push the project never answers pending while the handshake stays open", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.unansweredWrites.add(id);
@@ -1336,7 +1300,7 @@ describe("brains sync", () => {
 
     it("counts each unanswered push of a brain in flight, and keeps the pend until the newest is acknowledged", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       const id = store.addBrain("Chaser");
       await settle();
       channel.held = true;
@@ -1357,7 +1321,7 @@ describe("brains sync", () => {
 
     it("stops counting the pushes of a closed handshake in flight, keeping their pends", async () => {
       const store = syncedStore();
-      const channel = await handshake("token-1", projectOf());
+      const channel = await handshake(projectOf());
       channel.held = true;
       const id = store.addBrain("Chaser");
 
@@ -1418,10 +1382,10 @@ describe("brains sync", () => {
       return action?.binding === "host" ? action.id : undefined;
     }
 
-    /** Connects and opens a handshake of `binding` over an empty project whose manifest is `file`, resolving once it has reconciled. */
-    async function handshakeWith(binding: string, file: FakeManifestFile, project = projectOf()): Promise<FakeChannel> {
+    /** Connects and opens a handshake over an empty project whose manifest is `file`, resolving once it has reconciled. */
+    async function handshakeWith(file: FakeManifestFile, project = projectOf()): Promise<FakeChannel> {
       session.setStatus("connected");
-      const channel = sync.open(binding, project, false, true, file);
+      const channel = sync.open(project, false, true, file);
       await settle();
       return channel;
     }
@@ -1451,7 +1415,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const file = new FakeManifestFile();
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       assert.deepEqual(file.log.slice(0, 2), ["read", "list"]);
       assert.deepEqual(file.writes, [CHIME_IDS]);
@@ -1470,7 +1434,7 @@ describe("brains sync", () => {
       };
       file.reading = { manifest: held };
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       assert.deepEqual(file.writes, []);
       assert.equal(actionId(store, "actuator.chime.ring"), 1100);
@@ -1480,7 +1444,7 @@ describe("brains sync", () => {
       syncedStore();
       const file = new FakeManifestFile();
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       assert.deepEqual(file.writes, []);
     });
@@ -1491,7 +1455,7 @@ describe("brains sync", () => {
       const file = new FakeManifestFile();
       file.reading = { manifest: null, problem: MakeCodeManifestProblemCode.UNREADABLE };
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       assert.deepEqual(file.writes, [CHIME_IDS]);
     });
@@ -1502,7 +1466,7 @@ describe("brains sync", () => {
       const file = new FakeManifestFile();
       file.reading = { manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER };
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       assert.deepEqual(file.writes, []);
       assert.deepEqual(store.getSnapshot().catalogDiagnostics, [
@@ -1515,7 +1479,7 @@ describe("brains sync", () => {
       session.setCatalog(CHIME_CATALOG);
       const store = syncedStore();
       const file = new FakeManifestFile();
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
 
       session.setCatalog(GROWN_CATALOG);
       await settle();
@@ -1532,7 +1496,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const ringer = ringingBrain();
       const quiet = projectBrain("Quiet", authorCompilingRule);
-      const channel = await handshakeWith("token-1", new FakeManifestFile(), projectOf(ringer, quiet));
+      const channel = await handshakeWith(new FakeManifestFile(), projectOf(ringer, quiet));
       const unbound = entryOf(store, ringer.id);
       assert.ok(unbound.diagnostics.length > 0, "the ring tile is missing while its pack is unbound");
       assert.equal(unbound.compiled, undefined);
@@ -1555,7 +1519,7 @@ describe("brains sync", () => {
       const file = new FakeManifestFile();
       file.failingWrites = 1;
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
       assert.equal(file.writes.length, 1);
       assert.equal(file.reading.manifest, null);
       await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
@@ -1570,36 +1534,13 @@ describe("brains sync", () => {
       const file = new FakeManifestFile();
       file.failingReads = 1;
 
-      await handshakeWith("token-1", file);
+      await handshakeWith(file);
       assert.equal(store.getSnapshot().reconciled, false);
       await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
 
       assert.equal(store.getSnapshot().reconciled, true);
       assert.equal(file.reads, 2);
       assert.deepEqual(file.writes, [CHIME_IDS]);
-    });
-
-    it("reads a different binding's manifest afresh, keeping none of the earlier binding's allocation", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      const store = syncedStore();
-      const first = new FakeManifestFile();
-      first.reading = {
-        manifest: {
-          ...CHIME_IDS,
-          actions: [{ name: "actuator.chime.ring", id: 1100 }],
-          next: { ...CHIME_IDS.next, action: 1101 },
-        },
-      };
-      const channel = await handshakeWith("token-1", first);
-      assert.equal(actionId(store, "actuator.chime.ring"), 1100);
-      channel.close();
-      session.setStatus("none");
-
-      const second = new FakeManifestFile();
-      await handshakeWith("token-2", second);
-
-      assert.deepEqual(second.writes, [CHIME_IDS]);
-      assert.equal(actionId(store, "actuator.chime.ring"), 1024);
     });
 
     describe("unresolved tiles", () => {
@@ -1638,7 +1579,7 @@ describe("brains sync", () => {
           const file = chimeManifest();
           if (reading !== undefined) file.reading = reading;
 
-          const channel = await handshakeWith("token-1", file, projectOf(ringer));
+          const channel = await handshakeWith(file, projectOf(ringer));
 
           const entry = entryOf(store, ringer.id);
           assert.deepEqual(entry.compiled, ringer.compiled);
@@ -1652,7 +1593,7 @@ describe("brains sync", () => {
       it("resolves a pulled pack-tile brain once the catalog arrives, pushing nothing when it compiles to the project's program", async () => {
         const store = syncedStore();
         const ringer = compiledInChime(ringingBrain());
-        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+        const channel = await handshakeWith(chimeManifest(), projectOf(ringer));
 
         session.setCatalog(CHIME_CATALOG);
         await settle();
@@ -1667,7 +1608,7 @@ describe("brains sync", () => {
       it("pushes an edit made while its tiles are unresolved with the last good compiled form, then the fresh pair once the catalog arrives", async () => {
         const store = syncedStore();
         const ringer = compiledInChime(ringingBrain());
-        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+        const channel = await handshakeWith(chimeManifest(), projectOf(ringer));
 
         store.renameBrain(ringer.id, "Bell");
         await settle();
@@ -1701,7 +1642,7 @@ describe("brains sync", () => {
         session.setCatalog(CHIME_CATALOG);
         const store = syncedStore();
         const ringer = compiledInChime(ringingBrain());
-        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+        const channel = await handshakeWith(chimeManifest(), projectOf(ringer));
         assert.deepEqual(entryOf(store, ringer.id).unresolvedTiles, []);
         assert.deepEqual(channel.pushes, []);
 
@@ -1722,7 +1663,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       const remote = projectBrain("Remote");
       session.setStatus("connected");
-      const channel = sync.open("token-1", projectOf(remote));
+      const channel = sync.open(projectOf(remote));
       channel.failingLists = 1;
       await settle();
       assert.equal(store.getSnapshot().reconciled, false);
@@ -1744,7 +1685,7 @@ describe("brains sync", () => {
       const store = syncedStore();
       session.setStatus("connected");
       const extraRounds = 3;
-      const channel = sync.open("token-1", projectOf());
+      const channel = sync.open(projectOf());
       channel.failingLists = PUSH_RETRY_DELAYS_MS.length + extraRounds;
       await settle();
       const lists = () => channel.lists;
@@ -1771,11 +1712,11 @@ describe("brains sync", () => {
     it("drops the scheduled re-run when a new handshake reconciles first", async () => {
       const store = syncedStore();
       session.setStatus("connected");
-      const first = sync.open("token-1", projectOf());
+      const first = sync.open(projectOf());
       first.failingLists = 1;
       await settle();
 
-      const second = sync.open("token-1", first.project);
+      const second = sync.open(first.project);
       await settle();
       assert.equal(store.getSnapshot().reconciled, true);
       await elapse(60_000);
@@ -1788,7 +1729,7 @@ describe("brains sync", () => {
     it("stops re-running once the session disconnects, leaving the next handshake to reconcile", async () => {
       const store = syncedStore();
       session.setStatus("connected");
-      const first = sync.open("token-1", projectOf());
+      const first = sync.open(projectOf());
       first.failingLists = 1;
       await settle();
       first.close();
@@ -1796,7 +1737,7 @@ describe("brains sync", () => {
 
       await elapse(60_000);
       assert.equal(first.lists, 1);
-      await handshake("token-1", first.project);
+      await handshake(first.project);
 
       assert.equal(store.getSnapshot().reconciled, true);
     });

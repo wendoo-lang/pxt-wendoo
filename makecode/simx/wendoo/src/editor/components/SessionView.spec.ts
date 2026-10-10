@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { BridgeSessionErrorCode, PeerSessionErrorCode } from "@wendoo/bridge-app";
+import { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import { DocsSidebarProvider } from "@wendoo/docs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -18,12 +18,8 @@ const CATALOG_TEXT = '{"packs":[{"name":"motion","tiles":[{"name":"move","kind":
 /** A view state with `fields` layered over connected-session defaults. */
 function stateWith(fields: Partial<EditorSessionViewState>): EditorSessionViewState {
   return {
-    view: "session",
     status: "connected",
-    entry: undefined,
-    joinCode: "apple-bird-cloud",
     errorCode: undefined,
-    disconnectedBeyondGrace: false,
     connectedSinceOpen: true,
     catalogText: CATALOG_TEXT,
     assets: undefined,
@@ -73,26 +69,18 @@ function render(
 }
 
 describe("SessionView", () => {
-  it("shows no join code while connected, even one the store holds, no notices, and no catalog panel", () => {
+  it("shows no version notice and no catalog panel while connected", () => {
     const markup = render(stateWith({}));
 
-    assert.doesNotMatch(markup, /data-testid="join-code"/);
-    assert.doesNotMatch(markup, /apple-bird-cloud/);
-    assert.doesNotMatch(markup, /data-testid="copy-join-code"/);
     assert.doesNotMatch(markup, /data-testid="catalog-panel"/);
     assert.doesNotMatch(markup, /data-testid="catalog-tile"/);
-    assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
     assert.doesNotMatch(markup, /data-testid="version-notice"/);
-    assert.doesNotMatch(markup, /data-testid="code-unknown-notice"/);
   });
 
   it("renders no header, no connection status and no save status, whatever the session and brains report", () => {
     for (const [fields, brainsFields] of [
       [{ target: "arcade", projectName: "My Platformer" }, {}],
-      [
-        { status: "disconnected", disconnectedBeyondGrace: true },
-        { pending: new Set(["a"]), reconciled: false },
-      ],
+      [{ status: "disconnected" }, { pending: new Set(["a"]), reconciled: false }],
       [{ status: "disconnected", errorCode: PeerSessionErrorCode.PROTOCOL_VERSION_NEWER }, {}],
       [{}, { pending: new Set(["a"]), pushesInFlight: 1 }],
     ] as [Partial<EditorSessionViewState>, Partial<BrainsViewState>][]) {
@@ -105,7 +93,6 @@ describe("SessionView", () => {
       assert.doesNotMatch(markup, /data-testid="connection-status"/);
       assert.doesNotMatch(markup, /data-testid="save-status"/);
       assert.doesNotMatch(markup, /data-testid="save-dot"/);
-      assert.doesNotMatch(markup, /data-testid="end-session-button"/);
     }
   });
 
@@ -128,6 +115,7 @@ describe("SessionView", () => {
     const cases: [Partial<EditorSessionViewState>, string][] = [
       [{}, "connected"],
       [{ status: "disconnected", connectedSinceOpen: false }, "connecting"],
+      [{ status: "disconnected" }, "reconnecting"],
       [{ status: "disconnected", errorCode: PeerSessionErrorCode.PROTOCOL_VERSION_NEWER }, "update"],
     ];
     for (const [fields, status] of cases) {
@@ -150,36 +138,12 @@ describe("SessionView", () => {
     );
   });
 
-  it("stays quiet about a disconnection within the grace, keeping the session view rendered", () => {
+  it("carries a disconnection as data alone, with no away card, keeping the brain list rendered", () => {
     const markup = render(stateWith({ status: "disconnected" }), ["Chaser"]);
 
-    assert.match(rootTag(markup), /data-status="connected"/);
-    assert.match(markup, /data-testid="brain-list"/);
-  });
-
-  it("carries a disconnection past the grace as data alone, with no away card", () => {
-    const markup = render(stateWith({ status: "disconnected", disconnectedBeyondGrace: true }), ["Chaser"]);
-
     assert.match(rootTag(markup), /data-status="reconnecting"/);
-    assert.doesNotMatch(markup, /data-testid="end-session-button"/);
     assert.doesNotMatch(markup, /data-testid="disconnected-indicator"/);
-    assert.doesNotMatch(markup, /data-testid="forget-button"/);
     assert.match(markup, /data-testid="brain-list"/);
-  });
-
-  it("shows the replacement hold at once, with reconnect and start-over actions", () => {
-    const markup = render(
-      stateWith({
-        status: "disconnected",
-        errorCode: BridgeSessionErrorCode.SESSION_REPLACED,
-        disconnectedBeyondGrace: true,
-      })
-    );
-
-    assert.match(markup, /data-testid="replaced-notice"/);
-    assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.SESSION_REPLACED}"`));
-    assert.match(markup, /data-testid="reconnect-button"/);
-    assert.match(markup, /data-testid="start-over-button"/);
   });
 
   it("shows the version notice with its reload remedy at once, below the corner and above the brain list", () => {
@@ -187,7 +151,6 @@ describe("SessionView", () => {
       stateWith({
         status: "disconnected",
         errorCode: PeerSessionErrorCode.PROTOCOL_VERSION_NEWER,
-        disconnectedBeyondGrace: true,
       })
     );
 
@@ -196,21 +159,6 @@ describe("SessionView", () => {
     assert.match(markup, /data-testid="reload-button"/);
     assert.ok(markup.indexOf('data-testid="corner-controls"') < markup.indexOf('data-testid="version-notice"'));
     assert.ok(markup.indexOf('data-testid="version-notice"') < markup.indexOf('data-testid="brain-list"'));
-  });
-
-  it("shows the not-recognized notice, carrying the stable code, while it falls back to the held session", () => {
-    const markup = render(
-      stateWith({
-        status: "disconnected",
-        errorCode: BridgeSessionErrorCode.JOIN_CODE_UNKNOWN,
-        connectedSinceOpen: false,
-      })
-    );
-
-    assert.match(markup, /data-testid="code-unknown-notice"/);
-    assert.ok(markup.includes(`data-code="${BridgeSessionErrorCode.JOIN_CODE_UNKNOWN}"`));
-    assert.match(rootTag(markup), /data-status="connecting"/);
-    assert.doesNotMatch(markup, /data-testid="replaced-notice"/);
   });
 
   it("shows the brain list, listing the store's brains", () => {

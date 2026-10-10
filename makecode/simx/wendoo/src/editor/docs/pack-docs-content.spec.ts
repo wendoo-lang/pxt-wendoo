@@ -9,9 +9,7 @@
  * the environment or the fence's own catalog holds; every `tile:` reference
  * names a tile with a docs entry, and one the environment holds or whose
  * entry carries a label, so it draws as a tile; and every `concept:` reference names a
- * registered concept page. Also records which pages the standalone docs
- * route, which binds no session catalog, resolves: the core pages, and none
- * of the pack's.
+ * registered concept page.
  */
 
 import assert from "node:assert/strict";
@@ -291,17 +289,5 @@ describe("the arcade base pack's docs pages", () => {
     assert.ok(refs.length > 0, "no concept references found");
     const unresolved = refs.filter((ref) => !registry.concepts.has(ref.id)).map((ref) => `${ref.file}: ${ref.id}`);
     assert.deepEqual(unresolved, []);
-  });
-});
-
-describe("the standalone docs route, which binds no session catalog", () => {
-  test("resolves every core tile page and none of the pack's pages", () => {
-    const standalone = createEditorDocsRegistry(buildAuthoringEnvironment(undefined).environment, new Set());
-    for (const [tileId, entry] of standalone.tiles) {
-      assert.equal(registry.tiles.has(tileId), true, `${tileId} resolves standalone and in session alike`);
-      assert.equal(typeof entry.content, "string");
-    }
-    const resolved = pages.filter((page) => standalone.tiles.has(page.entryTileId)).map((page) => page.file);
-    assert.deepEqual(resolved, []);
   });
 });

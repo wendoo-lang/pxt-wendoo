@@ -57,8 +57,8 @@ function targetSource(initial: string | undefined) {
 
 /** Themes carrying one override, standing in for a record that ships a palette. */
 const OVERRIDING_THEMES: ReadonlyMap<string, TargetTheme> = new Map([
-  ["tinted", { displayName: "Tinted", tokens: { "--color-brain-accent": "#123456", "--color-success": "#00aa00" } }],
-  ["plain", { displayName: "Plain", tokens: {} }],
+  ["tinted", { tokens: { "--color-brain-accent": "#123456", "--color-success": "#00aa00" } }],
+  ["plain", { tokens: {} }],
 ]);
 
 /** Every `--color-*` and `--shadow-*` custom property declared in the CSS file at `relativePath` from this spec. */
@@ -68,19 +68,17 @@ function declaredThemeTokens(relativePath: string): string[] {
 }
 
 describe("resolveTarget", () => {
-  it("resolves arcade to its display name, its token overrides and its tile colors", () => {
+  it("resolves arcade to its token overrides and its tile colors", () => {
     const arcade = resolveTarget("arcade");
 
     assert.equal(arcade?.id, "arcade");
-    assert.equal(arcade?.displayName, "Arcade");
     assert.ok(Object.keys(arcade?.tokens ?? {}).length > 0);
     assert.notEqual(arcade?.tileColors, undefined);
   });
 
-  it("resolves micro:bit to its display name, with no token overrides and no tile colors", () => {
+  it("resolves micro:bit with no token overrides and no tile colors", () => {
     assert.deepEqual(resolveTarget("microbit"), {
       id: "microbit",
-      displayName: "micro:bit",
       tokens: {},
       tileColors: undefined,
     });
@@ -100,13 +98,11 @@ describe("resolveTarget", () => {
   it("resolves an unrecognized id to the raw id with the default theme, including ids naming object members", () => {
     assert.deepEqual(resolveTarget("gameboy"), {
       id: "gameboy",
-      displayName: "gameboy",
       tokens: {},
       tileColors: undefined,
     });
     assert.deepEqual(resolveTarget("constructor"), {
       id: "constructor",
-      displayName: "constructor",
       tokens: {},
       tileColors: undefined,
     });
@@ -187,7 +183,6 @@ describe("bindTargetTheme", () => {
     bindTargetTheme(targetSource("arcade"), surface);
 
     assert.ok(overrides.includes("--color-brain-desk-from"));
-    assert.ok(overrides.includes("--color-header"));
     assert.deepEqual([...surface.properties.keys()].sort(), [...overrides].sort());
   });
 

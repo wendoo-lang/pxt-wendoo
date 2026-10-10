@@ -5,6 +5,7 @@ import type {
   MakeCodeBrain,
   MakeCodeBrainPush,
   MakeCodeBrainSummary,
+  MakeCodeBrainsChannel,
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
@@ -14,7 +15,6 @@ import { BRAIN_REFERENCE_UNRESOLVED } from "./brain-literals.js";
 import { compileBrainSource, serializeBrainSource } from "./brain-source.js";
 import type { BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
-import type { EditorBrainsChannel } from "./editor-session-store.js";
 
 /** Document id of the project's brain the other one names. */
 const CHASER_ID = "chaserBrain00001";
@@ -44,8 +44,7 @@ class FakeSessionSource {
 }
 
 /** One handshake's brains channel over a project holding `brains` and no manifest, answering at once and recording pushes. */
-class ProjectChannel implements EditorBrainsChannel {
-  readonly binding = "binding-1";
+class ProjectChannel implements MakeCodeBrainsChannel {
   readonly pushes: MakeCodeBrainPush[] = [];
 
   constructor(private readonly brains: Map<string, MakeCodeBrain>) {}
@@ -113,7 +112,7 @@ async function reconciledStore() {
   const session = new FakeSessionSource();
   const brains = projectBrains();
   const channel = new ProjectChannel(brains);
-  let handshake: ((channel: EditorBrainsChannel) => void) | undefined;
+  let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
