@@ -30,13 +30,22 @@ export class FakePortFrame implements SimxPortFrame {
     this._listeners.delete(listener);
   }
 
-  /** MakeCode delivering the catalog message the running program posted, framed under the channel version. */
-  programPosts(catalog: string): void {
+  /**
+   * MakeCode delivering the catalog message the running program posted on
+   * `channel`: `catalog` framed under channel version `version`, as UTF-8
+   * bytes.
+   */
+  programPosts(catalog: string, channel = SIMX_CHANNEL, version = SIM_CHANNEL_VERSION): void {
+    this.programPostsText(`${version}\n${catalog}`, channel);
+  }
+
+  /** MakeCode delivering a message the running program posted on `channel` with `text` as its UTF-8 bytes. */
+  programPostsText(text: string, channel = SIMX_CHANNEL): void {
     const packet = {
       type: "messagepacket",
       broadcast: true,
-      channel: SIMX_CHANNEL,
-      data: new TextEncoder().encode(`${SIM_CHANNEL_VERSION}\n${catalog}`),
+      channel,
+      data: new TextEncoder().encode(text),
       srcFrameIndex: 0,
     };
     this.deliver({ data: packet, origin: PARENT_ORIGIN, ports: [] });

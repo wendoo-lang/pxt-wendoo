@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { delay, within } from "@wendoo/bridge-session/testing";
 import type { MakeCodeAsset } from "@wendoo/makecode-session";
 import type { ProjassetsErrorCode } from "../vendor/projassets.js";
 import { ImageBufferErrorCode } from "./image-buffer.js";
@@ -12,6 +11,29 @@ import { hexToBase64, pixelImage } from "./test-support/image-buffer-encoder.js"
 
 /** Retry and debounce timings short enough for specs, in milliseconds. */
 const TIMINGS = { retryDelayMs: 2, maxRetryDelayMs: 8, debounceMs: 5 };
+
+/** How long a wait in these specs lasts before it fails, in milliseconds. */
+const WAIT_MS = 2000;
+
+/** Resolves or rejects as `promise` does; rejects naming `what` when `promise` has not settled within {@link WAIT_MS}. */
+function within<T>(promise: Promise<T>, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`timed out waiting for ${what}`));
+    }, WAIT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
+/** Resolves after `ms` milliseconds. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /** A log recording every line written to it, by level. */
 class RecordingLog implements SimxLog {
