@@ -1,6 +1,6 @@
 {
-  // Solution-style index of this repo's npm/TypeScript projects: packages/*,
-  // apps/*, and makecode/simx/*. No build reads this file: tsc is always
+  // Solution-style index of this repo's npm/TypeScript projects: packages/*
+  // and makecode/simx/*. No build reads this file: tsc is always
   // invoked with an explicit project or from a package directory, and the
   // build driver runs per-package scripts.
   //
@@ -15,7 +15,7 @@
   // The build-config entries make this an honest index of the repo; the
   // spec-config entries are the load-bearing ones. scripts/
   // editor-projects.spec.js enforces that every tsconfig.spec.json under
-  // packages/, apps/, and makecode/simx/ is editor-reachable -- from here,
+  // packages/ and makecode/simx/ is editor-reachable -- from here,
   // or from a tsconfig.json inside its own project -- run it (root
   // `npm test`) after config changes.
   //
@@ -39,8 +39,6 @@
   "files": [],
   "references": [
     { "path": "./packages/protocol/tsconfig.json" },
-    { "path": "./packages/protocol/tsconfig.spec.json" },
-    { "path": "./apps/bridge/tsconfig.json" },
-    { "path": "./apps/bridge/tsconfig.spec.json" }
+    { "path": "./packages/protocol/tsconfig.spec.json" }
   ]
 }

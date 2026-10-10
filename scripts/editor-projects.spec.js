@@ -5,8 +5,8 @@ const { dirname, join, relative, resolve } = require("node:path");
 const { after, before, describe, test } = require("node:test");
 
 /**
- * Editor project coverage: every tsconfig.spec.json under packages/, apps/,
- * and makecode/simx/ must be referenced by the root tsconfig.json or by its
+ * Editor project coverage: every tsconfig.spec.json under packages/ and
+ * makecode/simx/ must be referenced by the root tsconfig.json or by its
  * project's own tsconfig.json, and tsserver must assign each project's spec
  * files to that spec project with zero semantic diagnostics.
  */
@@ -14,7 +14,7 @@ const { after, before, describe, test } = require("node:test");
 const repoRoot = resolve(__dirname, "..");
 
 /** Directories whose immediate subdirectories are indexed npm/TypeScript projects. */
-const projectGroups = ["packages", "apps", join("makecode", "simx")];
+const projectGroups = ["packages", join("makecode", "simx")];
 
 /** TypeScript installation resolved from packages/protocol; supplies tsserver and the config parser. */
 const typescriptDir = dirname(
