@@ -34,13 +34,10 @@ export {
 export type {
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
-  MakeCodeEditorSessionEntry,
   MakeCodeEditorSessionErrorCode,
-  MakeCodeEditorSessionOptions,
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
 } from "./makecode-editor-session.js";
-export { createMakeCodeEditorSession, DEFAULT_MAKECODE_BRIDGE_URL } from "./makecode-editor-session.js";
 export type {
   MakeCodeIdEntry,
   MakeCodeIdManifest,
@@ -78,8 +75,4 @@ export type {
   MakeCodeSessionOptions,
   MakeCodeSessionPort,
 } from "./makecode-session.js";
-export {
-  connectMakeCodeSession,
-  MAKECODE_SESSION_PROTOCOL_VERSION,
-  MAKECODE_SESSION_ROLE_PATHS,
-} from "./makecode-session.js";
+export { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./makecode-session.js";

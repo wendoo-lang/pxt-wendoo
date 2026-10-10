@@ -383,15 +383,6 @@ describe("brains store", () => {
 
       assert.deepEqual([...store.getSnapshot().pending], [editedDisconnected]);
     });
-
-    it("records edits made with no session as pending", () => {
-      session.set({ status: "none" });
-      const store = new BrainsStore(session);
-
-      const id = store.addBrain("Chaser");
-
-      assert.deepEqual([...store.getSnapshot().pending], [id]);
-    });
   });
 
   describe("snapshots", () => {
@@ -416,13 +407,7 @@ describe("brains store", () => {
   describe("over the editor session store", () => {
     /** An editor session reporting a live connection and delivering catalogs on the spec's word. */
     class LiveSession implements MakeCodeEditorSession {
-      state: MakeCodeEditorSessionState = {
-        status: "none",
-        entry: undefined,
-        joinCode: undefined,
-        errorCode: undefined,
-        target: undefined,
-      };
+      state: MakeCodeEditorSessionState = { status: "disconnected", errorCode: undefined, target: undefined };
       private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
       private readonly _catalogListeners = new Set<(content: string) => void>();
       private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
@@ -463,8 +448,6 @@ describe("brains store", () => {
       start(): void {}
 
       stop(): void {}
-
-      forget(): void {}
 
       /** The session's connectivity changing to `status`. */
       setStatus(status: MakeCodeEditorSessionStatus): void {

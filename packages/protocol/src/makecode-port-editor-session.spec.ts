@@ -4,6 +4,7 @@ import { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import type { MakeCodeBrainsChannel, MakeCodeEditorSessionState } from "./makecode-editor-session.js";
+import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
 import {
   createMakeCodePortEditorSession,
   type MakeCodePortEditorSession,
@@ -101,15 +102,9 @@ describe("port-backed editor session", () => {
     return peer;
   }
 
-  it("is disconnected with no token, code or entry until its port's handshake completes, then connected with the declared target", async () => {
+  it("is disconnected until its port's handshake completes, then connected with the declared target", async () => {
     const { session, delivered } = started();
-    assert.deepEqual(session.state, {
-      status: "disconnected",
-      entry: undefined,
-      joinCode: undefined,
-      errorCode: undefined,
-      target: undefined,
-    });
+    assert.deepEqual(session.state, { status: "disconnected", errorCode: undefined, target: undefined });
 
     const peer = await pair(session, "microbit");
     peer.publishCatalog("catalog one");
@@ -123,8 +118,6 @@ describe("port-backed editor session", () => {
 
     assert.equal(session.state.status, "connected");
     assert.equal(session.state.target, "microbit");
-    assert.equal(session.state.joinCode, undefined);
-    assert.equal(session.state.entry, undefined);
     assert.deepEqual(delivered.catalogs, ["catalog one"]);
     assert.deepEqual(delivered.assets, [ASSETS]);
     assert.deepEqual(delivered.projectInfo, [{ name: "Racer" }]);
@@ -264,24 +257,104 @@ describe("port-backed editor session", () => {
     assert.equal(session.state.status, "connected");
   });
 
-  it("drops the declared target and the error code on forget, staying disconnected", async () => {
+  it("never declares a target in its own hello", async () => {
     const { session } = started();
-    await pair(session, "arcade");
+    const { port1, port2 } = channel();
+    const arrived: unknown[] = [];
+    port1.addEventListener("message", (event) => arrived.push(event.data));
+    port1.start();
+
+    session.attachPort(messagePortSessionPort(port2));
     await eventually(
-      () => session.state.status,
-      (status) => status === "connected",
-      "the handshake"
+      () => arrived.length,
+      (count) => count === 1,
+      "the editor's hello"
     );
 
-    session.forget();
+    assert.deepEqual(arrived, [
+      { type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } },
+    ]);
+  });
 
-    assert.deepEqual(session.state, {
-      status: "disconnected",
-      entry: undefined,
-      joinCode: undefined,
-      errorCode: undefined,
-      target: undefined,
+  it("delivers the asset snapshots of the current port's handshake only", async () => {
+    const { session, delivered } = started();
+    const first = await pair(session);
+    first.publishAssets(ASSETS);
+    await eventually(
+      () => delivered.assets.length,
+      (count) => count === 1,
+      "the first port's snapshot"
+    );
+
+    const second = await pair(session);
+    first.publishAssets([{ ...ASSETS[0], id: "from-the-first-port" }]);
+    second.publishAssets([]);
+    await eventually(
+      () => delivered.assets.length,
+      (count) => count === 2,
+      "the second port's snapshot"
+    );
+
+    assert.deepEqual(delivered.assets, [ASSETS, []]);
+  });
+
+  it("delivers the project info of the current port's handshake only", async () => {
+    const { session, delivered } = started();
+    const first = await pair(session);
+    first.publishProjectInfo({ name: "first" });
+    await eventually(
+      () => delivered.projectInfo.length,
+      (count) => count === 1,
+      "the first port's project info"
+    );
+
+    const second = await pair(session);
+    first.publishProjectInfo({ name: "from the first port" });
+    second.publishProjectInfo({ name: "second" });
+    await eventually(
+      () => delivered.projectInfo.length,
+      (count) => count === 2,
+      "the second port's project info"
+    );
+
+    assert.deepEqual(delivered.projectInfo, [{ name: "first" }, { name: "second" }]);
+  });
+
+  it("carries the manifest requests on the handshake's port, closing them when the handshake ends", async () => {
+    const { session, delivered } = started();
+    const peer = await pair(session);
+    const writes: unknown[] = [];
+    peer.onManifestRequest((request) => {
+      if (request.kind === "read") request.reply({ manifest: null });
+      else writes.push(request.manifest);
     });
+    await eventually(
+      () => delivered.channels.length,
+      (count) => count === 1,
+      "the channel"
+    );
+
+    assert.deepEqual(await delivered.channels[0].readManifest(), { manifest: null });
+    const written = delivered.channels[0].writeManifest({
+      actions: [],
+      operators: [],
+      types: [],
+      next: { action: 1024, operator: 1024, atom: 1024 },
+    });
+    await eventually(
+      () => writes.length,
+      (count) => count === 1,
+      "the manifest write"
+    );
+    const closed = assert.rejects(written, (error: unknown) => {
+      assert.ok(error instanceof MakeCodeManifestError);
+      assert.equal(error.code, MakeCodeManifestErrorCode.CLOSED);
+      return true;
+    });
+
+    await pair(session);
+
+    await closed;
   });
 });
 

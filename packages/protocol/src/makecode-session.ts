@@ -40,17 +40,6 @@ const MAKECODE_SESSION_KIND: PeerSessionKind<"makecode"> = {
 };
 
 /**
- * The relay path each role of a makecode session connects at, `<kind>/<role>`:
- * `editor` for the Wendoo editor, `simx` for the MakeCode simulator extension
- * serving the project. Pass it as the `wsPath` of the role's bridge-client
- * `ProjectSession`.
- */
-export const MAKECODE_SESSION_ROLE_PATHS = {
-  editor: `${MAKECODE_SESSION_KIND.kind}/editor`,
-  simx: `${MAKECODE_SESSION_KIND.kind}/simx`,
-} as const;
-
-/**
  * What a party of a makecode session declares about itself in its hello.
  * Only the party serving the MakeCode project declares one; the editor's
  * hello carries none.

@@ -13,13 +13,7 @@ import { EditorSessionStore } from "./editor-session-store.js";
 class FakeSession implements MakeCodeEditorSession {
   started = 0;
   stopped = 0;
-  state: MakeCodeEditorSessionState = {
-    status: "disconnected",
-    entry: undefined,
-    joinCode: undefined,
-    errorCode: undefined,
-    target: undefined,
-  };
+  state: MakeCodeEditorSessionState = { status: "disconnected", errorCode: undefined, target: undefined };
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
@@ -68,8 +62,6 @@ class FakeSession implements MakeCodeEditorSession {
   stop(): void {
     this.stopped += 1;
   }
-
-  forget(): void {}
 
   /** The session's state changing by `fields`, reported to its listeners. */
   set(fields: Partial<MakeCodeEditorSessionState>): void {

@@ -12,8 +12,7 @@ import type { MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-ses
 /**
  * The editor's makecode session with the MakeCode project over ports the
  * page hosting the editor supplies: one session for the life of the editor's
- * frame. Its state's `entry` and `joinCode` are always `undefined`, and its
- * status is never `none`:
+ * frame. Its status is:
  *
  * - `connected` once the makecode handshake over the current port has
  *   completed;
@@ -22,17 +21,14 @@ import type { MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-ses
  *   {@link MakeCodeEditorSession.stop}.
  *
  * Every port attached opens a fresh handshake, replacing the previous
- * port's: the catalogs, asset snapshots, project
- * facts and brains channel delivered come from the current handshake only.
+ * port's: the catalogs, asset snapshots, project facts and brains channel
+ * delivered come from the current handshake only.
  * The one error code is `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`, for a
  * counterpart hello declaring a newer version; it stays until a later
  * handshake completes, or until {@link MakeCodeEditorSession.start} starts
- * the session again after a stop.
- * {@link MakeCodeEditorSession.stop} and {@link MakeCodeEditorSession.forget}
- * end the current port's handshake and let the port go; a port carries one
+ * the session again after a stop. {@link MakeCodeEditorSession.stop} ends
+ * the current port's handshake and lets the port go; a port carries one
  * handshake, and the next port attached carries the next.
- * {@link MakeCodeEditorSession.forget} also drops the error code and the
- * declared target.
  */
 export interface MakeCodePortEditorSession extends MakeCodeEditorSession {
   /**
@@ -95,7 +91,7 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private _counterpart: CounterpartSession | undefined;
   /** Whether the current handshake has completed. */
   private _established = false;
-  /** Whether the session handshakes over the ports attached: set by `start()`, cleared by `stop()` and `forget()`. */
+  /** Whether the session handshakes over the ports attached: set by `start()`, cleared by `stop()`. */
   private _running = false;
   private _errorCode: MakeCodeEditorSessionErrorCode | undefined;
   /** The target the counterpart declared in the latest completed handshake. */
@@ -162,13 +158,6 @@ class PortEditorSession implements MakeCodePortEditorSession {
     this.update();
   }
 
-  forget(): void {
-    this.stop();
-    this._errorCode = undefined;
-    this._target = undefined;
-    this.update();
-  }
-
   /** Opens a handshake over the attached port, if one is attached, taking it so no later handshake reuses it. */
   private open(): void {
     const port = this._port;
@@ -209,8 +198,6 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private readState(): MakeCodeEditorSessionState {
     return {
       status: this._established ? "connected" : "disconnected",
-      entry: undefined,
-      joinCode: undefined,
       errorCode: this._errorCode,
       target: this._target,
     };

@@ -49,9 +49,9 @@ export const MakeCodeBrainsErrorCode = {
    */
   WRITE_FAILED: "MAKECODE_BRAINS_WRITE_FAILED",
   /**
-   * The makecode handshake carrying the request ended -- the counterpart
-   * left, the connection closed, or a new welcome replaced the handshake --
-   * before the reply arrived. Raised by the requesting side; never on the
+   * The makecode handshake carrying the request ended -- the transport
+   * closed, or a new port replaced the handshake -- before the reply
+   * arrived. Raised by the requesting side; never on the
    * wire.
    */
   CLOSED: "MAKECODE_BRAINS_CLOSED",

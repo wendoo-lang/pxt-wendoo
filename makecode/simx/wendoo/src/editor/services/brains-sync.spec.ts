@@ -32,7 +32,7 @@ import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RET
 
 /** The session readings a brains store follows, driven by the spec. */
 class FakeSessionSource {
-  state: BrainsSessionState = { status: "none", catalogText: undefined, assets: undefined };
+  state: BrainsSessionState = { status: "disconnected", catalogText: undefined, assets: undefined };
   private readonly _listeners = new Set<() => void>();
 
   subscribe = (listener: () => void): (() => void) => {

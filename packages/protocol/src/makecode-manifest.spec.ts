@@ -94,7 +94,7 @@ function onlyRequest<TKind extends MakeCodeManifestRequest["kind"]>(
   return served[0] as Extract<MakeCodeManifestRequest, { kind: TKind }>;
 }
 
-/** Two sessions joined by a JSON wire, as the relay joins an editor and the party serving the project. */
+/** Two sessions joined by a JSON wire, standing in for the port that joins an editor and the party serving the project. */
 async function openPair(): Promise<{ requester: MakeCodeSession; responder: MakeCodeSession }> {
   const listeners = [
     new Set<(message: MakeCodeSessionMessage) => void>(),

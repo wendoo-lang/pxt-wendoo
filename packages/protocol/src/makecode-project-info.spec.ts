@@ -48,8 +48,9 @@ async function openSession(): Promise<{ session: MakeCodeSession; port: WirePort
 }
 
 /**
- * Two sessions joined by a JSON wire, as the relay joins an editor and the
- * party serving the project: every message one posts reaches the other.
+ * Two sessions joined by a JSON wire, standing in for the port that joins an
+ * editor and the party serving the project: every message one posts reaches
+ * the other.
  */
 async function openPair(): Promise<{ editor: MakeCodeSession; simx: MakeCodeSession }> {
   const listeners = [
