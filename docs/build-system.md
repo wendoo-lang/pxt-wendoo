@@ -28,7 +28,7 @@ Every app or npm package that produces build output follows this shape:
   the hooks that need current dists off it: `predev`, `prebuild`,
   `prebuild:headless`, `prepackage`, `pretest`, `pretypecheck`, as that
   package needs. The relative path depends on depth -- `../../external/...`
-  from `apps/<name>`, `../../../external/...` from `makecode/simx/<name>`.
+  from `packages/<name>`, `../../../external/...` from `makecode/simx/<name>`.
 
 ## How work gets skipped, and what that demands of a declaration
 

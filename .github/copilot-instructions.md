@@ -56,13 +56,12 @@ completions.
 ## Project-Specific Rules
 
 This repository (pxt-wendoo) brings Wendoo to MakeCode; the VM is
-target-agnostic and Arcade is the first target. Two toolchains meet here:
-`apps/` is the Wendoo side and `makecode/` the MakeCode side, but the toolchain
-split does not follow that line: `apps/` and `makecode/simx/` are ordinary
-npm/TypeScript web projects, while `makecode/extensions/` are MakeCode (pxt)
-projects written in the static TypeScript subset pxt compiles. Do not carry an
-idiom across that boundary without checking that it is legal on the other
-side.
+target-agnostic and Arcade is the first target. Two toolchains meet here, and
+the top-level layout does not follow their line: `makecode/simx/` and
+`packages/` are ordinary npm/TypeScript projects, while `makecode/extensions/`
+are MakeCode (pxt) projects written in the static TypeScript subset pxt
+compiles. Do not carry an idiom across that boundary without checking that it
+is legal on the other side.
 
 ### MakeCode Extensions (`makecode/extensions/*`)
 
@@ -80,9 +79,9 @@ side.
 ### MakeCode simx Components (`makecode/simx/*`)
 
 - One simx component per subfolder, each a webapp. `makecode/simx/wendoo`
-  holds two entries: its simx entry (`src/simx`) connects to the bridge service
-  and joins the editor webapp to the MakeCode project, and its root entry
-  (`src/editor`) is the editor webapp.
+  holds two entries: its simx entry (`src/simx`) joins the editor webapp to
+  the MakeCode project over the port MakeCode brokers to the editor tab, and
+  its root entry (`src/editor`) is the editor webapp, running as that tab.
 - A simx component is a messaging endpoint, not a place for product logic.
   Brain authoring belongs in the editor (`makecode/simx/wendoo/src/editor`);
   execution belongs in the extension.
@@ -92,18 +91,17 @@ side.
 - The editor entry (`makecode/simx/wendoo/src/editor`) owns the Wendoo editor
   webapp: brain authoring, project management, compiler integration, artifact
   loading, and diagnostics.
-- It reaches the MakeCode project through the bridge service and the simx
-  entry of `makecode/simx/wendoo`. Do not add a second, direct path between the
-  editor and MakeCode.
+- It reaches the MakeCode project only over its session with the simx entry
+  of `makecode/simx/wendoo`, on the port MakeCode brokers; the simx frame is
+  the one writer of the project's files. Do not add a second, direct path
+  between the editor and MakeCode.
 
-### Bridge Service (`apps/bridge`)
+### Session Kind (`packages/protocol`)
 
-- `apps/bridge` owns the bridge service that the simx entry of
-  `makecode/simx/wendoo` connects to.
-- The bridge wire protocol and the session engine are upstream
-  (`packages/bridge-protocol`, `packages/bridge-client`, `packages/bridge-app`,
-  `packages/bridge-session`). Consume them; do not fork message shapes or
-  session rules locally.
+- `packages/protocol` (`@wendoo/makecode-session`) is the MakeCode session
+  kind: the `makecode:*` messages and the session objects both entries speak.
+- It binds the upstream peer-session mechanism (`packages/bridge-app`).
+  Consume it; do not fork message shapes or session rules locally.
 
 ### VM Contract
 

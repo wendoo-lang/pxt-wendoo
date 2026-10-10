@@ -9,8 +9,9 @@ updated: 2026-10-09
 
 # Session Management in pxt-wendoo
 
-How this repository's components integrate with the Wendoo bridge
-session system. The mechanism itself -- the ontology, lifecycle,
+How this repository's components integrate with the Wendoo peer-session
+mechanism, over the port MakeCode brokers between the editor tab and the
+simulator extension. The mechanism itself -- the ontology, lifecycle,
 version discipline, and the engine/application seam -- is specified
 upstream in `external/wendoo-lang/docs/specs/session-management.md`;
 that document is authoritative, and nothing here restates it. This
@@ -32,8 +33,6 @@ session wire surface:
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
   declares;
-- the role-path segments `makecode/editor` and `makecode/simx`,
-  which endpoints pass to the role-generic client as their wsPath;
 - `connectMakeCodeSession`, binding the upstream peer-session
   mechanism to the kind over any payload-capable port, whose session
   both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and the
@@ -41,21 +40,16 @@ session wire surface:
   (`onBrainsRequest`, `onManifestRequest`), and both publishes and
   receives the catalog (`publishCatalog`, `onCatalog`) and the asset
   snapshot (`publishAssets`, `onAssets`);
-- `createMakeCodeEditorSession`, the editor role's session object
-  (described below), and `createMakeCodePortEditorSession`, the same
-  object over ports the page hosting the editor tab brokers, with
+- `createMakeCodePortEditorSession`, the editor role's session object
+  over the ports the page hosting the editor tab brokers, with
   `messagePortSessionPort` wrapping a `MessagePort` as a session port
-  (see "The editor tab's in-page session", below);
+  (see "The editor session object", below);
 - the id manifest's shape, `MakeCodeIdManifest` (see "The manifest
   payload family", below);
 - the brain contracts both sides of the family must agree on:
   `brainSourceHash` (32-bit FNV-1a over UTF-16 code units, eight
   lowercase hex digits) and the device profile compiled brains carry
-  (see "Device profiles", below);
-- `DEFAULT_MAKECODE_BRIDGE_URL`, the deployed bridge service's
-  address as a bare host with an optional port and no scheme; the
-  bridge client connects with `ws://` to a loopback host and
-  `wss://` to any other.
+  (see "Device profiles", below).
 
 Per the core placement rule, this package lives here -- with the
 integration -- and never in the upstream core packages. Its kind
@@ -83,58 +77,85 @@ this lane's declaration is `MakeCodeDeviceProfileNumericId` in
 
 ## Who plays which role
 
-The four-hop path assigns the session parts as follows.
+The three-hop path -- the editor tab, the simx column frame, and the
+MakeCode project, with MakeCode brokering the port between the two
+frames -- assigns the session parts as follows.
 
-- The editor (`makecode/simx/wendoo/src/editor`) is the EDITOR role endpoint. It reaches the wire
-  through the kind package's editor session object, which runs the
-  app-role stack (`createAppBridge` with the editor role path) and
-  binds `connectMakeCodeSession` over the payload surface. It joins
-  a session by the join code the MakeCode side shows. It follows
-  the editor-class obligations in the upstream spec: one session
-  object with stable identity, status, and a state-change event
-  surface; authoring continues while disconnected with changes
-  pending locally and the status clearly indicated; continuity
-  anchors on the binding token alone, never on session ids or join
-  codes: the join code a person enters is presented only until the
-  first welcome. It is the side that ENTERS codes and displays none
-  (see the editor webapp, below).
-- The simx (`makecode/simx/wendoo/src/simx`) is the SIMX role endpoint and the session's
-  hosting side and the side that DISPLAYS codes: it connects with no
-  join code, so the relay mints the session's code for it, and it
-  writes that code to the console and exposes it on its handle, again
-  for every code the relay sends for the editor's vacant role; each
-  welcome takes the code off its handle, since both roles are then
-  bound. Its frame renders a minimal session-status panel (see "The
-  simx status panel", below), which shows the code while the simx
-  holds no binding. It is a channel, not a store: the
-  one thing it carries across its reload is its binding token (next
-  section). It receives catalogs on the sim-message channel,
-  connects at the simx role path, opens or refreshes its
-  connection-scoped handshake on every welcome, publishes the
-  current catalog into the session RENDERED -- each icon the
-  extension carries as hex of an image buffer replaced by an
-  `iconUrl` data URI drawn under the project's palette, so no icon
-  hex reaches the editor -- then the project's asset snapshot (see
-  "The assets publication", below), and answers the editor's brains
-  and manifest requests from the project's files (see "The simx write
-  path" and "The id manifest", below).
-- `apps/bridge` is the relay service: an adapter plus a deployment
-  identity over the upstream session engine,
-  `@wendoo/bridge-session`, which holds every session rule. The
-  service owns the WebSocket route surface (`/{kind}/{role}`, each
-  connection handed to the engine through its adapter interface),
-  its configuration (listen address, log level, binding secret),
-  and its process lifecycle. It supplies the engine no frame
-  handler, so through the engine it parses only the control
-  envelope, forwards everything else byte-verbatim, and is
-  kind-blind -- it contains no MakeCode knowledge, and adding
-  session kinds or payload types never requires deploying it. The
-  engine's own rate protection applies to every connection.
+- The editor (`makecode/simx/wendoo/src/editor`) is the EDITOR role
+  endpoint, running as the MakeCode editor tab. It reaches the wire
+  through the kind package's port-backed session object, which binds
+  `connectMakeCodeSession` over each port MakeCode brokers to the tab.
+  It follows the editor-class obligations in the upstream spec: one
+  session object with stable identity, status, and a state-change
+  event surface; authoring continues while disconnected with changes
+  pending locally. Continuity anchors on the tab frame itself: the
+  session object is the binding, so no token or code is involved (see
+  "The editor session object", below).
+- The simx (`makecode/simx/wendoo/src/simx`) is the SIMX role endpoint
+  and the party serving the project. Its frame renders the brand strip
+  (see "The brand strip", below). It is a channel, not a store: it
+  carries nothing across its reload. It receives catalogs on the
+  sim-message channel, opens a makecode handshake over each port
+  MakeCode brokers to it, closing the previous one, publishes the
+  current catalog into the session RENDERED -- each icon the extension
+  carries as hex of an image buffer replaced by an `iconUrl` data URI
+  drawn under the project's palette, so no icon hex reaches the
+  editor -- then the project's asset snapshot (see "The assets
+  publication", below), then the project's name as its project info,
+  and answers the editor's brains and manifest requests from the
+  project's files (see "The simx write path" and "The id manifest",
+  below).
 - The VM EXTENSION (`makecode/extensions/vm`) is NOT a session
   party. It participates through the sim-message channel only (the
   extension channel, below). It is MakeCode-target-agnostic and holds
   its channel identity itself; no caller of its API supplies or sees
   it.
+
+## The editor tab's in-page session
+
+The editor runs as the MakeCode editor tab and reaches the project over
+a port MakeCode brokers: a `MessageChannel` between the tab frame and the
+simx frame (the column frame), over which the two speak the
+`makecode:*` session -- the hello with the target declaration, the
+catalog, the asset snapshot, the project info, and the brains and
+manifest request-reply families. The editor-tab messages themselves
+(`simxeditor`, `simxeditorport`) are MakeCode's, vendored from pxt's
+`pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
+
+- REGISTRATION: the simx's `approvedRepoLib` entry in a target's
+  `targetconfig.json` registers the tab with `allowEditorTab` and
+  `editor` -- `index` (the editor entry's page, `index.html`), `label`,
+  and `icon` (an artifact-relative SVG MakeCode shows beside the
+  label). Beside it the entry grants `allowFileWrite` (projfs) and
+  `allowAssetRead` (projassets) for the simx write path and the assets
+  publication, `allowPopups` for the brand strip's logotype link, and
+  `hideInFullscreen`, and sets `aspectRatio` 6.6, which sizes the
+  strip's frame to about 49 px tall at the 326 px simulator column.
+- BOOT: the simx starts its port bridge and renders the brand strip at
+  once. The editor entry boots the tab alone: it reads `parentOrigin`
+  from its frame URL, posts `{ type: "simxeditor", event: "ready" }` to
+  `parentOrigin`, and takes each `simxeditorport` MakeCode then posts
+  from that origin. A URL naming no valid `parentOrigin` is logged as
+  `TAB_PARENT_ORIGIN_INVALID`, and the editor hears nothing.
+- THE BROKERED RECONNECTION: MakeCode posts a new port pair whenever the
+  tab becomes ready while the simx frame is loaded and whenever a simx
+  frame finishes loading while the tab is ready. Each new port replaces
+  the previous one on both sides: the old handshake ends, its requests
+  reject with their family's `CLOSED` code, and the brains store
+  reconciles over the new handshake's brains channel, pushing its pends.
+  The simx accepts a port only from `parentOrigin`.
+- ONE WRITER: the tab gains no write path. It requests brains and the
+  manifest over its session, and the simx frame answers through projfs,
+  writes the project's files, and posts live program updates on the sim
+  channel.
+- TWO TABS, ONE PROJECT: two MakeCode tabs open on one project each hold
+  their own editor tab and simx frame, and both write the project
+  through their own simx. Nothing arbitrates between them: the last
+  write wins, the same advisory parity pxt's header lock gives two
+  Blocks tabs on one project.
+- CLOSE PATH: on MakeCode's `closing` event, and when the page is hidden
+  for good, the editor flushes every open brain editor's unflushed edit
+  at once, so the push leaves before the frame goes.
 
 ## The target declaration
 
@@ -149,20 +170,18 @@ session data, declared when the kind's handshake binds:
   URL without the parameter declares nothing; the hello then
   carries its version alone.
 - The editor's hello never carries a declaration. The editor session
-  records the target of each completed handshake, keeps it while
-  the session is disconnected, and drops it with the binding; the
-  editor's session store exposes it as `target`, `undefined` when
-  unknown.
+  records the target of each completed handshake and keeps it while
+  the session is disconnected; the editor's session store exposes it
+  as `target`, `undefined` when unknown.
 - The value is informational, for display and theming. It is the
   sender's own claim: identity and trust come from the session's
   credentials, never from it.
-- The editor presents it through its per-target record
+- The editor themes for it through its per-target record
   (`TARGET_THEMES` in `makecode/simx/wendoo/src/editor/services/target-theme.ts`),
-  which maps a target id to a display name, theme token overrides,
-  and the colors its tiles are filled in. An undeclared target, or a
-  declared value that is not a non-empty string, shows the Wendoo
-  logotype alone in the default theme; an id the record does not know
-  shows raw, in the default theme.
+  which maps a target id to theme token overrides and the colors its
+  tiles are filled in. An undeclared target, a declared value that is
+  not a non-empty string, and an id the record does not know all leave
+  the default theme.
 
 ## The brains payload family
 
@@ -175,13 +194,10 @@ catalogs and asset snapshots to their listeners and replies to their
 requests, and drops everything else).
 
 - REQUEST-REPLY: every request carries an envelope `id`, and its reply
-  carries the same `id`. This is the envelope correlation the relay
-  engine already honors (a forwarded message carrying an `id` has the
-  peer's next message carrying it relayed back as its reply) and the
-  folder-session protocol's `folder:ack` / `folder:error` shape. The
-  requesting session mints ids with a random per-session prefix, so a
-  late reply to an earlier handshake's request on the same connection
-  never matches a later request. A request settles on its reply, or
+  carries the same `id`, the folder-session protocol's `folder:ack` /
+  `folder:error` shape. The requesting session mints ids with a random
+  per-session prefix, so a late reply to an earlier handshake's request
+  on the same port never matches a later request. A request settles on its reply, or
   rejects with `MAKECODE_BRAINS_CLOSED` when its handshake ends; there
   is no timeout, and a peer that never answers leaves requests pending
   until the handshake ends.
@@ -224,9 +240,8 @@ requests, and drops everything else).
   API takes and returns bytes; only the wire carries text.
 - The editor session object hands out a BRAINS CHANNEL per completed
   makecode handshake (`onBrainsChannel`); its requests travel on that
-  handshake and reject once it ends, and every later handshake -- a
-  reconnection, the counterpart returning, or a further welcome on an
-  open connection -- hands out a new one.
+  handshake and reject once it ends, and every later handshake -- over
+  each port MakeCode brokers next -- hands out a new one.
 - Only the editor requests; the party serving the project answers.
   The kind's session hands each incoming request to its
   `onBrainsRequest` listeners (buffered until the first attaches) as a
@@ -560,335 +575,76 @@ namespace wendooIds {
   reads nil, and the host logs `wendoo field-undeclared <typeId>
   <fieldId>` once.
 
-## Simx credential continuity
-
-MakeCode tears the simx frame down and allocates a new one often,
-so the frame's lifetime anchors nothing; the binding token is what
-carries a session across frames.
-
-- The simx saves the binding token of every welcome to the
-  browser's `localStorage` and presents it in its first hello.
-  It never stores the join code.
-- PER-PROJECT KEYING: MakeCode passes the open project's id to every
-  simx frame in its URL's `project` parameter, and the simx stores its
-  token under a key naming that project
-  (`wendoo-simx-bridge:bindingToken:<projectId>`). A frame serving
-  another project in the same tab therefore finds no token and forms a
-  new pairing under a new join code, so an editor bound to the first
-  project never joins, lists, or pushes into the second; returning to
-  the first project resumes its own session by its own token. A frame
-  URL without the parameter (a MakeCode build that does not pass it)
-  stores under the one unscoped key `wendoo-simx-bridge:bindingToken`.
-- `localStorage` outlives the tab and is shared by every tab of the
-  origin: a frame reallocated in the same MakeCode tab, a page
-  refresh, and a MakeCode tab closed and opened again on the project
-  all present the stored token and rejoin the session, so the editor
-  waiting on its own token is welcomed with no code entered. The
-  editor persists each binding it joins in an entry of its own (see
-  "The editor webapp on this object", below), so the binding survives
-  either side's tab closing.
-- TWO TABS, ONE PROJECT: a second MakeCode tab on the same project
-  presents the same token, and the relay's token takeover resolves
-  it (see "Join codes, refusal, and takeover in this lane", below):
-  the newer tab takes the simx role over and the older one rests on
-  its `replaced` panel. The last tab opened holds the session.
-- WHO WRITES THE TOKEN: a welcome saves its token only when it differs
-  from the one held, and the relay signs one token per binding, so a
-  takeover rewrites nothing; a `SESSION_REPLACED` neither saves nor
-  clears the stored token, which the tab now holding the session
-  relies on for its own next reload; only an end clears it (next
-  bullet). Each frame reads the stored token once, when it opens.
-- RESPECTING AN END: when the relay reports `SESSION_ENDED`, the
-  simx clears its stored token and logs the code, and holds: its
-  panel shows the session ended, with a "start a new session" action
-  that opens a new pairing in place (`startNewSession`). A simulator
-  restart does the same -- the restarted frame presents no token and
-  forms a new session under a new code, never re-forming the ended
-  binding. Every other coded failure but a replacement is logged and
-  holds the same way, the token kept until a new session is started.
-  `SESSION_REPLACED` is logged and rests on the `replaced` panel,
-  which offers no action: nothing in that frame reconnects, starts a
-  new session, or touches the stored token, so two tabs never
-  displace each other in a loop. The way back is any fresh hello
-  from the resting tab: a page reload, or MakeCode resuming its
-  simulator when the tab becomes visible again -- MakeCode pauses a
-  hidden tab's simulator and resumes it on focus, so in practice the
-  session follows the tab the user is looking at, each switch a
-  user-driven takeover, never an automatic loop.
-- DEGRADATION RULE: where the browser denies the frame storage, the
-  simx holds the token in memory and says so in the console. The
-  session then lasts only as long as the frame: each teardown
-  starts a new pairing under a new join code, which the editor must
-  be given again.
-- A relay restart heals by token when the relay keeps its binding
-  secret (`BRIDGE_BINDING_SECRET`) across the restart: the simx and
-  the editor each reconnect presenting their saved token, the relay
-  re-forms the session under the same binding with a new session id
-  and join code, and both are welcomed with no code entered; the
-  first side back receives the new code, and the welcome takes it
-  down again. A relay started without a configured
-  secret signs with a new one at every start, so its restart ends
-  every session: the simx's reconnect starts a new pairing under a
-  new join code, which the editor must be given again.
-
-## Join codes, refusal, and takeover in this lane
-
-A join code is in service only while one of the session's two roles
-is vacant, and the relay sends it to whichever side is connected:
-
-- The simx never presents a code, so it forms each new session and
-  receives the session's first code, which it shows. An editor
-  entering that code fills the editor role, and the code leaves
-  service at that moment. While both sides are connected, the
-  session holds no code, and neither side shows one: the welcome
-  carries no code.
-- When a side drops -- routinely the simx, as MakeCode reallocates
-  its frame -- the other side is told its counterpart is away and
-  receives a freshly minted code, the only one that joins the
-  session while the role is vacant. The simx's return by its token
-  fills the role again and takes that code out of service. The editor
-  receives the code minted when the simx drops but shows none: it
-  names the simx's vacancy, which only the simx's token fills today.
-  A code display returns to the editor when the game side gains code
-  entry.
-- A hello presenting a code that opens no vacant role -- a spent
-  code, a stale one, a mistyped one, or the code of a session whose
-  editor role is filled -- is refused with `JOIN_CODE_UNKNOWN`. So a
-  second editor entering the code of a connected session is refused
-  and the session is undisturbed: there is no replacement.
-- The one takeover is by token. MakeCode tabs on one project share
-  the stored simx token; the newer connection takes the role over,
-  and the older one holds on `SESSION_REPLACED`. Editor tabs of one
-  origin never present one binding's token together: each holds its
-  binding under an exclusive claim (see "The editor webapp on this
-  object", below). An editor holds
-  until it is started again, which takes the session back; a simx
-  rests on its `replaced` panel until its next fresh hello -- a page
-  reload, or MakeCode resuming the simulator as its tab regains
-  focus, so the session follows the visible tab.
-- Reloads never end a session: the editor closing on `pagehide` and
-  the simx disposing its frame both stop the connection, which the
-  session survives. Two deliberate ends exist in this lane. The
-  editor's `forget()` over a live connection sends `session:goodbye`
-  (the editor's End session action calls it; see "The editor webapp
-  on this object", below); the simx is then told `SESSION_ENDED`,
-  clears its token, and holds on its ended panel. The simx's panel "end session" action, once
-  confirmed, calls `startNewSession`: over an open connection it sends
-  `session:goodbye`, so a connected editor is told `SESSION_ENDED`
-  and returns to its connect page, then the simx clears its token and
-  at once opens a new pairing, whose code its panel shows. An
-  operator end tells both sides, and each drops its token the same
-  way. An end reaches only a CONNECTED counterpart: one that is away
-  when the session ends is told nothing, and its token later re-forms
-  a lone session under the ended binding (the relay's documented
-  token semantics), from which its own start-over path recovers.
-
-The engine rotates every code in service every ten minutes; the relay
-service configures nothing about it. A rotation reaches the connected
-side as a pushed code: the simx writes the new code to the console,
-exposes it on its handle, and swaps it into its panel in place when
-the panel is showing a code. Neither side presents a code it received, so
-rotation never disturbs an established session. A person who read the
-simx's code just before a rotation can still enter it for two minutes
-afterward, and the editor joins. A
-code that has left service is not minted for another session for five
-minutes, so a person typing a code that has just gone stale never
-lands in a stranger's session.
-
 ## Liveness in this lane
 
-The engine closes a connection that sends nothing for a minute, into
-the same path as any drop. Both sides keep their connections active
-through the bridge client's heartbeat, so a live side never trips the
-timeout; a simx frame torn down without a clean close is detected
-within about a minute, and the editor is then told its counterpart is
-away.
+A brokered `MessagePort` gives no close event and the kind has no
+goodbye, so there is no heartbeat: a column frame that goes away
+without MakeCode brokering a new port reads `connected` until MakeCode
+re-brokers. A push to a frame that is gone goes unanswered, counts as
+failed after `PUSH_LIVENESS_DEADLINE_MS` (30 s), and stays pending; the
+next brokered port's handshake reconciles and flushes it.
 
 ## The editor session object
 
-`createMakeCodeEditorSession` returns the one object the editor's
-product code listens to. Its identity is stable for the whole life
-of the binding; the app bridges and makecode handshakes it runs
-underneath are replaced as connections come and go, and nothing in
-it keys on a session id.
+`createMakeCodePortEditorSession` returns the one object the editor's
+product code listens to. Its identity is stable for the life of the
+editor tab's frame; the makecode handshakes it runs are replaced as
+MakeCode brokers ports, and nothing in it keys on a session id.
 
-- STATUS is `none` (no session: no binding token held and never
-  welcomed), `connected` (welcomed, counterpart present), or
-  `disconnected` (a binding token is held, but this side's
-  connection is down or stopped, or the counterpart is away).
-- ENTRY reports the progress of the code a person entered while a
-  connection presents it and no welcome has come: `submitted` until
-  the relay answers the hello. When the MakeCode side is connected,
-  the welcome itself is the answer; otherwise the relay answers with
-  the session's code and the entry becomes `accepted` -- the code
-  joined the editor role of a session whose other side is not
-  connected yet. The welcome spends the code and clears the entry; a refusal clears
-  it with `JOIN_CODE_UNKNOWN`. There is no timeout: a refusal is loud,
-  and each wait is named on screen.
-- The state also carries the code for the session's vacant role
-  (every code the relay sends for it replaces the last; cleared at
-  each welcome, never the entered code) and the stable code of the
-  failure that ended the latest connection. Every change is published
-  at once, with no debouncing.
-- The session presents the join code it was created with on each
-  connection until its first welcome, and its binding token alone
-  from then on. A code the relay sends is never presented.
-- Catalogs and asset snapshots arrive as events from the current
-  handshake only.
-- The binding token is loaded and saved through caller-supplied
-  hooks; the session holds no storage of its own.
-- RECOVERY follows the upstream in-place rule.
-  `OUTBOUND_QUEUE_OVERFLOW` is recovered automatically: the session
-  reconnects at once with a fresh handshake, reporting the code
-  until it is connected again (the discarded queue is not replayed;
-  catalog currency re-establishes state). Every other code holds: no
-  automatic reconnection. After `SESSION_REPLACED` (a re-bind of the
-  same session elsewhere, by another editor holding the same token),
-  `start()` reconnects presenting the binding token and takes the
-  session back. After `JOIN_CODE_UNKNOWN` the entered code opened no
-  vacant role, and the way back is entering a current code. After
-  `SESSION_ENDED` the session respects the end as the simx does: it
-  drops its binding token and clears the persisted one, returning the
-  status to `none`, so the way back is entering the code the restarted
-  simx shows and no reload re-forms the ended binding. The version
-  codes hold and name their remedy -- update the outdated side, which
-  for the editor means reloading it.
-- The session's per-welcome handshake keys on the app bridge's
-  welcome event (`AppBridge.onWelcome`).
-- FORGET is the escape hatch the in-page rule requires. `forget()`
-  over an open connection ends the session on purpose, so the simx is
-  told `SESSION_ENDED`; with no open connection -- held, stopped, or
-  reconnecting -- it is a local clear. Either way it drops the
-  binding token and the join code, clears the token persisted through
-  the caller's `clearBindingToken` hook, and returns the state to
-  `none`. It is how an editor holding a token with no live way back
-  -- a stale token and no code to enter -- returns to code entry in
-  place.
+- BINDING BY CONTAINMENT: the tab frame lives inside the project's
+  page, so the binding is the frame itself, and the session object is
+  the binding: one for the frame's life, holding no token and no join
+  code and writing nothing to storage. Every brains channel therefore
+  belongs to the same project, so brains and pends survive every port.
+- STATUS BY PORT LIVENESS: the session is `connected` once the makecode
+  handshake over the current port has completed, and `disconnected`
+  while no port is attached, while the current port's handshake is
+  pending, after it was rejected, and after `stop()`. Every change is
+  published at once, with no debouncing.
+- PORTS: `attachPort` makes a port the session's port, replacing the
+  current one: the current handshake ends and stops reading its port,
+  and while the session is started a new handshake opens over the new
+  port at once. A port carries one handshake.
+- Catalogs, asset snapshots and project info arrive as events from the
+  current handshake only.
+- The one ERROR CODE is `PEER_SESSION_PROTOCOL_VERSION_NEWER`, for a
+  counterpart hello declaring a newer version. It holds until a later
+  handshake completes, or until `start()` starts the session again after
+  a stop, and names its remedy -- update the outdated side, which for the
+  editor means reloading it. On the simx side the same rejection is
+  logged by its code and nothing is served over that port.
+- `start()` opens handshakes over the ports attached, clearing the error
+  code; `stop()` ends the current handshake, lets its port go, and opens
+  none until the session is started again.
 
 ## The editor webapp on this object
 
-The editor (`makecode/simx/wendoo/src/editor`) consumes the session object through one store
-(`EditorSessionStore`), and its two views follow the state. The editor boots
-only as the MakeCode editor tab (see "The editor tab's in-page session",
-below), whose session is never `none`, so it always shows the session view;
-the bullets marked FORMER STANDALONE EDITOR describe surfaces of the relay
-session's editor that the tab never renders.
+The editor (`makecode/simx/wendoo/src/editor`) consumes the session
+object through one store (`EditorSessionStore`), which takes the
+session when it is created and starts it. The editor boots only as the
+MakeCode editor tab (see "The editor tab's in-page session", above), so
+it always shows the session view.
 
-- FORMER STANDALONE EDITOR: the CONNECT PAGE shows while the status
-  is `none`: a join-code entry whose submission creates the session
-  with the entered code and clears the entry. While the code is
-  pending the page names the
-  wait beside the status dot -- connecting while submitted, waiting
-  for the MakeCode project once accepted. A refused code
-  (`JOIN_CODE_UNKNOWN`) shows a not-recognized notice above the
-  cleared entry, and an ended session
-  (`SESSION_ENDED`) returns here with an ended notice, the entry being
-  the way to connect afresh. When the tab holds a binding at boot
-  (see BINDING ENTRIES, below), the app resumes its session on load
-  and skips this page, unless the page was opened with a join code in
-  its fragment (see "Opening the editor from the simx", below).
-  Below the entry, while any exist, the page lists RECENT PROJECTS:
-  the binding entries no other tab holds, most recently seen first,
-  one row each (`recent-project`, carrying the entry id as
-  `data-binding-id` and the target id as `data-target`) showing the
-  project name and the target's display name. Clicking a row takes
-  the entry as this tab's binding and resumes its session; when
-  another tab took it first the list is re-read instead. Each row's
-  remove control deletes its entry. The list is re-read when the page
-  returns to the connect view and when another tab changes an entry.
-- The SESSION VIEW shows once a session exists, with NO HEADER: no
-  logotype, project name, target name, connection status, save
-  status, or End session, since none of their states is something a
-  kid can act on, and MakeCode's own toggle for the tab shows the
-  Wendoo wordmark and the project name. The one control above the
-  content is the DOCS BUTTON in the page's upper right corner
-  (`corner-controls`), opening and closing the docs sidebar. The
-  connection status is machine-layer only, carried as `data-status`
-  on the view's root element (`session-view`): `connecting` (the
-  session has not connected since the page opened it), `connected`,
-  `reconnecting` (only once a disconnection outlasts the grace,
-  below), `replaced` (the takeover hold), `ended`, and `update` (a
-  version rejection). Below the corner the session view holds the
-  notices that apply -- in the tab, the version notice alone (see
-  RECOVERY AFFORDANCES, below) -- then the BRAIN LIST (the brains
-  store's brains, below), then the catalog's diagnostics -- and no
-  join code: the only codes an editor receives are spent or name the
-  simx's vacancy, which no person can enter yet. The store keeps the
-  latest catalog while disconnected -- status gates delivery, never
-  what is already held -- and drops it whenever no session exists.
-  The store holds the latest ASSET SNAPSHOT the same way: each one
-  the session delivers replaces the last, it is kept while
-  disconnected, and it is dropped whenever no session exists.
-- The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
-  routinely, so a brief disconnect is the common case. The carried
-  status turns `reconnecting` only once a disconnection outlasts
-  `DISCONNECT_GRACE_MS` (a few seconds); until then it keeps the
-  status from before the disconnection. In the former standalone
-  editor the header's status was the whole disconnection surface,
-  and End session beside it the way out. The session
-  object stays truthful; the grace lives in the editor's view-model
-  only.
-- FORMER STANDALONE EDITOR: END SESSION, a small destructive button
-  beside the header's status,
-  shown while the status is `connected` or `reconnecting` (never on
-  the connect page, and not in the `replaced` or `update` holds,
-  which carry their own remedies). It opens a destructive
-  confirmation, the same dialog removing a brain uses; confirming
-  calls the store's `forget()`, which over a live connection sends
-  `session:goodbye`, so the relay ends the session for BOTH sides --
-  the simx is told `SESSION_ENDED` and shows its ended panel -- and
-  returns this editor to the connect page. It is the analog of the
-  simx panel's "End session". Known shape: an end performed while the
-  simx is away does not reach it (see "Join codes, refusal, and
-  takeover in this lane", above), and an end performed while this
-  editor's own connection is down reaches no one; either way the
-  editor returns to its connect page, and the simx's own End session
-  recovers its side.
-- RECOVERY AFFORDANCES: a version rejection, the one the tab can
-  meet, shows its remedy -- reload the editor -- below the docs
-  button and above the brain list, and only while it applies. The
-  rest are the FORMER STANDALONE EDITOR's: `SESSION_REPLACED` shows a
-  held-state notice at once, with a reconnect action (`start()`) and a
-  "Start over" action (`forget()`, back to the connect page; the held connection
-  is closed, so nothing reaches the relay and the start over clears
-  this editor's seat alone). An overflow recovers
-  automatically and surfaces only as transient status. A version
-  rejection shows its remedy -- reload the editor -- the one
-  exception to in-page recovery. `JOIN_CODE_UNKNOWN` and
-  `SESSION_ENDED` render their notices on the connect page; a
-  `JOIN_CODE_UNKNOWN` refusing a code entered while a binding token is
-  held renders its notice in the session view instead, while the store
-  falls back to the token's session (see "Opening the editor from the
-  simx", below).
-- FORMER STANDALONE EDITOR: BINDING ENTRIES. `localStorage` keeps one
-  entry per binding the editor has joined, each under its own key,
-  `<app>:binding:<id>`, the id a 64-bit FNV-1a digest of the binding
-  token -- the relay signs one token per binding, so the id names the
-  binding across reconnections and relay restarts that keep the
-  binding secret. An entry holds the token, the project name and
-  target the session last reported, and when a tab last joined,
-  resumed, or connected over it; the recent projects show the name
-  and target, never the token. `sessionStorage` records the
-  binding this tab holds, so a reload resumes the same project. A tab
-  holds a binding only under its EXCLUSIVE CLAIM, a Web Lock named
-  like the entry key, let go when the tab closes or reloads; a page
-  without Web Locks (outside a secure context) claims without
-  excluding, and says so in the console. At boot
-  (`openTabBinding` in `makecode/simx/wendoo/src/editor/services/binding-entries.ts`),
-  before rendering, the editor moves a token stored under its former
-  single key into an entry, prunes, and resumes the binding the tab
-  recorded, while its claim is free -- a duplicated tab copies the
-  record, finds its twin holding the claim, and holds none. A tab
-  that recorded none -- a new tab -- holds none either: the connect
-  page, with its recent projects, is the way in. Pruning removes
-  unclaimed entries not seen for thirty days, then the oldest-seen
-  unclaimed entries beyond sixteen; an entry lost this way costs that
-  project's join code, which the simx shows only once its session is
-  ended from its panel. The tab's binding is the store's token persistence:
-  joining a session upserts its entry and moves the tab's record and
-  claim to it, leaving the earlier entry for other tabs; the session's
-  clear hook -- `forget()` and `SESSION_ENDED` -- removes this tab's
-  entry alone. The store owns nothing else durable.
+- The SESSION VIEW shows with NO HEADER: no logotype, project name,
+  target name, connection status, or save status, since none of their
+  states is something a kid can act on, and MakeCode's own chrome names
+  the project and labels the tab. The one control above the content is
+  the DOCS BUTTON in the page's upper right corner (`corner-controls`),
+  opening and closing the docs sidebar. The connection status is
+  machine-layer only, carried as `data-status` on the view's root
+  element (`session-view`): `connecting` (the session has not connected
+  since the page started it), `connected`, `reconnecting` (the session
+  connected earlier and is disconnected now, carried at once), and
+  `update` (a version rejection). Below the corner the session view
+  holds the version notice while it applies (see RECOVERY, below), then
+  the BRAIN LIST (the brains store's brains, below), then the catalog's
+  diagnostics. The store keeps the latest catalog while disconnected --
+  status gates delivery, never what is already held -- and holds the
+  latest ASSET SNAPSHOT and project name the same way: each one the
+  session delivers replaces the last, and it is kept while disconnected.
+- RECOVERY: a version rejection shows its remedy -- reload the editor --
+  below the docs button and above the brain list, carrying its code as
+  `data-code`, and only while it applies.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
   the catalog, from which it builds the environment brains are edited
   and compiled in -- the catalog's packs bound under the project's id
@@ -1053,19 +809,11 @@ The editor is authoritative for in-flight edits and the MakeCode
 project is durable truth. The brains store reconciles on every brains
 channel, then pushes each edit as it is made:
 
-- BINDING IDENTITY: each channel carries the binding token the session
-  held when its handshake completed -- the session store tracks it
-  through the session's token hooks. Equal tokens name the same
-  binding; the relay derives the token from the binding alone, so it is
-  stable across reconnections and across relay restarts that keep the
-  binding secret. The store compares tokens only.
-- LIFECYCLE, per binding: a channel of the same binding as the previous
-  one keeps every brain and pend. A channel of a DIFFERENT binding first
-  replaces the store's brains with that project's pulled set,
-  discarding every local brain and pend. Brains authored before any
-  binding was ever held are pending, so the first binding merges: they
-  push to it, and its brains are pulled beside them. Carrying brains
-  from one project to another is not done.
+- LIFECYCLE: the session object is the binding, so every channel
+  belongs to the one project the tab frame was opened in, and each keeps
+  every brain and pend. Brains authored before the first handshake are
+  pending, so the first handshake merges: they push to the project, and
+  its brains are pulled beside them.
 - RECONCILIATION: read the project's id manifest and list, adopting the
   manifest (see "The id manifest", above); pull every listed brain the
   store holds no copy of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
@@ -1124,8 +872,8 @@ channel, then pushes each edit as it is made:
   when the store's copy of the source matches, and the staleness rule
   pushes the fresh pair, rewriting the module. Every brain whose
   registration is current is left alone. Healing happens when a
-  handshake reconciles: a fresh editor session, a reconnection, or a
-  new simx frame. Damage done while a handshake stays open is not seen
+  handshake reconciles: a fresh editor tab, or a port MakeCode brokers
+  anew to a respawned column frame. Damage done while a handshake stays open is not seen
   until the next one.
 - CORRUPTION: a pulled source that is not a brain document is listed in
   the store's `damaged` map under `BRAIN_SOURCE_INVALID`, and one whose
@@ -1140,174 +888,29 @@ channel, then pushes each edit as it is made:
   push of the brain, or a later pull finding the source repaired or
   gone, clears the damage.
 
-## The simx status panel
+## The brand strip
 
-The simx frame is a visible panel in the simulator column, and it
-renders a minimal session-status surface: no authoring, no catalog,
-no product behavior. Everything it shows derives from session state
-the simx already holds; the panel stores nothing.
+The simx frame is a visible strip in the simulator column: the Wendoo
+logotype and one button, and nothing else -- no status, no code, no
+authoring, no catalog, no product behavior. The simx renders it at boot,
+whatever MakeCode offers, and the strip stores nothing.
 
-- LAYERS: the simx bridge handle exposes truthful session state
-  (`joinCode`, `counterpartConnected`, `counterpartAway`, `bound` --
-  a binding token is held -- `connection`, `errorCode`) with an
-  `onChange` event and the one action `startNewSession`.
-  `SimxStatusModel` derives the displayed state from it and adds the
-  only two things that are display-only: the away grace and the
-  end confirmation. The panel renders the model's view with plain
-  DOM and routes its buttons to the model's actions.
-- STATES, one at a time, carried as `data-state` on the panel root:
-  `connecting` (the connection is not open, or the relay has not
-  answered the hello; `data-retrying="true"` while the bridge client
-  retries after a failed attempt), `code`, `connected`, `away`,
-  `confirm`, `ended`, `replaced`, `update`.
-- VACANCY: the panel shows a join code exactly while the simx holds
-  no binding token -- the editor seat has never been filled in this
-  binding. The welcome takes the code down, a rotation swaps it in
-  place, and a bound session whose editor is gone shows `away`, never
-  a code. The relay does mint and push a working code for a lingering
-  editor role; it stays on the handle and in the console but is not
-  displayed, because a second editor entering it would contend with
-  the first editor's still-valid token. From `away` the way to a
-  displayable code is ending the session.
-- AWAY GRACE: `away` shows only once the session has called for it
-  continuously for `AWAY_DISPLAY_GRACE_MS` (a few seconds), so an
-  editor tab reload that resumes by token never flashes it; until
-  then the previous display stays. The session state stays truthful;
-  the grace lives in the model only.
-- ENDING: `connected` and `away` offer "end session", which shows an
-  inline confirmation first; confirming calls `startNewSession`
-  (see "Join codes, refusal, and takeover in this lane", above). `ended` covers
-  `SESSION_ENDED` and every other failure that stops the connection
-  except a replacement, and offers "start a new session", the same
-  call.
-- REPLACED: `SESSION_REPLACED` -- another tab on the project took the
-  session over -- shows `replaced`, which says the session continues
-  in the other tab and offers no action: starting a new session there
-  would clear the token the other tab relies on. Reloading the page
-  takes the session back.
-- VERSIONS: a relay refusing this side's protocol
-  (`PROTOCOL_VERSION_MISMATCH`) or an editor hello declaring a newer
-  makecode protocol (`PEER_SESSION_PROTOCOL_VERSION_NEWER`, held until
-  a later handshake completes) shows `update`: reload the page. It and
-  `replaced` are the states whose remedy is not in place.
-- LINKS: the header's logotype links to https://wendoo.com in every
-  state, and the `code` state adds an "or open the editor" link after
-  the type-this-code hint (see "Opening the editor from the simx",
-  below). Links carry `data-link` (`home`, `editor`) and open through
-  a click probe: the panel opens a blank tab, cuts its `opener`, and
-  navigates it to the link's URL. MakeCode creates simx frames
-  sandboxed without `allow-popups`, so there the browser refuses the
-  tab; the panel then replaces the link in place with its URL as
-  selectable text and selects it, for the person to copy -- the same
-  fallback the copy button takes.
-- COPY: the code's copy button writes it with the async clipboard
-  API. MakeCode's simx iframe delegates only `autoplay` and
-  `microphone`, so in Chromium the write is refused by permissions
-  policy; the panel then selects the code's text for the person to
-  copy, and a click on the code selects all of it.
-
-## Opening the editor from the simx
-
-The simx panel's `code` state links to the editor so a person can
-join without typing the code. The link carries the code between
-browser tabs in a URL, never on the session wire.
-
-- VACANCY: the link exists exactly while the panel shows a join code,
-  and its URL always carries the code shown: a rotation re-renders it
-  with the new code, and the welcome takes it down with the code.
-- FORMAT: `<editor origin>/#code=<code>`, the code percent-encoded
-  (`encodeURIComponent`). The code travels in the fragment, which the
-  browser sends to no server and writes to no request log.
-- BASE URL, derived like the bridge address from the frame's own host
-  (`editorUrlFor` beside `bridgeUrlFor` in
-  `makecode/simx/wendoo/src/simx/service-urls.ts`): a frame served from a
-  loopback host links to the dev editor at `http://localhost:5175`;
-  any other frame links to the deployed editor at
-  `https://makecode.playwendoo.com`.
-- ENTRY: at boot, before rendering, the editor takes a fragment that
-  starts `#code=` and carries a non-empty code
-  (`takeFragmentJoinCode` in `makecode/simx/wendoo/src/editor/services/fragment-entry.ts`):
-  it rewrites the URL without the fragment (`history.replaceState`,
-  keeping the path, query, and history state) and only then hands the
-  decoded, trimmed code to the store's `connect`, the connect page's
-  own entry action. The code is used once and stored nowhere; it gets
-  the ordinary entry states, and a code that went stale before the tab
-  opened is refused with `JOIN_CODE_UNKNOWN` like a typed one. Any
-  other fragment is left in the URL, and a page with no code resumes
-  the binding the tab holds, if any, as before.
-- WITH A HELD TOKEN: the session presents the entered code beside the
-  token of the binding the tab holds, and the relay matches the code
-  alone. A code in service joins its session, which becomes the tab's
-  binding, the earlier entry kept for other tabs. When the relay refuses the code, the store opens a
-  new session presenting the token alone, so the tab falls back into
-  the session it already had; the session view shows the
-  not-recognized notice, carrying `JOIN_CODE_UNKNOWN`, until that
-  session is welcomed, unless it fails with a code of its own.
-- The link opens through the panel's click probe (see "The simx
-  status panel", above): inside a MakeCode frame that may not open
-  tabs, it reveals its URL for the person to copy into a new tab.
-
-## The editor tab's in-page session
-
-When MakeCode offers the extension's editor tab, the editor runs as that
-tab and reaches the project without the bridge service: MakeCode brokers a
-`MessageChannel` between the tab frame and the simx frame (the column
-frame), and the two speak the same `makecode:*` session over it -- the
-hello with the target declaration, the catalog, the asset snapshot, the
-project info, and the brains and manifest request-reply families. No wire
-message differs from the relay session's. The editor-tab messages
-themselves (`simxeditor`, `simxeditorport`) are MakeCode's, vendored from
-pxt's `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
-
-- MODE AT BOOT: MakeCode adds `editor=1` to the simx frame's URL when its
-  registration offers the tab. With it, the simx starts no relay session,
-  opens no binding token store, and renders the BRAND STRIP: the status
-  panel's logotype row alone, linking to the Wendoo homepage, with one
-  button (`data-action="open-editor"`) that posts the open request
-  `{ type: "simxeditor", subtype: "open", id }` to MakeCode; a refusal is
-  logged by its code (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
-  `INVALID_REQUEST`). The strip shows no status and no code. Without
-  `editor=1` the simx runs the relay session and status panel described
-  above. The editor entry boots the tab alone: it reads `parentOrigin` and
-  `project` from its frame URL, posts `{ type: "simxeditor", event:
-  "ready" }` to `parentOrigin`, and takes each `simxeditorport` MakeCode
-  then posts from that origin. A URL naming no valid `parentOrigin` is
-  logged as `TAB_PARENT_ORIGIN_INVALID`, and the editor hears nothing.
-- BINDING BY CONTAINMENT: the tab frame lives inside the project's page,
-  so the binding is the frame itself -- one binding for the frame's life,
-  named by the `project` id in its URL. The editor's session is the
-  kind's port-backed session object (`createMakeCodePortEditorSession`),
-  which holds no token and no join code and is never `none`; the session
-  store opens it through a binding persistence that names the project and
-  writes nothing to storage. Every brains channel therefore belongs to the
-  same binding, so brains and pends survive every port.
-- STATUS BY PORT LIVENESS: the session is `connected` once the makecode
-  handshake over the current port has completed, and `disconnected` while
-  no port is attached or the handshake is pending. Its one error code is
-  `PEER_SESSION_PROTOCOL_VERSION_NEWER`, for a counterpart hello declaring
-  a newer version, held until a later handshake completes; on the simx
-  side the same rejection is logged by its code and nothing is served over
-  that port.
-- THE BROKERED RECONNECTION: MakeCode posts a new port pair whenever the
-  tab becomes ready while the simx frame is loaded and whenever a simx
-  frame finishes loading while the tab is ready. Each new port replaces
-  the previous one on both sides, exactly as a reconnection does on the
-  relay: the old handshake ends, its requests reject with their family's
-  `CLOSED` code, and the brains store reconciles over the new handshake's
-  brains channel, pushing its pends. The simx accepts a port only from
-  `parentOrigin`.
-- ONE WRITER: the tab gains no write path. It requests brains and the
-  manifest over its session, and the simx frame answers through projfs,
-  writes the project's files, and posts live program updates on the sim
-  channel, as it does for the relay session.
-- CLOSE PATH: on MakeCode's `closing` event, and when the page is hidden
-  for good, the editor flushes every open brain editor's unflushed edit at
-  once, so the push leaves before the frame goes.
-- The tab shows no header: its one control above the brain list is the
-  docs button in the upper right corner, and the connection status and
-  save state ride as data on the session view's root element (see "The
-  editor webapp on this object", above); there is no connect page, join
-  code, recent-projects list, or End session.
+- MARKUP: a section carrying `data-testid="simx-strip"` whose one row
+  holds the logotype, linking to https://wendoo.com and carrying
+  `data-link="home"`, and the open-editor button
+  (`data-action="open-editor"`).
+- OPEN EDITOR: the button posts MakeCode the open request
+  `{ type: "simxeditor", subtype: "open", id }`; a refusal is logged by
+  its code (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+  `INVALID_REQUEST`). On a MakeCode that offers no editor tab, no port
+  arrives and the request is refused and logged.
+- THE LOGOTYPE LINK opens through a click probe: the strip opens a blank
+  tab, cuts its `opener`, and navigates it to the link's URL. A frame
+  sandboxed without `allow-popups` makes the browser refuse the tab; the
+  strip then replaces the link in place with its URL as selectable text
+  and selects it, for the person to copy. The registration grants
+  `allowPopups` for this link (see "The editor tab's in-page session",
+  above).
 
 ## The extension channel
 
@@ -1344,9 +947,8 @@ from and beneath the session:
   brains, above). The simx reads each ping as a program start. pxt
   creates -- or, from an earlier run, restarts -- the simx frame on
   the first packet of a run on its channel, and that packet is lost
-  to it. The ping is that first packet, so the frame -- its status
-  panel, and the join code while the editor seat is vacant --
-  appears as soon as any program that includes the extension runs,
+  to it. The ping is that first packet, so the frame and its brand
+  strip appear as soon as any program that includes the extension runs,
   whether or not the program ever publishes a catalog. The
   simx requests the catalog once loaded; a program that publishes
   later posts its catalog unasked.
@@ -1386,49 +988,40 @@ Session traffic is program-reported and carries no trust. Provenance
 (which extension is installed, by coordinate) is host-attested via
 the simx's host-bound channel; assistant-content gating happens at
 the point of use against the editor's approved-extensions
-configuration. Nothing in the session or the relay participates in
+configuration. Nothing in the session participates in
 those decisions.
 
 ## Local development
 
-The full stack runs locally, with no configuration surface: a page
-served from a loopback host connects to the local relay at
-`localhost:6465` (the relay's default dev port; the vscode-bridge
-relay's is 6464, so both Wendoo relays can run on one dev machine)
-instead of the deployed service. The rule lives with each composition
-root (`makecode/simx/wendoo/src/editor/main.tsx`, `makecode/simx/wendoo/src/simx/service-urls.ts`);
-a deployed build, served from a real host, uses the deployed
-service.
+The full stack runs locally:
 
-- The relay: `npm run dev` in `apps/bridge` (port 6465). Set
-  `BRIDGE_BINDING_SECRET` to keep sessions healing across relay
-  restarts; without it, every restart ends every session.
 - The editor and the simx: `npm run dev` in `makecode/simx/wendoo`
   (port 5175, pinned with `strictPort` by its dev config, matching the
   `devUrl` its `approvedRepoLib` entry registers; `npm run dev -- --port
   <port>` serves it elsewhere, and the registration must then name that
-  port). The editor is served at the root, where a simx served from a
-  loopback host links, and the simx at `simx/index.html`, the `index`
-  the registration names.
-- MakeCode: `pxt serve` from a dev target checkout, with the simx
-  registered by localdev URL (an `approvedRepoLib` entry carrying
-  `devUrl`) and loaded via the `simxdev` URL parameter.
+  port). The editor is served at the root, the page the registration's
+  `editor` names, and the simx at `simx/index.html`, the `index` the
+  registration names.
+- MakeCode: `pxt serve` from a dev target checkout whose pxt offers the
+  editor tab, with the simx registered by localdev URL (an
+  `approvedRepoLib` entry carrying `devUrl`) and loaded via the
+  `simxdev` URL parameter.
 
-The dated all-local run-through in `generated-docs/` records the
-exact invocations. The harness exercises the extension's emission
-headlessly on both provisioned targets, and the composed acceptance
-tier drives the editor's service layer and the simx module against
-the engine's in-process testkit, `@wendoo/bridge-session/testing`
-(`makecode/simx/wendoo/src/editor/services/editor-session-store-relay.spec.ts`), and
-the brain sync against a scripted simx and against the real simx
-module serving an in-memory MakeCode project over the same testkit
-(`makecode/simx/wendoo/src/editor/services/brains-sync-relay.spec.ts`; the project is
-`makecode/simx/wendoo/src/simx/test-support/projfs-host.ts`, which applies
-MakeCode's projfs rules -- scope, visibility, quota, deferral over the
-rate, binding to the project a request arrived in, refusal of an
-unserved frame -- and plays MakeCode's text editor sharing the project:
-the open file's buffer, its reload on a write, its save-back on a file
-switch, and debounced saves of typing that wait for a reload; each rule
-has a switch whose control specs prove a spec's outcome rests on it). The
-relay service's own suite runs the testkit over the service's own
-server (`startTestRelay({ server: startRelayServer })`).
+The harness exercises the extension's emission headlessly on both
+provisioned targets, and three port specs make up the composed
+acceptance tier. `makecode/simx/wendoo/src/editor/services/brains-sync-port.spec.ts`
+composes the editor tab's session store and brains store over a real
+`MessageChannel`, against a column frame the spec plays over the raw
+port and against the simx's port bridge serving an in-memory MakeCode
+project (`makecode/simx/wendoo/src/simx/test-support/projfs-host.ts`,
+which applies MakeCode's projfs rules -- scope, visibility, quota,
+deferral over the rate, binding to the project a request arrived in,
+refusal of an unserved frame -- and plays MakeCode's text editor sharing
+the project: the open file's buffer, its reload on a write, its
+save-back on a file switch, and debounced saves of typing that wait for
+a reload; each rule has a switch whose control specs prove a spec's
+outcome rests on it). `makecode/simx/wendoo/src/simx/simx-port-bridge.spec.ts`
+drives the simx's port bridge from a raw editor end of the port, and
+`packages/protocol/src/makecode-port-editor-session.spec.ts` drives the
+port-backed session object against the kind's own session over a
+`MessageChannel`.

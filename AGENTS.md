@@ -115,11 +115,6 @@ Two hazards worth knowing:
 - A standalone wendoo-lang clone can lag the submodule checkouts. Prefer
   `external/wendoo-lang` as the current reference.
 
-The MakeCode bridge address is the worked example: both apps store the
-service as a bare host and let `bridge-client` pick `ws://` or `wss://`, and
-neither uses a `VITE_` env var. A baked-in scheme would have been silently
-stripped; an env var would have been this repo's only one.
-
 ## Build System
 
 Builds are driven by `wendooBuild` metadata plus wireit freshness tracking,
@@ -299,13 +294,14 @@ the current slice alone.
 - `external/wendoo-lang` is the imported reference checkout. Read it for
   contracts, compiler behavior, and TypeScript VM semantics, but do not make
   product changes there unless the task explicitly targets the reference.
-- The top level splits by side of the integration: `apps/` is the Wendoo side,
-  `makecode/` the MakeCode side. That grouping is not a toolchain boundary,
-  and conflating the two is the standing hazard here. A third top-level home,
-  `packages/`, holds this repo's own shared npm packages: contracts spoken by
+- The top level has two homes beside the submodule: `makecode/` holds the
+  units of the integration -- the MakeCode extensions and the simx
+  component, whose webapp also carries the Wendoo editor -- and
+  `packages/` holds this repo's own shared npm packages: contracts spoken by
   units on both sides of the integration, which therefore belong to neither
-  side. `apps/`, `makecode/simx/`, and `packages/` are ordinary npm/TypeScript
-  projects.
+  side. Neither home is a toolchain boundary, and conflating home with
+  toolchain is the standing hazard here. `makecode/simx/` and `packages/`
+  are ordinary npm/TypeScript projects.
   `makecode/extensions/` are MakeCode (pxt) projects, built by the MakeCode
   toolchain in the static TypeScript subset pxt compiles: a different language
   surface, a different dependency system, and not npm packages. A pattern that
@@ -635,18 +631,15 @@ the current slice alone.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in
     its own subfolder. `makecode/simx/wendoo` is one webapp with two
     entries: its simx entry (`simx/index.html`, sources in `src/simx`)
-    joins the editor webapp to the MakeCode project -- over the port
-    MakeCode brokers to the editor tab when the frame URL carries
-    `editor=1`, through the bridge service otherwise -- and its root entry
-    (`index.html`, sources in `src/editor`) is the editor webapp, booting
-    as that editor tab. A simx is a
-    channel, not a store: its frame persists across sim restarts and runs
-    but is reallocated on a page reload or project teardown, so no state
-    may live only there. It is not product UI, but its frame is a visible panel
-    and renders a minimal session-status surface -- the join code while the
-    editor seat is vacant, and basic connection state; under `editor=1`, a
-    brand strip instead: the logotype and an open-editor button; no
-    authoring, no catalog display. One shared artifact serves every target, bound by an
+    joins the editor webapp to the MakeCode project over the port MakeCode
+    brokers to the editor tab, and its root entry (`index.html`, sources
+    in `src/editor`) is the editor webapp, booting as that editor tab. A
+    simx is a channel, not a store: its frame persists across sim restarts
+    and runs but is reallocated on a page reload or project teardown, so
+    no state may live only there. It is not product UI, but its frame is
+    visible and renders a brand strip: the logotype and an open-editor
+    button; no session status, no authoring, no catalog display. One
+    shared artifact serves every target, bound by an
     `approvedRepoLib` entry in each target's own `targetconfig.json`
     (`owner/repo` key, hosting URL); it knows its hosting target from the
     `target` frame URL param and may carry target-keyed behavior (asset
@@ -665,8 +658,8 @@ the current slice alone.
     Wendoo editor webapp: brain authoring, project
     management, compiler integration, the project's id allocation,
     diagnostics, and the docs surface (the core docs pages from
-    `@wendoo/docs`, in a sidebar the brain editor opens and standalone at
-    `/docs`, which opens no session; every other visible catalog tile of a
+    `@wendoo/docs`, in a sidebar the brain editor opens; every other
+    visible catalog tile of a
     kind with a docs category, the packs' sensors and actuators among
     them, is listed with the docs markdown the catalog gives it as its
     page, and with no page of its own while it is given none, as
@@ -680,9 +673,7 @@ the current slice alone.
     type has one; an output or accessor tile carrying docs has a page of
     its own, unlisted -- in no list or search, opened by its tile id from
     the tile's docs action or a `tile:` reference -- and no page while it
-    carries none; the standalone route binds no session catalog, so it
-    holds the core pages alone and no pack page, and the session's sidebar
-    links to no standalone page).
+    carries none).
     The editor is
     TARGET-BLIND: the tile vocabulary is injected from the MakeCode side
     over the session, so the catalog is session data, never build
@@ -713,23 +704,20 @@ the current slice alone.
     names a type by its variable factory's label, else by the label its
     catalog entry carries, else by its name; the one
     target-aware residue is the per-target theme
-    record (the target's display name, theme token overrides and tile
-    colors), keyed by the target id carried in the session hello. Tripwire: this holds because
+    record (the target's theme token overrides and tile colors), keyed by
+    the target id carried in the session hello. Tripwire: this holds because
     user-authored tiles live on the MakeCode side -- a Wendoo-TS user-tile
     flow in this editor would reintroduce target-specific ambient typings
-    and must be raised as a boundary change, not slipped in. (The directory
-    name predates the target-blind ruling; renaming rides F48.)
-  - `apps/bridge` owns the bridge service that the simx entry of
-    `makecode/simx/wendoo` connects to. Also target-blind: one deployment
-    serves every target.
+    and must be raised as a boundary change, not slipped in.
   - The complete per-target surface of this repo is: the target base pack,
     the game-facing extension, feature packs, the `approvedRepoLib`
     registration, the upstream `trg-*` platform-stack layer, a theme record
     in the editor, and target-keyed code paths inside the shared simx.
     Everything else is shared.
-- The editor webapp, the bridge service, the simx component, and the MakeCode
-  project form one path. A change to any hop is not done until you have named
-  the other three and said what it does to them.
+- The editor webapp, the simx component, and the MakeCode project form one
+  path, MakeCode brokering the port between the editor tab and the simx
+  frame. A change to any hop is not done until you have named the other two
+  and said what it does to them.
 - The shared Wendoo packages (`packages/core`, `packages/ts-compiler`,
   `packages/app-host`, `packages/bridge-app`, `packages/ui`) have several
   first-class, co-equal product consumers. Two are visible from this checkout:

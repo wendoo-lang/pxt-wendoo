@@ -26,26 +26,25 @@ is released yet, and formats and extension coordinates may still change.
 
 ## Layout
 
-The top level splits by side of the integration.
+The top level holds the MakeCode-side units, the shared packages, and the upstream submodule.
 
 | Directory                                    | Contents                                                                                                         |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [apps/bridge](apps/bridge/)                  | The bridge service, relaying between the editor and the simx.                                                    |
 | [makecode/extensions/](makecode/extensions/) | MakeCode extensions. `vm` holds the Static TypeScript Wendoo VM (target-agnostic, no blocks); `arcade-base` is Arcade's base vocabulary pack, and `arcade` is the extension a project adds. |
-| [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `wendoo` holds the Wendoo editor webapp, which authors brains, and the simx that joins it to the MakeCode project through the bridge. |
-| [packages/](packages/)                       | Shared npm packages: contracts spoken by units on both sides of the integration. `protocol` carries the MakeCode session kinds. |
+| [makecode/simx/](makecode/simx/)             | MakeCode simulator extension components. `wendoo` holds the Wendoo editor webapp, which authors brains as a MakeCode editor tab, and the simx that joins it to the MakeCode project over the port MakeCode brokers. |
+| [packages/](packages/)                       | Shared npm packages: contracts spoken by units on both sides of the integration. `protocol` carries the MakeCode session kind. |
 | [external/wendoo-lang](external/wendoo-lang) | The upstream language, compiler, and reference VM (submodule).                                                   |
 
-`apps/`, `makecode/simx/`, and `packages/` are ordinary npm/TypeScript projects.
+`makecode/simx/` and `packages/` are ordinary npm/TypeScript projects.
 `makecode/extensions/` are pxt projects built by the MakeCode toolchain, in the
 static TypeScript subset it compiles. The root `pxt.json` exists only because
 pxt requires a top-level extension for the nested ones to resolve.
 
 ## Getting started
 
-This is not an npm workspaces monorepo. Each app and simx component installs
-into its own `node_modules`; cross-package links use `file:` dependencies, and
-the Wendoo language lives in a submodule.
+This is not an npm workspaces monorepo. Each package and simx component
+installs into its own `node_modules`; cross-package links use `file:`
+dependencies, and the Wendoo language lives in a submodule.
 
 ```bash
 git clone --recurse-submodules https://github.com/wendoo-lang/pxt-wendoo.git
@@ -56,7 +55,8 @@ npm run bootstrap
 `bootstrap` installs every package and builds the `file:` dependency graph,
 dependencies first.
 
-Run the editor webapp:
+Serve the simulator extension and the editor it hosts, for a local MakeCode
+(`pxt serve`) to load through its `simxdev` URL parameter:
 
 ```bash
 npm --prefix makecode/simx/wendoo run dev

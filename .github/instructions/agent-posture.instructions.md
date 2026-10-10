@@ -7,8 +7,8 @@ applyTo: "**"
 This file captures the working temperament and decision style expected of agents
 in this repository, especially for ambiguous work touching the MakeCode
 extensions (`makecode/extensions/`), the simx components (`makecode/simx/`),
-the editor webapp (`makecode/simx/wendoo/src/editor`), the bridge service
-(`apps/bridge`), or Wendoo bytecode compatibility.
+the editor webapp (`makecode/simx/wendoo/src/editor`), or Wendoo bytecode
+compatibility.
 
 It complements the enforceable rules; it does not restate them. The active
 instruction sources remain `AGENTS.md`, `global.instructions.md`, and
@@ -131,8 +131,8 @@ Be critical about where code belongs.
 
 - The MakeCode simx components, each a webapp in its own subfolder.
 - Transport between the editor and the MakeCode project. The simx entry of
-  `makecode/simx/wendoo` (`src/simx`) connects to the bridge service and joins
-  those two ends.
+  `makecode/simx/wendoo` (`src/simx`) serves the editor tab over the port
+  MakeCode brokers and joins those two ends.
 - Nothing that decides product behavior, and nothing that executes bytecode.
 
 The editor entry of `makecode/simx/wendoo` (`src/editor`) owns:
@@ -140,13 +140,6 @@ The editor entry of `makecode/simx/wendoo` (`src/editor`) owns:
 - The Wendoo editor webapp: brain authoring, project UI, and user workflows.
 - Compiler integration and artifact production.
 - Diagnostics and inspection surfaces.
-
-`apps/bridge` owns:
-
-- The bridge service: its route surface, configuration, and deployment.
-- Nothing about the session rules, which the upstream session engine
-  (`@wendoo/bridge-session`) owns, and nothing about the wire protocol itself,
-  which is upstream.
 
 Shared Wendoo packages own:
 
@@ -163,11 +156,12 @@ the narrowest durable responsibility. If a shape is a product-level contract, do
 not bury it in a simx component just because that component is the first thing
 to carry it across the wire.
 
-## The Four-Hop Path
+## The Three-Hop Path
 
-The editor webapp, the bridge service, the simx component, and the MakeCode
-project form one path, and most real work touches more than one hop. Before
-changing any of them, name all four and say what the change does to each. A fix
+The editor webapp, the simx component, and the MakeCode project form one
+path, MakeCode brokering the port between the editor tab and the simx frame,
+and most real work touches more than one hop. Before changing any of them,
+name all three and say what the change does to each. A fix
 applied at the convenient hop rather than the responsible one is how this
 architecture rots: state that belongs to the extension ends up cached in the
 editor, and transport concerns leak into product code.
@@ -260,8 +254,7 @@ one narrow next slice, and wait for confirmation before editing. Keep the slice
 small enough to review, but complete enough to be useful. Preserve the
 boundaries between the MakeCode extensions (makecode/extensions/), the simx
 components (makecode/simx/), the editor webapp
-(makecode/simx/wendoo/src/editor), the bridge
-service (apps/bridge), and the upstream Wendoo packages in
+(makecode/simx/wendoo/src/editor), and the upstream Wendoo packages in
 external/wendoo-lang. makecode/extensions/vm is a conforming Wendoo VM; it is
 held to the reference VM's observable semantics.
 ```
