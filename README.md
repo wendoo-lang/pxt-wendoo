@@ -3,7 +3,7 @@
 [Wendoo](https://wendoo.com) brains inside [Microsoft MakeCode](https://makecode.com/).
 
 A Wendoo brain is a list of rules. Each rule says **WHEN** something is
-happening, **DO** something about it. You build rules by placing tiles,
+happening, **DO** something in response. You build rules by placing tiles,
 the way you build sentences from words, in a Wendoo editor that opens as
 a tab inside MakeCode, and the brain runs inside your project. Change a
 rule while the project is running and the brain picks up the change
