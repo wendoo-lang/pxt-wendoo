@@ -1,5 +1,5 @@
 import { stream } from "@wendoo/core";
-import type { BrainDef, IBrainDef, WendooEnvironment } from "@wendoo/core/app";
+import type { BrainDef, IBrainDef, IBrainRuleDef, WendooEnvironment } from "@wendoo/core/app";
 import { encodePersistedBrainJson } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
 import { linkedBrainProgramToBytes } from "@wendoo/core/runtime";
@@ -51,6 +51,30 @@ export interface BrainSourceCompile {
    * `undefined` when an error-severity diagnostic stopped the build.
    */
   readonly bytecode: Uint8Array | undefined;
+  /**
+   * Ids of the tiles the source places that the environment it was compiled
+   * in holds no tile for, each read as a missing-tile placeholder: each id
+   * once, in the order first placed, page by page and rule by rule. Empty
+   * when every tile resolved.
+   */
+  readonly unresolvedTiles: readonly string[];
+}
+
+/** Ids of the missing-tile placeholders `definition`'s rules place, each once, in the order first placed. */
+function missingTileIds(definition: IBrainDef): string[] {
+  const found = new Set<string>();
+  const visit = (rule: IBrainRuleDef): void => {
+    for (const side of [rule.when(), rule.do()]) {
+      side.tiles().forEach((tile) => {
+        if (tile.kind === "missing") found.add(tile.tileId);
+      });
+    }
+    rule.children().forEach(visit);
+  };
+  definition.pages().forEach((page) => {
+    page.children().forEach(visit);
+  });
+  return [...found];
 }
 
 /**
@@ -58,21 +82,24 @@ export interface BrainSourceCompile {
  * the linked program for the MakeCode Wendoo VM: profile
  * {@link MAKECODE_VM_PROFILE_ID}, numbers at {@link MAKECODE_VM_PRECISION}.
  * A build stopped by an error-severity diagnostic returns its diagnostics and
- * no bytecode. Throws when `source` is not a brain document.
+ * no bytecode. Reports the tiles the source places that `environment` holds
+ * no tile for. Throws when `source` is not a brain document.
  *
  * @param environment - The environment to compile in.
  * @param source - Source text, as {@link serializeBrainSource} produces it.
  */
 export function compileBrainSource(environment: WendooEnvironment, source: string): BrainSourceCompile {
-  const result = environment.linkBrain(readBrainSource(environment, source));
+  const definition = readBrainSource(environment, source);
+  const unresolvedTiles = missingTileIds(definition);
+  const result = environment.linkBrain(definition);
   const diagnostics = result.diagnostics.toArray();
   if (result.program === undefined) {
-    return { diagnostics, bytecode: undefined };
+    return { diagnostics, bytecode: undefined, unresolvedTiles };
   }
   const bytes = linkedBrainProgramToBytes(result.program, {
     profileId: MAKECODE_VM_PROFILE_ID,
     precision: MAKECODE_VM_PRECISION,
     typeRegistry: environment.brainServices.runtime.types,
   });
-  return { diagnostics, bytecode: stream.byteArrayToUint8Array(bytes) as Uint8Array };
+  return { diagnostics, bytecode: stream.byteArrayToUint8Array(bytes) as Uint8Array, unresolvedTiles };
 }

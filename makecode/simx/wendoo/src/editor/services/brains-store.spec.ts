@@ -313,6 +313,19 @@ describe("brains store", () => {
       assert.equal(definitionOf(store, id).servicesTypeRegistry(), rebuilt.brainServices.runtime.types);
     });
 
+    it("compiles a core-only brain with no catalog as current, recording no unresolved tiles", () => {
+      const store = new BrainsStore(session);
+
+      const id = store.addBrain("Chaser");
+      const edited = definitionOf(store, id);
+      authorCompilingRule(store.getSnapshot().environment, edited);
+      store.applyBrain(edited);
+
+      const entry = entryOf(store, id);
+      assert.equal(entry.compiled?.sourceHash, entry.sourceHash);
+      assert.deepEqual(entry.unresolvedTiles, []);
+    });
+
     it("keeps authoring and compiling through an unreadable catalog, reporting it by its stable code", () => {
       session.set({ catalogText: "not a catalog" });
       const store = new BrainsStore(session);

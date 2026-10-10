@@ -343,6 +343,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
     tabs.splice(tabs.indexOf(authoring), 1);
     running.bridge.dispose();
     columns.splice(columns.indexOf(running), 1);
+    const writesBeforeReopen = host.mutations.length;
 
     const reopened = openTab("project-a");
     const stopped = spawnColumn(host);
@@ -364,8 +365,14 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
     assert.deepEqual(reopened.brains.getSnapshot().brains.get(id)?.compiled, project);
     assert.deepEqual(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id)?.bytecode, project.bytecode);
-    const restarted = postedProgramUpdates(stopped.frame.posted).filter((update) => update.documentId === id);
-    assert.deepEqual(restarted.at(-1)?.bytecode, project.bytecode);
+    assert.deepEqual(
+      host.mutations.slice(writesBeforeReopen).filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`),
+      [],
+      "the project's compiled form is never rewritten"
+    );
+    for (const update of postedProgramUpdates(stopped.frame.posted)) {
+      if (update.documentId === id) assert.deepEqual(update.bytecode, project.bytecode);
+    }
   });
 
   it("keeps the brains of two tab and column pairs, for two projects, apart", async () => {

@@ -19,7 +19,15 @@ const INFO: BrainBuildDiagnostic = { code: TypeDiagCode.DataTypeConverted, sever
 
 /** An entry for source hash `sourceHash` with `fields` layered over it. */
 function entryWith(fields: Partial<BrainEntry>): BrainEntry {
-  return { name: "Chaser", source: "{}", sourceHash: "aaaaaaaa", diagnostics: [], compiled: undefined, ...fields };
+  return {
+    name: "Chaser",
+    source: "{}",
+    sourceHash: "aaaaaaaa",
+    diagnostics: [],
+    unresolvedTiles: [],
+    compiled: undefined,
+    ...fields,
+  };
 }
 
 describe("brainCompileState", () => {

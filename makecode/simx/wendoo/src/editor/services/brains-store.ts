@@ -47,6 +47,22 @@ function retryDelay(attempt: number): number {
   return PUSH_RETRY_DELAYS_MS[Math.min(attempt, PUSH_RETRY_DELAYS_MS.length - 1)] ?? 0;
 }
 
+/**
+ * Stable code of a brain whose source places tiles the store's environment
+ * holds no tile for -- pack tiles while no catalog binds their pack. A compile
+ * reading any is not a good one: the brain keeps its last good compiled form,
+ * and the store never pushes the compile's program.
+ */
+export const BRAIN_TILE_UNRESOLVED = "BRAIN_TILE_UNRESOLVED";
+
+/** A tile a brain's source places that the store's environment holds no tile for. */
+export interface UnresolvedTile {
+  /** The tile's id, as the source places it. */
+  readonly tileId: string;
+  /** Why the tile is reported. */
+  readonly code: typeof BRAIN_TILE_UNRESOLVED;
+}
+
 /** The session readings a {@link BrainsStore} follows. */
 export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText" | "assets">;
 
@@ -80,10 +96,18 @@ export interface BrainEntry {
   /** Diagnostics of compiling {@link source}, in the order they were reported. */
   readonly diagnostics: readonly BrainBuildDiagnostic[];
   /**
-   * The latest compile that produced bytecode, or `undefined` when none has.
-   * It compiled {@link source} exactly when its `sourceHash` equals
-   * {@link sourceHash}; otherwise the latest compile failed and this is the
-   * last good one.
+   * The tiles {@link source} places that the store's environment holds no
+   * tile for, in the order first placed; empty when every tile resolved.
+   * While any is listed, the latest compile is not a good one, and
+   * {@link compiled} is the last good compile.
+   */
+  readonly unresolvedTiles: readonly UnresolvedTile[];
+  /**
+   * The latest good compile -- one that produced bytecode with every tile
+   * resolved -- or `undefined` when none has. It compiled {@link source}
+   * exactly when its `sourceHash` equals {@link sourceHash}; otherwise the
+   * latest compile failed or left tiles unresolved, and this is the last good
+   * one.
    */
   readonly compiled: CompiledBrain | undefined;
 }
@@ -188,9 +212,11 @@ export interface BrainsViewState {
  *
  * Every document written to the store is compiled at once in the current
  * environment. A failed compile keeps the document and records its
- * diagnostics, beside the last good compile. A document whose source text
- * equals the source the store holds for its brain changes nothing: it is not
- * compiled, and no edit is recorded.
+ * diagnostics, beside the last good compile; so does a compile reading any
+ * tile the document places as one the environment does not hold, which also
+ * records those tiles under {@link BRAIN_TILE_UNRESOLVED}. A document whose
+ * source text equals the source the store holds for its brain changes
+ * nothing: it is not compiled, and no edit is recorded.
  *
  * The environment binds the catalog's packs under the project's id
  * allocation, which the store holds once a handshake has read the project's
@@ -237,7 +263,7 @@ export interface BrainsViewState {
  * document is listed in {@link BrainsViewState.damaged} and never overwritten
  * by itself; a pulled source whose compiled form was not compiled from it,
  * or whose compile now makes another program, is recompiled and, when that
- * compile succeeds, pushed. Once reconciled, each
+ * compile is a good one, pushed. Once reconciled, each
  * edit is pushed as it is made, pending until the project acknowledges it.
  * A push left unanswered for {@link PUSH_LIVENESS_DEADLINE_MS} counts as
  * failed. A failed push of a brain's latest edit is retried, unless the brain
@@ -425,12 +451,14 @@ export class BrainsStore {
     this._environment.brainLiterals.bindSource(source);
     const sourceHash = brainSourceHash(source);
     const compile = compileBrainSource(this._environment.environment, source);
+    const bytecode = goodBytecode(compile);
     const entry: BrainEntry = {
       name: definition.name(),
       source,
       sourceHash,
       diagnostics: compile.diagnostics,
-      compiled: compile.bytecode === undefined ? held?.compiled : { bytecode: compile.bytecode, sourceHash },
+      unresolvedTiles: unresolvedTilesOf(compile),
+      compiled: bytecode === undefined ? held?.compiled : { bytecode, sourceHash },
     };
     this._brains = new Map(this._brains).set(id, entry);
     this.edited(id);
@@ -667,10 +695,9 @@ export class BrainsStore {
   /**
    * Reads a pulled brain in the current environment: its damage when its
    * source is not a brain document or embeds a different id, and otherwise
-   * the entry holding it, compiled at once. A failed compile keeps the
-   * pulled compiled form as the last good one. `recompiled` reports a
-   * successful compile of a source the pulled compiled form was not
-   * compiled from.
+   * the entry holding it, compiled at once. A compile that is not a good one
+   * keeps the pulled compiled form as the last good one. `recompiled` reports
+   * a good compile making another program than the pulled compiled form.
    */
   private readPulled(brain: MakeCodeBrain): BrainDamageCode | { entry: BrainEntry; recompiled: boolean } {
     const environment = this._environment.environment;
@@ -690,14 +717,16 @@ export class BrainsStore {
       return BRAIN_SOURCE_INVALID;
     }
     const sourceHash = brainSourceHash(brain.source);
+    const bytecode = goodBytecode(compile);
     const entry: BrainEntry = {
       name: definition.name(),
       source: brain.source,
       sourceHash,
       diagnostics: compile.diagnostics,
-      compiled: compile.bytecode === undefined ? brain.compiled : { bytecode: compile.bytecode, sourceHash },
+      unresolvedTiles: unresolvedTilesOf(compile),
+      compiled: bytecode === undefined ? brain.compiled : { bytecode, sourceHash },
     };
-    const recompiled = compile.bytecode !== undefined && !sameCompiled(brain.compiled, entry.compiled);
+    const recompiled = bytecode !== undefined && !sameCompiled(brain.compiled, entry.compiled);
     return { entry, recompiled };
   }
 
@@ -785,10 +814,11 @@ export class BrainsStore {
 
   /**
    * Rebuilds the environment from the session's catalog and the allocation
-   * held, then recompiles every brain in it: a brain whose compiled form
-   * changes is recorded as edited, and so is a pending brain whose
-   * diagnostics alone change, so its pend clears on the push of its new
-   * entry.
+   * held, then recompiles every brain in it, each compile that is not a good
+   * one leaving the brain at its last good compiled form. A brain whose
+   * compiled form changes is recorded as edited, and so is a pending brain
+   * whose diagnostics or unresolved tiles alone change, so its pend clears
+   * on the push of its new entry.
    */
   private rebuild(): void {
     this._environment = this.buildEnvironment();
@@ -801,10 +831,17 @@ export class BrainsStore {
       } catch {
         continue;
       }
-      const compiled =
-        compile.bytecode === undefined ? held.compiled : { bytecode: compile.bytecode, sourceHash: held.sourceHash };
-      if (sameCompiled(compiled, held.compiled) && sameDiagnostics(compile.diagnostics, held.diagnostics)) continue;
-      brains.set(id, { ...held, diagnostics: compile.diagnostics, compiled });
+      const bytecode = goodBytecode(compile);
+      const compiled = bytecode === undefined ? held.compiled : { bytecode, sourceHash: held.sourceHash };
+      const unresolvedTiles = unresolvedTilesOf(compile);
+      if (
+        sameCompiled(compiled, held.compiled) &&
+        sameDiagnostics(compile.diagnostics, held.diagnostics) &&
+        sameUnresolvedTiles(unresolvedTiles, held.unresolvedTiles)
+      ) {
+        continue;
+      }
+      brains.set(id, { ...held, diagnostics: compile.diagnostics, unresolvedTiles, compiled });
       if (!sameCompiled(compiled, held.compiled) || this._pending.has(id)) edited.push(id);
     }
     this._brains = brains;
@@ -917,6 +954,25 @@ export class BrainsStore {
     this._state = this.readState();
     for (const listener of this._listeners) listener();
   }
+}
+
+/**
+ * The bytecode of `compile` when it is a good compile: one that produced
+ * bytecode and read every tile its source places as a tile the environment
+ * holds. `undefined` otherwise.
+ */
+function goodBytecode(compile: BrainSourceCompile): Uint8Array | undefined {
+  return compile.unresolvedTiles.length === 0 ? compile.bytecode : undefined;
+}
+
+/** The tiles `compile` read as missing-tile placeholders, each under {@link BRAIN_TILE_UNRESOLVED}. */
+function unresolvedTilesOf(compile: BrainSourceCompile): readonly UnresolvedTile[] {
+  return compile.unresolvedTiles.map((tileId) => ({ tileId, code: BRAIN_TILE_UNRESOLVED }));
+}
+
+/** Whether `a` and `b` list the same tiles, in the same order. */
+function sameUnresolvedTiles(a: readonly UnresolvedTile[], b: readonly UnresolvedTile[]): boolean {
+  return a.length === b.length && a.every((tile, index) => tile.tileId === b[index]?.tileId);
 }
 
 /** Whether `a` and `b` are the same compiled form: both absent, or the same bytes compiled from the same source. */

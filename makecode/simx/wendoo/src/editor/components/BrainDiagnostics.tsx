@@ -5,10 +5,10 @@ import type { BrainEntry } from "@/services/brains-store";
 /**
  * How a brain's compiled form stands against its source:
  *
- * - `current` -- the latest compile produced bytecode for the brain's source;
- * - `stale` -- the latest compile failed, and the brain keeps an earlier
- *   source's bytecode;
- * - `none` -- no compile of the brain has produced bytecode.
+ * - `current` -- the brain's bytecode was compiled from its source;
+ * - `stale` -- the latest compile failed or left tiles unresolved, and the
+ *   brain keeps an earlier source's bytecode;
+ * - `none` -- the brain holds no bytecode.
  */
 export type BrainCompileState = "current" | "stale" | "none";
 

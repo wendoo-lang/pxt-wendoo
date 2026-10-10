@@ -991,6 +991,14 @@ session's editor that the tab never renders.
   `BRAIN_ASSET_UNRESOLVED` as `data-code`. It informs and never blocks:
   the brain still compiles and runs as before. No notice shows before
   the first snapshot arrives.
+- A brain placing UNRESOLVED PACK TILES -- tiles the store's
+  environment holds none for: while no catalog has arrived (the
+  program has not run yet), under an unreadable catalog or a manifest
+  of a newer format, or once the pack has left the project -- keeps its
+  last good program (see "Brain sync", below). The store records each
+  such tile on the brain under `BRAIN_TILE_UNRESOLVED`, beside the
+  compile's diagnostics. The state is machine-layer only: the view
+  shows no notice for it.
 - The CATALOG DIAGNOSTICS the store reports while building its
   environment render as one coded line each below the brain list,
   each carrying its code as `data-code` and, where it names them, the pack
@@ -1081,7 +1089,10 @@ channel, then pushes each edit as it is made:
   A push carries the brain exactly as the store holds it -- source plus
   the compiled form and hash of ONE compile (the convergence rule; a
   failed compile carries the last good compiled form); a removal pushes
-  as `remove`. A push records its brain pending as it goes out, and the
+  as `remove`. A compile reading any tile the brain places as one the
+  store's environment does not hold is not a good compile either: the
+  push carries the last good compiled form, never that compile's
+  program. A push records its brain pending as it goes out, and the
   project's acknowledgment of it clears the pend only while it carries
   the brain's latest state, however late it arrives. A push unanswered
   for `PUSH_LIVENESS_DEADLINE_MS` (30 s) counts as failed, its pend
@@ -1100,7 +1111,12 @@ channel, then pushes each edit as it is made:
   same holds for every held brain whenever the environment is rebuilt: a
   brain whose compiled form changes is pushed. A pulled source that parses but fails to compile is
   held with its diagnostics beside the project's compiled form as the
-  last good one, and nothing is pushed.
+  last good one, and nothing is pushed. A pulled or held brain whose
+  compile reads any of its tiles as one the environment does not hold
+  -- a pack tile while no catalog binds its pack -- is held the same
+  way at its last good compiled form, and nothing is pushed for that
+  compile; once a later catalog or allocation resolves every tile, the
+  rebuild recompiles it and pushes the fresh pair when it differs.
 - COMPILED-FORM HEALING: because the list reports the compiled form, a
   project whose `brains.g.ts` lost or garbled a brain's registration --
   the file deleted in MakeCode's Explorer, an entry damaged, a

@@ -27,7 +27,7 @@ import {
   serializeBrainSource,
 } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
-import { BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
+import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_LIVENESS_DEADLINE_MS, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
 import type { EditorBrainsChannel } from "./editor-session-store.js";
 
 /** The session readings a brains store follows, driven by the spec. */
@@ -1535,6 +1535,8 @@ describe("brains sync", () => {
       const channel = await handshakeWith("token-1", new FakeManifestFile(), projectOf(ringer, quiet));
       const unbound = entryOf(store, ringer.id);
       assert.ok(unbound.diagnostics.length > 0, "the ring tile is missing while its pack is unbound");
+      assert.equal(unbound.compiled, undefined);
+      assert.deepEqual(channel.pushes, []);
       const pushesBefore = channel.pushes.length;
 
       session.setCatalog(CHIME_CATALOG);
@@ -1598,6 +1600,120 @@ describe("brains sync", () => {
 
       assert.deepEqual(second.writes, [CHIME_IDS]);
       assert.equal(actionId(store, "actuator.chime.ring"), 1024);
+    });
+
+    describe("unresolved tiles", () => {
+      const RING_TILE = mkActuatorTileId("actuator.chime.ring");
+
+      /** `brain` as a project holds it after an editor binding {@link CHIME_CATALOG} under {@link CHIME_IDS} pushed it. */
+      function compiledInChime(brain: MakeCodeBrain): MakeCodeBrain {
+        const { environment } = buildAuthoringEnvironment(CHIME_CATALOG, CHIME_IDS);
+        const { bytecode } = compileBrainSource(environment, brain.source);
+        assert.ok(bytecode);
+        return { ...brain, compiled: { bytecode, sourceHash: brainSourceHash(brain.source) } };
+      }
+
+      /** A project manifest allocating {@link CHIME_IDS}, as the editor that pushed the ringing brain wrote it. */
+      function chimeManifest(): FakeManifestFile {
+        const file = new FakeManifestFile();
+        file.reading = { manifest: structuredClone(CHIME_IDS) };
+        return file;
+      }
+
+      const unboundCases: { what: string; catalog: string | undefined; reading?: MakeCodeManifestReading }[] = [
+        { what: "no catalog", catalog: undefined },
+        { what: "an unreadable catalog", catalog: "not a catalog" },
+        { what: "a catalog without its pack", catalog: '{"packs":[]}' },
+        {
+          what: "a manifest of a newer format",
+          catalog: CHIME_CATALOG,
+          reading: { manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER },
+        },
+      ];
+      for (const { what, catalog, reading } of unboundCases) {
+        it(`holds a pack-tile brain pulled under ${what} at the project's compiled form, recording its unresolved tile and pushing nothing`, async () => {
+          session.setCatalog(catalog);
+          const store = syncedStore();
+          const ringer = compiledInChime(ringingBrain());
+          const file = chimeManifest();
+          if (reading !== undefined) file.reading = reading;
+
+          const channel = await handshakeWith("token-1", file, projectOf(ringer));
+
+          const entry = entryOf(store, ringer.id);
+          assert.deepEqual(entry.compiled, ringer.compiled);
+          assert.deepEqual(entry.unresolvedTiles, [{ tileId: RING_TILE, code: BRAIN_TILE_UNRESOLVED }]);
+          assert.ok(entry.diagnostics.length > 0);
+          assert.deepEqual(channel.pushes, []);
+          assert.equal(store.getSnapshot().pending.size, 0);
+        });
+      }
+
+      it("resolves a pulled pack-tile brain once the catalog arrives, pushing nothing when it compiles to the project's program", async () => {
+        const store = syncedStore();
+        const ringer = compiledInChime(ringingBrain());
+        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+
+        session.setCatalog(CHIME_CATALOG);
+        await settle();
+
+        const entry = entryOf(store, ringer.id);
+        assert.deepEqual(entry.compiled, ringer.compiled);
+        assert.deepEqual(entry.unresolvedTiles, []);
+        assert.deepEqual(entry.diagnostics, []);
+        assert.deepEqual(channel.pushes, []);
+      });
+
+      it("pushes an edit made while its tiles are unresolved with the last good compiled form, then the fresh pair once the catalog arrives", async () => {
+        const store = syncedStore();
+        const ringer = compiledInChime(ringingBrain());
+        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+
+        store.renameBrain(ringer.id, "Bell");
+        await settle();
+
+        const edited = entryOf(store, ringer.id);
+        assert.notEqual(edited.sourceHash, ringer.compiled?.sourceHash);
+        assert.deepEqual(edited.compiled, ringer.compiled);
+        assert.deepEqual(edited.unresolvedTiles, [{ tileId: RING_TILE, code: BRAIN_TILE_UNRESOLVED }]);
+        assert.deepEqual(
+          channel.pushes.map((push) => (push.op === "write" ? push.brain.compiled : undefined)),
+          [ringer.compiled]
+        );
+        assert.deepEqual(channel.project.get(ringer.id)?.compiled, ringer.compiled);
+        const pushesBefore = channel.pushes.length;
+
+        session.setCatalog(CHIME_CATALOG);
+        await settle();
+
+        const resolved = entryOf(store, ringer.id);
+        assert.equal(resolved.compiled?.sourceHash, resolved.sourceHash);
+        assert.deepEqual(resolved.unresolvedTiles, []);
+        const pushed = channel.pushes.slice(pushesBefore);
+        assert.equal(pushed.length, 1);
+        assert.ok(pushed[0]?.op === "write");
+        assert.deepEqual(pushed[0].brain.compiled, resolved.compiled);
+        assert.deepEqual(channel.project.get(ringer.id)?.compiled, resolved.compiled);
+        assert.equal(store.getSnapshot().pending.size, 0);
+      });
+
+      it("keeps a held pack-tile brain at its last good compiled form when a catalog without its pack arrives, pushing nothing", async () => {
+        session.setCatalog(CHIME_CATALOG);
+        const store = syncedStore();
+        const ringer = compiledInChime(ringingBrain());
+        const channel = await handshakeWith("token-1", chimeManifest(), projectOf(ringer));
+        assert.deepEqual(entryOf(store, ringer.id).unresolvedTiles, []);
+        assert.deepEqual(channel.pushes, []);
+
+        session.setCatalog('{"packs":[]}');
+        await settle();
+
+        const entry = entryOf(store, ringer.id);
+        assert.deepEqual(entry.compiled, ringer.compiled);
+        assert.deepEqual(entry.unresolvedTiles, [{ tileId: RING_TILE, code: BRAIN_TILE_UNRESOLVED }]);
+        assert.deepEqual(channel.pushes, []);
+        assert.equal(store.getSnapshot().pending.size, 0);
+      });
     });
   });
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 import { List } from "@wendoo/core";
 import type { IBrainTileDef } from "@wendoo/core/app";
 import {
@@ -7,6 +7,8 @@ import {
   BrainTileLiteralDef,
   CoreOpId,
   CoreTypeIds,
+  LogLevel,
+  logger,
   mkActuatorTileId,
   mkOperatorTileId,
   mkSensorTileId,
@@ -156,6 +158,18 @@ function offeredAfter(built: AuthoringEnvironment, entries: readonly (string | n
 }
 
 describe("pack type accessors", () => {
+  let loggedLevel: LogLevel;
+
+  // Silences the compiler's warning log for the expressions a refused write drops.
+  before(() => {
+    loggedLevel = logger.level;
+    logger.level = LogLevel.ERROR;
+  });
+
+  after(() => {
+    logger.level = loggedLevel;
+  });
+
   it("binds a field's accessor as an accessor tile carrying the label, docs and icon its catalog entry carries", () => {
     const built = environment();
 
