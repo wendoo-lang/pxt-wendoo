@@ -51,7 +51,7 @@ const REGISTRATION_DIAG_PREFIX = "registration ";
  * Source file declaring the simulator extension's channel, as `SIMX_CHANNEL`,
  * and the channel version it reads, as `SIM_CHANNEL_VERSION`.
  */
-const SIMX_CHANNEL_SOURCE_PATH = path.join(__dirname, "..", "..", "simx", "bridge", "src", "sim-channel.ts");
+const SIMX_CHANNEL_SOURCE_PATH = path.join(__dirname, "..", "..", "simx", "wendoo", "src", "simx", "sim-channel.ts");
 
 /** Committed list of the opcodes the MakeCode VM extension does not dispatch. */
 const UNSUPPORTED_OPCODES_PATH = path.join(__dirname, "unsupported-opcodes.json");
