@@ -9,7 +9,7 @@ interface DocsButtonProps {
 }
 
 /**
- * The header's Docs toggle: an icon button controlling the docs sidebar
+ * The Docs toggle: an icon button controlling the docs sidebar
  * (`docs-sidebar`), its expanded state following `isOpen` and a click
  * calling `onToggle`.
  */

@@ -768,11 +768,16 @@ it keys on a session id.
 ## The editor webapp on this object
 
 The editor (`makecode/simx/wendoo/src/editor`) consumes the session object through one store
-(`EditorSessionStore`), and its two views follow the state:
+(`EditorSessionStore`), and its two views follow the state. The editor boots
+only as the MakeCode editor tab (see "The editor tab's in-page session",
+below), whose session is never `none`, so it always shows the session view;
+the bullets marked FORMER STANDALONE EDITOR describe surfaces of the relay
+session's editor that the tab never renders.
 
-- The CONNECT PAGE shows while the status is `none`: a join-code
-  entry whose submission creates the session with the entered code
-  and clears the entry. While the code is pending the page names the
+- FORMER STANDALONE EDITOR: the CONNECT PAGE shows while the status
+  is `none`: a join-code entry whose submission creates the session
+  with the entered code and clears the entry. While the code is
+  pending the page names the
   wait beside the status dot -- connecting while submitted, waiting
   for the MakeCode project once accepted. A refused code
   (`JOIN_CODE_UNKNOWN`) shows a not-recognized notice above the
@@ -791,39 +796,40 @@ The editor (`makecode/simx/wendoo/src/editor`) consumes the session object throu
   another tab took it first the list is re-read instead. Each row's
   remove control deletes its entry. The list is re-read when the page
   returns to the connect view and when another tab changes an entry.
-- The SESSION VIEW shows once a session exists, under the APP
-  HEADER: the Wendoo logotype (a link to https://wendoo.com, opening
-  in a new tab), the declared target's display name,
-  and the connection status as an 8px dot and a lowercase word --
-  the simx panel's idiom, using its words where the states
-  correspond -- followed, while the status is `connected` or
-  `reconnecting`, by the END SESSION action (below). The status is
-  carried as `data-status`: `connecting`
-  (the session has not connected since the page opened it),
-  `connected`, `reconnecting` (only once a disconnection outlasts the
-  grace, below), `replaced` (the takeover hold), `ended`,
-  and `update` (a version rejection). The dots paint from the
-  editor's themeable tokens: success, warning, destructive, and the
-  neutral muted foreground. Below the notices the session view holds
-  the BRAIN LIST (the brains store's brains, below), then the
-  catalog's diagnostics, then the catalog panel rendering the latest
-  catalog -- and no join code: the only codes an editor receives are
-  spent or name the simx's vacancy, which no person can enter yet.
-  The catalog stays rendered while disconnected -- status gates
-  delivery, never what is already shown -- and is dropped whenever no
-  session exists. The store holds the latest ASSET SNAPSHOT the same
-  way: each one the session delivers replaces the last, it is kept
-  while disconnected, and it is dropped whenever no session exists.
+- The SESSION VIEW shows once a session exists, with NO HEADER: no
+  logotype, project name, target name, connection status, save
+  status, or End session, since none of their states is something a
+  kid can act on, and MakeCode's own toggle for the tab shows the
+  Wendoo wordmark and the project name. The one control above the
+  content is the DOCS BUTTON in the page's upper right corner
+  (`corner-controls`), opening and closing the docs sidebar. The
+  connection status is machine-layer only, carried as `data-status`
+  on the view's root element (`session-view`): `connecting` (the
+  session has not connected since the page opened it), `connected`,
+  `reconnecting` (only once a disconnection outlasts the grace,
+  below), `replaced` (the takeover hold), `ended`, and `update` (a
+  version rejection). Below the corner the session view holds the
+  notices that apply -- in the tab, the version notice alone (see
+  RECOVERY AFFORDANCES, below) -- then the BRAIN LIST (the brains
+  store's brains, below), then the catalog's diagnostics -- and no
+  join code: the only codes an editor receives are spent or name the
+  simx's vacancy, which no person can enter yet. The store keeps the
+  latest catalog while disconnected -- status gates delivery, never
+  what is already held -- and drops it whenever no session exists.
+  The store holds the latest ASSET SNAPSHOT the same way: each one
+  the session delivers replaces the last, it is kept while
+  disconnected, and it is dropped whenever no session exists.
 - The DISCONNECTED GRACE: MakeCode reallocates the simulator frame
-  routinely, so a brief disconnect is the common case. The header
-  turns `reconnecting` only once a disconnection outlasts
-  `DISCONNECT_GRACE_MS` (a few seconds); until then it keeps showing
-  the status from before the disconnection. The header's status is
-  the whole disconnection surface, and End session beside it is the
-  way out. The session
+  routinely, so a brief disconnect is the common case. The carried
+  status turns `reconnecting` only once a disconnection outlasts
+  `DISCONNECT_GRACE_MS` (a few seconds); until then it keeps the
+  status from before the disconnection. In the former standalone
+  editor the header's status was the whole disconnection surface,
+  and End session beside it the way out. The session
   object stays truthful; the grace lives in the editor's view-model
   only.
-- END SESSION: a small destructive button beside the header's status,
+- FORMER STANDALONE EDITOR: END SESSION, a small destructive button
+  beside the header's status,
   shown while the status is `connected` or `reconnecting` (never on
   the connect page, and not in the `replaced` or `update` holds,
   which carry their own remedies). It opens a destructive
@@ -838,9 +844,12 @@ The editor (`makecode/simx/wendoo/src/editor`) consumes the session object throu
   editor's own connection is down reaches no one; either way the
   editor returns to its connect page, and the simx's own End session
   recovers its side.
-- RECOVERY AFFORDANCES: `SESSION_REPLACED` shows a held-state notice
-  at once, with a reconnect action (`start()`) and a "Start over"
-  action (`forget()`, back to the connect page; the held connection
+- RECOVERY AFFORDANCES: a version rejection, the one the tab can
+  meet, shows its remedy -- reload the editor -- below the docs
+  button and above the brain list, and only while it applies. The
+  rest are the FORMER STANDALONE EDITOR's: `SESSION_REPLACED` shows a
+  held-state notice at once, with a reconnect action (`start()`) and a
+  "Start over" action (`forget()`, back to the connect page; the held connection
   is closed, so nothing reaches the relay and the start over clears
   this editor's seat alone). An overflow recovers
   automatically and surfaces only as transient status. A version
@@ -851,8 +860,8 @@ The editor (`makecode/simx/wendoo/src/editor`) consumes the session object throu
   held renders its notice in the session view instead, while the store
   falls back to the token's session (see "Opening the editor from the
   simx", below).
-- BINDING ENTRIES: `localStorage` keeps one entry per binding the
-  editor has joined, each under its own key,
+- FORMER STANDALONE EDITOR: BINDING ENTRIES. `localStorage` keeps one
+  entry per binding the editor has joined, each under its own key,
   `<app>:binding:<id>`, the id a 64-bit FNV-1a digest of the binding
   token -- the relay signs one token per binding, so the id names the
   binding across reconnections and relay restarts that keep the
@@ -952,17 +961,16 @@ The editor (`makecode/simx/wendoo/src/editor`) consumes the session object throu
   edit's flush, or the close, tries again. Edits live only in memory
   until the project acknowledges them: closing the page drops any not
   yet acknowledged.
-- The SAVE STATUS beside the header's connection status shows whether
-  the brains are saved to the MakeCode project, from the store's facts:
-  `saved` while nothing is pending, and nothing shown; `saving` while
-  something is pending and a push is in flight; `unsaved` while
-  something is pending and no push is in flight -- disconnected,
-  reconciling, waiting to retry, or held by a damaged source. It is
-  worded for the kid; the state rides as `data-save-state`, the pend
-  count as `data-pending`, the pushes in flight as `data-in-flight`,
-  and `reconciled` as `data-reconciled`. From the `sm` breakpoint up
-  it is drawn above the brain editor's backdrop, so it stays readable
-  while the editor is open.
+- The SAVE STATE says whether the brains are saved to the MakeCode
+  project, from the store's facts: `saved` while nothing is pending;
+  `saving` while something is pending and a push is in flight;
+  `unsaved` while something is pending and no push is in flight --
+  disconnected, reconciling, waiting to retry, or held by a damaged
+  source. It is machine-layer only, shown nowhere: the session view's
+  root element carries the state as `data-save-state`, the pend count
+  as `data-pending`, the pushes in flight as `data-in-flight`, and
+  `reconciled` as `data-reconciled`. A damaged brain, the one state
+  behind `unsaved` a kid can act on, shows its own notice (below).
 - DAMAGED BRAINS (see "Brain sync", below) surface in the brain list
   at the default diagnostics tier, since restoring is a
   blocks-only action. A damaged brain's row carries a notice worded
@@ -984,7 +992,7 @@ The editor (`makecode/simx/wendoo/src/editor`) consumes the session object throu
   the brain still compiles and runs as before. No notice shows before
   the first snapshot arrives.
 - The CATALOG DIAGNOSTICS the store reports while building its
-  environment render as one coded line each above the catalog panel,
+  environment render as one coded line each below the brain list,
   each carrying its code as `data-code` and, where it names them, the pack
   as `data-pack`, the entry as `data-name` and the offending token as
   `data-token`: `CATALOG_UNREADABLE` for catalog text it cannot read
@@ -1279,10 +1287,11 @@ pxt's `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
 - CLOSE PATH: on MakeCode's `closing` event, and when the page is hidden
   for good, the editor flushes every open brain editor's unflushed edit at
   once, so the push leaves before the frame goes.
-- The header in the tab shows the logotype, the project name, the docs
-  toggle, the save status, and the connection status as its dot alone;
-  there is no connect page, join code, recent-projects list, or End
-  session.
+- The tab shows no header: its one control above the brain list is the
+  docs button in the upper right corner, and the connection status and
+  save state ride as data on the session view's root element (see "The
+  editor webapp on this object", above); there is no connect page, join
+  code, recent-projects list, or End session.
 
 ## The extension channel
 

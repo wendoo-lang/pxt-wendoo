@@ -10,12 +10,13 @@ import { createDocsTileCatalog, createEditorDocsRegistry } from "@/docs/docs-reg
 import { resolveTarget } from "@/services/target-theme";
 
 /**
- * Root view: the session -- status, brains, catalog; the toast region the
- * shared components announce through; and the docs sidebar, over a docs registry
- * and tile visuals rebuilt from the brains store's environment each time it
- * changes, its entries and pages opening in the sidebar with no link to the
- * standalone docs pages. Tiles, in the docs and the brain editor alike, are
- * filled in the declared target's tile colors where its theme gives them.
+ * Root view: the session -- the Docs toggle, the brains, the catalog's
+ * diagnostics; the toast region the shared components announce through; and
+ * the docs sidebar, over a docs registry and tile visuals rebuilt from the
+ * brains store's environment each time it changes, its entries and pages
+ * opening in the sidebar with no link to the standalone docs pages. Tiles, in
+ * the docs and the brain editor alike, are filled in the declared target's
+ * tile colors where its theme gives them.
  */
 export function App() {
   const { target } = useEditorSessionState();
