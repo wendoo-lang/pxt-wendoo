@@ -11,16 +11,17 @@ name: Publish simulator extension
 # registers it. Each run reports the new gh-pages commit sha for the
 # registration in its job summary.
 
+# Manual only: a publish mints the sha a target's registration pins, so
+# it happens when someone decides it should, never on a push. The branch
+# input names the branch to build and publish.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "makecode/simx/**"
-      - "packages/**"
-      - "external/wendoo-lang"
-      - ".github/workflows/publish-simx.yml"
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build and publish to gh-pages"
+        required: false
+        type: string
+        default: main
 
 permissions:
   contents: write
@@ -40,7 +41,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.branch }}
           submodules: recursive
+
+      # In a dispatched run github.sha names the branch the workflow file
+      # came from, not the branch checked out, so the source commit is
+      # read from the checkout.
+      - name: Record the source commit
+        run: echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -69,23 +77,23 @@ jobs:
           fi
 
       - name: Publish the artifact to gh-pages
-        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: makecode/simx/wendoo/dist
           publish_branch: gh-pages
-          commit_message: "Publish ${{ github.sha }}"
+          commit_message: "Publish ${{ inputs.branch }} at ${{ env.SOURCE_SHA }}"
 
       # The sha a target's approvedRepoLib registration pins is the
       # gh-pages commit, not the main commit that produced it.
       - name: Report the published commit
-        if: github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           SHA="$(git ls-remote origin refs/heads/gh-pages | cut -f1)"
           {
             echo "## Published"
+            echo
+            echo "Source: \`${{ inputs.branch }}\` at \`$SOURCE_SHA\`"
             echo
             echo "gh-pages commit: \`$SHA\`"
             echo
