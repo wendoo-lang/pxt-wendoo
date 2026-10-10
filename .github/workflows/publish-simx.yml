@@ -1,0 +1,97 @@
+name: Publish simulator extension
+
+# Builds the merged Wendoo simulator-extension artifact (the editor tab at
+# the artifact root and the simulator frame at simx/index.html) and
+# publishes it to the gh-pages branch. MakeCode serves a simulator
+# extension from this repository at the commit named by the `sha` of its
+# approvedRepoLib registration, resolving `index`, `editor.index` and
+# `editor.icon` against that commit's root, so the artifact's dist folder
+# is published AS the branch root, and the gh-pages history is never
+# rewritten: a pinned sha must stay reachable for as long as a target
+# registers it. Each run reports the new gh-pages commit sha for the
+# registration in its job summary.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "makecode/simx/**"
+      - "packages/**"
+      - "external/wendoo-lang"
+      - ".github/workflows/publish-simx.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One publish at a time, never cancelled: a cancelled run would leave the
+# branch at a commit no registration should pin.
+concurrency:
+  group: publish-simx
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, check, test and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
+
+      # The root install script installs packages/ and every simx webapp;
+      # the webapp's own prebuild installs and builds the submodule's
+      # packages it depends on.
+      - name: Install
+        run: npm install
+
+      # The runner sets CI, which makes the loop run each webapp's
+      # check:only, then its two-pass production build, then its tests.
+      - name: Check, build and test the simulator extension
+        run: npm run build --prefix makecode/simx
+
+      - name: Assert a clean tree
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "The build modified tracked files or left new ones behind:"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Publish the artifact to gh-pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: makecode/simx/wendoo/dist
+          publish_branch: gh-pages
+          commit_message: "Publish ${{ github.sha }}"
+
+      # The sha a target's approvedRepoLib registration pins is the
+      # gh-pages commit, not the main commit that produced it.
+      - name: Report the published commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          SHA="$(git ls-remote origin refs/heads/gh-pages | cut -f1)"
+          {
+            echo "## Published"
+            echo
+            echo "gh-pages commit: \`$SHA\`"
+            echo
+            echo "Registration \`sha\` for \`wendoo-lang/pxt-wendoo\` in a target's targetconfig.json:"
+            echo
+            echo '```json'
+            echo "\"sha\": \"$SHA\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
