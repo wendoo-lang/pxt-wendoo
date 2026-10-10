@@ -33,6 +33,19 @@ import { tabBinding } from "./tab-binding.js";
 
 const CATALOG = '{"packs":[]}';
 
+/** A catalog whose one pack declares a sensor and an actuator, as the program posts it once it runs. */
+const PACK_CATALOG = JSON.stringify({
+  packs: [
+    {
+      name: "walk",
+      tiles: [
+        { name: "sensor.walk.pressed", kind: "sensor", returns: "boolean" },
+        { name: "actuator.walk.step", kind: "actuator" },
+      ],
+    },
+  ],
+});
+
 /** How long a wait in these specs lasts before it fails, in milliseconds. */
 const WAIT_MS = 2000;
 
@@ -71,6 +84,26 @@ function authorBrain(brains: BrainsStore, name: string): string {
   const edited = brains.getBrain(id);
   assert.ok(edited);
   authorCompilingRule(brains.getSnapshot().environment, edited);
+  brains.applyBrain(edited);
+  return id;
+}
+
+/**
+ * Adds a brain named `name` to `brains` whose one rule reads the pack sensor
+ * `sensor` and runs the pack actuator `actuator`, returning its id. Throws
+ * when the store's environment does not bind both tiles.
+ */
+function authorPackBrain(brains: BrainsStore, name: string, sensor: string, actuator: string): string {
+  const id = brains.addBrain(name);
+  const edited = brains.getBrain(id);
+  assert.ok(edited);
+  const rule = (edited.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+  const catalogs = brains.getSnapshot().environment.tileCatalogs();
+  const when = catalogs.map((catalog) => catalog.get(mkSensorTileId(sensor))).find((tile) => tile !== undefined);
+  const act = catalogs.map((catalog) => catalog.get(mkActuatorTileId(actuator))).find((tile) => tile !== undefined);
+  assert.ok(when && act, "the pack's tiles are bound");
+  rule.when().appendTile(when);
+  rule.do().appendTile(act);
   brains.applyBrain(edited);
   return id;
 }
@@ -132,8 +165,15 @@ describe("brains sync between the editor tab and the column frame over a brokere
     return tab;
   }
 
-  /** Starts a column frame over `host`'s project, as MakeCode does on every spawn; the program posts the catalog. */
-  function startColumn(host: FakeProjfsHost): ColumnFrame {
+  /** Starts a column frame over `host`'s project, as MakeCode does on every spawn; the program posts `catalog`. */
+  function startColumn(host: FakeProjfsHost, catalog = CATALOG): ColumnFrame {
+    const column = spawnColumn(host);
+    column.frame.programPosts(catalog);
+    return column;
+  }
+
+  /** Starts a column frame over `host`'s project beside a program that has not run, so nothing has posted a catalog. */
+  function spawnColumn(host: FakeProjfsHost): ColumnFrame {
     const frame = new FakePortFrame();
     const files = host.client();
     clients.push(files);
@@ -148,7 +188,6 @@ describe("brains sync between the editor tab and the column frame over a brokere
       log: silentLog,
       target: "arcade",
     });
-    frame.programPosts(CATALOG);
     const column = { frame, bridge };
     columns.push(column);
     return column;
@@ -288,6 +327,45 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assert.equal(brains.get(kept)?.name, "Chaser Two");
     assert.equal(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(kept)?.name, "Chaser Two");
     assert.equal(tab.store.getSnapshot().status, "connected");
+  });
+
+  it("runs the project's program at every start once the catalog arrives, for a tab that connected before the program first ran", async () => {
+    const host = new FakeProjfsHost();
+    const authoring = openTab("project-a");
+    const running = startColumn(host, PACK_CATALOG);
+    broker(running, authoring);
+    await brainsUntil(authoring, (state) => state.reconciled, "the authoring editor to reconcile");
+    const id = authorPackBrain(authoring.brains, "Walker", "sensor.walk.pressed", "actuator.walk.step");
+    await saved(host, authoring, "the brain to be saved");
+    const project = authoring.brains.getSnapshot().brains.get(id)?.compiled;
+    assert.ok(project);
+    authoring.store.stop();
+    tabs.splice(tabs.indexOf(authoring), 1);
+    running.bridge.dispose();
+    columns.splice(columns.indexOf(running), 1);
+
+    const reopened = openTab("project-a");
+    const stopped = spawnColumn(host);
+    broker(stopped, reopened);
+    await brainsUntil(
+      reopened,
+      (state) => state.reconciled && state.brains.has(id) && state.pending.size === 0,
+      "the reopened editor to reconcile"
+    );
+    stopped.frame.programPings();
+    stopped.frame.programPosts(PACK_CATALOG);
+    await storeUntil(reopened, (state) => state.catalogText !== undefined, "the catalog to arrive");
+    await brainsUntil(
+      reopened,
+      (state) => state.pending.size === 0 && state.pushesInFlight === 0,
+      "the reopened editor to settle"
+    );
+    stopped.frame.programPings();
+
+    assert.deepEqual(reopened.brains.getSnapshot().brains.get(id)?.compiled, project);
+    assert.deepEqual(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id)?.bytecode, project.bytecode);
+    const restarted = postedProgramUpdates(stopped.frame.posted).filter((update) => update.documentId === id);
+    assert.deepEqual(restarted.at(-1)?.bytecode, project.bytecode);
   });
 
   it("keeps the brains of two tab and column pairs, for two projects, apart", async () => {

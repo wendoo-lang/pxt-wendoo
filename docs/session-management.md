@@ -422,10 +422,12 @@ serves exactly what the last one wrote.
   the drain. The moment a push arrives, before it joins a drain, the simx
   posts a program update to the running program over the extension
   channel (see "The extension channel"): a write carrying a compiled form
-  whose source hash differs from the last update the simx posted for that
-  brain posts that compiled form; a write carrying the compiled form it
-  posted last (a source edit that does not compile pushes the last good
-  compiled form beside it) or carrying none posts nothing; a removal
+  other than the last update the simx posted for that brain -- compiled
+  from other source, or the same source compiled to other bytes, as the
+  editor's staleness rule pushes -- posts that compiled form; a write
+  carrying the compiled form it posted last (a source edit that does not
+  compile pushes the last good compiled form beside it) or carrying none
+  posts nothing; a removal
   posts an update carrying no program. The post never waits on projfs:
   the game takes a save at the channel's speed while the project write
   trails at the drain's pace, the same bytes at two speeds. The simx

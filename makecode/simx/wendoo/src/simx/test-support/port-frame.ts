@@ -42,6 +42,11 @@ export class FakePortFrame implements SimxPortFrame {
     this.deliver({ data: packet, origin: PARENT_ORIGIN, ports: [] });
   }
 
+  /** MakeCode delivering the ping the running program posts when it starts: a frame with an empty payload. */
+  programPings(): void {
+    this.programPosts("");
+  }
+
   /** MakeCode brokering `port` to this frame, posting it from `origin`. */
   brokerPort(port: MakeCodeMessagePort, origin = PARENT_ORIGIN): void {
     this.deliver({ data: { type: SIMXEDITOR_PORT_MESSAGE_TYPE, key: SIMX_CHANNEL }, origin, ports: [port] });

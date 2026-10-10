@@ -67,6 +67,24 @@ describe("live programs", () => {
     assert.equal(posted.length, 1);
   });
 
+  it("posts a push carrying the same source compiled to other bytes than it posted last", () => {
+    const { live, posted } = recording();
+
+    live.push(write(A, "Chaser", "00000001", [1, 2, 3]));
+    live.push(write(A, "Chaser", "00000001", [1, 2, 3, 4]));
+    live.push(write(A, "Chaser", "00000001", [1, 2, 4, 4]));
+    live.push(write(A, "Chaser", "00000001", [1, 2, 4, 4]));
+
+    assert.deepEqual(
+      posted.map((update) => [...update.bytecode]),
+      [
+        [1, 2, 3],
+        [1, 2, 3, 4],
+        [1, 2, 4, 4],
+      ]
+    );
+  });
+
   it("posts nothing for a push carrying no compiled form", () => {
     const { live, posted } = recording();
 

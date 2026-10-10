@@ -7,8 +7,10 @@ import type { ProgramUpdate } from "./sim-channel.js";
  * moment the push arrives.
  *
  * - A write carrying a compiled form posts it, unless the last update posted
- *   for that program carried a compiled form of the same source hash: a push
- *   whose source changed but whose compiled form did not posts nothing.
+ *   for that program carried the same compiled form -- the same program bytes
+ *   compiled from the same source hash: a push whose source changed but whose
+ *   compiled form did not posts nothing, and a push of the same source
+ *   compiled to other bytes posts them.
  * - A write carrying no compiled form posts nothing.
  * - A removal posts an update carrying no program, unless the last update
  *   posted for that program was a removal.
@@ -42,7 +44,7 @@ export class LivePrograms {
       update = { documentId: id, name, sourceHash: compiled.sourceHash, bytecode: compiled.bytecode };
     }
     const last = this._posted.get(update.documentId);
-    if (last !== undefined && last.sourceHash === update.sourceHash) return;
+    if (last !== undefined && sameProgram(last, update)) return;
     this._posted.set(update.documentId, update);
     this._post(update);
   }
@@ -53,4 +55,10 @@ export class LivePrograms {
       this._post(update);
     }
   }
+}
+
+/** Whether `a` and `b` carry the same program: the same bytes, compiled from the same source hash. */
+function sameProgram(a: ProgramUpdate, b: ProgramUpdate): boolean {
+  if (a.sourceHash !== b.sourceHash || a.bytecode.length !== b.bytecode.length) return false;
+  return a.bytecode.every((byte, index) => byte === b.bytecode[index]);
 }
