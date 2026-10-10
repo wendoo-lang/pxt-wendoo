@@ -62,13 +62,25 @@ export {
   MakeCodeManifestErrorCode,
   MakeCodeManifestProblemCode,
 } from "./makecode-manifest.js";
-export type { MakeCodeMessagePort, MakeCodePortEditorSession } from "./makecode-port-editor-session.js";
-export { createMakeCodePortEditorSession, messagePortSessionPort } from "./makecode-port-editor-session.js";
+export type {
+  MakeCodeHeartbeatOptions,
+  MakeCodeMessagePort,
+  MakeCodePortEditorSession,
+  MakeCodePortEditorSessionOptions,
+} from "./makecode-port-editor-session.js";
+export {
+  createMakeCodePortEditorSession,
+  MAKECODE_HEARTBEAT_DEADLINE_MS,
+  MAKECODE_HEARTBEAT_INTERVAL_MS,
+  messagePortSessionPort,
+} from "./makecode-port-editor-session.js";
 export type { MakeCodeProjectInfo, MakeCodeProjectInfoMessage } from "./makecode-project-info.js";
 export type {
   MakeCodeCatalogMessage,
   MakeCodeCatalogPayload,
   MakeCodeHelloMessage,
+  MakeCodePingMessage,
+  MakeCodePongMessage,
   MakeCodeSession,
   MakeCodeSessionDeclaration,
   MakeCodeSessionMessage,

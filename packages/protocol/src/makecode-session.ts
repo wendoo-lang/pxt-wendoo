@@ -81,6 +81,24 @@ export interface MakeCodeCatalogMessage {
 }
 
 /**
+ * Liveness probe either party of an established makecode session may send.
+ * The peer answers it with a {@link MakeCodePongMessage} carrying the same
+ * `id`.
+ */
+export interface MakeCodePingMessage {
+  type: "makecode:ping";
+  /** The probe's id, minted by its sender and carried back by the answer. */
+  id: string;
+}
+
+/** Answer to a {@link MakeCodePingMessage}, carrying the ping's `id`. */
+export interface MakeCodePongMessage {
+  type: "makecode:pong";
+  /** The `id` of the ping this answers. */
+  id: string;
+}
+
+/**
  * Messages either party of a makecode session sends to the other. Every
  * message type is named `makecode:<name>`, and the set grows additively
  * under {@link MAKECODE_SESSION_PROTOCOL_VERSION}: a party ignores every
@@ -94,7 +112,9 @@ export type MakeCodeSessionMessage =
   | MakeCodeBrainsRequestMessage
   | MakeCodeBrainsReplyMessage
   | MakeCodeManifestRequestMessage
-  | MakeCodeManifestReplyMessage;
+  | MakeCodeManifestReplyMessage
+  | MakeCodePingMessage
+  | MakeCodePongMessage;
 
 /**
  * Transport carrying makecode-session messages between this party and its
@@ -213,9 +233,20 @@ export interface MakeCodeSession {
    */
   onManifestRequest(listener: (request: MakeCodeManifestRequest) => void): () => void;
   /**
+   * Probe the peer's liveness: sends a `makecode:ping` under a freshly
+   * minted id and resolves once the peer's `makecode:pong` carrying that id
+   * arrives. The session sets no deadline: a peer that does not answer
+   * leaves the ping pending, so race it against a deadline of your own. A
+   * ping pending when the session is disposed, and one made afterwards,
+   * never settles.
+   */
+  ping(): Promise<void>;
+  /**
    * Detach from the port. Every brains and manifest request still awaiting
    * its reply rejects with its family's `CLOSED`, as does every request made
-   * afterwards; an answer to a request from the peer is no longer sent.
+   * afterwards; an answer to a request from the peer is no longer sent, nor
+   * is the answer to a ping. Pings still awaiting their answer are dropped
+   * unsettled.
    */
   dispose(): void;
 }
@@ -227,7 +258,8 @@ export interface MakeCodeSession {
  * its version and declared target are recorded on the session. Rejects with `PeerSessionError` carrying
  * `PROTOCOL_VERSION_NEWER` when the peer declares a newer version. A
  * session covers one connection of the peer; open a new session when the
- * peer reconnects.
+ * peer reconnects. Until it is disposed, the session answers every
+ * `makecode:ping` the peer sends with the `makecode:pong` carrying its id.
  */
 export async function connectMakeCodeSession(options: MakeCodeSessionOptions): Promise<MakeCodeSession> {
   const { port, target } = options;
@@ -273,6 +305,8 @@ class EstablishedSession implements MakeCodeSession {
   /** Project facts received while no project-info listener was attached, in arrival order. */
   private readonly _bufferedProjectInfo: MakeCodeProjectInfo[] = [];
   private readonly _pending = new Map<string, PendingRequest>();
+  /** Resolvers of the pings awaiting their pong, by ping id. */
+  private readonly _pings = new Map<string, () => void>();
   private readonly _requestListeners = new Set<(request: MakeCodeBrainsRequest) => void>();
   /** Requests from the peer received while no request listener was attached, in arrival order. */
   private readonly _bufferedRequests: MakeCodeBrainsRequest[] = [];
@@ -280,12 +314,12 @@ class EstablishedSession implements MakeCodeSession {
   /** Manifest requests from the peer received while no manifest listener was attached, in arrival order. */
   private readonly _bufferedManifestRequests: MakeCodeManifestRequest[] = [];
   /**
-   * Prefix of every request id this session mints, random per session, so a
-   * late reply to an earlier session's request on the same connection never
-   * matches a request of this one.
+   * Prefix of every request and ping id this session mints, random per
+   * session, so a late reply to an earlier session's request or ping on the
+   * same connection never matches one of this one.
    */
-  private readonly _requestPrefix = Math.random().toString(36).slice(2, 10);
-  private _requestCount = 0;
+  private readonly _idPrefix = Math.random().toString(36).slice(2, 10);
+  private _idCount = 0;
   private _disposed = false;
 
   constructor(session: PeerSession<SessionTraffic, MakeCodeSessionDeclaration>) {
@@ -375,11 +409,21 @@ class EstablishedSession implements MakeCodeSession {
     };
   }
 
+  ping(): Promise<void> {
+    if (this._disposed) return new Promise(() => {});
+    const id = this.mintId();
+    return new Promise((resolve) => {
+      this._pings.set(id, resolve);
+      this._session.postMessage({ type: "makecode:ping", id });
+    });
+  }
+
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
     this._unsubscribe();
     this._session.dispose();
+    this._pings.clear();
     const pending = [...this._pending.values()];
     this._pending.clear();
     for (const request of pending) {
@@ -401,7 +445,7 @@ class EstablishedSession implements MakeCodeSession {
       ? "makecode:manifestError"
       : "makecode:brainsError";
     if (this._disposed) return Promise.reject(closedError(errorType));
-    const id = `${this._requestPrefix}-${++this._requestCount}`;
+    const id = this.mintId();
     return new Promise((resolve, reject) => {
       this._pending.set(id, {
         replyType,
@@ -415,12 +459,30 @@ class EstablishedSession implements MakeCodeSession {
     });
   }
 
+  /** A fresh request or ping id: the session's random prefix and a count no earlier id of this session used. */
+  private mintId(): string {
+    return `${this._idPrefix}-${++this._idCount}`;
+  }
+
   /**
-   * Routes one message from the peer: catalogs, asset snapshots and project
+   * Routes one message from the peer: answers a ping with its pong, settles
+   * the ping a pong answers, routes catalogs, asset snapshots and project
    * facts to their listeners, brains and manifest requests to their
-   * family's request listeners, replies to their requests; drops the rest.
+   * family's request listeners, and replies to their requests; drops the
+   * rest.
    */
   private receive(message: SessionTraffic): void {
+    if (message.type === "makecode:ping") {
+      this._session.postMessage({ type: "makecode:pong", id: message.id });
+      return;
+    }
+    if (message.type === "makecode:pong") {
+      const answered = this._pings.get(message.id);
+      if (answered === undefined) return;
+      this._pings.delete(message.id);
+      answered();
+      return;
+    }
     if (message.type === "makecode:catalog") {
       const { content } = message.payload;
       if (this._catalogListeners.size === 0) {

@@ -27,8 +27,9 @@ session wire surface:
 - the wire messages: `makecode:hello`, `makecode:catalog`, the
   `makecode:brains*` payload family (see "The brains payload family",
   below), the `makecode:manifest*` payload family (see "The manifest
-  payload family", below), and `makecode:assets` (see "The assets
-  publication", below);
+  payload family", below), `makecode:assets` (see "The assets
+  publication", below), and the liveness pair `makecode:ping` /
+  `makecode:pong` (see "Liveness in this lane", below);
 - the hello's declaration, `MakeCodeSessionDeclaration` (see "The
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
@@ -39,7 +40,8 @@ session wire surface:
   id manifest (`readManifest`, `writeManifest`) and serves them
   (`onBrainsRequest`, `onManifestRequest`), and both publishes and
   receives the catalog (`publishCatalog`, `onCatalog`) and the asset
-  snapshot (`publishAssets`, `onAssets`);
+  snapshot (`publishAssets`, `onAssets`), and both probes its peer's
+  liveness (`ping`) and answers the peer's probes;
 - `createMakeCodePortEditorSession`, the editor role's session object
   over the ports the page hosting the editor tab brokers, with
   `messagePortSessionPort` wrapping a `MessagePort` as a session port
@@ -198,9 +200,11 @@ requests, and drops everything else).
   `folder:error` shape. The requesting session mints ids with a random
   per-session prefix, so a late reply to an earlier handshake's request
   on the same port never matches a later request. A request settles on its reply, or
-  rejects with `MAKECODE_BRAINS_CLOSED` when its handshake ends; there
-  is no timeout, and a peer that never answers leaves requests pending
-  until the handshake ends.
+  rejects with `MAKECODE_BRAINS_CLOSED` when its handshake ends; the
+  kind sets no timeout, and a peer that never answers leaves requests
+  pending until the handshake ends -- which, in the editor, the
+  heartbeat brings about once the peer leaves two pings in a row
+  unanswered (see "Liveness in this lane", below).
 - `makecode:brainsList` (editor -> project): answered by
   `makecode:brainsListReply` carrying `{ brains: [{ id, name,
   sourceHash, compiledSourceHash? }] }` -- every brain the project
@@ -578,11 +582,46 @@ namespace wendooIds {
 ## Liveness in this lane
 
 A brokered `MessagePort` gives no close event and the kind has no
-goodbye, so there is no heartbeat: a column frame that goes away
-without MakeCode brokering a new port reads `connected` until MakeCode
-re-brokers. A push to a frame that is gone goes unanswered, counts as
-failed after `PUSH_LIVENESS_DEADLINE_MS` (30 s), and stays pending; the
-next brokered port's handshake reconciles and flushes it.
+goodbye, so the editor tab learns that the column frame is gone by
+probing it. The kind carries a liveness pair, on the bridge protocol's
+`control:ping` / `control:pong` shape:
+
+- `makecode:ping` carries an `id`, minted with the sending session's
+  random prefix; `makecode:pong` answers it carrying the same `id`.
+  Either party may ping, and every established session answers each
+  ping it receives until it is disposed, so the column frame answers
+  through the kind's shared session code with nothing of its own.
+- `ping()` on the kind's session sends a ping and resolves when its pong
+  arrives. The session sets no deadline of its own: a ping pending when
+  the session is disposed, and one made afterwards, never settles, and
+  the caller races it against its own deadline.
+- THE HEARTBEAT: the editor session object pings the column frame over
+  each established handshake, one ping outstanding at a time and two
+  after a miss -- `MAKECODE_HEARTBEAT_INTERVAL_MS` (5 s) after the
+  handshake completes and after each pong. A ping unanswered for
+  `MAKECODE_HEARTBEAT_DEADLINE_MS` (10 s) is a MISS: a follow-up ping
+  goes out at once under a fresh deadline, the missed ping still
+  awaiting its pong, and a pong to either one clears the miss and the
+  heartbeat carries on at the interval. A stall of either frame -- a
+  busy thread, a frozen page, a sleeping machine -- therefore costs at
+  most one miss: the follow-up goes out after the stall and is answered
+  in milliseconds.
+- TWO MISSES IN A ROW end the handshake: a follow-up ping unanswered
+  for its deadline ends it exactly as a port replacement does -- its
+  brains and manifest requests reject with their family's `CLOSED`, the
+  status turns `disconnected` with no error code, and the session stays
+  started. A column frame that stops answering is detected within the
+  interval plus twice the deadline (25 s at the defaults). No ping goes
+  out before a handshake completes, a pong arriving after the handshake
+  ended changes nothing, and `stop()` and every port replacement end the
+  heartbeat with the handshake.
+- RECOVERY is always a new port: MakeCode brokers one whenever a column
+  frame finishes loading, which a respawned frame does on the next
+  simulator run. The tab cannot ask for one. A push to a frame that is
+  gone stays pending through the disconnection; the next brokered
+  port's handshake reconciles and flushes it.
+- The `MAKECODE_HEARTBEAT_*` values are defaults; the session object's
+  `heartbeat` option sets others.
 
 ## The editor session object
 
@@ -597,10 +636,13 @@ MakeCode brokers ports, and nothing in it keys on a session id.
   code and writing nothing to storage. Every brains channel therefore
   belongs to the same project, so brains and pends survive every port.
 - STATUS BY PORT LIVENESS: the session is `connected` once the makecode
-  handshake over the current port has completed, and `disconnected`
-  while no port is attached, while the current port's handshake is
-  pending, after it was rejected, and after `stop()`. Every change is
-  published at once, with no debouncing.
+  handshake over the current port has completed, until the column frame
+  leaves two pings in a row unanswered past the heartbeat deadline --
+  detected within the interval plus twice the deadline (see "Liveness
+  in this lane", above) -- the port is replaced, or `stop()`; and
+  `disconnected` while no port is attached, while the current port's
+  handshake is pending, after it was rejected or ended, and after
+  `stop()`. Every change is published at once, with no debouncing.
 - PORTS: `attachPort` makes a port the session's port, replacing the
   current one: the current handshake ends and stops reading its port,
   and while the session is started a new handshake opens over the new
@@ -842,9 +884,11 @@ channel, then pushes each edit as it is made:
   push carries the last good compiled form, never that compile's
   program. A push records its brain pending as it goes out, and the
   project's acknowledgment of it clears the pend only while it carries
-  the brain's latest state, however late it arrives. A push unanswered
+  the brain's latest state, however late it arrives. A push to a column
+  frame that has gone rejects with `CLOSED` once the heartbeat ends its
+  handshake, its pend standing; a push the live frame leaves unanswered
   for `PUSH_LIVENESS_DEADLINE_MS` (30 s) counts as failed, its pend
-  standing. A failed push of a brain's latest state is retried after
+  standing too. A failed push of a brain's latest state is retried after
   each of `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then
   every 8 s for as long as the push keeps failing, while the handshake
   stays reconciled and connected and the brain is not damaged; a newer

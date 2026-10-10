@@ -8,8 +8,12 @@ import { connectMakeCodeSession } from "./makecode-session.js";
 
 /** Where a {@link CounterpartSession} reports what its handshake brings. */
 export interface CounterpartHandlers {
-  /** Receives the peer's declared target once the handshake completes, then the handshake's brains channel. */
-  established(target: string | undefined, channel: MakeCodeBrainsChannel): void;
+  /**
+   * Receives, once the handshake completes, the peer's declared target, the
+   * handshake's brains channel, and its liveness probe: `ping` resolves when
+   * the counterpart answers, and never settles once the handshake is closed.
+   */
+  established(target: string | undefined, channel: MakeCodeBrainsChannel, ping: () => Promise<void>): void;
   /** Receives each catalog the counterpart publishes. */
   catalog(content: string): void;
   /** Receives each asset snapshot the counterpart publishes. */
@@ -23,9 +27,9 @@ export interface CounterpartHandlers {
 /**
  * The editor's makecode handshake with the counterpart over one port: sends
  * the editor's hello at once, then reports the established session's brains
- * channel and the catalogs, asset snapshots and project facts the
- * counterpart publishes to `handlers`. Nothing is reported once it is
- * closed.
+ * channel and liveness probe and the catalogs, asset snapshots and project
+ * facts the counterpart publishes to `handlers`. Nothing is reported once it
+ * is closed.
  */
 export class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -57,13 +61,17 @@ export class CounterpartSession {
           return;
         }
         this._session = session;
-        handlers.established(session.peerTarget, {
-          listBrains: () => session.listBrains(),
-          pullBrains: (ids) => session.pullBrains(ids),
-          pushBrain: (push) => session.pushBrain(push),
-          readManifest: () => session.readManifest(),
-          writeManifest: (manifest) => session.writeManifest(manifest),
-        });
+        handlers.established(
+          session.peerTarget,
+          {
+            listBrains: () => session.listBrains(),
+            pullBrains: (ids) => session.pullBrains(ids),
+            pushBrain: (push) => session.pushBrain(push),
+            readManifest: () => session.readManifest(),
+            writeManifest: (manifest) => session.writeManifest(manifest),
+          },
+          () => session.ping()
+        );
         session.onCatalog((content) => {
           handlers.catalog(content);
         });

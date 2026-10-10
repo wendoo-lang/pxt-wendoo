@@ -10,19 +10,70 @@ import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
 
 /**
+ * How long, in milliseconds, a {@link MakeCodePortEditorSession} waits after
+ * a handshake completes, and after each answer to its liveness ping, before
+ * pinging the counterpart again, unless its options give another interval.
+ */
+export const MAKECODE_HEARTBEAT_INTERVAL_MS = 5000;
+
+/**
+ * How long, in milliseconds, a {@link MakeCodePortEditorSession} waits for
+ * the answer to a liveness ping before counting it a miss, unless its
+ * options give another deadline. A miss sends a follow-up ping at once; a
+ * second miss in a row ends the handshake.
+ */
+export const MAKECODE_HEARTBEAT_DEADLINE_MS = 10_000;
+
+/** Timing of a {@link MakeCodePortEditorSession}'s liveness pings. */
+export interface MakeCodeHeartbeatOptions {
+  /** Milliseconds from a completed handshake, and from each ping's answer, to the next ping. */
+  intervalMs: number;
+  /**
+   * Milliseconds a ping may go unanswered before it counts as a miss. Two
+   * misses in a row end the handshake.
+   */
+  deadlineMs: number;
+}
+
+/** Options for {@link createMakeCodePortEditorSession}. */
+export interface MakeCodePortEditorSessionOptions {
+  /**
+   * Timing of the liveness pings. Defaults to
+   * {@link MAKECODE_HEARTBEAT_INTERVAL_MS} and
+   * {@link MAKECODE_HEARTBEAT_DEADLINE_MS}.
+   */
+  heartbeat?: MakeCodeHeartbeatOptions;
+}
+
+/**
  * The editor's makecode session with the MakeCode project over ports the
  * page hosting the editor supplies: one session for the life of the editor's
  * frame. Its status is:
  *
  * - `connected` once the makecode handshake over the current port has
- *   completed;
+ *   completed, until the counterpart leaves two liveness pings in a row
+ *   unanswered past the heartbeat deadline, the port is replaced, or
+ *   {@link MakeCodeEditorSession.stop} is called. A counterpart that stops
+ *   answering is detected within the heartbeat interval plus twice the
+ *   deadline;
  * - `disconnected` while no port is attached, while the current port's
- *   handshake is pending, after it was rejected, and after
+ *   handshake is pending, after it was rejected or ended, and after
  *   {@link MakeCodeEditorSession.stop}.
  *
  * Every port attached opens a fresh handshake, replacing the previous
  * port's: the catalogs, asset snapshots, project facts and brains channel
  * delivered come from the current handshake only.
+ * While a handshake is established the session pings the counterpart, one
+ * ping outstanding at a time, two after a miss: the first a heartbeat
+ * interval after the handshake completes, each next one an interval after
+ * the previous one is answered. A ping unanswered for the heartbeat deadline
+ * is a miss, and a follow-up ping goes out at once under a fresh deadline,
+ * the missed ping still awaiting its answer; a pong to either one clears the
+ * miss. A follow-up ping unanswered for its deadline ends the handshake as
+ * replacing its port does -- its brains channel's requests reject with their
+ * family's `CLOSED`, the status turns `disconnected` with the error code
+ * unchanged -- and the session stays started, so the next port attached
+ * opens the next handshake.
  * The one error code is `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`, for a
  * counterpart hello declaring a newer version; it stays until a later
  * handshake completes, or until {@link MakeCodeEditorSession.start} starts
@@ -42,10 +93,15 @@ export interface MakeCodePortEditorSession extends MakeCodeEditorSession {
 /**
  * Create a {@link MakeCodePortEditorSession}, with no port attached and not
  * started: it handshakes over the ports attached once
- * {@link MakeCodeEditorSession.start} is called.
+ * {@link MakeCodeEditorSession.start} is called, and pings each established
+ * handshake's counterpart on the timing `options.heartbeat` gives.
  */
-export function createMakeCodePortEditorSession(): MakeCodePortEditorSession {
-  return new PortEditorSession();
+export function createMakeCodePortEditorSession(
+  options: MakeCodePortEditorSessionOptions = {}
+): MakeCodePortEditorSession {
+  return new PortEditorSession(
+    options.heartbeat ?? { intervalMs: MAKECODE_HEARTBEAT_INTERVAL_MS, deadlineMs: MAKECODE_HEARTBEAT_DEADLINE_MS }
+  );
 }
 
 /** The parts of a `MessagePort` {@link messagePortSessionPort} uses. */
@@ -80,6 +136,7 @@ export function messagePortSessionPort(port: MakeCodeMessagePort): MakeCodeSessi
 }
 
 class PortEditorSession implements MakeCodePortEditorSession {
+  private readonly _heartbeat: MakeCodeHeartbeatOptions;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
@@ -96,7 +153,25 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private _errorCode: MakeCodeEditorSessionErrorCode | undefined;
   /** The target the counterpart declared in the latest completed handshake. */
   private _target: string | undefined;
+  /**
+   * The heartbeat's one pending timer while a handshake is established: the
+   * wait before the next ping, or the current ping's deadline.
+   */
+  private _heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The heartbeat's generation, advanced when a round opens with its
+   * interval ping and again when the first pong to any ping of the round
+   * closes it; a round's follow-up ping after a miss joins it. A pong or
+   * deadline of a round whose generation is no longer the latest does
+   * nothing.
+   */
+  private _heartbeatRound = 0;
   private _state: MakeCodeEditorSessionState = this.readState();
+
+  /** @param heartbeat - Timing of the liveness pings. */
+  constructor(heartbeat: MakeCodeHeartbeatOptions) {
+    this._heartbeat = heartbeat;
+  }
 
   get state(): MakeCodeEditorSessionState {
     return this._state;
@@ -163,11 +238,12 @@ class PortEditorSession implements MakeCodePortEditorSession {
     const port = this._port;
     if (port === undefined) return;
     this._port = undefined;
-    this._counterpart = new CounterpartSession(port, {
-      established: (target, channel) => {
+    const counterpart = new CounterpartSession(port, {
+      established: (target, channel, ping) => {
         this._established = true;
         this._errorCode = undefined;
         this._target = target;
+        this.awaitNextPing(counterpart, ping);
         this.update();
         for (const listener of this._brainsChannelListeners) listener(channel);
       },
@@ -185,10 +261,54 @@ class PortEditorSession implements MakeCodePortEditorSession {
         this.update();
       },
     });
+    this._counterpart = counterpart;
   }
 
-  /** Ends the current handshake, if any, and lets the attached port go. */
+  /** Whether `counterpart` is the current handshake and has completed. */
+  private isCurrent(counterpart: CounterpartSession): boolean {
+    return this._counterpart === counterpart && this._established;
+  }
+
+  /** Opens a new heartbeat round, pinging the established `counterpart` with `ping`, once the heartbeat interval has passed. */
+  private awaitNextPing(counterpart: CounterpartSession, ping: () => Promise<void>): void {
+    this._heartbeatTimer = setTimeout(() => {
+      this.probe(counterpart, ping, ++this._heartbeatRound, false);
+    }, this._heartbeat.intervalMs);
+  }
+
+  /**
+   * Pings the established `counterpart` with `ping` in heartbeat round
+   * `round`. The first answer to any ping of the round, while the handshake
+   * is current and the round the latest, closes the round and schedules the
+   * next one. No answer within the heartbeat deadline is a miss: after the
+   * round's first ping, a follow-up ping goes out at once; after the
+   * follow-up, the handshake ends and the state is published.
+   *
+   * @param afterMiss - Whether this is the follow-up ping of a round whose first ping missed.
+   */
+  private probe(counterpart: CounterpartSession, ping: () => Promise<void>, round: number, afterMiss: boolean): void {
+    const latest = (): boolean => this.isCurrent(counterpart) && this._heartbeatRound === round;
+    this._heartbeatTimer = setTimeout(() => {
+      if (!latest()) return;
+      if (!afterMiss) {
+        this.probe(counterpart, ping, round, true);
+        return;
+      }
+      this.leave();
+      this.update();
+    }, this._heartbeat.deadlineMs);
+    void ping().then(() => {
+      if (!latest()) return;
+      this._heartbeatRound += 1;
+      clearTimeout(this._heartbeatTimer);
+      this.awaitNextPing(counterpart, ping);
+    });
+  }
+
+  /** Ends the current handshake, if any, stops its heartbeat, and lets the attached port go. */
   private leave(): void {
+    clearTimeout(this._heartbeatTimer);
+    this._heartbeatTimer = undefined;
     this._counterpart?.close();
     this._counterpart = undefined;
     this._established = false;

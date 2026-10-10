@@ -202,3 +202,103 @@ describe("makecode session catalog", () => {
     session.dispose();
   });
 });
+
+describe("makecode session liveness", () => {
+  /**
+   * A session over one end of a JSON wire whose other end the spec drives by
+   * hand: the hello is answered, and every message the session sends after
+   * it is recorded.
+   */
+  async function handDriven(): Promise<{
+    session: Awaited<ReturnType<typeof connectMakeCodeSession>>;
+    send(message: MakeCodeSessionMessage): void;
+    sent: MakeCodeSessionMessage[];
+  }> {
+    const [sessionPort, handPort] = linkedPorts();
+    const sent: MakeCodeSessionMessage[] = [];
+    handPort.onMessage((message) => {
+      if (message.type === "makecode:hello") return;
+      sent.push(message);
+    });
+    handPort.postMessage({ type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } });
+    const session = await connectMakeCodeSession({ port: sessionPort });
+    return { session, send: (message) => handPort.postMessage(message), sent };
+  }
+
+  it("answers each ping with the pong carrying the same id", async () => {
+    const { session, send, sent } = await handDriven();
+
+    send({ type: "makecode:ping", id: "probe-1" });
+    send({ type: "makecode:ping", id: "probe-2" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(sent, [
+      { type: "makecode:pong", id: "probe-1" },
+      { type: "makecode:pong", id: "probe-2" },
+    ]);
+    session.dispose();
+  });
+
+  it("answers no ping once disposed", async () => {
+    const { session, send, sent } = await handDriven();
+
+    session.dispose();
+    send({ type: "makecode:ping", id: "late" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(sent, []);
+  });
+
+  it("resolves a ping once the peer's pong arrives", async () => {
+    const [editorPort, peerPort] = linkedPorts();
+    const [editor, peer] = await Promise.all([
+      connectMakeCodeSession({ port: editorPort }),
+      connectMakeCodeSession({ port: peerPort, target: "arcade" }),
+    ]);
+
+    await editor.ping();
+    await peer.ping();
+
+    editor.dispose();
+    peer.dispose();
+  });
+
+  it("settles a ping only on the pong carrying its own id, and leaves a ping pending at dispose unsettled", async () => {
+    const { session, send, sent } = await handDriven();
+    let settled = false;
+    session.ping().then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [probe] = sent;
+    assert.equal(probe?.type, "makecode:ping");
+
+    send({ type: "makecode:pong", id: "another" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(settled, false);
+
+    session.dispose();
+    if (probe?.type === "makecode:ping") send({ type: "makecode:pong", id: probe.id });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(settled, false);
+  });
+
+  it("mints each ping a distinct id", async () => {
+    const { session, sent } = await handDriven();
+
+    void session.ping();
+    void session.ping();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(sent.length, 2);
+    const ids = sent.map((message) => (message.type === "makecode:ping" ? message.id : undefined));
+    assert.ok(ids.every((id) => typeof id === "string"));
+    assert.notEqual(ids[0], ids[1]);
+    session.dispose();
+  });
+});

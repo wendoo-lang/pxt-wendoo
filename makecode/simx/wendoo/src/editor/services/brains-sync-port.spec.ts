@@ -18,6 +18,7 @@ import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type {
   MakeCodeBrainSummary,
   MakeCodeBrainsRequestMessage,
+  MakeCodeHeartbeatOptions,
   MakeCodeIdManifest,
   MakeCodeManifestRequestMessage,
   MakeCodePortEditorSession,
@@ -402,9 +403,9 @@ describe("brains sync between the editor tab and the column frame over a brokere
     }
   });
 
-  /** Opens an editor tab frame, as its boot does, before any port arrives. */
-  function openTab(): EditorTab {
-    const session = createMakeCodePortEditorSession();
+  /** Opens an editor tab frame, as its boot does, before any port arrives, pinging on `heartbeat` when one is given. */
+  function openTab(heartbeat?: MakeCodeHeartbeatOptions): EditorTab {
+    const session = createMakeCodePortEditorSession({ heartbeat });
     const store = new EditorSessionStore(session);
     const brains = new BrainsStore(store, store);
     store.start();
@@ -650,6 +651,29 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assert.equal(brains.get(kept)?.name, "Chaser Two");
     assert.equal(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(kept)?.name, "Chaser Two");
     assert.equal(tab.store.getSnapshot().status, "connected");
+  });
+
+  it("reconnects when the column frame silently stops answering pings, and the re-brokered port's handshake saves the pend", async () => {
+    const host = new FakeProjfsHost();
+    const tab = openTab({ intervalMs: 20, deadlineMs: 100 });
+    const gone = startColumn(host);
+    broker(gone, tab);
+    await brainsUntil(tab, (state) => state.reconciled, "the editor to reconcile");
+
+    disposeColumn(gone);
+    const pended = authorBrain(tab.brains, "Chaser");
+    const waiting = await storeUntil(
+      tab,
+      (state) => connectionStatus(state) === "reconnecting",
+      "the heartbeat to end the handshake"
+    );
+    assert.equal(waiting.errorCode, undefined);
+    assert.ok(tab.brains.getSnapshot().pending.has(pended));
+
+    broker(startColumn(host), tab);
+    await brainsUntil(tab, (state) => state.reconciled && state.pending.size === 0, "the pend to be saved");
+    await saved(host, tab, "the brain to be saved");
+    assert.equal(connectionStatus(tab.store.getSnapshot()), "connected");
   });
 
   it("runs the project's program at every start once the catalog arrives, for a tab that connected before the program first ran", async () => {
