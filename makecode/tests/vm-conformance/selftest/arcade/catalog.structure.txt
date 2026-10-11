@@ -219,6 +219,12 @@ pack arcade
               arg anon.Effect type=Effect anonymous
             optional
               arg anon.Sound type=Sound anonymous
+  tile sensor sensor.arcade.button-a returns=boolean icon
+    args
+      arg anon.Player type=Player anonymous optional
+  tile sensor sensor.arcade.button-b returns=boolean icon
+    args
+      arg anon.Player type=Player anonymous optional
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

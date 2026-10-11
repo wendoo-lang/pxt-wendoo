@@ -62,8 +62,9 @@ namespace wendoo {
                 "---\n" +
                 "\n" +
                 "**player one**, **player two**, **player three** and **player four** are the players of an Arcade game,\n" +
-                "each with a controller of its own. Give one to **dpad** to read that player's dpad, or to **add score**\n" +
-                "to change that player's score. Without one, both use player one.\n" +
+                "each with a controller of its own. Give one to **dpad**, **A button** or **B button** to read that\n" +
+                "player's controller, or to **add score** to change that player's score. Without one, each uses player\n" +
+                "one.\n" +
                 "\n" +
                 "## Score\n" +
                 "\n" +
@@ -1235,6 +1236,122 @@ namespace wendoo {
                 "`tile:tile.sensor->sensor.arcade.myself`\n" +
                 "`tile:tile.sensor->sensor.arcade.in-range`\n" +
                 "`tile:tile.actuator->actuator.arcade.move`\n";
+        }
+        if (name === "sensor.arcade.button-a") {
+            return "```brain noframe when\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# A Button\n" +
+                "\n" +
+                "On while the player holds the A button.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **A button** on the **WHEN** side of a rule to act while the player holds A. **WHEN A button\n" +
+                "DO move up** moves your sprite up for as long as A is held, and stops it when A is let go.\n" +
+                "\n" +
+                "**A button** reads player one's controller. Give it a player to read that player's instead: **WHEN A\n" +
+                "button player two DO move** answers only player two's A button.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.button-a\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.move\", \"tile.modifier->modifier.direction.up\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Move up while A is held.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": []\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of A button, as the editor offers it:\n" +
+                "- One optional Player, at most once: [player one] .. [player four].\n" +
+                "  Nothing else: no modifier, no other value, no parameter, no output tile. A button is not inline, so\n" +
+                "  no accessor or operator follows it and it fills no value slot.\n" +
+                "\n" +
+                "What it reads: the A button of the controller of the Player placed, else player one's, fresh at every\n" +
+                "run. It is on while that button is held and off otherwise; the B button never turns it on. A Player\n" +
+                "placed as anything but a literal tile that reads as nothing leaves the rule off for that frame.\n" +
+                "\n" +
+                "The WHEN result is true while it is on, not a Vector2 or a Sprite:\n" +
+                "- An undirected move -- no direction modifier, or move's own modifiers cancelling, and no direction\n" +
+                "  value placed after move -- goes rightward.\n" +
+                "- move's own cardinals, a toward or away from with a target, or wander pick the direction, and A\n" +
+                "  button only gates the rule: WHEN A button DO move up goes up while A is held.\n" +
+                "- toward or away from with no target placed add nothing, its result being no Sprite.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.sensor->sensor.arcade.dpad`\n" +
+                "`tile:tile.actuator->actuator.arcade.move`\n" +
+                "`tile:tile.var.factory->struct:<Player>`\n";
+        }
+        if (name === "sensor.arcade.button-b") {
+            return "```brain noframe when\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# B Button\n" +
+                "\n" +
+                "On while the player holds the B button.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **B button** on the **WHEN** side of a rule to act while the player holds B. **WHEN B button\n" +
+                "DO move left** moves your sprite to the left for as long as B is held, and stops it when B is let go.\n" +
+                "\n" +
+                "**B button** reads player one's controller. Give it a player to read that player's instead: **WHEN B\n" +
+                "button player two DO move** answers only player two's B button.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.button-b\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.move\", \"tile.modifier->modifier.direction.left\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Move left while B is held.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": []\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of B button, as the editor offers it:\n" +
+                "- One optional Player, at most once: [player one] .. [player four].\n" +
+                "  Nothing else: no modifier, no other value, no parameter, no output tile. B button is not inline, so\n" +
+                "  no accessor or operator follows it and it fills no value slot.\n" +
+                "\n" +
+                "What it reads: the B button of the controller of the Player placed, else player one's, fresh at every\n" +
+                "run. It is on while that button is held and off otherwise; the A button never turns it on. A Player\n" +
+                "placed as anything but a literal tile that reads as nothing leaves the rule off for that frame.\n" +
+                "\n" +
+                "The WHEN result is true while it is on, not a Vector2 or a Sprite:\n" +
+                "- An undirected move -- no direction modifier, or move's own modifiers cancelling, and no direction\n" +
+                "  value placed after move -- goes rightward.\n" +
+                "- move's own cardinals, a toward or away from with a target, or wander pick the direction, and B\n" +
+                "  button only gates the rule: WHEN B button DO move left goes left while B is held.\n" +
+                "- toward or away from with no target placed add nothing, its result being no Sprite.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.sensor->sensor.arcade.dpad`\n" +
+                "`tile:tile.actuator->actuator.arcade.move`\n" +
+                "`tile:tile.var.factory->struct:<Player>`\n";
         }
         if (name === "sensor.arcade.dpad") {
             return "```brain noframe when\n" +

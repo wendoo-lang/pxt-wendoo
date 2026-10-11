@@ -3,8 +3,9 @@
  * literal, its `x` and `y` accessors, the `Sprite` type, its `image`, `position`,
  * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain`
  * type, the `Player` type with its four literals and its `score` accessor,
- * the `Effect` and `Sound` types with their literals, the `dpad`, `bump`,
- * `in range`, `out of range` and `myself` sensors, the `move`, `add score`
+ * the `Effect` and `Sound` types with their literals, the `dpad`,
+ * `A button`, `B button`, `bump`, `in range`, `out of range` and `myself`
+ * sensors, the `move`, `add score`
  * and `game over` actuators, the core equality and inequality
  * operators' overloads over two images, two sprites, two brains and two
  * `Vector2`s, and the core addition
@@ -26,6 +27,9 @@
  *   points nowhere; given a player, that player's dpad. Its direction
  *   modifiers mask the reading: each admits its own direction's component,
  *   none admits every component, and a reading masked to nothing is nil.
+ * - `WHEN [A button]` and `WHEN [B button]` read `true` while player one
+ *   holds that button, and nil otherwise; given a player, that player's
+ *   button.
  * - The proximity sensors -- `bump`, `in range` and `out of range` -- each
  *   take one optional filter, an image, a sprite or a brain, and read only
  *   the sprites it admits: given an image, the sprites whose image has the
@@ -148,6 +152,14 @@ namespace wendoo {
   //% hidden
   export const DPAD_TILE = "sensor.arcade.dpad";
 
+  /** Tile name of the A button sensor. */
+  //% hidden
+  export const BUTTON_A_TILE = "sensor.arcade.button-a";
+
+  /** Tile name of the B button sensor. */
+  //% hidden
+  export const BUTTON_B_TILE = "sensor.arcade.button-b";
+
   /** Tile name of the move actuator. */
   //% hidden
   export const MOVE_TILE = "actuator.arcade.move";
@@ -220,6 +232,9 @@ namespace wendoo {
 
   /** Argument-buffer position of the dpad's player, after its direction modifiers. */
   const DPAD_SLOT_PLAYER = 4;
+
+  /** Argument-buffer position of each button sensor's player. */
+  const BUTTON_SLOT_PLAYER = 0;
 
   /** Argument-buffer positions of the add-score actuator's amount and player. */
   const ADD_SCORE_SLOT_AMOUNT = 0;
@@ -419,6 +434,28 @@ namespace wendoo {
       const direction = readDpadDirection(slotPlayerNumber(args[DPAD_SLOT_PLAYER]));
       const masked = maskDirection(direction, all || up, all || down, all || left, all || right);
       return masked.isZero() ? NIL_VALUE : vector2Value(masked);
+    }
+  }
+
+  /**
+   * `sensor.arcade.button-a` and `sensor.arcade.button-b`: `true` while the
+   * button of the player its player slot names, else player one's, is held,
+   * and nil otherwise.
+   */
+  class ButtonSensor extends HostActionBinding {
+    /** The button this sensor reads: `ControllerButton.A` or `ControllerButton.B`. */
+    private button: ControllerButton;
+
+    /**
+     * @param button - The button the sensor reads: `ControllerButton.A` or `ControllerButton.B`.
+     */
+    constructor(button: ControllerButton) {
+      super(false);
+      this.button = button;
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return readButtonHeld(slotPlayerNumber(args[BUTTON_SLOT_PLAYER]), this.button) ? TRUE_VALUE : NIL_VALUE;
     }
   }
 
@@ -907,6 +944,15 @@ namespace wendoo {
     ];
   }
 
+  /** The spec of a button sensor labelled `label`, read with the word `bare`: one optional anonymous player. */
+  function buttonSpec(label: string, bare: string): TileSpec {
+    const spec = new TileSpec(TILE_KIND_SENSOR, [optional(anonymousArg(TYPE_PLAYER))], TYPE_BOOLEAN);
+    spec.label = label;
+    spec.language.form = "press";
+    spec.language.bare = bare;
+    return spec;
+  }
+
   /**
    * Type metadata declaring the display label `label` the editor calls the
    * type by, and the literals `literals`, in the order the editor offers them.
@@ -1031,6 +1077,11 @@ namespace wendoo {
   gameOverSpec.label = "game over";
   arcadePack.bind(GAME_OVER_TILE, new GameOverActuator(), gameOverSpec);
 
+  const buttonASpec = buttonSpec("A button", "A");
+  arcadePack.bind(BUTTON_A_TILE, new ButtonSensor(ControllerButton.A), buttonASpec);
+  const buttonBSpec = buttonSpec("B button", "B");
+  arcadePack.bind(BUTTON_B_TILE, new ButtonSensor(ControllerButton.B), buttonBSpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -1123,6 +1174,8 @@ namespace wendoo {
     effectMeta.icon = effectTypeIcon();
     soundMeta.icon = soundTypeIcon();
     dpadSpec.icon = dpadIcon();
+    buttonASpec.icon = buttonAIcon();
+    buttonBSpec.icon = buttonBIcon();
     moveSpec.icon = moveIcon();
     bumpSpec.icon = bumpIcon();
     bumpSpec.outputs[0].icon = bumpIcon();
@@ -1225,6 +1278,8 @@ namespace wendoo {
     effectMeta.docs = arcadeBaseDocs(TYPE_EFFECT);
     soundMeta.docs = arcadeBaseDocs(TYPE_SOUND);
     dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
+    buttonASpec.docs = arcadeBaseDocs(BUTTON_A_TILE);
+    buttonBSpec.docs = arcadeBaseDocs(BUTTON_B_TILE);
     moveSpec.docs = arcadeBaseDocs(MOVE_TILE);
     bumpSpec.docs = arcadeBaseDocs(BUMP_TILE);
     bumpSpec.outputs[0].docs = arcadeBaseDocs("output.bumped");

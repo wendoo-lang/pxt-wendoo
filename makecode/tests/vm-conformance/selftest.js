@@ -515,6 +515,13 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-program-reading-player-twos-score-switches-the-game-to-arcades-multiplayer-display",
   "a-dpad-given-player-two-follows-player-twos-controller-and-a-bare-dpad-player-ones",
   "a-dpad-given-the-argument-buffer-of-a-program-compiled-before-its-player-slot-reads-player-one",
+  "an-a-button-rule-moves-rightward-while-a-is-held-and-stops-on-release",
+  "a-b-button-rule-moves-rightward-while-b-is-held-and-stops-on-release",
+  "a-held-leaves-the-b-rule-off-and-b-held-leaves-the-a-rule-off",
+  "a-and-b-held-together-fire-both-rules",
+  "an-a-button-given-player-two-fires-on-player-twos-a-and-not-on-player-ones",
+  "a-bare-a-button-ignores-player-twos-a",
+  "a-button-sensor-reads-true-while-its-players-button-is-held-and-nil-otherwise",
   "effect-and-sound-types-take-their-atoms-and-fields-from-the-manifest",
   "each-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-effect-slot-names-none",
   "each-sound-literal-names-the-arcade-melody-of-its-key-and-an-empty-sound-slot-names-none",
@@ -603,6 +610,8 @@ const EXPECTED_ARCADE_ENDING_CHOICE_LINES = {
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
 const ARCADE_ICONED_TILES = [
   "sensor.arcade.dpad",
+  "sensor.arcade.button-a",
+  "sensor.arcade.button-b",
   "actuator.arcade.move",
   "sensor.arcade.bump",
   "sensor.arcade.in-range",
@@ -715,10 +724,11 @@ const ARCADE_HOST_REJECTIONS = [
  * overloads, the overloads over `Vector2`s, the programs holding
  * variables, the programs writing one number of a position, the programs
  * adding to and reading player one's score, the program reading player
- * two's score, the dpad's player, and the game over's gate on a placed value
- * reading nothing.
+ * two's score, the dpad's player, the A and B buttons, and the game over's
+ * gate on a placed value reading nothing.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,

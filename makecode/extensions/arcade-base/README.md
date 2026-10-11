@@ -8,6 +8,9 @@ keep score, and end the game.
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
   to just those directions.
+- **A button** and **B button** -- WHEN tiles that are on while that button
+  is held: **WHEN A button DO move up** moves the sprite up for as long as A
+  is held.
 - **bump** -- a WHEN tile that is on while the sprite touches another
   sprite, carrying the sprite it touches. When it touches several at once,
   it carries the nearest. Give it one of your project's images to notice
@@ -36,15 +39,15 @@ keep score, and end the game.
   sprite just like whatever it bumps.
 - **player one**, **player two**, **player three** and **player four** --
   the players of your game, each with a controller and a score of its own.
-  Give **dpad** a player to read that player's controller: **WHEN dpad
-  player two DO move** steers with the second controller. **add score** is
-  a DO tile adding 1 to player one's score on every frame its rule is on;
-  give it a number to add that many instead -- a negative number takes
-  points away -- and a player to change that player's score. Put **score**
-  after a player to read it: **WHEN player one score greater than 9 DO
-  move** waits for 10 points. Once a rule reads or changes the score of
-  player two, three or four, the game shows scores the way Arcade does for
-  several players, each in a corner of its own.
+  Give **dpad**, **A button** or **B button** a player to read that player's
+  controller: **WHEN dpad player two DO move** steers with the second
+  controller. **add score** is a DO tile adding 1 to player one's score on
+  every frame its rule is on; give it a number to add that many instead -- a
+  negative number takes points away -- and a player to change that player's
+  score. Put **score** after a player to read it: **WHEN player one score
+  greater than 9 DO move** waits for 10 points. Once a rule reads or changes
+  the score of player two, three or four, the game shows scores the way
+  Arcade does for several players, each in a corner of its own.
 - **game over** -- a DO tile that ends the game the way Arcade does, as a
   loss. Add **win** to end it as a win, or give it a player to have that
   player win. Give it one of Arcade's effects, like **confetti**, and one of

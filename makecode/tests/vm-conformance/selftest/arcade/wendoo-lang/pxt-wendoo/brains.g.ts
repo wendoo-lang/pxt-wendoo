@@ -691,6 +691,33 @@ namespace wendooBrains {
         028108
     `);
 
+    // source-hash 9f9b09af
+    //% fixedInstance block="Press A two"
+    export const p_pressAPlayerTwo1 = wendoo.registerCompiledBrain("pressAPlayerTwo1", "Press A two", hex`
+        894d425004d10f0701001066506730707265737341506c617972320100840800
+        020108000203000401010000001a460000000106002c89080100472648000000
+        0000000000000000000000000000000000000000000000000000002c81080f01
+        4900001f00000100000100000100020000890800018108
+    `);
+
+    // source-hash 43a7cb8f
+    //% fixedInstance block="Press A"
+    export const p_pressButtonA0001 = wendoo.registerCompiledBrain("pressButtonA0001", "Press A", hex`
+        894d425004d10f07010010665067307072657373427574746f6e410000010101
+        000000184600002c890801004726480000000000000000000000000000000000
+        000000000000000000000000002c81080f014900001f00000100000100000100
+        020000890800018108
+    `);
+
+    // source-hash ea040287
+    //% fixedInstance block="Press B"
+    export const p_pressButtonB0001 = wendoo.registerCompiledBrain("pressButtonB0001", "Press B", hex`
+        894d425004d10f07010010665067307072657373427574746f6e420000010101
+        000000184600002c8a0801004726480000000000000000000000000000000000
+        000000000000000000000000002c81080f014900001f00000100000100000100
+        0200008a0800018108
+    `);
+
     // source-hash e4055eca
     //% fixedInstance block="Pursue"
     export const p_pursuePosition01 = wendoo.registerCompiledBrain("pursuePosition01", "Pursue", hex`

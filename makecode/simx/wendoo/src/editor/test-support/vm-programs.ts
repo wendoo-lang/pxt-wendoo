@@ -277,6 +277,9 @@ const ARCADE_SOURCES = [
   "origin-home.src.json",
   "fresh-toward.src.json",
   "fresh-step.src.json",
+  "press-a.src.json",
+  "press-b.src.json",
+  "press-a-two.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

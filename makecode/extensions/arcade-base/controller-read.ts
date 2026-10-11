@@ -1,9 +1,10 @@
 /**
  * Reading the Arcade controller: this module owns every raw controller read
- * and the raw-to-clean transform, so no tile downstream sees a button state
- * or a pressure level -- only a clean direction in Arcade's own convention,
- * `x` increasing rightward and `y` increasing downward, each component from
- * -1 (full deflection left or up) to 1 (full deflection right or down).
+ * and the raw-to-clean transform, so no tile downstream sees a pressure
+ * level -- only whether the A or B button is held, and a clean direction in
+ * Arcade's own convention, `x` increasing rightward and `y` increasing
+ * downward, each component from -1 (full deflection left or up) to 1 (full
+ * deflection right or down).
  *
  * A digital dpad reads full deflection on every pressed direction. An analog
  * controller reads each axis as the difference of its two buttons' pressure
@@ -112,5 +113,18 @@ namespace wendoo {
       return new DirectionVector(analogAxis(pad.left, pad.right), analogAxis(pad.up, pad.down));
     }
     return new DirectionVector(digitalAxis(pad.left, pad.right), digitalAxis(pad.up, pad.down));
+  }
+
+  /**
+   * Whether the A or B button of the player numbered `player` is held now,
+   * read fresh.
+   *
+   * @param player - The player's number: 2, 3 or 4 for that player, any other number for player one.
+   * @param button - `ControllerButton.B` reads the B button; any other value reads the A button.
+   */
+  //% hidden
+  export function readButtonHeld(player: number, button: ControllerButton): boolean {
+    const pad = controllerOf(player);
+    return (button === ControllerButton.B ? pad.B : pad.A).isPressed();
   }
 }

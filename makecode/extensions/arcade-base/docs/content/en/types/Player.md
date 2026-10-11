@@ -16,8 +16,9 @@ One of the four players in your game.
 ---
 
 **player one**, **player two**, **player three** and **player four** are the players of an Arcade game,
-each with a controller of its own. Give one to **dpad** to read that player's dpad, or to **add score**
-to change that player's score. Without one, both use player one.
+each with a controller of its own. Give one to **dpad**, **A button** or **B button** to read that
+player's controller, or to **add score** to change that player's score. Without one, each uses player
+one.
 
 ## Score
 

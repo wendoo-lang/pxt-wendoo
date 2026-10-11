@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "pressAPlayerTwo1",
+  "name": "Press A two",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0pressAPlayr2",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0pressAPlayr2",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a",
+            "tile.literal->struct:<Player>->2"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0pressAPlayr2"
+        }
+      ]
+    }
+  ]
+}

@@ -529,15 +529,18 @@ the current slice alone.
       proximity read's scan), the wander module (one module owning each
       wandering move's random on-screen destination, kept per call site in
       the sprite's attachment, its re-picks on arrival or deadline, and the random
-      source picking it), the `dpad`, `bump`, `in range`, `out of range`
-      and `myself` sensors and the `move`, `add score` and `game over`
-      actuators (dpad
+      source picking it), the `dpad`, `A button`, `B button`, `bump`,
+      `in range`, `out of range` and `myself` sensors and the `move`,
+      `add score` and `game over` actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
-      reading player one's too; add score adds its optional anonymous
-      number, else 1, to the score of its optional anonymous `Player`, else
-      player one's, the two in either order; game over ends the game through
-      Arcade's own game over -- as a loss, as a win given its `win` modifier,
+      reading player one's too; `A button` and `B button` are on while that
+      button of the controller of the player their optional anonymous
+      `Player` names, else player one's, is held, their WHEN result `true`;
+      add score adds its optional anonymous number, else 1, to the score of
+      its optional anonymous `Player`, else player one's, the two in either
+      order; game over ends the game through Arcade's own game over --
+      as a loss, as a win given its `win` modifier,
       and as that player's win given its optional anonymous `Player`, whatever
       `win` or `lose` says -- first making its optional anonymous `Effect` and
       `Sound` those of the outcome it ends the game with, an absent one or one

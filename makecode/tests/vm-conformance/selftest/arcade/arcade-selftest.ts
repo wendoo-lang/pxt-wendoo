@@ -8,18 +8,19 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * bump, in-range, out-of-range, myself, move, add-score and game-over tiles,
- * its player literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
- * pressing the controllers' buttons, placing and moving sprites and setting
- * scores from game code, and programs updated while the game runs, through
- * the messages the Wendoo simulator extension posts. It also calls the
- * bump, in-range, out-of-range, myself, dpad and add-score tiles' bodies and
- * the `Sprite` and `Player` types' field hooks directly with image asset,
- * sprite, brain and player values, the `Effect` and `Sound` types' bindings
- * with each of their literals, images resolved through an image factory
- * registered the way a project's images module registers one, and the move
- * tile's body with sprite and point targets and with wander destinations
- * picked from random sources it scripts.
+ * A button, B button, bump, in-range, out-of-range, myself, move, add-score
+ * and game-over tiles, its player literals, and the `Sprite`, `Vector2` and
+ * `Player` accessors, driven by pressing the controllers' buttons, placing
+ * and moving sprites and setting scores from game code, and programs updated
+ * while the game runs, through the messages the Wendoo simulator extension
+ * posts. It also calls the bump, in-range, out-of-range, myself, dpad, A
+ * button, B button and add-score tiles' bodies and the `Sprite` and `Player`
+ * types' field hooks directly with image asset, sprite, brain and player
+ * values, the `Effect` and `Sound` types' bindings with each of their
+ * literals, images resolved through an image factory registered the way a
+ * project's images module registers one, and the move tile's body with
+ * sprite and point targets and with wander destinations picked from random
+ * sources it scripts.
  *
  * Output grammar, one line each:
  *
@@ -4416,6 +4417,101 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /**
+   * In a scene of its own, check the A and B button sensors through three
+   * programs, each moving under the bare A button, the bare B button, or the
+   * A button given player two: none moves while no button is held; the bare
+   * A and B rules each move rightward while their button is held and stop
+   * once it is released; holding one button leaves the other's rule off,
+   * and holding both fires both; the A button given player two answers
+   * player two's A and not player one's, while the bare A button answers
+   * player one's A and not player two's. Then call the bodies directly: the
+   * A button's reads `true` while the A button of the player its argument
+   * buffer names, else player one's, is held, and nil otherwise, and the B
+   * button's reads nil while only A is held.
+   */
+  function checkButtonSensors(): void {
+    game.pushScene();
+    const a = spriteRunning(wendooBrains.p_pressButtonA0001);
+    const b = spriteRunning(wendooBrains.p_pressButtonB0001);
+    const aTwo = spriteRunning(wendooBrains.p_pressAPlayerTwo1);
+    pause(FRAMES_MS);
+    const untouched = movesAt(a, 0, 0) && movesAt(b, 0, 0) && movesAt(aTwo, 0, 0);
+
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    const aHeld = movesAt(a, 100, 0);
+    const bOffUnderA = movesAt(b, 0, 0);
+    const twoOffUnderOnesA = movesAt(aTwo, 0, 0);
+    controller.A.setPressed(false);
+    pause(FRAMES_MS);
+    check(
+      "an-a-button-rule-moves-rightward-while-a-is-held-and-stops-on-release",
+      untouched && aHeld && movesAt(a, 0, 0)
+    );
+
+    controller.B.setPressed(true);
+    pause(FRAMES_MS);
+    const bHeld = movesAt(b, 100, 0);
+    const aOffUnderB = movesAt(a, 0, 0) && movesAt(aTwo, 0, 0);
+    controller.B.setPressed(false);
+    pause(FRAMES_MS);
+    check("a-b-button-rule-moves-rightward-while-b-is-held-and-stops-on-release", bHeld && movesAt(b, 0, 0));
+    check("a-held-leaves-the-b-rule-off-and-b-held-leaves-the-a-rule-off", bOffUnderA && aOffUnderB);
+
+    controller.A.setPressed(true);
+    controller.B.setPressed(true);
+    pause(FRAMES_MS);
+    check("a-and-b-held-together-fire-both-rules", movesAt(a, 100, 0) && movesAt(b, 100, 0));
+    controller.A.setPressed(false);
+    controller.B.setPressed(false);
+    pause(FRAMES_MS);
+
+    controller.player2.A.setPressed(true);
+    pause(FRAMES_MS);
+    check(
+      "an-a-button-given-player-two-fires-on-player-twos-a-and-not-on-player-ones",
+      twoOffUnderOnesA && movesAt(aTwo, 100, 0)
+    );
+    check("a-bare-a-button-ignores-player-twos-a", movesAt(a, 0, 0) && movesAt(b, 0, 0));
+    controller.player2.A.setPressed(false);
+    pause(FRAMES_MS);
+
+    const nil = wendoo.NIL_VALUE;
+    const buttonA = tileBody(wendoo.BUTTON_A_TILE);
+    const buttonB = tileBody(wendoo.BUTTON_B_TILE);
+    const released = act(buttonA, a, []);
+    controller.A.setPressed(true);
+    const bare = act(buttonA, a, []);
+    const empty = act(buttonA, a, [nil]);
+    const first = act(buttonA, a, [playerLiteral(1)]);
+    const secondUnheld = act(buttonA, a, [playerLiteral(2)]);
+    const bUnderA = act(buttonB, a, []);
+    controller.A.setPressed(false);
+    controller.player2.A.setPressed(true);
+    const second = act(buttonA, a, [playerLiteral(2)]);
+    const firstUnheld = act(buttonA, a, []);
+    controller.player2.A.setPressed(false);
+    check(
+      "a-button-sensor-reads-true-while-its-players-button-is-held-and-nil-otherwise",
+      readsNothing(released) &&
+        readsTrue(bare) &&
+        readsTrue(empty) &&
+        readsTrue(first) &&
+        readsNothing(secondUnheld) &&
+        readsNothing(bUnderA) &&
+        readsTrue(second) &&
+        readsNothing(firstUnheld)
+    );
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
+  /** Whether `value` is the boolean `true`. */
+  function readsTrue(value: wendoo.Value): boolean {
+    return value.t === wendoo.ValueTag.Boolean && value.b;
+  }
+
   /** Wendoo type name of the `Effect` type. */
   const EFFECT_TYPE = "Effect";
 
@@ -4886,8 +4982,9 @@ namespace arcadeSelftest {
    * the move's toward and away carry, the move's wander, its speed limit,
    * move smoothing, non-finite motion, the equality operators, the operators
    * over `Vector2`s, programs holding variables, players' scores and dpads,
-   * the effects and sounds a game over takes, the game over's gate on a
-   * placed value reading nothing, and the arcade icon encoder.
+   * the A and B buttons, the effects and sounds a game over takes, the game
+   * over's gate on a placed value reading nothing, and the arcade icon
+   * encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -4968,6 +5065,7 @@ namespace arcadeSelftest {
     checkPlayerScores();
     checkScorePrograms();
     checkPlayerDpad();
+    checkButtonSensors();
     checkEndingChoices();
     checkGameOverGates();
     checkIconEncoder();

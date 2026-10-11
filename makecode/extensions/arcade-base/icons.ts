@@ -30,6 +30,52 @@ namespace wendoo {
     `;
   }
 
+  /** Icon of the A button sensor: a white letter A on a round red button. */
+  //% hidden
+  export function buttonAIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . 2 2 2 2 2 2 . . . . .
+      . . . 2 2 2 2 2 2 2 2 2 2 . . .
+      . . 2 2 2 2 2 2 2 2 2 2 2 2 . .
+      . . 2 2 2 2 2 1 1 2 2 2 2 2 . .
+      . 2 2 2 2 2 1 1 1 1 2 2 2 2 2 .
+      . 2 2 2 2 1 1 2 2 1 1 2 2 2 2 .
+      . 2 2 2 2 1 1 2 2 1 1 2 2 2 2 .
+      . 2 2 2 2 1 1 1 1 1 1 2 2 2 2 .
+      . 2 2 2 2 1 1 2 2 1 1 2 2 2 2 .
+      . 2 2 2 2 1 1 2 2 1 1 2 2 2 2 .
+      . . 2 2 2 1 1 2 2 1 1 2 2 2 . .
+      . . 2 2 2 2 2 2 2 2 2 2 2 2 . .
+      . . . 2 2 2 2 2 2 2 2 2 2 . . .
+      . . . . . 2 2 2 2 2 2 . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the B button sensor: a white letter B on a round blue button. */
+  //% hidden
+  export function buttonBIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . 8 8 8 8 8 8 . . . . .
+      . . . 8 8 8 8 8 8 8 8 8 8 . . .
+      . . 8 8 8 8 8 8 8 8 8 8 8 8 . .
+      . . 8 8 8 1 1 1 1 1 8 8 8 8 . .
+      . 8 8 8 8 1 1 8 8 1 1 8 8 8 8 .
+      . 8 8 8 8 1 1 8 8 1 1 8 8 8 8 .
+      . 8 8 8 8 1 1 1 1 1 8 8 8 8 8 .
+      . 8 8 8 8 1 1 8 8 1 1 8 8 8 8 .
+      . 8 8 8 8 1 1 8 8 1 1 8 8 8 8 .
+      . 8 8 8 8 1 1 8 8 1 1 8 8 8 8 .
+      . . 8 8 8 1 1 1 1 1 8 8 8 8 . .
+      . . 8 8 8 8 8 8 8 8 8 8 8 8 . .
+      . . . 8 8 8 8 8 8 8 8 8 8 . . .
+      . . . . . 8 8 8 8 8 8 . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
   /** Icon of the move actuator: an arrow trailing speed lines. */
   //% hidden
   export function moveIcon(): Image {
