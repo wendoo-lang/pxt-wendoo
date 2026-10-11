@@ -4645,7 +4645,7 @@ namespace arcadeSelftest {
     );
     const icons = [
       wendoo.dpadIcon(),
-      wendoo.imageAccessorIcon(),
+      wendoo.imageTypeIcon(),
       heroPicture(),
       image.ofBuffer(Buffer.fromHex(MONO_ICON_HEX)),
     ];

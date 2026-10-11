@@ -6,6 +6,7 @@ import { RuleSide } from "@wendoo/core/brain";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorProvider, BrainTile } from "@wendoo/ui";
+import { kTileCornerIconAttribute } from "@wendoo/ui/brain-editor/BrainTile";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
@@ -40,11 +41,15 @@ function valueFrame(config: BrainEditorConfig, tileDef: IBrainTileDef): string {
   return markup.slice(start, markup.indexOf("</div>", start));
 }
 
-/** The markup of `tileDef` rendered as a placed tile under `config`. */
-function placedMarkup(config: BrainEditorConfig, tileDef: IBrainTileDef): string {
-  return renderToStaticMarkup(
+/** The `src` of every image `tileDef` draws in its corner, rendered as a placed tile under `config`. */
+function cornerSources(config: BrainEditorConfig, tileDef: IBrainTileDef): string[] {
+  const markup = renderToStaticMarkup(
     createElement(BrainEditorProvider, { config }, createElement(BrainTile, { tileDef, side: RuleSide.When }))
   );
+  return [...markup.matchAll(/<img ([^>]*)>/g)]
+    .map((match) => match[1])
+    .filter((attributes) => attributes.includes(`${kTileCornerIconAttribute}=`))
+    .map((attributes) => attributes.match(/(?:^| )src="([^"]*)"/)?.[1] ?? "");
 }
 
 /** The asset literal as minted into the environment and as the brain reader places it, with the environment. */
@@ -142,8 +147,7 @@ describe("a placed brain literal tile", () => {
 
     for (const def of [minted, placed]) {
       assert.equal(def.metadata?.iconUrl, KIN_ICON);
-      const markup = placedMarkup(config, def);
-      assert.ok(markup.includes(`url(${KIN_ICON})`), markup);
+      assert.deepEqual(cornerSources(config, def), [KIN_ICON]);
       assert.match(valueFrame(config, def), />Chaser</);
     }
   });

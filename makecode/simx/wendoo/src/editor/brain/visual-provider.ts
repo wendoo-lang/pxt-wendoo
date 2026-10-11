@@ -1,4 +1,4 @@
-import type { BrainTileVariableDef, IBrainTileDef } from "@wendoo/core/app";
+import type { BrainTileLiteralDef, BrainTileVariableDef, IBrainTileDef } from "@wendoo/core/app";
 import { getCatalogFallbackLabel, mkLiteralTileId } from "@wendoo/core/app";
 import type { ITileCatalog } from "@wendoo/core/brain";
 import type { StructTypeDef, StructValue, TypeId } from "@wendoo/core/runtime";
@@ -33,15 +33,15 @@ function boundMetadata(tileCatalogs: readonly ITileCatalog[], tileDef: IBrainTil
  * The editor's one tile visual provider: resolves any tile to how it shows.
  * An asset literal shows its asset's name as its label and its asset's
  * preview as its face while the snapshot lists the asset, and its label
- * alone, with no face, while it is unresolved. A page's own tile shows its
- * metadata with `pageIcon` as its face, and its metadata alone while no page
- * icon is given. A variable tile carrying no icon of its own shows its
- * variable type's icon, as `typeIcons` holds it, as its face. Every other tile
- * shows the display metadata the environment binds under its tile id, the
- * icon its catalog entry carries included -- whichever environment the tile
- * was read in -- and its own metadata when the environment binds no tile
- * under its id. Icons are data URIs for an image source; render them only as
- * one.
+ * alone while it is unresolved. A page's own tile shows its metadata with
+ * `pageIcon` as its face, and its metadata alone while no page icon is given.
+ * Every other tile shows the display metadata the environment binds under its
+ * tile id, the icon its catalog entry carries included -- whichever
+ * environment the tile was read in -- and its own metadata when the
+ * environment binds no tile under its id. A variable or literal tile left
+ * with no face by the above shows its type's icon, as `typeIcons` holds it,
+ * as its face, and no face while `typeIcons` holds none for its type. Icons
+ * are data URIs for an image source; render them only as one.
  *
  * Given `tileColors`, every tile is filled in the pair `tileColors` holds for
  * its kind; without, a tile carries no fill of its own and is drawn in the
@@ -87,20 +87,33 @@ function visualResolver(
     if (tileDef.kind === "page" && pageIcon !== undefined) {
       return { ...(metadata ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: pageIcon };
     }
-    if (tileDef.kind === "variable" && metadata?.iconUrl === undefined) {
-      const typeIcon = typeIcons.get((tileDef as BrainTileVariableDef).varType);
-      if (typeIcon !== undefined) {
-        return { ...(metadata ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: typeIcon };
-      }
-    }
     const literal = assetLiterals.get(tileDef.tileId);
-    if (literal === undefined) return metadata;
-    return {
-      ...metadata,
-      label: literal.label,
-      ...(literal.previewUrl === undefined ? {} : { iconUrl: literal.previewUrl }),
-    };
+    const visual =
+      literal === undefined
+        ? metadata
+        : {
+            ...metadata,
+            label: literal.label,
+            ...(literal.previewUrl === undefined ? {} : { iconUrl: literal.previewUrl }),
+          };
+    if (visual?.iconUrl !== undefined) return visual;
+    const typeId = valueTypeOf(tileDef);
+    const typeIcon = typeId === undefined ? undefined : typeIcons.get(typeId);
+    if (typeIcon === undefined) return visual;
+    return { ...(visual ?? { label: getCatalogFallbackLabel(tileDef) }), iconUrl: typeIcon };
   };
+}
+
+/** The type a variable tile holds or a literal tile's value is of; `undefined` for a tile of any other kind. */
+function valueTypeOf(tileDef: IBrainTileDef): TypeId | undefined {
+  switch (tileDef.kind) {
+    case "variable":
+      return (tileDef as BrainTileVariableDef).varType;
+    case "literal":
+      return (tileDef as BrainTileLiteralDef).valueType;
+    default:
+      return undefined;
+  }
 }
 
 /**

@@ -30,6 +30,7 @@ import type {
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorProvider, BrainRuleEditor, BrainTile } from "@wendoo/ui";
 import { type ArmedTargetController, ArmedTargetProvider } from "@wendoo/ui/brain-editor/ArmedTargetContext";
+import { kTileCornerIconAttribute } from "@wendoo/ui/brain-editor/BrainTile";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrainsSessionState } from "../services/brains-store.js";
@@ -223,14 +224,22 @@ function placed(config: BrainEditorConfig, tileDef: IBrainTileDef): string {
   );
 }
 
-/** The face icon a placed tile's markup draws: the source of its image. */
-function faceOf(markup: string): string | undefined {
-  return markup.match(/<img src="([^"]*)"/)?.[1];
+/** The `src` of the first image a placed tile's markup draws in its corner (`corner`) or outside it. */
+function imageSource(markup: string, corner: boolean): string | undefined {
+  const attributes = [...markup.matchAll(/<img ([^>]*)>/g)]
+    .map((match) => match[1])
+    .find((found) => found.includes(`${kTileCornerIconAttribute}=`) === corner);
+  return attributes?.match(/(?:^| )src="([^"]*)"/)?.[1];
 }
 
-/** The corner icon a placed tile's markup draws: the image its corner masks with. */
+/** The face icon a placed tile's markup draws: the source of its image. */
+function faceOf(markup: string): string | undefined {
+  return imageSource(markup, false);
+}
+
+/** The corner icon a placed tile's markup draws: the source of its corner image. */
 function cornerOf(markup: string): string | undefined {
-  return markup.match(/mask-image:url\(([^)]*)\)/)?.[1];
+  return imageSource(markup, true);
 }
 
 /** The tile with id `tileId` among the tiles `side` of `rule` holds. Throws when it holds none. */

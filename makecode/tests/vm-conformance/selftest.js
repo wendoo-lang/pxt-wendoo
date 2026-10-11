@@ -609,6 +609,7 @@ const ARCADE_ICONED_TILES = [
   "sensor.arcade.out-of-range",
   "sensor.arcade.myself",
   "actuator.arcade.add-score",
+  "actuator.arcade.game-over",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -626,6 +627,8 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.position.below",
   "modifier.position.left",
   "modifier.position.right",
+  "modifier.outcome.win",
+  "modifier.outcome.lose",
 ];
 
 /** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id, and every page's own tile by the page family id `tile.page`. */
@@ -669,7 +672,7 @@ const ARCADE_ICONED_CORE_TILES = [
 const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
 
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
-const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Brain", "Player"];
+const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Image", "Brain", "Player", "Effect", "Sound"];
 
 /** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
 const ARCADE_ICONED_ACCESSORS = [

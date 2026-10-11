@@ -11,7 +11,7 @@ import {
   mkSensorTileId,
   mkVariableFactoryTileId,
 } from "@wendoo/core/app";
-import { type BrainTileFactoryDef, BrainTilePageDef } from "@wendoo/core/brain/tiles";
+import { type BrainTileFactoryDef, BrainTileLiteralDef, BrainTilePageDef } from "@wendoo/core/brain/tiles";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { emptyIdManifest } from "../services/id-allocation.js";
@@ -211,6 +211,35 @@ describe("createTileVisualProvider", () => {
 
     assert.deepEqual(resolve(bare), bare.metadata);
     assert.equal(resolve(bare)?.iconUrl, undefined);
+  });
+
+  it("resolves a literal tile carrying no icon of its own to its type's icon as its face", () => {
+    const built = buildAuthoringEnvironment(VARIABLE_CATALOG, emptyIdManifest());
+    const resolve = createTileVisualProvider(
+      built.environment.tileCatalogs(),
+      built.assetLiterals.view,
+      built.typeIcons
+    );
+    const count = new BrainTileLiteralDef(CoreTypeIds.Number, 7, {}, built.environment.brainServices);
+
+    assert.equal(count.metadata?.iconUrl, undefined);
+    assert.equal(resolve(count)?.iconUrl, NUMBER_TYPE_ICON);
+  });
+
+  it("resolves an asset literal to its asset's preview as its face, and to its type's icon while it is unresolved", () => {
+    const pictureIcon = "data:image/svg+xml;base64,cGljdHVyZQ==";
+    const catalog = JSON.parse(ASSET_CATALOG);
+    catalog.packs[0].types[0].iconUrl = pictureIcon;
+    const built = buildAuthoringEnvironment(JSON.stringify(catalog), assetCatalogIds());
+    built.assetLiterals.applySnapshot([picture("img1", "hero", "data:image/svg+xml;base64,aGVybw==")]);
+    const literal = catalogTile(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
+    const resolve = () =>
+      createTileVisualProvider(built.environment.tileCatalogs(), built.assetLiterals.view, built.typeIcons)(literal);
+
+    assert.equal(resolve()?.iconUrl, "data:image/svg+xml;base64,aGVybw==");
+    built.assetLiterals.applySnapshot([]);
+    assert.equal(resolve()?.iconUrl, pictureIcon);
+    assert.equal(resolve()?.label, "hero");
   });
 
   it("fills every tile in the pair the tile colors hold for its kind, keeping the rest of how it shows", () => {

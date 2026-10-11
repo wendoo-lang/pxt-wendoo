@@ -1410,9 +1410,9 @@ namespace wendoo {
     `;
   }
 
-  /** Icon of the `image` accessor of a `Sprite`: a framed portrait of a hero in a teal starred helmet, head and shoulders against the sky. */
+  /** Icon of the `Image` type and of the `image` accessor of a `Sprite`: a framed portrait of a hero in a teal starred helmet, head and shoulders against the sky. */
   //% hidden
-  export function imageAccessorIcon(): Image {
+  export function imageTypeIcon(): Image {
     return img`
       f f f f f f f f f f f f f f f f
       f 9 9 9 9 9 9 9 9 9 9 9 9 9 9 f

@@ -10,7 +10,7 @@ pack arcade
     field position Vector2 routed accessor accessor-icon
     field brain Brain routed accessor accessor-icon
     field moveSmoothing number routed accessor accessor-icon
-  type Image asset=image
+  type Image asset=image icon
     field asset string readOnly
   type Brain brain icon
     field id string readOnly

@@ -939,7 +939,8 @@ namespace wendoo {
   const spriteMeta = variableTypeMeta("sprite");
   const spriteFieldSpecs = spriteFields();
   arcadePack.defineStruct(TYPE_SPRITE, spriteFieldSpecs, spriteBinding, spriteMeta);
-  arcadePack.defineAssetType(TYPE_IMAGE, imageBinding);
+  const imageMeta = new TypeMeta();
+  arcadePack.defineAssetType(TYPE_IMAGE, imageBinding, imageMeta);
   const brainMeta = new TypeMeta();
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);
   const playerMeta = literalTypeMeta("player", playerLiterals());
@@ -1098,11 +1099,11 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, the modifier tiles filling their slots,
-   * its sensors' outputs, its `Vector2`, `Sprite`, `Brain`, `Player`, `Effect`
-   * and `Sound` types and their accessor tiles their icons, and give the core tiles and the core number,
-   * text and switch types the pack's icons for them. Call it once, after the
-   * pack's registrations and before the catalog is first published. Does
-   * nothing on hardware.
+   * its sensors' outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
+   * `Effect` and `Sound` types and their accessor tiles their icons, and give
+   * the core tiles and the core number, text and switch types the pack's icons
+   * for them. Call it once, after the pack's registrations and before the
+   * catalog is first published. Does nothing on hardware.
    */
   //% shim=TD_NOOP
   function attachArcadeBaseIcons(): void {
@@ -1110,7 +1111,8 @@ namespace wendoo {
     attachAccessorIcon(vector2FieldSpecs, "x", xAccessorIcon());
     attachAccessorIcon(vector2FieldSpecs, "y", yAccessorIcon());
     spriteMeta.icon = spriteTypeIcon();
-    attachAccessorIcon(spriteFieldSpecs, "image", imageAccessorIcon());
+    imageMeta.icon = imageTypeIcon();
+    attachAccessorIcon(spriteFieldSpecs, "image", imageTypeIcon());
     attachAccessorIcon(spriteFieldSpecs, "position", positionAccessorIcon());
     attachAccessorIcon(spriteFieldSpecs, "brain", brainTypeIcon());
     attachAccessorIcon(spriteFieldSpecs, "moveSmoothing", moveSmoothingAccessorIcon());

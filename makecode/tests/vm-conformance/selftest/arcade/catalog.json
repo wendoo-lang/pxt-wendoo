@@ -112,7 +112,8 @@
               "type": "string",
               "readOnly": true
             }
-          ]
+          ],
+          "icon": "8704100010000000ffffffffffffffff9f999999999999f99f99f9ffff9f99ff9f996f6666f6f9f49ff966ffffff4ff49f6f66dfddd34ff49f6f65dffffdfdf49f5f55dfdddd5ff49f5f55dfdddd5ff49f6f65dffffdfdf49f9f66dfddd34ff49ff966ffffff4ff49f996f6666f6f9f49f99f9ffff9f99ff9f999999999999f9ffffffffffffffff"
         },
         {
           "name": "Brain",

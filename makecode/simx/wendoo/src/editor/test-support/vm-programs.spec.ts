@@ -308,6 +308,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
     assert.deepEqual(icons.map((icon) => icon.name).sort(), [
       "Brain",
       "Effect",
+      "Image",
       "Player",
       "Sound",
       "Sprite",

@@ -501,8 +501,9 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite`, `Brain`, `Player`, `Effect` and `Sound` types, the variable factory flag and editor
-      label (`position`, `sprite`) of its `Vector2` and `Sprite` types (a
+      `Sprite`, `Image`, `Brain`, `Player`, `Effect` and `Sound` types, the
+      variable factory flag and editor label (`position`, `sprite`) of its
+      `Vector2` and `Sprite` types (a
       `Vector2` variable starts at `origin` and holds the point written to
       it -- the store's deep copy is the snapshot; a `Sprite` variable
       declares no initial, holding nothing until a brain writes it, and
@@ -702,7 +703,10 @@ the current slice alone.
     type to that core type, the first icon given standing and an icon
     given a name that is no core type reported; every type icon bound is
     the brain editor's data-type icon for that type, which every variable
-    tile of the type carrying no icon of its own wears; the brain editor
+    or literal tile of the type wears as its face while it carries no icon
+    of its own -- an asset literal's resolved preview being its own -- and
+    which every value tile of the type -- a literal, a variable or an
+    output -- wears in its corner over any icon of its own; the brain editor
     names a type by its variable factory's label, else by the label its
     catalog entry carries, else by its name; the one
     target-aware residue is the per-target theme
