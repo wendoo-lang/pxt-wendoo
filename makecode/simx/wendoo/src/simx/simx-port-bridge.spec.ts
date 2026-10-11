@@ -18,6 +18,7 @@ import { decodeImageHex } from "./image-buffer.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode } from "./sim-channel.js";
 import { type SimxPortBridge, startSimxPortBridge } from "./simx-bridge.js";
 import { imageSvg } from "./svg-image.js";
+import { targetIconPalette } from "./target-icon-palettes.js";
 import { FakeAssetProvider, listedImage } from "./test-support/asset-provider.js";
 import { pixelImage } from "./test-support/image-buffer-encoder.js";
 import { FakePortFrame, PARENT_ORIGIN } from "./test-support/port-frame.js";
@@ -378,10 +379,12 @@ describe("simx port bridge", () => {
       });
     }
 
-    /** The catalog the editor receives for {@link iconCatalog} of `icon`, its icon rendered under `palette`. */
-    function renderedIconCatalog(icon: string, palette: readonly string[]): string {
+    /** The catalog the editor receives for {@link iconCatalog} of `icon`, its icon rendered under the arcade target's icon palette. */
+    function renderedIconCatalog(icon: string): string {
       const reading = decodeImageHex(icon);
       assert.ok(reading.image);
+      const palette = targetIconPalette("arcade");
+      assert.ok(palette);
       const iconUrl = imageSvg(reading.image, palette).url;
       return JSON.stringify({
         packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor", iconUrl }] }],
@@ -496,7 +499,8 @@ describe("simx port bridge", () => {
       );
     });
 
-    it("publishes the catalog with each tile icon rendered as an iconUrl, and no icon text", async () => {
+    it("publishes the catalog with each tile icon rendered as an iconUrl under the target's icon palette, never the project's, and no icon text", async () => {
+      assets.palette = ["#000000", "#00aa00", "#0000aa"];
       assets.answer();
       const frame = start();
       const editor = await joinRaw(frame);
@@ -505,7 +509,7 @@ describe("simx port bridge", () => {
 
       frame.programPosts(iconCatalog(ICON));
 
-      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON, assets.palette)));
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
     });
 
     it("publishes a tile whose icon it cannot read without an iconUrl, logging the icon's code, and the catalog all the same", async () => {
@@ -527,35 +531,23 @@ describe("simx port bridge", () => {
       assert.ok(errors[0].startsWith("IMAGE_BUFFER_MAGIC_UNKNOWN: "));
     });
 
-    it("re-publishes both the snapshot and the re-rendered catalog when the project's palette changes", async () => {
+    it("re-publishes the snapshot when the project's palette changes, and never the catalog", async () => {
       assets.images = [listedImage("image1", [[1]])];
       assets.answer();
       const frame = start();
       frame.programPosts(iconCatalog(ICON));
       const editor = await joinRaw(frame);
-      const opening = [await editor.nextMessage(), await editor.nextMessage(), await editor.nextMessage()];
-      assert.deepEqual(
-        opening.find((message) => message.type === "makecode:projectInfo"),
-        projectInfoMessage(assets.name)
-      );
-      assert.deepEqual(
-        opening.find((message) => message.type === "makecode:catalog"),
-        catalogMessage(renderedIconCatalog(ICON, assets.palette))
-      );
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
+      assert.deepEqual(await editor.nextMessage(), assetsMessage([snapshotEntry("image1", [[1]], assets.palette)]));
+      assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
       const recolored = ["#000000", "#00aa00", "#0000aa"];
       assets.palette = recolored;
       assets.change();
-      const updates = [await editor.nextMessage(), await editor.nextMessage()];
 
-      assert.deepEqual(
-        updates.find((message) => message.type === "makecode:catalog"),
-        catalogMessage(renderedIconCatalog(ICON, recolored))
-      );
-      assert.deepEqual(
-        updates.find((message) => message.type === "makecode:assets"),
-        assetsMessage([snapshotEntry("image1", [[1]], recolored)])
-      );
+      assert.deepEqual(await editor.nextMessage(), assetsMessage([snapshotEntry("image1", [[1]], recolored)]));
+      await quiet(300);
+      await nothingMore(editor);
     });
 
     it("keeps publishing the catalog and serving brains requests when MakeCode refuses it the project's assets, logging the code", async () => {
@@ -566,12 +558,7 @@ describe("simx port bridge", () => {
       frame.programPosts(iconCatalog(ICON));
       const editor = await joinRaw(frame);
 
-      assert.deepEqual(
-        await editor.nextMessage(),
-        catalogMessage(
-          JSON.stringify({ packs: [{ name: "arcade", tiles: [{ name: "sensor.arcade.dpad", kind: "sensor" }] }] })
-        )
-      );
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
       editor.send({ type: "makecode:brainsList", id: "list-1" });
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsListReply",

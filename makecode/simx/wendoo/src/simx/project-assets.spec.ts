@@ -87,19 +87,6 @@ describe("project assets", () => {
     );
   }
 
-  /** Resolves with the next palette `subject` announces. */
-  function nextPalette(subject: ProjectAssets): Promise<readonly string[]> {
-    return within(
-      new Promise((resolve) => {
-        const unsubscribe = subject.onPalette((palette) => {
-          unsubscribe();
-          resolve(palette);
-        });
-      }),
-      "a palette"
-    );
-  }
-
   /** Resolves with the next project name `subject` announces. */
   function nextName(subject: ProjectAssets): Promise<string> {
     return within(
@@ -130,7 +117,6 @@ describe("project assets", () => {
       },
     ]);
     assert.deepEqual(subject.snapshot, snapshot);
-    assert.deepEqual(subject.palette, provider.palette);
     assert.equal(
       provider.listed.every((kind) => kind === "image"),
       true
@@ -142,7 +128,6 @@ describe("project assets", () => {
     const subject = start();
     await delay(20);
     assert.equal(subject.snapshot, undefined);
-    assert.equal(subject.palette, undefined);
     provider.images = [listedImage("image1", [[1]])];
     const arriving = nextSnapshot(subject);
     provider.answer();
@@ -224,22 +209,6 @@ describe("project assets", () => {
     for (let i = 0; i < 10; i++) provider.change();
     await delay(40);
     assert.equal(provider.listed.length, listedBefore + 1);
-  });
-
-  it("announces the palette on the first listing and again only when it changes", async () => {
-    provider.answer();
-    const subject = start();
-    assert.deepEqual(await nextPalette(subject), provider.palette);
-    await delay(20);
-    const announced: (readonly string[])[] = [];
-    subject.onPalette((palette) => announced.push(palette));
-    provider.change();
-    await delay(40);
-    assert.deepEqual(announced, []);
-    provider.palette = ["#000000", "#00ff00"];
-    provider.change();
-    await delay(40);
-    assert.deepEqual(announced, [["#000000", "#00ff00"]]);
   });
 
   it("announces the project's name on the first listing and again only when it changes", async () => {

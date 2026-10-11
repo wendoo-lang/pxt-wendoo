@@ -10,7 +10,7 @@
  * lowest bits, so at 4 bits per pixel an even row sits in the low nibble and
  * at 1 bit per pixel row `y` in bit `y & 7`. Each column is padded with zero
  * bytes: at 1 bit per pixel to a whole byte, otherwise to a multiple of 4
- * bytes. A pixel's value is an index into the project's palette.
+ * bytes. A pixel's value is an index into the palette it is drawn under.
  */
 
 /** The byte opening every image buffer. */

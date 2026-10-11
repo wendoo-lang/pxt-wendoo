@@ -89,10 +89,10 @@ function snapshotOf(images: readonly ProjassetsImage[], palette: readonly string
 }
 
 /**
- * The MakeCode project's images, palette and name, as the editor's asset
- * provider lists them, held for publication: the asset snapshot -- every
- * image of the project with its preview rendered under the project's
- * palette -- the palette itself, and the project's name.
+ * The MakeCode project's images and name, as the editor's asset provider
+ * lists them, held for publication: the asset snapshot -- every image of
+ * the project with its preview rendered under the project's palette -- and
+ * the project's name.
  *
  * On construction it subscribes to the provider's change reports and lists
  * the project's images, and it lists them again once the subscription is
@@ -100,8 +100,7 @@ function snapshotOf(images: readonly ProjassetsImage[], palette: readonly string
  * {@link ProjectAssetsTimings.debounceMs} window gathered into one listing
  * and a listing asked for while one is in flight made once it settles. A
  * listing that yields a snapshot unlike the last is announced to
- * {@link onSnapshot}, a palette unlike the last to {@link onPalette}, and a
- * name unlike the last to {@link onName}.
+ * {@link onSnapshot}, and a name unlike the last to {@link onName}.
  * Each image that cannot be rendered in full is logged by code when a
  * listing first meets it, and again only after a listing without it.
  *
@@ -121,13 +120,10 @@ export class ProjectAssets {
   private readonly _maxRetryDelayMs: number;
   private readonly _debounceMs: number;
   private readonly _snapshotListeners = new Set<(snapshot: readonly MakeCodeAsset[]) => void>();
-  private readonly _paletteListeners = new Set<(palette: readonly string[]) => void>();
   private readonly _nameListeners = new Set<(name: string) => void>();
   private readonly _timers = new Set<ReturnType<typeof setTimeout>>();
   private _snapshot: MakeCodeAsset[] | undefined;
   private _snapshotText: string | undefined;
-  private _palette: string[] | undefined;
-  private _paletteText: string | undefined;
   private _name: string | undefined;
   private _problems: ReadonlySet<string> = new Set();
   // true from a listing's request until it settles, including the waits between its retries
@@ -160,11 +156,6 @@ export class ProjectAssets {
     return this._snapshot;
   }
 
-  /** The latest palette, each color as `#rrggbb`, or `undefined` before the first listing. */
-  get palette(): readonly string[] | undefined {
-    return this._palette;
-  }
-
   /** The project's latest name, or `undefined` before the first listing. */
   get name(): string | undefined {
     return this._name;
@@ -175,14 +166,6 @@ export class ProjectAssets {
     this._snapshotListeners.add(listener);
     return () => {
       this._snapshotListeners.delete(listener);
-    };
-  }
-
-  /** Subscribe to each palette unlike the one before it. Returns an unsubscribe function. */
-  onPalette(listener: (palette: readonly string[]) => void): () => void {
-    this._paletteListeners.add(listener);
-    return () => {
-      this._paletteListeners.delete(listener);
     };
   }
 
@@ -200,7 +183,6 @@ export class ProjectAssets {
     for (const timer of this._timers) clearTimeout(timer);
     this._timers.clear();
     this._snapshotListeners.clear();
-    this._paletteListeners.clear();
     this._nameListeners.clear();
   }
 
@@ -268,24 +250,18 @@ export class ProjectAssets {
     );
   }
 
-  /** Takes `listing` as the latest, announcing its palette, snapshot and name where they changed. */
+  /** Takes `listing` as the latest, announcing its snapshot and name where they changed. */
   private adopt(listing: ProjassetsListing): void {
-    const palette = [...listing.palette];
-    const paletteText = JSON.stringify(palette);
-    const paletteChanged = paletteText !== this._paletteText;
-    const { snapshot, problems } = snapshotOf(listing.assets, palette);
+    const { snapshot, problems } = snapshotOf(listing.assets, listing.palette);
     for (const problem of problems) if (!this._problems.has(problem)) this._log.error(problem);
     this._problems = new Set(problems);
     const snapshotText = JSON.stringify(snapshot);
     const snapshotChanged = snapshotText !== this._snapshotText;
     const { name } = listing;
     const nameChanged = name !== this._name;
-    this._palette = palette;
-    this._paletteText = paletteText;
     this._snapshot = snapshot;
     this._snapshotText = snapshotText;
     this._name = name;
-    if (paletteChanged) for (const listener of this._paletteListeners) listener(palette);
     if (snapshotChanged) for (const listener of this._snapshotListeners) listener(snapshot);
     if (nameChanged) for (const listener of this._nameListeners) listener(name);
   }

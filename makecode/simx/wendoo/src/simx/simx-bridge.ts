@@ -15,6 +15,7 @@ import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
 import { ProjectAssets, type ProjectAssetsProvider } from "./project-assets.js";
 import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
+import { targetIconPalette } from "./target-icon-palettes.js";
 
 /** Where the simulator extension writes its log lines for developers. */
 export interface SimxLog {
@@ -34,8 +35,8 @@ export interface SimxServingOptions {
   files: ProjectFiles;
   /**
    * The editor's asset provider, which the MakeCode project's images,
-   * palette and name are listed from for the asset snapshot, the catalog's
-   * icons and the project info.
+   * palette and name are listed from for the asset snapshot and the project
+   * info.
    */
   assets: ProjectAssetsProvider;
   /**
@@ -47,15 +48,16 @@ export interface SimxServingOptions {
   /**
    * Receives every message from the program that was rejected, by its code,
    * the code of a counterpart's rejected makecode hello, the code of every
-   * request the asset provider fails, and the code of every image or icon
-   * that cannot be rendered in full.
+   * request the asset provider fails, the code of every image or icon
+   * that cannot be rendered in full, and the code of a catalog whose target
+   * has no icon palette.
    */
   log: SimxLog;
   /**
    * Id of the MakeCode target running the program, for example `microbit`
-   * or `arcade`, declared to the editor in each makecode session's hello.
-   * Informational, for display and theming. When omitted, no target is
-   * declared.
+   * or `arcade`, declared to the editor in each makecode session's hello,
+   * and keying the palette the catalog's icons are rendered under. When
+   * omitted, no target is declared.
    */
   target?: string;
 }
@@ -224,11 +226,10 @@ interface ProjectServer {
  * program's messages are read on `channel`, and the program is asked for its
  * catalog at once. The latest catalog the program posted is published into
  * each session once it is established, and every later catalog into the
- * current one, each with its icons rendered as `iconUrl` data URIs under the
- * project's palette; the catalog as posted is kept, and published again
- * re-rendered whenever the palette changes the result. A rejected message
- * from the program is logged by its code and discards the latest catalog, so
- * no session receives a catalog older than the program's newest. The
+ * current one, each rendered once as it arrives, its icons as `iconUrl` data
+ * URIs under the hosting `target`'s icon palette. A rejected message from
+ * the program is logged by its code and discards the latest catalog, so no
+ * session receives a catalog older than the program's newest. The
  * project's asset snapshot, listed from `assets`, is published into each
  * session once it is established, after the catalog, and into the current
  * one whenever it changes; so is the project's name, listed beside it, as
@@ -250,15 +251,14 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   const serveManifest = (request: MakeCodeManifestRequest): void => {
     manifest.serve(request);
   };
-  let catalog: string | undefined;
-  // the latest catalog with its icons rendered under the project's palette, as sessions receive it
+  const iconPalette = targetIconPalette(options.target);
+  // the latest catalog with its icons rendered under the target's icon palette, as sessions receive it
   let publishedCatalog: string | undefined;
   let counterpart: CounterpartSession | undefined;
 
   const channelUnsubscribes = [
     channel.onCatalog((posted) => {
-      catalog = posted;
-      const rendered = enrichCatalogIcons(posted, projectAssets.palette, log);
+      const rendered = enrichCatalogIcons(posted, options.target, iconPalette, log);
       publishedCatalog = rendered;
       counterpart?.publish(rendered);
     }),
@@ -266,16 +266,8 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
       live.repost();
     }),
     channel.onRejected((code) => {
-      catalog = undefined;
       publishedCatalog = undefined;
       log.error(`${code}: ${REJECTION_EXPLANATIONS[code]}`);
-    }),
-    projectAssets.onPalette((palette) => {
-      if (catalog === undefined) return;
-      const rendered = enrichCatalogIcons(catalog, palette, log);
-      if (rendered === publishedCatalog) return;
-      publishedCatalog = rendered;
-      counterpart?.publish(rendered);
     }),
     projectAssets.onSnapshot((snapshot) => {
       counterpart?.publishAssets(snapshot);
@@ -324,13 +316,13 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
  * from `files`, and its pushes and manifest writes are written to them; each
  * push that changes what a program runs is posted to the running program at
  * once, and the last update of every program is posted again each time the
- * program starts. The program's latest catalog, its icons rendered under the
- * project's palette, then the latest asset snapshot, then the project's name
- * are published into each session once it is established, and each later
- * one into the current session; a message from the program rejected by its
- * code is logged and discards the latest catalog. An editor hello declaring
- * a newer makecode protocol is logged by its code, and no session is served
- * over that port.
+ * program starts. The program's latest catalog, its icons rendered under
+ * the `target`'s icon palette, then the latest asset snapshot, then the
+ * project's name are published into each session once it is established,
+ * and each later one into the current session; a message from the program
+ * rejected by its code is logged and discards the latest catalog. An editor
+ * hello declaring a newer makecode protocol is logged by its code, and no
+ * session is served over that port.
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
   const { frame, parentOrigin, log } = options;

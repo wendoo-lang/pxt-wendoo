@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { enrichCatalogIcons } from "./catalog-icons.js";
+import { CatalogIconProblemCode, enrichCatalogIcons } from "./catalog-icons.js";
 import { decodeImageHex, ImageBufferErrorCode } from "./image-buffer.js";
 import type { SimxLog } from "./simx-bridge.js";
 import { imageSvg } from "./svg-image.js";
 
 const PALETTE = ["#000000", "#ffffff", "#ff2121"];
+
+/** The hosting target the catalogs are rendered for. */
+const TARGET = "arcade";
 
 /** A 4-bit icon, 1 wide and 2 tall: index 1 above index 2. */
 const ICON_A = "870401000200000021000000";
@@ -69,7 +72,7 @@ describe("catalog icon enrichment", () => {
   it("renders every icon to an iconUrl in the icon's place, leaving no icon text behind", () => {
     const log = new RecordingLog();
     const raw = catalogWithIcons({ type: ICON_A, tile: ICON_A, slot: ICON_B, node: ICON_B });
-    const enriched = enrichCatalogIcons(raw, PALETTE, log);
+    const enriched = enrichCatalogIcons(raw, TARGET, PALETTE, log);
     const a = iconUrl(ICON_A, PALETTE);
     const b = iconUrl(ICON_B, PALETTE);
     const expected = JSON.parse(raw.replaceAll('"icon":', '"iconUrl":'), (_key, value: unknown) => {
@@ -85,15 +88,15 @@ describe("catalog icon enrichment", () => {
   it("renders the same catalog and palette to the same text every time", () => {
     const raw = catalogWithIcons({ type: ICON_A, tile: ICON_B, slot: ICON_A, node: ICON_B });
     assert.equal(
-      enrichCatalogIcons(raw, PALETTE, new RecordingLog()),
-      enrichCatalogIcons(raw, PALETTE, new RecordingLog())
+      enrichCatalogIcons(raw, TARGET, PALETTE, new RecordingLog()),
+      enrichCatalogIcons(raw, TARGET, PALETTE, new RecordingLog())
     );
   });
 
   it("colors the icons from the palette it is given", () => {
     const raw = catalogWithIcons({ type: ICON_A, tile: ICON_A, slot: ICON_A, node: ICON_A });
     const recolored = ["#000000", "#00aa00", "#0000aa"];
-    const enriched = JSON.parse(enrichCatalogIcons(raw, recolored, new RecordingLog())) as {
+    const enriched = JSON.parse(enrichCatalogIcons(raw, TARGET, recolored, new RecordingLog())) as {
       packs: { tiles: { iconUrl?: string }[] }[];
     };
     assert.equal(enriched.packs[0].tiles[0].iconUrl, iconUrl(ICON_A, recolored));
@@ -102,7 +105,7 @@ describe("catalog icon enrichment", () => {
   it("writes an icon it cannot read without an iconUrl and logs it once by code, and renders the rest", () => {
     const log = new RecordingLog();
     const raw = catalogWithIcons({ type: ICON_A, tile: "8805", slot: ICON_B, node: ICON_B });
-    const enriched = JSON.parse(enrichCatalogIcons(raw, PALETTE, log)) as {
+    const enriched = JSON.parse(enrichCatalogIcons(raw, TARGET, PALETTE, log)) as {
       packs: { types: Record<string, unknown>[]; tiles: Record<string, unknown>[] }[];
     };
     const tile = enriched.packs[0].tiles[0];
@@ -126,27 +129,38 @@ describe("catalog icon enrichment", () => {
         },
       ],
     });
-    enrichCatalogIcons(raw, PALETTE, log);
+    enrichCatalogIcons(raw, TARGET, PALETTE, log);
     assert.equal(log.errors.length, 2);
     assert.ok(log.errors[0].includes("arcade/tile.op->and"));
     assert.ok(log.errors[1].includes("arcade/number"));
   });
 
-  it("writes every icon without an iconUrl, logging nothing, while no palette is known", () => {
+  it("writes every icon without an iconUrl for a target with no palette, logging it once for the catalog by code naming the target", () => {
     const log = new RecordingLog();
     const raw = catalogWithIcons({ type: ICON_A, tile: ICON_A, slot: ICON_B, node: "zz" });
-    const enriched = enrichCatalogIcons(raw, undefined, log);
+    const enriched = enrichCatalogIcons(raw, "microbit", undefined, log);
     assert.equal(enriched.includes('"icon"'), false);
     assert.equal(enriched.includes('"iconUrl"'), false);
-    assert.deepEqual(log.errors, []);
+    assert.equal(log.errors.length, 1);
+    assert.ok(log.errors[0].startsWith(`${CatalogIconProblemCode.TARGET_PALETTE_MISSING}: `));
+    assert.ok(log.errors[0].includes("microbit"));
+  });
+
+  it("logs a catalog carrying icons once by code while no target is declared", () => {
+    const log = new RecordingLog();
+    const raw = catalogWithIcons({ type: ICON_A, tile: ICON_A, slot: ICON_B, node: ICON_B });
+    enrichCatalogIcons(raw, undefined, undefined, log);
+    assert.equal(log.errors.length, 1);
+    assert.ok(log.errors[0].startsWith(`${CatalogIconProblemCode.TARGET_PALETTE_MISSING}: `));
   });
 
   it("passes a catalog carrying no icon through verbatim, and text that is no JSON document unchanged", () => {
     const log = new RecordingLog();
     const plain = '{"packs":[{"name":"beacon","tiles":[{"name":"say","docs":"caf\\u00e9"}]}]}';
-    assert.equal(enrichCatalogIcons(plain, PALETTE, log), plain);
+    assert.equal(enrichCatalogIcons(plain, TARGET, PALETTE, log), plain);
     const notJson = '{"packs": [ "icon": "87\t';
-    assert.equal(enrichCatalogIcons(notJson, PALETTE, log), notJson);
+    assert.equal(enrichCatalogIcons(notJson, TARGET, PALETTE, log), notJson);
+    assert.equal(enrichCatalogIcons(plain, "microbit", undefined, log), plain);
     assert.deepEqual(log.errors, []);
   });
 });

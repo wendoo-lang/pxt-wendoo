@@ -643,8 +643,10 @@ the current slice alone.
     `approvedRepoLib` entry in each target's own `targetconfig.json`
     (`owner/repo` key, hosting URL); it knows its hosting target from the
     `target` frame URL param and may carry target-keyed behavior (asset
-    previews, target-specific state). Per-target simx builds are not
-    taken; raise a need as a decision.
+    previews, target-specific state). Catalog icons are rendered under the
+    hosting target's own palette, keyed by target inside the simx, while
+    image assets render under the project's palette. Per-target simx builds
+    are not taken; raise a need as a decision.
   - `packages/*` own this repo's cross-side shared npm packages: contracts
     consumed by units on both sides of the integration via `file:`
     dependencies. The first is `packages/protocol` (`@wendoo/makecode-session`),

@@ -55,6 +55,7 @@ import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-sessio
 import { writeBrainsModule } from "../../simx/brains-module.js";
 import { enrichCatalogIcons } from "../../simx/catalog-icons.js";
 import { writeIdsModule } from "../../simx/ids-module.js";
+import { targetIconPalette } from "../../simx/target-icon-palettes.js";
 import { buildBrainEditorConfig } from "../brain/editor-config.js";
 import { createTileVisualProvider } from "../brain/visual-provider.js";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
@@ -1215,26 +1216,6 @@ export function arcadeStructTextConstants(bytecode: Uint8Array): string[] {
   return texts;
 }
 
-/** The MakeCode Arcade default palette, as the simx renders icons under it. */
-const ARCADE_PALETTE = [
-  "#000000",
-  "#ffffff",
-  "#ff2121",
-  "#ff93c4",
-  "#ff8135",
-  "#fff609",
-  "#249ca3",
-  "#78dc52",
-  "#003fad",
-  "#87f2ff",
-  "#8e2ec4",
-  "#a4839f",
-  "#5c406c",
-  "#e5cdc4",
-  "#91463d",
-  "#000000",
-];
-
 /** One icon the rendered arcade catalog carries, and what the editor makes of it. */
 export interface RenderedIcon {
   /** Id of the tile the icon belongs to: a sensor, an actuator, a modifier slot's tile, or a core tile; or the page family id. */
@@ -1252,7 +1233,7 @@ export interface RenderedIcon {
 /**
  * Every icon the arcade selftest's pinned catalog carries on a tile, a
  * modifier slot or a core tile icon entry once the simx has rendered it under
- * the Arcade default palette, first declaration of a shared slot tile or of a
+ * the arcade target's icon palette, first declaration of a shared slot tile or of a
  * core tile winning, each beside what
  * the environment binding the rendered catalog under the arcade selftest's
  * allocation holds and resolves for its tile -- for the page family id, the
@@ -1261,7 +1242,7 @@ export interface RenderedIcon {
  */
 export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[] } {
   const errors: string[] = [];
-  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, {
+  const rendered = enrichCatalogIcons(arcadeCatalog(), "arcade", targetIconPalette("arcade"), {
     info: () => {},
     error: (message) => {
       errors.push(message);
@@ -1323,13 +1304,16 @@ export function arcadeRenderedIcons(): { icons: RenderedIcon[]; errors: string[]
 
 /**
  * Every icon a type entry or a core type icon entry of the arcade selftest's
- * pinned catalog carries once the simx has rendered it under the Arcade
- * default palette, keyed by type name, each beside the icon the environment
+ * pinned catalog carries once the simx has rendered it under the arcade
+ * target's icon palette, keyed by type name, each beside the icon the environment
  * binding the rendered catalog under the arcade selftest's allocation binds
  * to the type.
  */
 export function arcadeRenderedTypeIcons(): { name: string; carried: string; bound: string | undefined }[] {
-  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, { info: () => {}, error: () => {} });
+  const rendered = enrichCatalogIcons(arcadeCatalog(), "arcade", targetIconPalette("arcade"), {
+    info: () => {},
+    error: () => {},
+  });
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
   return parseCatalog(rendered).packs.flatMap((pack) => [
     ...pack.types.flatMap((type) =>
@@ -1373,7 +1357,7 @@ export function arcadeVariableFactories(): { name: string; produces: string | un
 
 /**
  * For each type of the arcade selftest's pinned catalog the environment
- * binding it -- once the simx has rendered it under the Arcade default
+ * binding it -- once the simx has rendered it under the arcade target's icon
  * palette -- binds a variable factory for: the icon the environment binds to
  * the type, what the visual provider resolves the type's variable factory to
  * as its face, and what it resolves a variable that factory mints to.
@@ -1384,7 +1368,10 @@ export function arcadeVariableFaces(): {
   factoryFace: string | undefined;
   variableFace: string | undefined;
 }[] {
-  const rendered = enrichCatalogIcons(arcadeCatalog(), ARCADE_PALETTE, { info: () => {}, error: () => {} });
+  const rendered = enrichCatalogIcons(arcadeCatalog(), "arcade", targetIconPalette("arcade"), {
+    info: () => {},
+    error: () => {},
+  });
   const built = buildAuthoringEnvironment(rendered, arcadeIds());
   const resolve = createTileVisualProvider(
     built.environment.tileCatalogs(),
