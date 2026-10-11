@@ -20,10 +20,12 @@ namespace wendoo {
   }
 
   /**
-   * The sprite in the current scene, other than `sprite`, whose center is
-   * nearest the center of `sprite`; among those equally near, the one
-   * created first in the scene (the lowest sprite id). `undefined` when the
-   * scene holds no other sprite `admits` admits.
+   * The sprite in the current scene, other than `sprite` and not destroyed,
+   * whose center is nearest the center of `sprite`; among those equally
+   * near, the one created first in the scene (the lowest sprite id).
+   * `undefined` when the scene holds no other such sprite `admits` admits. A
+   * sprite destroyed with an effect stays in the scene while the effect
+   * plays, and is never picked.
    *
    * @param sprite - The sprite nearness is read from.
    * @param admits - Whether a sprite may be picked; omit to admit every sprite.
@@ -38,7 +40,7 @@ namespace wendoo {
         continue;
       }
       const other = candidates[i] as Sprite;
-      if (other === sprite || (admits && !admits(other))) {
+      if (other === sprite || isDestroyed(other) || (admits && !admits(other))) {
         continue;
       }
       const distance = centerDistanceSquared(sprite, other);

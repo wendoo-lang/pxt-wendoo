@@ -8,29 +8,31 @@
  * programs the project's brains module declares, through the Wendoo arcade
  * extension's block function, and reports how the programs ran across the
  * game's frames -- among them programs placing the arcade base pack's dpad,
- * A button, B button, bump, in-range, out-of-range, myself, move, add-score
- * and game-over tiles, its player literals, and the `Sprite`, `Vector2` and
- * `Player` accessors, driven by pressing the controllers' buttons, placing
- * and moving sprites and setting scores from game code, and programs updated
- * while the game runs, through the messages the Wendoo simulator extension
- * posts. It also calls the bump, in-range, out-of-range, myself, dpad, A
- * button, B button and add-score tiles' bodies and the `Sprite` and `Player`
- * types' field hooks directly with image asset, sprite, brain and player
- * values, the `Effect` and `Sound` types' bindings with each of their
- * literals, images resolved through an image factory registered the way a
- * project's images module registers one, and the move tile's body with
- * sprite and point targets and with wander destinations picked from random
- * sources it scripts. It reads and writes the variables of the brains
- * sprites run through the arcade extension's brain variable block
- * functions.
+ * A button, B button, bump, in-range, out-of-range, myself, destroyed, move,
+ * add-score, game-over and destroy tiles, its player and particle effect
+ * literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
+ * pressing the controllers' buttons, placing, moving and destroying sprites
+ * and setting scores from game code, and programs updated while the game
+ * runs, through the messages the Wendoo simulator extension posts -- and a
+ * program on a program host it drains by hand. It also calls the bump,
+ * in-range, out-of-range, myself, dpad, A button, B button, add-score,
+ * destroy and destroyed tiles' bodies and the `Sprite` and `Player` types'
+ * field hooks directly with image asset, sprite, brain, player and particle
+ * effect values, the `Effect`, `Sound` and `ParticleEffect` types' bindings
+ * with each of their literals, images resolved through an image factory
+ * registered the way a project's images module registers one, and the move
+ * tile's body with sprite and point targets and with wander destinations
+ * picked from random sources it scripts. It reads and writes the variables
+ * of the brains sprites run through the arcade extension's brain variable
+ * block functions.
  *
  * Output grammar, one line each:
  *
  * - `CHECK <check> ok` or `CHECK <check> failed`, one per check.
  * - `ASSERT <check>` -- follows each failed check; the capture harness reads
  *   it as the run's failure.
- * - `wendoo program-rejected <code> <id>` -- one per program a scene's host
- *   refused, as the host logs it.
+ * - `wendoo program-rejected <code> <id>` -- one per program a scene's host,
+ *   or the host drained by hand, refused, as the host logs it.
  * - `wendoo program-updated <id> <source-hash>`, `wendoo program-removed <id>`,
  *   `wendoo program-update-rejected <code> <id>`, and
  *   `wendoo sim-channel-rejected <code>` -- one per program update taken,
@@ -42,6 +44,9 @@
  * - `wendoo WENDOO_BRAIN_UNRESOLVED <id>` -- one per brain document id no
  *   compiled brain holds when a sprite's brain was first set to it, as the
  *   arcade base pack logs it.
+ * - `wendoo WENDOO_PARTICLE_EFFECT_UNUSABLE` -- one for the whole run, the
+ *   first time the destroy tile is given a particle effect naming nothing
+ *   Arcade holds, as the arcade base pack logs it.
  * - `wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE` and `wendoo WENDOO_SCORE_UNUSABLE`
  *   -- one each for the whole run, the first time a sprite's move smoothing
  *   is written, and a score written or added to, with no usable number, as
@@ -4748,10 +4753,7 @@ namespace arcadeSelftest {
     pause(FRAMES_MS);
     const oneFollowsOne = movesAt(one, DEFAULT_MOVE_SPEED, 0) && movesAt(two, 0, 0);
     controller.right.setPressed(false);
-    check(
-      "an-update-restart-keeps-the-player-game-code-gave-each-sprite",
-      restarted && twoFollowsTwo && oneFollowsOne
-    );
+    check("an-update-restart-keeps-the-player-game-code-gave-each-sprite", restarted && twoFollowsTwo && oneFollowsOne);
 
     wendoo.setBrainNumber(one, "bonus", 500);
     wendoo.setBrainNumber(one, "extra", 9);
@@ -4790,9 +4792,7 @@ namespace arcadeSelftest {
     const bonusReturned = wendoo.readBrainNumber(two, "bonus");
     check(
       "a-variable-an-update-drops-is-gone-and-a-later-update-declaring-it-starts-it-fresh",
-      bonusGone &&
-        bonusReturned > 0 &&
-        wendoo.readBrainNumber(two, "count") === countBeforeReturn + bonusReturned
+      bonusGone && bonusReturned > 0 && wendoo.readBrainNumber(two, "count") === countBeforeReturn + bonusReturned
     );
 
     const countBeforeSwitch = wendoo.readBrainNumber(two, "count");
@@ -5025,6 +5025,391 @@ namespace arcadeSelftest {
     check(
       "a-game-over-given-a-player-effect-or-sound-that-reads-nothing-does-not-run",
       ticksOf(unset) > 0 && endings === 0 && !config.effectSetByUser && !config.soundSetByUser
+    );
+    game.popScene();
+  }
+
+  /** Wendoo type name of the `ParticleEffect` type. */
+  const PARTICLE_EFFECT_TYPE = "ParticleEffect";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `ParticleEffect` type. */
+  const PARTICLE_EFFECT_ATOM = 1031;
+
+  /** The action id the arcade selftest's ids module allocates the destroy actuator. */
+  const DESTROY_ACTION = 1035;
+
+  /** The action id the arcade selftest's ids module allocates the destroyed sensor. */
+  const DESTROYED_ACTION = 1036;
+
+  /** The names Arcade's API gives the particle effects its destroy block offers: the particle-only effects, then the screen effects. */
+  const ARCADE_PARTICLE_EFFECT_NAMES = [
+    "spray",
+    "trail",
+    "fountain",
+    "rings",
+    "fire",
+    "warmRadial",
+    "coolRadial",
+    "halo",
+    "ashes",
+    "disintegrate",
+    "confetti",
+    "hearts",
+    "smiles",
+    "blizzard",
+    "bubbles",
+    "starField",
+    "clouds",
+    "none",
+  ];
+
+  /** Arcade's particle effect each name in {@link ARCADE_PARTICLE_EFFECT_NAMES} names, at its position. */
+  function arcadeParticleEffects(): effects.ParticleEffect[] {
+    return [
+      effects.spray,
+      effects.trail,
+      effects.fountain,
+      effects.rings,
+      effects.fire,
+      effects.warmRadial,
+      effects.coolRadial,
+      effects.halo,
+      effects.ashes,
+      effects.disintegrate,
+      effects.confetti,
+      effects.hearts,
+      effects.smiles,
+      effects.blizzard,
+      effects.bubbles,
+      effects.starField,
+      effects.clouds,
+      effects.none,
+    ];
+  }
+
+  /** The `ParticleEffect` value naming `name`, as a program compiled with a literal holding that name holds it. */
+  function particleEffectValue(name: string): wendoo.Value {
+    return literalValue(PARTICLE_EFFECT_TYPE, wendoo.namedChoiceLiterals([name], [name])[0]);
+  }
+
+  /** Whether `sprite` is among the current scene's sprites. */
+  function inScene(sprite: Sprite): boolean {
+    return game.currentScene().allSprites.indexOf(sprite) >= 0;
+  }
+
+  /** Whether `sprite` is flagged a ghost, as Arcade flags a sprite vanishing in an effect. */
+  function isGhost(sprite: Sprite): boolean {
+    return (sprite.flags & SpriteFlag.Ghost) !== 0;
+  }
+
+  /**
+   * Check the `ParticleEffect` type and the destroy tiles' registrations:
+   * the type takes its atom and its one field, and the destroy actuator and
+   * destroyed sensor their action ids, from the project's ids module; the
+   * type declares one literal per particle effect Arcade's destroy block
+   * offers, keyed by the name Arcade's API gives it and holding that name,
+   * each naming the Arcade effect of that name; and an empty slot names
+   * nothing. None of it logs a value naming nothing.
+   */
+  function checkParticleEffectType(): void {
+    const ids = wendoo.projectIds();
+    check(
+      "particle-effect-type-and-destroy-tiles-take-their-ids-from-the-manifest",
+      wendoo.particleEffectBinding.atomId === PARTICLE_EFFECT_ATOM &&
+        wendoo.particleEffectBinding.typeId === wendoo.structTypeId(PARTICLE_EFFECT_TYPE) &&
+        wendoo.particleEffectBinding.fieldIds.length === 1 &&
+        wendoo.particleEffectBinding.fieldIds[0] === ids.fieldId(PARTICLE_EFFECT_TYPE, "name") &&
+        ids.actionId(wendoo.DESTROY_TILE) === DESTROY_ACTION &&
+        ids.actionId(wendoo.DESTROYED_TILE) === DESTROYED_ACTION &&
+        tileBody(wendoo.DESTROY_TILE) !== undefined &&
+        tileBody(wendoo.DESTROYED_TILE) !== undefined
+    );
+
+    const literals = wendoo.particleEffectLiterals();
+    const expected = arcadeParticleEffects();
+    let named = keyedByName(literals, ARCADE_PARTICLE_EFFECT_NAMES);
+    for (let i = 0; named && i < literals.length; i++) {
+      named =
+        wendoo.particleEffectBinding.particleEffectOf(literalValue(PARTICLE_EFFECT_TYPE, literals[i])) === expected[i];
+    }
+    check(
+      "each-particle-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-slot-names-none",
+      named &&
+        wendoo.particleEffectBinding.particleEffectOf(wendoo.NIL_VALUE) === undefined &&
+        wendoo.particleEffectBinding.particleEffectOf(undefined) === undefined
+    );
+  }
+
+  /**
+   * In a scene of its own, check the destroy actuator's and destroyed
+   * sensor's bodies, called directly: a bare destroy destroys its own sprite
+   * at once, and one given a sprite destroys that sprite alone; given an
+   * effect and a duration of half a second, the sprite is destroyed at once
+   * but stays in the scene as a ghost for 500 milliseconds, then is gone;
+   * given a duration and no effect, or an effect naming nothing Arcade
+   * holds, it is gone at once; given an effect and a duration of 0, below 0
+   * or none, the ghost stays for the effect's own length, a quarter of its
+   * default lifespan; a destroy of a sprite already destroyed changes
+   * nothing; and destroyed reads true on behalf of a destroyed sprite and nil
+   * on behalf of one that is not.
+   */
+  function checkDestroyTile(): void {
+    game.pushScene();
+    const destroy = tileBody(wendoo.DESTROY_TILE);
+    const nil = wendoo.NIL_VALUE;
+    const confetti = particleEffectValue("confetti");
+    const half = wendoo.mkNumber(0.5);
+
+    const own = newSprite(SpriteKind.Player);
+    act(destroy, own, []);
+    const bystander = newSprite(SpriteKind.Player);
+    const target = newSprite(SpriteKind.Player);
+    act(destroy, bystander, [wendoo.spriteValue(target)]);
+    check(
+      "a-bare-destroy-destroys-its-own-sprite-at-once-and-one-given-a-sprite-that-sprite-alone",
+      wendoo.isDestroyed(own) &&
+        !inScene(own) &&
+        wendoo.isDestroyed(target) &&
+        !inScene(target) &&
+        !wendoo.isDestroyed(bystander) &&
+        inScene(bystander)
+    );
+
+    const ghost = newSprite(SpriteKind.Player);
+    act(destroy, ghost, [nil, confetti, half]);
+    const ghostly = wendoo.isDestroyed(ghost) && isGhost(ghost) && inScene(ghost) && ghost.lifespan === 500;
+
+    const plain = newSprite(SpriteKind.Player);
+    act(destroy, plain, [nil, nil, half]);
+    check(
+      "a-destroy-given-a-duration-and-no-effect-removes-its-sprite-at-once",
+      wendoo.isDestroyed(plain) && !inScene(plain) && !isGhost(plain)
+    );
+
+    const unheld = newSprite(SpriteKind.Player);
+    const unheldAgain = newSprite(SpriteKind.Player);
+    act(destroy, unheld, [nil, particleEffectValue("sparkle"), half]);
+    act(destroy, unheldAgain, [nil, particleEffectValue("sparkle"), nil]);
+    check(
+      "a-destroy-given-a-particle-effect-naming-nothing-removes-its-sprite-at-once",
+      wendoo.isDestroyed(unheld) &&
+        !inScene(unheld) &&
+        !isGhost(unheld) &&
+        wendoo.isDestroyed(unheldAgain) &&
+        !inScene(unheldAgain) &&
+        !isGhost(unheldAgain)
+    );
+
+    const zero = newSprite(SpriteKind.Player);
+    const negative = newSprite(SpriteKind.Player);
+    const unset = newSprite(SpriteKind.Player);
+    act(destroy, zero, [nil, confetti, wendoo.mkNumber(0)]);
+    act(destroy, negative, [nil, confetti, wendoo.mkNumber(-2)]);
+    act(destroy, unset, [nil, confetti, nil]);
+    check(
+      "a-destroy-given-an-effect-and-a-duration-of-0-below-0-or-none-keeps-the-ghost-for-the-effects-own-length",
+      isGhost(zero) &&
+        zero.lifespan === 1000 &&
+        isGhost(negative) &&
+        negative.lifespan === 1000 &&
+        isGhost(unset) &&
+        unset.lifespan === 1000
+    );
+
+    const twice = newSprite(SpriteKind.Player);
+    act(destroy, twice, [nil, confetti, wendoo.mkNumber(2)]);
+    act(destroy, twice, []);
+    act(destroy, bystander, [wendoo.spriteValue(twice), particleEffectValue("fire"), half]);
+    check(
+      "destroying-a-destroyed-sprite-again-changes-nothing",
+      inScene(twice) && isGhost(twice) && twice.lifespan === 2000
+    );
+
+    const destroyed = tileBody(wendoo.DESTROYED_TILE);
+    check(
+      "destroyed-reads-true-on-behalf-of-a-destroyed-sprite-and-nil-otherwise",
+      readsNothing(act(destroyed, bystander, [])) &&
+        readsTrue(act(destroyed, own, [])) &&
+        readsTrue(act(destroyed, ghost, []))
+    );
+
+    pause(6 * FRAMES_MS);
+    check(
+      "a-destroy-given-an-effect-and-half-a-second-leaves-a-ghost-for-half-a-second-then-removes-it",
+      ghostly && !inScene(ghost) && wendoo.isDestroyed(ghost)
+    );
+    game.popScene();
+  }
+
+  /**
+   * Check, on a program host the check drains by hand, a program's final
+   * think: a program whose bare destroy destroys its own sprite has that
+   * sprite destroyed in the think it runs in and stays on the host; the next
+   * drain thinks it once more, its destroyed rule firing, then ends it; and
+   * later drains think it no more.
+   */
+  function checkFinalThink(): void {
+    game.pushScene();
+    const host = new wendoo.ProgramHost(new wendoo.VmObserver());
+    const sprite = newSprite(SpriteKind.Player);
+    host.attach(new wendoo.SpriteAttachment(sprite), wendooBrains.p_vanishDestroy001);
+    const before = info.score();
+    host.drain(20);
+    const program = host.hostedPrograms()[0];
+    check(
+      "a-bare-destroy-in-a-brain-destroys-its-sprite-in-that-think-and-the-brain-stays-for-the-next-drain",
+      wendoo.isDestroyed(sprite) && host.hostedPrograms().length === 1 && info.score() === before
+    );
+    host.drain(40);
+    const ended = host.hostedPrograms().length === 0 && info.score() === before + 1;
+    host.drain(60);
+    check(
+      "the-next-drain-thinks-the-brain-once-more-its-destroyed-rule-firing-then-ends-it",
+      ended && info.score() === before + 1 && program !== undefined && program.runtime.tickCount() === 2
+    );
+    game.popScene();
+  }
+
+  /**
+   * In a scene of its own, check programs placing the destroy and destroyed
+   * tiles: a destroyed rule never fires while its sprite lives, and fires
+   * once when game code destroys the sprite, with an effect or without, the
+   * brain ending after it; a brain asked for, or an update restart due, on a
+   * sprite destroyed before the next frame never starts, the brain it ran
+   * thinking its final think; a destroy placing a sprite or a particle
+   * effect that reads nothing does not run; an eat rule destroys the sprite
+   * it bumps, whose brain thinks its final think, and runs on; an eat rule
+   * given confetti and half a second leaves a ghost that is gone after it;
+   * and a sprite variable holding the sprite its brain destroyed reads
+   * nothing from that moment on.
+   */
+  function checkDestroyPrograms(): void {
+    game.pushScene();
+    const mourn = wendooBrains.p_mournDestroyed01;
+    const start = info.score();
+    const mourner = spriteRunning(mourn);
+    const ghostMourner = spriteRunning(mourn);
+    pause(FRAMES_MS);
+    check("a-sprite-never-destroyed-never-fires-its-destroyed-rule", ticksOf(mourner) > 0 && info.score() === start);
+
+    sprites.destroy(mourner);
+    sprites.destroy(ghostMourner, effects.fire, 2000);
+    pause(FRAMES_MS);
+    const afterDeaths = info.score();
+    pause(FRAMES_MS);
+    check(
+      "a-sprite-game-code-destroys-fires-its-brains-destroyed-rule-once-with-or-without-an-effect-and-the-brain-ends",
+      afterDeaths === start + 2 &&
+        info.score() === start + 2 &&
+        programOf(mourner) === NOT_RUNNING &&
+        programOf(ghostMourner) === NOT_RUNNING
+    );
+
+    const switched = spriteRunning(mourn);
+    pause(FRAMES_MS);
+    const beforeSwitch = info.score();
+    wendoo.runBrain(switched, wendooBrains.p_mournFiveScore01);
+    sprites.destroy(switched);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-asked-for-on-a-sprite-destroyed-before-it-starts-never-starts-and-the-old-brain-thinks-its-final-think",
+      info.score() === beforeSwitch + 1 && programOf(switched) === NOT_RUNNING
+    );
+
+    const lament = wendooBrains.p_lamentDestroyed1;
+    const lamenter = spriteRunning(lament);
+    pause(FRAMES_MS);
+    const beforeUpdate = info.score();
+    postUpdate(lament, wendooBrains.p_mournFiveScore01.bytecode, "00000018");
+    sprites.destroy(lamenter);
+    pause(FRAMES_MS);
+    check(
+      "an-update-restart-due-on-a-sprite-destroyed-before-it-starts-never-starts-and-the-old-brain-thinks-its-final-think",
+      info.score() === beforeUpdate + 1 && programOf(lamenter) === NOT_RUNNING
+    );
+
+    const unset = spriteRunning(wendooBrains.p_destroyUnsetPrey);
+    pause(FRAMES_MS);
+    check(
+      "a-destroy-given-a-sprite-or-particle-effect-that-reads-nothing-does-not-run",
+      ticksOf(unset) > 0 && !wendoo.isDestroyed(unset)
+    );
+
+    const eater = solidSprite(8, 40, 40);
+    wendoo.runBrain(eater, wendooBrains.p_eatBumpedSprite1);
+    const prey = solidSprite(8, 44, 40);
+    wendoo.runBrain(prey, mourn);
+    const beforeEat = info.score();
+    pause(FRAMES_MS);
+    const eaterTicks = ticksOf(eater);
+    pause(FRAMES_MS);
+    check(
+      "an-eat-rule-destroys-the-sprite-it-bumps-whose-brain-thinks-its-final-think-and-runs-on",
+      wendoo.isDestroyed(prey) &&
+        !inScene(prey) &&
+        programOf(prey) === NOT_RUNNING &&
+        info.score() === beforeEat + 1 &&
+        !wendoo.isDestroyed(eater) &&
+        ticksOf(eater) > eaterTicks
+    );
+
+    const feaster = solidSprite(8, 120, 40);
+    wendoo.runBrain(feaster, wendooBrains.p_feastConfetti001);
+    const morsel = solidSprite(8, 124, 40);
+    pause(FRAMES_MS);
+    const ghostly =
+      wendoo.isDestroyed(morsel) && isGhost(morsel) && inScene(morsel) && morsel.lifespan > 0 && morsel.lifespan <= 500;
+    pause(5 * FRAMES_MS);
+    check(
+      "an-eat-rule-given-confetti-and-half-a-second-leaves-a-ghost-that-is-gone-after-half-a-second",
+      ghostly && !inScene(morsel) && !wendoo.isDestroyed(feaster)
+    );
+
+    const grudger = solidSprite(8, 40, 100);
+    wendoo.runBrain(grudger, wendooBrains.p_grudgeHeldPrey01);
+    const quarry = solidSprite(8, 44, 100);
+    const beforeGrudge = info.score();
+    pause(FRAMES_MS);
+    pause(FRAMES_MS);
+    check(
+      "a-sprite-variable-holding-the-sprite-its-brain-destroyed-reads-nothing-from-that-moment-on",
+      wendoo.isDestroyed(quarry) && info.score() === beforeGrudge + 1 && ticksOf(grudger) > 0
+    );
+    game.popScene();
+  }
+
+  /**
+   * In a scene of its own, check that a sprite destroyed with an effect,
+   * still in the scene as a ghost while the effect plays, is read as nothing
+   * by another sprite's brain: the range rules of a brain watching it, on
+   * while it lived, stop, and bump, in range and out of range read nothing
+   * on that brain's behalf.
+   */
+  function checkDestroyedSpriteWatch(): void {
+    game.pushScene();
+    const nil = wendoo.NIL_VALUE;
+    const watcher = newSprite(SpriteKind.Player);
+    watcher.setPosition(80, 60);
+    wendoo.runBrain(watcher, wendooBrains.p_eitherInUpOutDn1);
+    const watched = newSprite(SpriteKind.Player);
+    watched.setPosition(100, 60);
+    pause(FRAMES_MS);
+    const climbing = movesAt(watcher, 0, -100);
+    act(tileBody(wendoo.DESTROY_TILE), watcher, [
+      wendoo.spriteValue(watched),
+      particleEffectValue("fire"),
+      wendoo.mkNumber(2),
+    ]);
+    pause(FRAMES_MS);
+    check(
+      "another-brain-reads-a-sprite-destroyed-with-an-effect-as-nothing-and-its-range-rules-stop",
+      climbing &&
+        inScene(watched) &&
+        isGhost(watched) &&
+        movesAt(watcher, 0, 0) &&
+        readsNothing(sense(wendoo.IN_RANGE_TILE, watcher, nil, nil, nil)) &&
+        readsNothing(sense(wendoo.OUT_OF_RANGE_TILE, watcher, nil, nil, nil)) &&
+        readsNothing(sense(wendoo.BUMP_TILE, watcher, nil, nil, nil))
     );
     game.popScene();
   }
@@ -5393,6 +5778,11 @@ namespace arcadeSelftest {
     checkBrainVariableCarry();
     checkEndingChoices();
     checkGameOverGates();
+    checkParticleEffectType();
+    checkDestroyTile();
+    checkFinalThink();
+    checkDestroyPrograms();
+    checkDestroyedSpriteWatch();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

@@ -38,21 +38,25 @@
  * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
  * other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
- * order and no other, no unusable effect or sound line, no
+ * order and no other, the unusable effect, sound and particle effect lines in
+ * `EXPECTED_ARCADE_CHOICE_LINES` in that order and no other, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
  * catalog whose payload is printable-ASCII JSON whose structural listing is
  * `EXPECTED_ARCADE_CATALOG_STRUCTURE`, which is, as JSON, the arcade catalog
- * fixture, its types, accessors, tiles, modifier
- * slots, core tile icon entries and core type icon entries carrying icons,
- * and every icon it carries a 16 by 16 image with at least one pixel drawn.
+ * fixture, every entry its packs declare -- each type, accessor, tile,
+ * output, and slot a tile of its own fills, modifier or parameter -- carrying
+ * an icon, its core tile icon entries and core type icon entries carrying
+ * icons, and every icon it carries a 16 by 16 image with at least one pixel
+ * drawn.
  *
  * It then builds and captures each arcade ending project, whose capture must
  * carry one `CHECK <name> ok` line per name its ending lists in
  * `EXPECTED_ARCADE_ENDING_CHECKS` and no other check line, the program
- * refusals in `ARCADE_HOST_REJECTIONS` in that order, the unusable effect and
- * sound lines its ending lists in `EXPECTED_ARCADE_ENDING_CHOICE_LINES` in
+ * refusals in `ARCADE_HOST_REJECTIONS` in that order, the unusable effect,
+ * sound and particle effect lines its ending lists in
+ * `EXPECTED_ARCADE_ENDING_CHOICE_LINES` in
  * that order and no other, no program-fault line, a `DEBUG ON` line no line
  * the Wendoo extensions log precedes, `CHECKS failed 0`, and its `SIMCAP
  * PASS` verdict.
@@ -117,6 +121,7 @@ const EXPECTED_CHECKS = [
   "host-thinks-each-running-program-once-per-drain",
   "host-replaces-an-actors-program",
   "host-ends-an-ended-actors-program",
+  "host-thinks-an-ended-actors-program-once-more-and-starts-nothing-on-it",
   "a-faulting-program-reports-every-fault-to-its-hosts-observer-with-its-code-message-and-site",
   "a-throwing-tile-faults-its-fiber-and-every-drain-runs-on",
   "a-throwing-page-hook-faults-its-program-and-every-drain-runs-on",
@@ -547,6 +552,26 @@ const EXPECTED_ARCADE_CHECKS = [
   "each-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-effect-slot-names-none",
   "each-sound-literal-names-the-arcade-melody-of-its-key-and-an-empty-sound-slot-names-none",
   "a-game-over-given-a-player-effect-or-sound-that-reads-nothing-does-not-run",
+  "particle-effect-type-and-destroy-tiles-take-their-ids-from-the-manifest",
+  "each-particle-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-slot-names-none",
+  "a-bare-destroy-destroys-its-own-sprite-at-once-and-one-given-a-sprite-that-sprite-alone",
+  "a-destroy-given-a-duration-and-no-effect-removes-its-sprite-at-once",
+  "a-destroy-given-a-particle-effect-naming-nothing-removes-its-sprite-at-once",
+  "a-destroy-given-an-effect-and-a-duration-of-0-below-0-or-none-keeps-the-ghost-for-the-effects-own-length",
+  "destroying-a-destroyed-sprite-again-changes-nothing",
+  "destroyed-reads-true-on-behalf-of-a-destroyed-sprite-and-nil-otherwise",
+  "a-destroy-given-an-effect-and-half-a-second-leaves-a-ghost-for-half-a-second-then-removes-it",
+  "a-bare-destroy-in-a-brain-destroys-its-sprite-in-that-think-and-the-brain-stays-for-the-next-drain",
+  "the-next-drain-thinks-the-brain-once-more-its-destroyed-rule-firing-then-ends-it",
+  "a-sprite-never-destroyed-never-fires-its-destroyed-rule",
+  "a-sprite-game-code-destroys-fires-its-brains-destroyed-rule-once-with-or-without-an-effect-and-the-brain-ends",
+  "a-brain-asked-for-on-a-sprite-destroyed-before-it-starts-never-starts-and-the-old-brain-thinks-its-final-think",
+  "an-update-restart-due-on-a-sprite-destroyed-before-it-starts-never-starts-and-the-old-brain-thinks-its-final-think",
+  "a-destroy-given-a-sprite-or-particle-effect-that-reads-nothing-does-not-run",
+  "an-eat-rule-destroys-the-sprite-it-bumps-whose-brain-thinks-its-final-think-and-runs-on",
+  "an-eat-rule-given-confetti-and-half-a-second-leaves-a-ghost-that-is-gone-after-half-a-second",
+  "a-sprite-variable-holding-the-sprite-its-brain-destroyed-reads-nothing-from-that-moment-on",
+  "another-brain-reads-a-sprite-destroyed-with-an-effect-as-nothing-and-its-range-rules-stop",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -618,8 +643,20 @@ const EXPECTED_ARCADE_VARIABLE_LINES = [
 /** The prefix of the lines the VM extension logs for brain variables game code reads and writes. */
 const VARIABLE_LINE_PREFIX = "wendoo WENDOO_VARIABLE_";
 
-/** The lines the arcade base pack logs for an effect and for a sound naming nothing Arcade holds. */
-const CHOICE_LINES = ["wendoo WENDOO_EFFECT_UNUSABLE", "wendoo WENDOO_SOUND_UNUSABLE"];
+/** The lines the arcade base pack logs for an effect, a sound and a particle effect naming nothing Arcade holds. */
+const CHOICE_LINES = [
+  "wendoo WENDOO_EFFECT_UNUSABLE",
+  "wendoo WENDOO_SOUND_UNUSABLE",
+  "wendoo WENDOO_PARTICLE_EFFECT_UNUSABLE",
+];
+
+/**
+ * Every unusable effect, sound and particle effect line the arcade selftest
+ * is expected to log, in order, each without its `wendoo ` prefix: one for
+ * the whole run, however many times the destroy tile is given a particle
+ * effect naming nothing.
+ */
+const EXPECTED_ARCADE_CHOICE_LINES = ["WENDOO_PARTICLE_EFFECT_UNUSABLE"];
 
 /**
  * Every check each arcade ending project is expected to report, by the
@@ -638,6 +675,10 @@ const EXPECTED_ARCADE_ENDING_CHECKS = {
     "a-game-over-given-a-player-ends-the-game-once-as-a-win-even-given-lose-and-its-program-runs-on",
     "a-game-over-given-an-effect-and-a-sound-sets-them-for-the-win-it-ends-the-game-with",
   ],
+  destroyed: [
+    "a-brain-destroying-its-own-sprite-ends-the-game-once-from-its-final-think-and-is-gone-after",
+    "the-game-ends-with-the-sprite-already-destroyed",
+  ],
 };
 
 /**
@@ -650,6 +691,7 @@ const EXPECTED_ARCADE_ENDING_CHOICE_LINES = {
   lose: [],
   win: ["WENDOO_EFFECT_UNUSABLE", "WENDOO_SOUND_UNUSABLE"],
   player: [],
+  destroyed: [],
 };
 
 /** The arcade base pack's tiles whose catalog entries must carry an icon. */
@@ -664,6 +706,8 @@ const ARCADE_ICONED_TILES = [
   "sensor.arcade.myself",
   "actuator.arcade.add-score",
   "actuator.arcade.game-over",
+  "actuator.arcade.destroy",
+  "sensor.arcade.destroyed",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -726,7 +770,7 @@ const ARCADE_ICONED_CORE_TILES = [
 const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
 
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
-const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Image", "Brain", "Player", "Effect", "Sound"];
+const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Image", "Brain", "Player", "Effect", "Sound", "ParticleEffect"];
 
 /** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
 const ARCADE_ICONED_ACCESSORS = [
@@ -770,10 +814,16 @@ const ARCADE_HOST_REJECTIONS = [
  * variables, the programs writing one number of a position, the programs
  * adding to and reading player one's score, the program reading player
  * two's score, the dpad's player, the A and B buttons, the brain variables
- * game code reads and writes, the variables an update restart carries, and
- * the game over's gate on a placed value reading nothing.
+ * game code reads and writes, the variables an update restart carries, the
+ * game over's gate on a placed value reading nothing, the destroy and
+ * destroyed tiles' programs, and a brain watching a sprite destroyed with an
+ * effect -- with the host the final-think check drains by hand, between the
+ * game over's scene and the destroy programs' scene.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -811,9 +861,10 @@ const EXPECTED_ARCADE_REJECTIONS = [
  * atom the project's ids module does not hold -- the three messages refused,
  * the paused scene's program update taken, the removal taken, the bump
  * rule's update taken, the pursuit rule's update to flight taken, the
- * in-range rule's update to out of range taken, and the paddle program's
- * four updates taken -- to the counted paddle, to the bonus paddle, back to
- * the counted paddle, and to the bonus paddle again.
+ * in-range rule's update to out of range taken, the paddle program's four
+ * updates taken -- to the counted paddle, to the bonus paddle, back to the
+ * counted paddle, and to the bonus paddle again -- and the lament program's
+ * update, taken as its sprite is destroyed.
  */
 const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated driftBareMove001 0000000a",
@@ -832,6 +883,7 @@ const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated brainVarPaddle01 00000015",
   "program-updated brainVarPaddle01 00000016",
   "program-updated brainVarPaddle01 00000017",
+  "program-updated lamentDestroyed1 00000018",
 ];
 
 /** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */
@@ -1008,7 +1060,7 @@ function reportedVariableLines(log) {
     .map((line) => line.slice("wendoo ".length));
 }
 
-/** Every unusable effect and sound line the capture logged, in order, each without its `wendoo ` prefix. */
+/** Every unusable effect, sound and particle effect line the capture logged, in order, each without its `wendoo ` prefix. */
 function reportedChoiceLines(log) {
   return linesOf(log)
     .filter((line) => CHOICE_LINES.includes(line))
@@ -1083,6 +1135,41 @@ function arcadeIconValidityFailures(payload) {
 /** `["<what> carries no icon"]` when `text` is absent, else nothing. */
 function iconPresence(what, text) {
   return text === undefined ? [`${what} carries no icon`] : [];
+}
+
+/**
+ * The ways the parsed arcade catalog payload `payload` declares an entry of
+ * an iconed kind carrying no icon, walking every pack it holds: each type,
+ * each accessor, each tile, each output, and each slot a tile of its own
+ * fills -- modifier or parameter, anonymous slots aside -- must carry one.
+ * A kind with no entry anywhere in the payload is a failure too, reported as
+ * `no <kind> found`.
+ */
+function arcadeIconSweepFailures(payload) {
+  const entries = { type: [], accessor: [], tile: [], output: [], "modifier slot": [], "parameter slot": [] };
+  for (const pack of payload.packs || []) {
+    for (const type of pack.types || []) {
+      entries.type.push({ what: `type ${type.name}`, icon: type.icon });
+      for (const field of type.fields || []) {
+        if (!field.accessor) continue;
+        entries.accessor.push({ what: `accessor ${type.name}.${field.name}`, icon: field.accessor.icon });
+      }
+    }
+    for (const tile of pack.tiles || []) {
+      entries.tile.push({ what: `tile ${tile.name}`, icon: tile.icon });
+      for (const output of tile.outputs || []) {
+        entries.output.push({ what: `output ${output.name} of ${tile.name}`, icon: output.icon });
+      }
+      for (const slot of grammarSlots(tile.args || tile.call)) {
+        if (slot.anonymous) continue;
+        const kind = slot.modifier ? "modifier slot" : "parameter slot";
+        entries[kind].push({ what: `${kind} ${slot.tileId} of ${tile.name}`, icon: slot.icon });
+      }
+    }
+  }
+  return Object.entries(entries).flatMap(([kind, found]) =>
+    found.length === 0 ? [`no ${kind} found`] : found.flatMap((entry) => iconPresence(entry.what, entry.icon))
+  );
 }
 
 /** Every slot entry in the grammar nodes `nodes`, flat `args` entries included, in declaration order. */
@@ -1335,8 +1422,8 @@ function arcadeContractFailures(exitCode, log, simxLog) {
     failures.push(`brain variable lines logged: ${variableLines.join(" | ")}`);
   }
   const choiceLines = reportedChoiceLines(log);
-  if (choiceLines.length > 0) {
-    failures.push(`unusable effects or sounds logged: ${choiceLines.join(" | ")}`);
+  if (choiceLines.join("\n") !== EXPECTED_ARCADE_CHOICE_LINES.join("\n")) {
+    failures.push(`unusable effects, sounds or particle effects logged: ${choiceLines.join(" | ")}`);
   }
   const faultLines = reportedFaultLines(log);
   if (faultLines.length > 0) {
@@ -1356,6 +1443,7 @@ function arcadeContractFailures(exitCode, log, simxLog) {
     failures.push(...read.failures);
     if (read.parsed) {
       failures.push(
+        ...arcadeIconSweepFailures(read.parsed),
         ...arcadeIconFailures(read.parsed),
         ...arcadeIconValidityFailures(read.parsed),
         ...fixtureStaleness(ARCADE_CATALOG_FIXTURE, read.parsed)

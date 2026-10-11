@@ -379,7 +379,10 @@ the current slice alone.
       of a program run shares the one drain of every pack's registrations
       through the project's id manifest, `hostRegistries`; each actor's
       attachment names the host that started its program, which lists the
-      actors running a given brain; a running program an update replaces
+      actors running a given brain; an actor observed ended gets exactly
+      one final think, in the first pass that sees it ended, and its
+      program ends after it, a start or restart requested for an ended
+      actor starting nothing; a running program an update replaces
       restarts on its actor with its variables carried forward by name from
       the program it replaces -- a variable the update declares keeps the
       value the replaced program held by its name, a slot a game write gave
@@ -463,8 +466,8 @@ the current slice alone.
       a sprite's image instead wraps that image object itself, its asset id
       reading empty), the pack's docs pages (one markdown page per
       documented tile or output under `docs/content/en/tiles/`, per
-      documented struct type -- `Vector2`, `Sprite`, `Player`, `Effect` and
-      `Sound` -- under
+      documented struct type -- `Vector2`, `Sprite`, `Player`, `Effect`,
+      `Sound` and `ParticleEffect` -- under
       `docs/content/en/types/`, and per documented accessor under
       `docs/content/en/accessors/`, each named `<key>.md` by its key -- a
       tile's or type's name, `output.<name>` for an output, and
@@ -497,14 +500,16 @@ the current slice alone.
       three's or four's switches to the multiplayer display; a write of a
       finite number takes Arcade's whole-number truncation, and one holding
       no finite number changes nothing and is logged once per run), the
-      `Effect` and `Sound` types (plain structs each naming one of Arcade's
-      own screen effects or built-in melodies by the name Arcade's API gives
-      it, in one read-only string `name` field, looked up when a tile uses
-      the value and never baked into a program; the effects Arcade's
-      game-over blocks offer and the melodies its sound blocks offer each a
-      declared literal keyed by that name and labelled in Arcade's block
-      wording, and no variable factory; a value naming nothing Arcade holds
-      reads as none and is logged once per run), the core equality and
+      `Effect`, `Sound` and `ParticleEffect` types (plain structs each
+      naming one of Arcade's own screen effects, built-in melodies or
+      particle effects by the name Arcade's API gives it, in one read-only
+      string `name` field, looked up when a tile uses the value and never
+      baked into a program; the effects Arcade's game-over blocks offer,
+      the melodies its sound blocks offer and the particle effects its
+      destroy block offers each a declared literal keyed by that name and
+      labelled in Arcade's block wording, and no variable factory; a value
+      naming nothing Arcade holds reads as none and is logged once per run,
+      by its type's own code), the core equality and
       inequality operators' overloads over two images (equal when they have
       the same pixels, whichever image objects they are; an image no
       factory holds, or a value naming no image, equals nothing), two
@@ -525,7 +530,8 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite`, `Image`, `Brain`, `Player`, `Effect` and `Sound` types, the
+      `Sprite`, `Image`, `Brain`, `Player`, `Effect`, `Sound` and
+      `ParticleEffect` types, the
       variable factory flag and editor label (`position`, `sprite`,
       `player`) of its `Vector2`, `Sprite` and `Player` types (a
       `Vector2` variable starts at `origin` and holds the point written to
@@ -544,18 +550,21 @@ the current slice alone.
       pack registers, giving every icon above -- each the img literal one
       function returns -- so in the simulator it gives the icons before the
       catalog is first published and on hardware it compiles to nothing and
-      no icon reaches the binary), the controller read (one module owning every
+      no icon reaches the binary; every entry the pack declares -- each
+      tile, the modifier and parameter tiles filling its slots, each output,
+      accessor and type -- carries an icon, and the arcade selftest fails on
+      one without), the controller read (one module owning every
       raw read of any player's controller and its dead-banded transform), the proximity read (one
       module owning the
-      nearest-sprite scan and its center-distance metric, made
-      synchronously at sense time), the overlap read (one module owning
+      nearest-sprite scan, which never reads a destroyed sprite, and its
+      center-distance metric, made synchronously at sense time), the overlap read (one module owning
       every sprite-touch read, picking among touched sprites through the
       proximity read's scan), the wander module (one module owning each
       wandering move's random on-screen destination, kept per call site in
       the sprite's attachment, its re-picks on arrival or deadline, and the random
       source picking it), the `dpad`, `A button`, `B button`, `bump`,
-      `in range`, `out of range` and `myself` sensors and the `move`,
-      `add score` and `game over` actuators (dpad
+      `in range`, `out of range`, `myself` and `destroyed` sensors and the
+      `move`, `add score`, `game over` and `destroy` actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
       reading player one's too; `A button` and `B button` are on while that
@@ -570,7 +579,16 @@ the current slice alone.
       `Sound` those of the outcome it ends the game with, an absent one or one
       naming nothing leaving that outcome's own, its modifier and three values
       in any order; Arcade ends a game once, so only the first frame its rule
-      fires ends anything; `myself` reads the
+      fires ends anything; destroy destroys its optional anonymous `Sprite`,
+      else the program's own sprite, through Arcade's own `sprites.destroy`
+      -- in its optional anonymous `ParticleEffect`, over its optional
+      `duration` parameter in seconds, held at 0 or above, else over the
+      effect's own length; given no effect, or one naming nothing, at once,
+      the duration ignored -- the three in any order; the sprite reads as
+      destroyed from the call on, and a sprite already destroyed stays as
+      it is; `destroyed` is on while the program's own sprite is destroyed,
+      which the program sees only in its final think, its WHEN result
+      `true`; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,

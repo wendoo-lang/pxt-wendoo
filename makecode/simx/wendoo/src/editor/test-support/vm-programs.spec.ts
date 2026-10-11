@@ -10,6 +10,7 @@ import {
   arcadeBindingDiagnosticCodes,
   arcadeBindsWritableInlineSensor,
   arcadeCarriedSlotLabel,
+  arcadeCarriedSlotLanguage,
   arcadeCarriedTileInline,
   arcadeCarriedTileLabel,
   arcadeCarriedTileLanguage,
@@ -25,6 +26,7 @@ import {
   arcadeReadOfTileReference,
   arcadeRenderedIcons,
   arcadeRenderedTypeIcons,
+  arcadeRuleSentence,
   arcadeSensorLabel,
   arcadeSensorNames,
   arcadeSpriteOutputLabels,
@@ -47,6 +49,7 @@ import {
   OPEN_PAREN,
   OPERATOR_ENTRY_PREFIX,
   OUTPUT_ENTRY_PREFIX,
+  PARAMETER_ENTRY_PREFIX,
   type RenderedFile,
   renderVmPrograms,
   SENSOR_ENTRY_PREFIX,
@@ -309,6 +312,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       "Brain",
       "Effect",
       "Image",
+      "ParticleEffect",
       "Player",
       "Sound",
       "Sprite",
@@ -633,6 +637,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       { name: "Player", produces: mkTypeId(NativeType.Struct, "Player") },
       { name: "Effect", produces: undefined },
       { name: "Sound", produces: undefined },
+      { name: "ParticleEffect", produces: undefined },
     ]);
   });
 
@@ -670,6 +675,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
         ["Player", true],
         ["Effect", false],
         ["Sound", false],
+        ["ParticleEffect", false],
       ]
     );
     for (const entry of names) {
@@ -904,6 +910,63 @@ describe("the MakeCode VM extension's compiled programs", () => {
         arcadeImageRuleDiagnosticCodes([], act).includes(ParseDiagCode.UnexpectedExpressionAfterExpression),
         act.join(" ")
       );
+    }
+  });
+
+  const destroy = "actuator.arcade.destroy";
+  const duration = `${PARAMETER_ENTRY_PREFIX}duration`;
+  const confettiBurst = `${LITERAL_ENTRY_PREFIX}ParticleEffect.confetti`;
+  const fireBurst = `${LITERAL_ENTRY_PREFIX}ParticleEffect.fire`;
+
+  it("offers a sprite, a particle effect and the duration at destroy, and no game-over effect", () => {
+    assert.ok(arcadeOffersLiteral(bumped, [bump], [destroy]));
+    assert.ok(arcadeOffersLiteral(confettiBurst, [], [destroy]));
+    assert.ok(arcadeOffersLiteral(duration, [], [destroy, confettiBurst]));
+    assert.equal(arcadeOffersLiteral(confetti, [], [destroy]), false);
+  });
+
+  for (const [sentence, act] of [
+    ["a bare destroy", [destroy]],
+    ["destroy given the bumped sprite", [destroy, bumped]],
+    ["destroy given a particle effect and a duration", [destroy, confettiBurst, duration, NUMBER_LITERAL]],
+    [
+      "destroy given a duration, the bumped sprite, then a particle effect",
+      [destroy, duration, NUMBER_LITERAL, bumped, fireBurst],
+    ],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([bump], [...act]), []);
+    });
+  }
+
+  it("projects destroy given the bumped sprite, a particle effect and a duration with the words its catalog entries carry, the duration read by its slot's form", () => {
+    const wordOf = (tileName: string) => arcadeCarriedTileLanguage(tileName)?.form ?? arcadeCarriedTileLabel(tileName);
+    const durationWords = arcadeCarriedSlotLanguage(destroy, "parameter.duration");
+    const { words } = arcadeRuleSentence([bump], [destroy, bumped, confettiBurst, duration, NUMBER_LITERAL]);
+
+    assert.notEqual(durationWords?.form, undefined, "the arcade base pack declares a form on the duration slot");
+    assert.deepEqual(
+      words.map((word) => word.text),
+      [
+        wordOf(bump),
+        arcadeCarriedTileLanguage(bump)?.bare,
+        wordOf(destroy),
+        arcadeSpriteOutputLabels("bumped").carried,
+        confettiBurst.slice(confettiBurst.lastIndexOf(".") + 1),
+        durationWords?.form,
+        "40",
+      ]
+    );
+  });
+
+  it("refuses destroy given two sprites, two particle effects or a game-over effect", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [destroy, bumped, `${SENSOR_ENTRY_PREFIX}sensor.arcade.myself`],
+      [destroy, confettiBurst, fireBurst],
+      [destroy, confetti],
+    ]) {
+      assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
     }
   });
 });

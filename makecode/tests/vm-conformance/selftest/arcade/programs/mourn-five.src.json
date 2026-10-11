@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "mournFiveScore01",
+  "name": "Mourn five",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0mournFive001",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 5,
+      "valueLabel": "5",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0mournFive001",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score",
+            "tile.literal->number:<number>->5"
+          ],
+          "children": [],
+          "ruleId": "fRu0mournFive000"
+        }
+      ]
+    }
+  ]
+}

@@ -23,6 +23,7 @@ import {
   mkLiteralTileId,
   mkModifierTileId,
   mkOperatorTileId,
+  mkParameterTileId,
   mkSensorTileId,
   mkVariableFactoryTileId,
 } from "@wendoo/core/app";
@@ -285,6 +286,15 @@ const ARCADE_SOURCES = [
   "pick.src.json",
   "paddle-counted.src.json",
   "paddle-bonus.src.json",
+  "vanish.src.json",
+  "mourn.src.json",
+  "lament.src.json",
+  "mourn-five.src.json",
+  "eat.src.json",
+  "feast.src.json",
+  "destroy-unset.src.json",
+  "grudge.src.json",
+  "ending-destroyed.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -753,6 +763,20 @@ export function arcadeLoneSensorSentence(tileName: string): ProjectedSentence {
   return projectedSentence(rule);
 }
 
+/**
+ * The projected sentence, read as data, of a one-rule brain in the
+ * environment binding the arcade selftest's catalog under its allocation:
+ * its WHEN side the tiles `when` names and its DO side the tiles `act`
+ * names, each entry named as {@link arcadeImageRuleDiagnosticCodes} names
+ * entries.
+ *
+ * @param when - The WHEN side's entries, such as `["sensor.arcade.bump"]`.
+ * @param act - The DO side's entries, such as `["actuator.arcade.destroy"]`.
+ */
+export function arcadeRuleSentence(when: string[], act: string[]): ProjectedSentence {
+  return projectedSentence(arcadeImageRuleBrain(when, act).rule);
+}
+
 /** The grammar nodes directly below `node`, in declaration order; empty for a slot. */
 function childNodes(node: CatalogArgNode): readonly CatalogArgNode[] {
   switch (node.kind) {
@@ -789,6 +813,21 @@ export function arcadeCarriedSlotLabel(tileName: string, slotTileId: string): st
     .packs.flatMap((pack) => pack.tiles)
     .find((entry) => entry.name === tileName);
   return slotsOf(tile?.grammar ?? []).find((slot) => slot.tileId === slotTileId)?.label;
+}
+
+/**
+ * The sentence words the arcade selftest's catalog carries on the slot of
+ * the tile `tileName` that `slotTileId` fills, or `undefined` when that slot
+ * carries none or the tile has no such slot.
+ *
+ * @param tileName - The tile's name, such as `actuator.arcade.destroy`.
+ * @param slotTileId - The slot's declared fragment, such as `parameter.duration`.
+ */
+export function arcadeCarriedSlotLanguage(tileName: string, slotTileId: string): CarriedLanguage | undefined {
+  const tile = parseCatalog(arcadeCatalog())
+    .packs.flatMap((pack) => pack.tiles)
+    .find((entry) => entry.name === tileName);
+  return slotsOf(tile?.grammar ?? []).find((slot) => slot.tileId === slotTileId)?.language;
 }
 
 /**
@@ -876,6 +915,13 @@ export const OUTPUT_ENTRY_PREFIX = "output:";
  * `modifier.position.above`.
  */
 export const MODIFIER_ENTRY_PREFIX = "modifier.";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the shared parameter tile the whole entry declares, such as
+ * `parameter.duration`.
+ */
+export const PARAMETER_ENTRY_PREFIX = "parameter.";
 
 /**
  * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
@@ -969,6 +1015,7 @@ function entryTileId(entry: string, bareTileId: (name: string) => string, litera
   if (entry === OPEN_PAREN) return mkControlFlowTileId(CoreControlFlowId.OpenParen);
   if (entry === CLOSE_PAREN) return mkControlFlowTileId(CoreControlFlowId.CloseParen);
   if (entry.startsWith(MODIFIER_ENTRY_PREFIX)) return mkModifierTileId(entry);
+  if (entry.startsWith(PARAMETER_ENTRY_PREFIX)) return mkParameterTileId(entry);
   if (entry.startsWith(OUTPUT_ENTRY_PREFIX)) {
     return mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length));
   }
@@ -1011,6 +1058,8 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * {@link CLOSE_PAREN} for the parenthesis tiles, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
  * output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX} for the
  * shared modifier tile it declares, an entry starting
+ * {@link PARAMETER_ENTRY_PREFIX} for the shared parameter tile it declares,
+ * an entry starting
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
  * {@link SENSOR_ENTRY_PREFIX} for a sensor on either side, or an entry
  * starting {@link OPERATOR_ENTRY_PREFIX} for a core operator's tile, such
@@ -1077,7 +1126,7 @@ function arcadeImageRule(when: string[], act: string[]) {
 /**
  * Whether the candidate strip offers the tile `literal` -- {@link IMAGE_LITERAL},
  * {@link BRAIN_LITERAL}, {@link NIL_LITERAL}, or an output, modifier,
- * accessor, sensor, operator or {@link FACTORY_ENTRY_PREFIX} entry -- at the end of the WHEN
+ * parameter, accessor, sensor, operator or {@link FACTORY_ENTRY_PREFIX} entry -- at the end of the WHEN
  * side holding the tiles `when` names or, given `act`, at the end of the DO
  * side holding the tiles `act` names, each as
  * {@link arcadeImageRuleDiagnosticCodes} names them, given the side's
@@ -1135,6 +1184,8 @@ export function arcadeOperatorResultType(operatorId: string, operandTypeIds: str
  * an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
  * `Sprite` output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX}
  * for the shared modifier tile it names, an entry starting
+ * {@link PARAMETER_ENTRY_PREFIX} for the shared parameter tile it names, an
+ * entry starting
  * {@link ACCESSOR_ENTRY_PREFIX} for an accessor tile, an entry starting
  * {@link SENSOR_ENTRY_PREFIX} for a sensor on either side, or an entry
  * starting {@link OPERATOR_ENTRY_PREFIX} for a core operator's tile, such

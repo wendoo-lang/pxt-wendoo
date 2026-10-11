@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "vanishDestroy001",
+  "name": "Vanish",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0vanishDstry1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0vanishDstry1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score"
+          ],
+          "children": [],
+          "ruleId": "fRu0vanishDstry0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy"
+          ],
+          "children": [],
+          "ruleId": "fRu0vanishDstry1"
+        }
+      ]
+    }
+  ]
+}

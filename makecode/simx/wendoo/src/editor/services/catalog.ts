@@ -18,7 +18,7 @@ export const CatalogProblemCode = {
   /** Part of an entry does not have the shape the catalog grammar gives it. */
   ENTRY_MALFORMED: "CATALOG_ENTRY_MALFORMED",
   /**
-   * The sentence words of a tile or a modifier slot name a frame other than
+   * The sentence words of a tile or a slot name a frame other than
    * `verb`, `state` or `event`; the token is the frame. Only the frame is
    * dropped: the entry's tile is still made, and reads through the default
    * frame.
@@ -184,7 +184,7 @@ export interface CatalogArgSlot {
   readonly unit?: string;
   /** Display label of the tile that fills the slot, or absent when the slot declares none. */
   readonly label?: string;
-  /** Sentence words of the tile that fills a modifier slot, or absent when it declares none; a parameter slot carries none. */
+  /** Sentence words of the tile that fills the slot, or absent when it declares none. */
   readonly language?: CatalogLanguage;
   /** Icon of the tile that fills the slot, as {@link CatalogMeta.iconUrl} carries one, or absent when the slot carries none. */
   readonly iconUrl?: string;
@@ -452,8 +452,8 @@ function rangeOf(value: unknown): CatalogRange {
 }
 
 /**
- * The slot `entry` declares, its slot fields read, and on a modifier slot its
- * sentence words, an unknown frame among them passed to `reportFrame`. Throws
+ * The slot `entry` declares, its slot fields read, its sentence words among
+ * them, an unknown frame among those passed to `reportFrame`. Throws
  * a {@link GrammarProblem} when it is not one.
  */
 function slotOf(entry: JsonObject, reportFrame: FrameReport): CatalogArgSlot {
@@ -489,7 +489,7 @@ function slotOf(entry: JsonObject, reportFrame: FrameReport): CatalogArgSlot {
   if (unit !== undefined) slot.unit = unit;
   const label = stringField(entry, "label");
   if (label !== undefined) slot.label = label;
-  const language = modifier ? languageOf(entry.language, reportFrame) : undefined;
+  const language = languageOf(entry.language, reportFrame);
   if (language !== undefined) slot.language = language;
   const iconUrl = stringField(entry, "iconUrl");
   if (iconUrl !== undefined) slot.iconUrl = iconUrl;

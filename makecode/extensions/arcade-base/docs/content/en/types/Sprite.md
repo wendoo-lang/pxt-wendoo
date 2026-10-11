@@ -47,7 +47,9 @@ Open a part to see how it reads and changes.
 ## When a Sprite Is Destroyed
 
 A destroyed sprite reads as nothing: a WHEN holding it does not fire, its parts read nothing, and
-changing a part of it changes nothing.
+changing a part of it changes nothing. `tile:tile.actuator->actuator.arcade.destroy` destroys a sprite,
+and `tile:tile.sensor->sensor.arcade.destroyed` lets a sprite's own brain act one last time when it is
+destroyed.
 
 ## See Also
 

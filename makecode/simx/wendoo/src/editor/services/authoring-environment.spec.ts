@@ -174,13 +174,17 @@ const WORDS = {
   spot: { form: "spot", frame: "state", bare: "a lion" },
   lion: { form: "a lion" },
   pounce: { form: "pounce on" },
+  across: { form: "across" },
+  along: { form: "along" },
+  count: { form: "this many" },
 } as const;
 
 /**
- * A catalog whose tiles and modifier slots carry sentence words: a sensor
- * declaring every word and a shared modifier declaring a form, an actuator
- * declaring a form, and a second tile declaring the shared modifier again
- * with no words.
+ * A catalog whose tiles and slots carry sentence words: a sensor declaring
+ * every word, a shared modifier, a shared parameter and a private parameter
+ * each declaring a form, an actuator declaring a form, and a second tile
+ * declaring the shared modifier again with no words, the shared parameter
+ * again with other words, and a private parameter with none.
  */
 const WORDED_CATALOG = JSON.stringify({
   packs: [
@@ -190,7 +194,11 @@ const WORDED_CATALOG = JSON.stringify({
         {
           name: "sensor.zoo.spot",
           kind: "sensor",
-          args: [{ tileId: "modifier.zoo.lion", modifier: true, optional: true, language: WORDS.lion }],
+          args: [
+            { tileId: "modifier.zoo.lion", modifier: true, optional: true, language: WORDS.lion },
+            { tileId: "parameter.zoo.distance", type: "number", optional: true, language: WORDS.across },
+            { tileId: "count", type: "number", optional: true, language: WORDS.count },
+          ],
           returns: "boolean",
           label: "spot",
           language: WORDS.spot,
@@ -199,7 +207,11 @@ const WORDED_CATALOG = JSON.stringify({
         {
           name: "actuator.zoo.watch",
           kind: "actuator",
-          args: [{ tileId: "modifier.zoo.lion", modifier: true, optional: true }],
+          args: [
+            { tileId: "modifier.zoo.lion", modifier: true, optional: true },
+            { tileId: "parameter.zoo.distance", type: "number", optional: true, language: WORDS.along },
+            { tileId: "pace", type: "number", optional: true },
+          ],
         },
       ],
     },
@@ -496,6 +508,17 @@ describe("buildAuthoringEnvironment", () => {
     assert.deepEqual(languageOf(mkSensorTileId("sensor.zoo.spot")), WORDS.spot);
     assert.deepEqual(languageOf(mkActuatorTileId("actuator.zoo.pounce")), WORDS.pounce);
     assert.deepEqual(languageOf(mkModifierTileId("modifier.zoo.lion")), WORDS.lion);
+  });
+
+  it("carries a parameter slot's sentence words into its tile's metadata, the first declaration of a shared one standing, and none where none is carried", () => {
+    const built = buildAuthoringEnvironment(WORDED_CATALOG, emptyIdManifest());
+    const { environment } = built;
+    const languageOf = (tileId: string) => tile(environment, tileId).metadata?.language;
+
+    assert.deepEqual(built.diagnostics, []);
+    assert.deepEqual(languageOf(mkParameterTileId("parameter.zoo.distance")), WORDS.across);
+    assert.deepEqual(languageOf(mkParameterTileId(mkPrivateArgId("zoo", "sensor.zoo.spot", "count"))), WORDS.count);
+    assert.equal(languageOf(mkParameterTileId(mkPrivateArgId("zoo", "actuator.zoo.watch", "pace"))), undefined);
   });
 
   it("carries a tile's and a slot's icon into the tile's metadata, verbatim, and none where none is carried", () => {

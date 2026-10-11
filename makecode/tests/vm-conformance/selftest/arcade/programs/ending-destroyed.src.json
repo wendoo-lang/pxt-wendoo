@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "endingDestroyed1",
+  "name": "Last stand",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0endingDstry1",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0endingDstry1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.game-over",
+            "tile.modifier->modifier.outcome.win"
+          ],
+          "children": [],
+          "ruleId": "fRu0endingDstry0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy"
+          ],
+          "children": [],
+          "ruleId": "fRu0endingDstry1"
+        }
+      ]
+    }
+  ]
+}

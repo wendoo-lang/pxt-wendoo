@@ -165,9 +165,8 @@ namespace chime {
   pack.defineAssetType(TUNE_TYPE, tuneBinding);
 
   /**
-   * The ring tile's count slot: a labeled parameter slot declaring sentence
-   * words the catalog leaves out, and an icon the selftest's encoder refuses
-   * to render.
+   * The ring tile's count slot: a labeled parameter slot declaring a
+   * sentence form, and an icon the selftest's encoder refuses to render.
    */
   const timesSlot = wendoo.arg("times", wendoo.TYPE_NUMBER, "times to ring");
   timesSlot.language = wendoo.tileLanguage("this many times");

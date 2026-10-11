@@ -36,8 +36,9 @@ namespace wendoo {
     }
 
     /**
-     * Whether the actor is gone. The drain that first sees it gone ends the
-     * actor's program without thinking it again. The base actor never ends.
+     * Whether the actor is gone. The first drain to see it gone thinks the
+     * actor's program once more -- its final think, run with the actor
+     * already gone -- then ends it. The base actor never ends.
      */
     hasEnded(): boolean {
       return false;
@@ -413,18 +414,25 @@ namespace wendoo {
      * run's {@link hostRegistries} -- draining them when no host has yet;
      * apply every queued program update ({@link applyProgramUpdates}); on
      * the first pass, load every registered compiled brain, logging each
-     * refusal; end the program of every actor that has ended; restart, on
-     * its own actor, every running program whose registration an update has
-     * replaced since it started, in start order, the new program's variables
-     * installed by name from the replaced program's -- a variable both
-     * declare keeps its value, one new to the update takes its starting
-     * value, and one the update no longer declares is dropped -- then start
-     * the programs attached since the last pass, in request order, each with
-     * its variables at their starting values -- each restart and start
-     * ending the program its actor ran; think every running program
-     * once, in start order; then log each field programs addressed that its
-     * registered type does not declare, not logged before by any host, as
+     * refusal; restart, on its own actor, every running program whose
+     * registration an update has replaced since it started, in start order,
+     * the new program's variables installed by name from the replaced
+     * program's -- a variable both declare keeps its value, one new to the
+     * update takes its starting value, and one the update no longer declares
+     * is dropped -- then start the programs attached since the last pass, in
+     * request order, each with its variables at their starting values --
+     * each restart and start ending the program its actor ran, and a restart
+     * or start for an actor that has ended dropped, starting nothing; think
+     * every running program once, in start order, and end each whose actor
+     * had ended before its think, that think being its final think; then log
+     * each field programs addressed that its registered type does not
+     * declare, not logged before by any host, as
      * `wendoo field-undeclared <typeId> <fieldId>` through {@link debugLog}.
+     *
+     * An actor ending gets exactly one final think: the first pass to see it
+     * ended thinks its program once more, with the actor already ended, and
+     * ends the program after it. An actor ending during a pass, after its
+     * program thought, has its final think at the next pass.
      *
      * A throw out of a program's start or think, outside every fiber of it,
      * is reported as that program's fault through its
@@ -446,8 +454,6 @@ namespace wendoo {
         }
       }
 
-      this.endEndedPrograms();
-
       const requests = this.restartsOfUpdatedPrograms();
       for (let i = 0; i < this.requests.length; i++) {
         requests.push(this.requests[i]);
@@ -457,14 +463,7 @@ namespace wendoo {
         this.start(requests[i]);
       }
 
-      for (let i = 0; i < this.running.length; i++) {
-        const hosted = this.running[i];
-        try {
-          hosted.runtime.think(timeMs);
-        } catch (e) {
-          hosted.observer.onThrown(e);
-        }
-      }
+      this.thinkRunningPrograms(timeMs);
 
       const registries = this.registries;
       const undeclared = registries.types.undeclaredFieldAccesses();
@@ -506,7 +505,11 @@ namespace wendoo {
       return refused;
     }
 
-    /** Start the program `request` asks for, ending the one its actor runs. */
+    /**
+     * Start the program `request` asks for, ending the one its actor runs.
+     * A request for an actor that has ended starts nothing and leaves the
+     * actor's program running for its final think.
+     */
     private start(request: AttachRequest): void {
       if (request.attachment.hasEnded()) {
         return;
@@ -552,9 +555,7 @@ namespace wendoo {
         const hosted = this.running[i];
         const loaded = hosted.loaded;
         if (loaded.revision !== loaded.registration.revision) {
-          restarts.push(
-            new AttachRequest(hosted.attachment, loaded.registration, hosted.runtime.snapshotVariables())
-          );
+          restarts.push(new AttachRequest(hosted.attachment, loaded.registration, hosted.runtime.snapshotVariables()));
         }
       }
       return restarts;
@@ -586,12 +587,26 @@ namespace wendoo {
       return undefined;
     }
 
-    /** Drop every running program whose actor has ended. */
-    private endEndedPrograms(): void {
+    /**
+     * Think every running program once, in start order, at `timeMs`, then
+     * drop each whose actor had ended before its think: that think was its
+     * final think. A throw out of a think is reported as that program's
+     * fault and the rest still think.
+     *
+     * @param timeMs - Cumulative scheduled time of this pass, in milliseconds.
+     */
+    private thinkRunningPrograms(timeMs: number): void {
       const kept: HostedProgram[] = [];
       for (let i = 0; i < this.running.length; i++) {
-        if (!this.running[i].attachment.hasEnded()) {
-          kept.push(this.running[i]);
+        const hosted = this.running[i];
+        const finalThink = hosted.attachment.hasEnded();
+        try {
+          hosted.runtime.think(timeMs);
+        } catch (e) {
+          hosted.observer.onThrown(e);
+        }
+        if (!finalThink) {
+          kept.push(hosted);
         }
       }
       this.running = kept;

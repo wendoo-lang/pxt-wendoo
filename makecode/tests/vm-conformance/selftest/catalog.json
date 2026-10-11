@@ -134,7 +134,10 @@
               "tileId": "times",
               "type": "number",
               "optional": true,
-              "label": "times to ring"
+              "label": "times to ring",
+              "language": {
+                "form": "this many times"
+              }
             },
             {
               "tileId": "loudly",

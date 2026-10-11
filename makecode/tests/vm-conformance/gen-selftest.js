@@ -86,10 +86,10 @@ const ARCADE_ENDING_SELFTEST_NAME = "arcade-ending-selftest.ts";
 
 /**
  * The endings the arcade ending projects each run, one project per ending,
- * as the ending selftest's `run` names them: a loss, a win, and a player's
- * win.
+ * as the ending selftest's `run` names them: a loss, a win, a player's win,
+ * and a win from the final think of a program that destroyed its own sprite.
  */
-const ARCADE_ENDINGS = ["lose", "win", "player"];
+const ARCADE_ENDINGS = ["lose", "win", "player", "destroyed"];
 
 /**
  * The packs the project depends on: one generated extension each, carrying

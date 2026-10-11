@@ -135,10 +135,10 @@ const WORDS = {
 } as const;
 
 /**
- * A catalog whose tiles and modifier slots carry sentence words: a sensor
- * declaring every word, a modifier slot in flat form declaring a form, a
- * modifier slot in a call tree declaring every word, and a parameter slot
- * declaring a form, which the grammar never carries on a parameter slot.
+ * A catalog whose tiles and slots carry sentence words: a sensor declaring
+ * every word, a modifier slot in flat form declaring a form, a parameter
+ * slot in flat form declaring a form, and a modifier slot in a call tree
+ * declaring every word.
  */
 const WORDED_CATALOG = JSON.stringify({
   packs: [
@@ -167,7 +167,7 @@ const WORDED_CATALOG = JSON.stringify({
 });
 
 describe("parseCatalog", () => {
-  it("reads the sentence words of a tile and of a modifier slot, flat or in a call tree, and none of a parameter slot", () => {
+  it("reads the sentence words of a tile, of a modifier slot and of a parameter slot, flat or in a call tree", () => {
     const { packs, problems } = parseCatalog(WORDED_CATALOG);
     const [see, roar] = packs[0].tiles;
 
@@ -188,7 +188,15 @@ describe("parseCatalog", () => {
       },
       {
         kind: "optional",
-        item: { kind: "arg", tileId: "count", modifier: false, type: "number", anonymous: false, derived: false },
+        item: {
+          kind: "arg",
+          tileId: "count",
+          modifier: false,
+          type: "number",
+          anonymous: false,
+          derived: false,
+          language: WORDS.count,
+        },
       },
     ]);
     assert.deepEqual(roar.grammar, [

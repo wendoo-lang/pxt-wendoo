@@ -1,10 +1,10 @@
 /**
  * The arcade base pack's icons: one 16 by 16 image per tile and per
- * modifier tile its tiles' argument grammars declare, per accessor tile its
- * types declare, per core tile it gives an icon, and per type it gives one,
- * each the img literal one function returns, which the catalog carries
- * through the arcade icon encoder. Outside tests, call them only from
- * {@link attachArcadeBaseIcons}.
+ * modifier and parameter tile its tiles' argument grammars declare, per
+ * accessor tile its types declare, per core tile it gives an icon, and per
+ * type it gives one, each the img literal one function returns, which the
+ * catalog carries through the arcade icon encoder. Outside tests, call them
+ * only from {@link attachArcadeBaseIcons}.
  */
 namespace wendoo {
   /** Icon of the dpad sensor: a dpad cross. */
@@ -1682,6 +1682,121 @@ namespace wendoo {
       . . 2 2 2 2 2 2 2 2 2 2 2 2 . .
       . . . 2 2 2 2 2 2 2 2 2 2 . . .
       . . . . . 2 2 2 2 2 2 . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `ParticleEffect` type: an orange burst of particles flying out from a yellow center. */
+  //% hidden
+  export function particleEffectTypeIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . 2 . . . . . . 4 . . . . . 2 .
+      . . 4 . . . . . . . . . . 4 . .
+      . . . . . . . . 4 . . . . . . .
+      . . . . 4 . . . . . . 4 . . . .
+      . . . . . . . 5 5 . . . . . . .
+      . . . . . . 5 5 5 5 . . . . . .
+      . 4 . 4 . 5 5 1 1 5 5 . 4 . 4 .
+      . . . . . 5 5 1 1 5 5 . . . . .
+      . . . . . . 5 5 5 5 . . . . . .
+      . . . . . . . 5 5 . . . . . . .
+      . . . . 4 . . . . . . 4 . . . .
+      . . . . . . . . 4 . . . . . . .
+      . . 4 . . . . . . . . . . 4 . .
+      . 2 . . . . . . 4 . . . . . 2 .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the destroy actuator: a red sprite struck through by a black X. */
+  //% hidden
+  export function destroyIcon(): Image {
+    return img`
+      f f . . . . . . . . . . . . f f
+      f f f . . . . . . . . . . f f f
+      . f f f 2 2 2 2 2 2 2 2 f f f .
+      . . f f f 2 2 2 2 2 2 f f f . .
+      . . . f f f 1 2 2 1 f f f . . .
+      . . . 2 f f f 2 2 f f f 2 . . .
+      . . . 2 2 f f f f f f 2 2 . . .
+      . . . 2 2 2 f f f f 2 2 2 . . .
+      . . . 2 2 2 f f f f 2 2 2 . . .
+      . . . 2 2 f f f f f f 2 2 . . .
+      . . . 2 f f f 2 2 f f f 2 . . .
+      . . . f f f 2 2 2 2 f f f . . .
+      . . f f f . . . . . . f f f . .
+      . f f f . . . . . . . . f f f .
+      f f f . . . . . . . . . . f f f
+      f f . . . . . . . . . . . . f f
+    `;
+  }
+
+  /** Icon of the destroyed sensor: a white ghost with a wavy hem. */
+  //% hidden
+  export function destroyedIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . b b b b b b . . . . .
+      . . . . b 1 1 1 1 1 1 b . . . .
+      . . . b 1 1 1 1 1 1 1 1 b . . .
+      . . b 1 1 1 1 1 1 1 1 1 1 b . .
+      . . b 1 1 f f 1 1 f f 1 1 b . .
+      . . b 1 1 f f 1 1 f f 1 1 b . .
+      . . b 1 1 1 1 1 1 1 1 1 1 b . .
+      . . b 1 1 1 1 f f 1 1 1 1 b . .
+      . . b 1 1 1 1 f f 1 1 1 1 b . .
+      . . b 1 1 1 1 1 1 1 1 1 1 b . .
+      . . b 1 1 1 1 1 1 1 1 1 1 b . .
+      . . b 1 1 1 1 1 1 1 1 1 1 b . .
+      . . b 1 b b 1 1 b b 1 1 b b . .
+      . . b b . . b b . . b b . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the move's `speed` parameter: a speedometer, its needle swung toward the red end of its dial. */
+  //% hidden
+  export function speedParameterIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . c c c c c c . . . . .
+      . . . c c 5 5 5 5 5 5 c c . . .
+      . . c 7 7 5 5 5 5 5 5 2 2 c . .
+      . c 7 7 7 1 1 1 1 1 1 2 2 2 c .
+      . c 7 7 1 1 1 1 1 1 1 f 2 2 c .
+      c 7 7 1 1 1 1 1 1 1 f 1 1 2 2 c
+      c 7 7 1 1 1 1 1 1 f 1 1 1 2 2 c
+      c 7 7 1 1 1 1 1 f 1 1 1 1 2 2 c
+      c 7 7 1 1 1 1 f f 1 1 1 1 2 2 c
+      c 7 7 1 1 1 1 f f 1 1 1 1 2 2 c
+      c c c c c c c c c c c c c c c c
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the destroy's `duration` parameter: a clock face, the span from twelve to four shaded between its hands. */
+  //% hidden
+  export function durationParameterIcon(): Image {
+    return img`
+      . . . . . c c c c c c . . . . .
+      . . . c c 1 1 1 9 9 9 c c . . .
+      . . c 1 1 1 1 f 9 9 9 9 9 c . .
+      . c 1 1 1 1 1 f 9 9 9 9 9 9 c .
+      . c 1 1 1 1 1 f 9 9 9 9 9 9 c .
+      c 1 1 1 1 1 1 f 9 9 9 9 9 9 9 c
+      c 1 1 1 1 1 1 f 9 9 9 9 9 9 9 c
+      c 1 1 1 1 1 1 f f 9 9 9 9 9 9 c
+      c 1 1 1 1 1 1 1 1 f f 9 9 9 9 c
+      c 1 1 1 1 1 1 1 1 1 1 f f 9 9 c
+      . c 1 1 1 1 1 1 1 1 1 1 1 f c .
+      . c 1 1 1 1 1 1 1 1 1 1 1 1 c .
+      . . c 1 1 1 1 1 1 1 1 1 1 c . .
+      . . . c c 1 1 1 1 1 1 c c . . .
+      . . . . . c c c c c c . . . . .
       . . . . . . . . . . . . . . . .
     `;
   }

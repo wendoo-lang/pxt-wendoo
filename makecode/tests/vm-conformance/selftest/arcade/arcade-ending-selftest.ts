@@ -5,8 +5,9 @@
 
 /**
  * The arcade ending selftest: one run ends a running Arcade game one way --
- * as a loss, as a win, or as a player's win -- through a program placing the
- * arcade base pack's game-over tile, and reports how the game ended. Each
+ * as a loss, as a win, as a player's win, or as a win from the final think
+ * of a program that destroyed its own sprite -- through a program placing
+ * the arcade base pack's game-over tile, and reports how the game ended. Each
  * ending runs in a project of its own, its `main.ts` naming the ending. The
  * game's code handles game over, so the run goes on past the ending to
  * report it: Arcade hands that handler whether the game was won, and the run
@@ -39,6 +40,9 @@ namespace arcadeEndingSelftest {
 
   /** The ending whose program places a game over given `lose`, player two, an effect and a sound. */
   export const PLAYER = "player";
+
+  /** The ending whose program destroys its own sprite and places a game over given `win` under destroyed. */
+  export const DESTROYED = "destroyed";
 
   /** Milliseconds the run lets the game run between readings: several frames. */
   const FRAMES_MS = 120;
@@ -101,12 +105,17 @@ namespace arcadeEndingSelftest {
     effectSet: boolean;
     /** Whether game code had set a sound. */
     soundSet: boolean;
+    /** Whether the sprite {@link SeenEnding.watched} names was destroyed as the handler ran; `false` while it names none. */
+    watchedDestroyed: boolean;
+    /** The sprite whose destruction the handler reads, or `undefined` for none. */
+    watched: Sprite;
 
     constructor() {
       this.calls = 0;
       this.win = false;
       this.effectSet = false;
       this.soundSet = false;
+      this.watchedDestroyed = false;
     }
 
     /** Record one call of the handler, given `win`, reading the settings as they stand. */
@@ -120,13 +129,21 @@ namespace arcadeEndingSelftest {
       this.loseMelody = melodyOf(config.getSound(false));
       this.effectSet = config.effectSetByUser;
       this.soundSet = config.soundSetByUser;
+      this.watchedDestroyed = this.watched !== undefined && wendoo.isDestroyed(this.watched);
     }
   }
 
-  /** The program the ending `ending` runs: one game-over rule on every frame. */
+  /**
+   * The program the ending `ending` runs: one game-over rule on every frame,
+   * or, for {@link DESTROYED}, a bare destroy on every frame and a game-over
+   * rule under destroyed.
+   */
   function programFor(ending: string): wendoo.CompiledBrainRegistration {
     if (ending === WIN) {
       return wendooBrains.p_endingWinUnheld1;
+    }
+    if (ending === DESTROYED) {
+      return wendooBrains.p_endingDestroyed1;
     }
     return ending === PLAYER ? wendooBrains.p_endingPlayerTwo1 : wendooBrains.p_endingLoseBare01;
   }
@@ -193,9 +210,25 @@ namespace arcadeEndingSelftest {
   }
 
   /**
+   * Check the ending a program destroying its own sprite ends the game with:
+   * its first think destroys the sprite, and its final think, the next
+   * frame, fires its game over given `win` under destroyed, which ends the
+   * game once as a win with the sprite already destroyed; the program is gone
+   * after it.
+   */
+  function checkDestroyedWin(seen: SeenEnding, sprite: Sprite): void {
+    check(
+      "a-brain-destroying-its-own-sprite-ends-the-game-once-from-its-final-think-and-is-gone-after",
+      seen.calls === 1 && seen.win && wendoo.isDestroyed(sprite) && ticksOf(sprite) === -1
+    );
+    check("the-game-ends-with-the-sprite-already-destroyed", seen.watchedDestroyed);
+  }
+
+  /**
    * Turn debug logging on, handle game over in game code, give a sprite the
-   * program of the ending `ending` -- {@link LOSE}, {@link WIN} or
-   * {@link PLAYER} -- let the game run, and check how the game ended.
+   * program of the ending `ending` -- {@link LOSE}, {@link WIN},
+   * {@link PLAYER} or {@link DESTROYED} -- let the game run, and check how
+   * the game ended.
    *
    * @param ending - Which ending the run checks.
    */
@@ -210,6 +243,7 @@ namespace arcadeEndingSelftest {
       seen.record(win);
     });
     const sprite = sprites.create(image.create(2, 2), SpriteKind.Player);
+    seen.watched = sprite;
     wendoo.runBrain(sprite, programFor(ending));
     pause(FRAMES_MS);
     const firstTicks = ticksOf(sprite);
@@ -218,6 +252,8 @@ namespace arcadeEndingSelftest {
 
     if (ending === WIN) {
       checkWin(seen, runsOn);
+    } else if (ending === DESTROYED) {
+      checkDestroyedWin(seen, sprite);
     } else if (ending === PLAYER) {
       checkPlayerWin(seen, runsOn);
     } else {

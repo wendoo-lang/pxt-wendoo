@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "destroyUnsetPrey",
+  "name": "Unset prey",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0destroyUnset",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "prey",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0destroyPrey0"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "burst",
+      "varType": "struct:<ParticleEffect>",
+      "uniqueId": "fVr0destroyBurst"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0destroyUnset",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy",
+            "tile.var->fVr0destroyPrey0"
+          ],
+          "children": [],
+          "ruleId": "fRu0destroyUnst0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy",
+            "tile.var->fVr0destroyBurst"
+          ],
+          "children": [],
+          "ruleId": "fRu0destroyUnst1"
+        }
+      ]
+    }
+  ]
+}

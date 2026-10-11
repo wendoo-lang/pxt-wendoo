@@ -91,6 +91,44 @@ pack arcade
       value name {"t":4,"v":"spooky"}
     literal beamUp
       value name {"t":4,"v":"beamUp"}
+  type ParticleEffect icon
+    field name string readOnly
+    literal spray
+      value name {"t":4,"v":"spray"}
+    literal trail
+      value name {"t":4,"v":"trail"}
+    literal fountain
+      value name {"t":4,"v":"fountain"}
+    literal rings
+      value name {"t":4,"v":"rings"}
+    literal fire
+      value name {"t":4,"v":"fire"}
+    literal warmRadial
+      value name {"t":4,"v":"warmRadial"}
+    literal coolRadial
+      value name {"t":4,"v":"coolRadial"}
+    literal halo
+      value name {"t":4,"v":"halo"}
+    literal ashes
+      value name {"t":4,"v":"ashes"}
+    literal disintegrate
+      value name {"t":4,"v":"disintegrate"}
+    literal confetti
+      value name {"t":4,"v":"confetti"}
+    literal hearts
+      value name {"t":4,"v":"hearts"}
+    literal smiles
+      value name {"t":4,"v":"smiles"}
+    literal blizzard
+      value name {"t":4,"v":"blizzard"}
+    literal bubbles
+      value name {"t":4,"v":"bubbles"}
+    literal starField
+      value name {"t":4,"v":"starField"}
+    literal clouds
+      value name {"t":4,"v":"clouds"}
+    literal none
+      value name {"t":4,"v":"none"}
   tile sensor sensor.arcade.dpad returns=Vector2 icon
     args
       arg modifier.direction.up optional modifier icon
@@ -121,7 +159,7 @@ pack arcade
             arg modifier.slowly modifier icon
           repeat min=1 max=3
             arg modifier.quickly modifier icon
-          arg parameter.speed type=number range={"min":0,"onExceed":"clamp"}
+          arg parameter.speed type=number range={"min":0,"onExceed":"clamp"} icon
       optional
         arg modifier.direction.up modifier icon
       optional
@@ -225,6 +263,18 @@ pack arcade
   tile sensor sensor.arcade.button-b returns=boolean icon
     args
       arg anon.Player type=Player anonymous optional
+  tile actuator actuator.arcade.destroy icon
+    call
+      optional
+        choice
+          bag
+            optional
+              arg anon.Sprite type=Sprite anonymous
+            optional
+              arg anon.ParticleEffect type=ParticleEffect anonymous
+            optional
+              arg parameter.duration type=number range={"min":0,"onExceed":"clamp"} icon
+  tile sensor sensor.arcade.destroyed returns=boolean icon
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

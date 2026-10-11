@@ -12,8 +12,8 @@
  *
  * A registration also carries its declared shape and catalog metadata --
  * fields (each with its accessor tile's metadata), an asset type's asset
- * kind, argument grammar (each slot with its tile's display label and icon,
- * and each modifier slot with its tile's sentence words), returns, outputs,
+ * kind, argument grammar (each slot with its tile's display label, sentence
+ * words and icon), returns, outputs,
  * consumed WHEN result, a sensor's inline and writable-result flags, a struct
  * type's variable factory flag, declared literals and variable initial,
  * label, group, docs, icon, sentence words. A
@@ -541,7 +541,7 @@ namespace wendoo {
   }
 
   /**
-   * Sentence words for a {@link TileSpec.language} or a modifier slot's
+   * Sentence words for a {@link TileSpec.language} or a slot's
    * {@link ArgSlotSpec.language}.
    *
    * @param form - The tile's word in a sentence; `""` to declare none. See {@link TileLanguage.form}.
@@ -785,10 +785,9 @@ namespace wendoo {
      */
     label: string = "";
     /**
-     * Sentence words of the tile that fills a modifier slot, such as the
-     * form `"a carnivore"`; each field `""` when undeclared, and the editor
-     * reads the tile by its label. Read on modifier slots only: a parameter
-     * slot's is never carried. Declare the same words on every slot a shared
+     * Sentence words of the tile that fills the slot, such as the form
+     * `"a carnivore"`; each field `""` when undeclared, and the editor reads
+     * the tile by its label. Declare the same words on every slot a shared
      * tile fills: the editor reads the tile with the words of the first one
      * registered.
      */

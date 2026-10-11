@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "id": "grudgeHeldPrey01",
+  "name": "Grudge",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0grudgePrey01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "prey",
+      "varType": "struct:<Sprite>",
+      "uniqueId": "fVr0grudgePrey00"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0grudgePrey01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.var->fVr0grudgePrey00",
+            "tile.op->assign",
+            "tile.out->struct:<Sprite>.bumped"
+          ],
+          "children": [],
+          "ruleId": "fRu0grudgePrey00"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0grudgePrey00"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score"
+          ],
+          "children": [],
+          "ruleId": "fRu0grudgePrey01"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0grudgePrey00"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy",
+            "tile.var->fVr0grudgePrey00"
+          ],
+          "children": [],
+          "ruleId": "fRu0grudgePrey02"
+        }
+      ]
+    }
+  ]
+}

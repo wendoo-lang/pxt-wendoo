@@ -3,7 +3,7 @@
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
 shares: the tiles a brain uses to read the controllers, notice what its
 sprite touches and what is near it, move its sprite, change how it looks,
-keep score, and end the game.
+keep score, destroy sprites, and end the game.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -55,6 +55,14 @@ keep score, and end the game.
   greater than 9 DO game over win confetti** wins with confetti at 10
   points. A game ends only once, so the first frame a **game over** rule is
   on decides how it ends.
+- **destroy** -- a DO tile that removes a sprite from the game: on its own,
+  your own sprite; given a sprite, that one -- **WHEN bump DO destroy bumped
+  sprite** eats whatever your sprite bumps. Give it one of Arcade's particle
+  effects, like **confetti**, to make the sprite vanish in it, and a
+  **duration** in seconds for how long the effect plays.
+- **destroyed** -- a WHEN tile that is on once, when your own sprite is
+  destroyed, for its brain's last turn: **WHEN destroyed DO game over** ends
+  the game when your sprite is destroyed, by a brain or by the game's code.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or

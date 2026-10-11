@@ -909,7 +909,9 @@ namespace registrationSelftest {
    * drain -- two programs sharing a name each on its own actor -- runs the
    * empty program as nothing, refuses the programs the loader refuses while
    * the rest run on, replaces an actor's program when it is given another,
-   * and ends an actor's program when the actor ends.
+   * and, when an actor ends, thinks its program once more -- its final
+   * think -- in the drain that first sees it ended, then ends it, starting
+   * nothing a request made for the ended actor asks for.
    */
   function checkProgramHost(): void {
     const counter = new EffectRecorder();
@@ -965,15 +967,20 @@ namespace registrationSelftest {
     );
 
     twinA.ended = true;
+    host.attach(twinA, wendooBrains.p_akBQz0nySKaYx37w);
+    time += DRAIN_INTERVAL_MS;
+    host.drain(time);
+    const afterFinal = counter.switches;
     time += DRAIN_INTERVAL_MS;
     host.drain(time);
     check(
       "host-ends-an-ended-actors-program",
       programOf(host, twinA) === NOT_RUNNING &&
         host.hostedPrograms().length === 3 &&
-        counter.switches === 14 &&
+        counter.switches === afterFinal + 2 &&
         counter.faults === 0
     );
+    check("host-thinks-an-ended-actors-program-once-more-and-starts-nothing-on-it", afterFinal === 15);
   }
 
   /** How many drains the fault checks run while the ring tile fails. */

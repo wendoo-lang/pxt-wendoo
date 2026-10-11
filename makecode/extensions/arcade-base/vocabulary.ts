@@ -3,10 +3,10 @@
  * literal, its `x` and `y` accessors, the `Sprite` type, its `image`, `position`,
  * `brain` and `move smoothing` accessors, the `Image` asset type, the `Brain`
  * type, the `Player` type with its four literals and its `score` accessor,
- * the `Effect` and `Sound` types with their literals, the `dpad`,
- * `A button`, `B button`, `bump`, `in range`, `out of range` and `myself`
- * sensors, the `move`, `add score`
- * and `game over` actuators, the core equality and inequality
+ * the `Effect`, `Sound` and `ParticleEffect` types with their literals, the
+ * `dpad`, `A button`, `B button`, `bump`, `in range`, `out of range`,
+ * `myself` and `destroyed` sensors, the `move`, `add score`, `game over`
+ * and `destroy` actuators, the core equality and inequality
  * operators' overloads over two images, two sprites, two brains, two
  * `Vector2`s and two players, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
@@ -16,7 +16,8 @@
  * factory. In the
  * simulator only, {@link attachArcadeBaseIcons} gives each tile, modifier
  * tile, output and accessor its icon and the `Vector2`, `Sprite`, `Brain`,
- * `Player`, `Effect` and `Sound` types theirs, and gives icons to the core tiles (the page
+ * `Player`, `Effect`, `Sound` and `ParticleEffect` types theirs, and gives
+ * icons to the core tiles (the page
  * tiles, the
  * timer, AND, OR, NOT, the six comparisons, the arithmetic operators, gets,
  * the parentheses, random number, true, false, nil, and the variable and
@@ -138,6 +139,19 @@
  *   such as `[power up]`, the outcome it ends the game with shows that effect
  *   and plays that sound, and otherwise keeps the ones it has. Arcade ends a
  *   game once: `DO [game over] [win] [hearts]` ends it as a win with hearts.
+ * - `DO [destroy]` destroys the program's own sprite through Arcade's own
+ *   destroy; given a sprite, that sprite: `WHEN [bump] DO [destroy] [bumped
+ *   sprite]` eats whatever it bumps. Given a particle effect, such as
+ *   `[confetti]`, the sprite vanishes in it, over the `duration` it is given
+ *   in seconds or else the effect's own; a duration without an effect
+ *   changes nothing. A destroyed sprite reads as nothing from that moment
+ *   on, and destroying it again does nothing. A program whose own sprite is
+ *   destroyed finishes the think it is in, thinks once more -- its final
+ *   think -- and ends.
+ * - `WHEN [destroyed]` reads `true` while the program's own sprite is
+ *   destroyed, which a program sees only in its final think, so its rule
+ *   fires once: `WHEN [destroyed] DO [game over]` ends the game when the
+ *   sprite is destroyed, by a brain or by game code.
  * - A brain may hold variables of the `Vector2`, `Sprite` and `Player`
  *   types. A `Vector2` variable starts at `origin`; a `Sprite` or `Player`
  *   variable never written reads nil. A `Vector2` variable holds the point
@@ -194,6 +208,14 @@ namespace wendoo {
   /** Tile name of the game-over actuator. */
   //% hidden
   export const GAME_OVER_TILE = "actuator.arcade.game-over";
+
+  /** Tile name of the destroy actuator. */
+  //% hidden
+  export const DESTROY_TILE = "actuator.arcade.destroy";
+
+  /** Tile name of the destroyed sensor. */
+  //% hidden
+  export const DESTROYED_TILE = "sensor.arcade.destroyed";
 
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
@@ -257,6 +279,11 @@ namespace wendoo {
   const GAME_OVER_SLOT_PLAYER = 2;
   const GAME_OVER_SLOT_EFFECT = 3;
   const GAME_OVER_SLOT_SOUND = 4;
+
+  /** Argument-buffer positions of the destroy actuator's target sprite, its particle effect and its duration. */
+  const DESTROY_SLOT_TARGET = 0;
+  const DESTROY_SLOT_EFFECT = 1;
+  const DESTROY_SLOT_DURATION = 2;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -663,6 +690,66 @@ namespace wendoo {
     }
   }
 
+  /**
+   * The duration a destroy is given, in milliseconds as Arcade's destroy
+   * takes it: the duration argument, in seconds, times 1000 when it carries
+   * a number -- 0 for a not-a-number or a number below 0; `undefined` when it
+   * carries none.
+   *
+   * @param duration - The duration argument, in seconds: a number, or nil.
+   */
+  function destroyDurationMs(duration: Value): number {
+    if (duration === undefined || duration.t !== ValueTag.Number) {
+      return undefined;
+    }
+    return duration.num > 0 ? duration.num * 1000 : 0;
+  }
+
+  /**
+   * `actuator.arcade.destroy`: destroys the sprite its target slot holds,
+   * else the program's own sprite, through Arcade's own `sprites.destroy`.
+   * Given a particle effect naming one of Arcade's, as
+   * {@link ParticleEffectBinding.particleEffectOf} reads it, the sprite
+   * vanishes in that effect over its duration, as {@link destroyDurationMs}
+   * reads it, else over the effect's own; given none, or one naming nothing,
+   * it is gone at once and the duration is ignored. A target already
+   * destroyed stays as it is. The sprite reads as destroyed from the call
+   * on, whatever effect plays.
+   */
+  class DestroyActuator extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      let target = (ctx.data as SpriteAttachment).sprite;
+      if (isFilled(args, DESTROY_SLOT_TARGET)) {
+        target = spriteOf(args[DESTROY_SLOT_TARGET]);
+      }
+      if (!target) {
+        return VOID_VALUE;
+      }
+      const effect = particleEffectBinding.particleEffectOf(args[DESTROY_SLOT_EFFECT]);
+      sprites.destroy(target, effect, destroyDurationMs(args[DESTROY_SLOT_DURATION]));
+      return VOID_VALUE;
+    }
+  }
+
+  /**
+   * `sensor.arcade.destroyed`: `true` while the program's own sprite is
+   * destroyed, and nil otherwise. A program sees its sprite destroyed only in
+   * its final think.
+   */
+  class DestroyedSensor extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      return (ctx.data as SpriteAttachment).hasEnded() ? TRUE_VALUE : NIL_VALUE;
+    }
+  }
+
   /** `sensor.arcade.myself`: the `Sprite` value standing for the program's own sprite. */
   class MyselfSensor extends HostActionBinding {
     constructor() {
@@ -941,6 +1028,27 @@ namespace wendoo {
     ];
   }
 
+  /**
+   * The argument grammar the destroy actuator declares: an optional target
+   * sprite, an optional particle effect and an optional duration, in any
+   * order, each anonymous value filling the slot of its type -- a sprite the
+   * target, a particle effect the effect -- and the duration its own named
+   * number of seconds, held at 0 or above, read as "for" in a sentence.
+   */
+  function destroyArgs(): TileArgSpec[] {
+    const duration = arg("parameter.duration", TYPE_NUMBER, "duration");
+    duration.language = tileLanguage("for");
+    duration.unit = "s";
+    duration.range = argRangeAtLeast(0, ARG_ON_EXCEED_CLAMP);
+    return [
+      optional(
+        choice([
+          bag([optional(anonymousArg(TYPE_SPRITE)), optional(anonymousArg(TYPE_PARTICLE_EFFECT)), optional(duration)]),
+        ])
+      ),
+    ];
+  }
+
   /** The four optional direction modifier slots, up, down, left then right. */
   function directionModifiers(): TileArgSpec[] {
     return [
@@ -1009,6 +1117,8 @@ namespace wendoo {
   arcadePack.defineStruct(TYPE_EFFECT, namedChoiceFields(), effectBinding, effectMeta);
   const soundMeta = literalTypeMeta("sound", soundLiterals());
   arcadePack.defineStruct(TYPE_SOUND, namedChoiceFields(), soundBinding, soundMeta);
+  const particleEffectMeta = literalTypeMeta("particle effect", particleEffectLiterals());
+  arcadePack.defineStruct(TYPE_PARTICLE_EFFECT, namedChoiceFields(), particleEffectBinding, particleEffectMeta);
 
   const dpadSpec = new TileSpec(
     TILE_KIND_SENSOR,
@@ -1094,6 +1204,14 @@ namespace wendoo {
   const buttonBSpec = buttonSpec("B button", "B");
   arcadePack.bind(BUTTON_B_TILE, new ButtonSensor(ControllerButton.B), buttonBSpec);
 
+  const destroySpec = new TileSpec(TILE_KIND_ACTUATOR, destroyArgs(), "");
+  destroySpec.label = "destroy";
+  arcadePack.bind(DESTROY_TILE, new DestroyActuator(), destroySpec);
+  const destroyedSpec = new TileSpec(TILE_KIND_SENSOR, [], TYPE_BOOLEAN);
+  destroyedSpec.label = "destroyed";
+  destroyedSpec.language.frame = SENTENCE_FRAME_STATE;
+  arcadePack.bind(DESTROYED_TILE, new DestroyedSensor(), destroyedSpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -1163,9 +1281,10 @@ namespace wendoo {
   }
 
   /**
-   * Give each of the pack's tiles, the modifier tiles filling their slots,
-   * its sensors' outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
-   * `Effect` and `Sound` types and their accessor tiles their icons, and give
+   * Give each of the pack's tiles, the modifier and parameter tiles filling
+   * their slots, its sensors' outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
+   * `Effect`, `Sound` and `ParticleEffect` types and their accessor tiles
+   * their icons, and give
    * the core tiles and the core number, text and switch types the pack's icons
    * for them. Call it once, after the pack's registrations and before the
    * catalog is first published. Does nothing on hardware.
@@ -1186,6 +1305,7 @@ namespace wendoo {
     attachAccessorIcon(playerFieldSpecs, "score", scoreAccessorIcon());
     effectMeta.icon = effectTypeIcon();
     soundMeta.icon = soundTypeIcon();
+    particleEffectMeta.icon = particleEffectTypeIcon();
     dpadSpec.icon = dpadIcon();
     buttonASpec.icon = buttonAIcon();
     buttonBSpec.icon = buttonBIcon();
@@ -1199,7 +1319,19 @@ namespace wendoo {
     myselfSpec.icon = myselfIcon();
     addScoreSpec.icon = addScoreIcon();
     gameOverSpec.icon = gameOverIcon();
-    const tiles = [dpadSpec, moveSpec, bumpSpec, inRangeSpec, outOfRangeSpec, myselfSpec, addScoreSpec, gameOverSpec];
+    destroySpec.icon = destroyIcon();
+    destroyedSpec.icon = destroyedIcon();
+    const tiles = [
+      dpadSpec,
+      moveSpec,
+      bumpSpec,
+      inRangeSpec,
+      outOfRangeSpec,
+      myselfSpec,
+      addScoreSpec,
+      gameOverSpec,
+      destroySpec,
+    ];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
     attachSlotIcon(tiles, "modifier.direction.left", leftIcon());
@@ -1215,6 +1347,8 @@ namespace wendoo {
     attachSlotIcon(tiles, "modifier.position.right", rightOfIcon());
     attachSlotIcon(tiles, "modifier.outcome.win", winIcon());
     attachSlotIcon(tiles, "modifier.outcome.lose", loseIcon());
+    attachSlotIcon(tiles, "parameter.speed", speedParameterIcon());
+    attachSlotIcon(tiles, "parameter.duration", durationParameterIcon());
 
     arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", coreOnPageEnteredIcon());
     arcadePack.defineCoreTileIcon("tile.actuator->switch-page", coreSwitchPageIcon());
@@ -1269,7 +1403,8 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, its sensors' outputs, its `Vector2`,
-   * `Sprite`, `Player`, `Effect` and `Sound` types and their accessor tiles the docs page {@link arcadeBaseDocs}
+   * `Sprite`, `Player`, `Effect`, `Sound` and `ParticleEffect` types and their
+   * accessor tiles the docs page {@link arcadeBaseDocs}
    * holds under the key it is wired to: a tile's or type's name, and
    * `output.<name>` or `accessor.<field>` for an output or an accessor, one
    * accessor page serving every field wired to it. Call it once, after the
@@ -1290,6 +1425,7 @@ namespace wendoo {
     attachAccessorDocs(playerFieldSpecs, "score", "accessor.score");
     effectMeta.docs = arcadeBaseDocs(TYPE_EFFECT);
     soundMeta.docs = arcadeBaseDocs(TYPE_SOUND);
+    particleEffectMeta.docs = arcadeBaseDocs(TYPE_PARTICLE_EFFECT);
     dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
     buttonASpec.docs = arcadeBaseDocs(BUTTON_A_TILE);
     buttonBSpec.docs = arcadeBaseDocs(BUTTON_B_TILE);
@@ -1303,6 +1439,8 @@ namespace wendoo {
     myselfSpec.docs = arcadeBaseDocs(MYSELF_TILE);
     addScoreSpec.docs = arcadeBaseDocs(ADD_SCORE_TILE);
     gameOverSpec.docs = arcadeBaseDocs(GAME_OVER_TILE);
+    destroySpec.docs = arcadeBaseDocs(DESTROY_TILE);
+    destroyedSpec.docs = arcadeBaseDocs(DESTROYED_TILE);
   }
 
   attachArcadeBaseIcons();

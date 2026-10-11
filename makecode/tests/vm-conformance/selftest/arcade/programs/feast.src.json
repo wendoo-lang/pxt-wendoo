@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "feastConfetti001",
+  "name": "Feast",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0feastConfti1",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0.5,
+      "valueLabel": "0.5",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0feastConfti1",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.destroy",
+            "tile.out->struct:<Sprite>.bumped",
+            "tile.literal->struct:<ParticleEffect>->confetti",
+            "tile.parameter->parameter.duration",
+            "tile.literal->number:<number>->0.5"
+          ],
+          "children": [],
+          "ruleId": "fRu0feastConfti0"
+        }
+      ]
+    }
+  ]
+}

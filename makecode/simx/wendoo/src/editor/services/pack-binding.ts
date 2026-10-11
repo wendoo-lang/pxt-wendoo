@@ -161,6 +161,7 @@ interface ParameterTile {
   readonly hidden: boolean;
   readonly userArg?: UserArgIdentity;
   readonly anonType?: { readonly localName: string };
+  readonly language?: CatalogLanguage;
   readonly iconUrl?: string;
 }
 
@@ -182,6 +183,11 @@ interface SlotTiles {
 /** The label of the tile filling `slot`: the label the slot carries, or its declared fragment after the last dot when it carries none. */
 function slotLabel(slot: CatalogArgSlot): string {
   return slot.label ?? slot.tileId.slice(slot.tileId.lastIndexOf(".") + 1);
+}
+
+/** The `language` field `slot` carries, spread into a slot tile's description: empty when it carries none. */
+function slotWords(slot: CatalogArgSlot): { language?: CatalogLanguage } {
+  return slot.language === undefined ? {} : { language: slot.language };
 }
 
 /** The `iconUrl` field `slot` carries, spread into a slot tile's description: empty when it carries none. */
@@ -477,7 +483,7 @@ class PackBinder {
       tiles.modifiers.push({
         id,
         label: slotLabel(slot),
-        ...(slot.language === undefined ? {} : { language: slot.language }),
+        ...slotWords(slot),
         ...(shared ? {} : { userArg: { namespace: pack, actionId: tile, argName: slot.tileId } }),
         ...slotIcon(slot),
       });
@@ -493,10 +499,18 @@ class PackBinder {
         label: slot.label ?? typeName,
         hidden: true,
         anonType: { localName: typeName },
+        ...slotWords(slot),
         ...slotIcon(slot),
       };
     } else if (slot.tileId.startsWith(SHARED_PARAMETER_PREFIX)) {
-      parameter = { id: slot.tileId, dataType, label: slotLabel(slot), hidden: false, ...slotIcon(slot) };
+      parameter = {
+        id: slot.tileId,
+        dataType,
+        label: slotLabel(slot),
+        hidden: false,
+        ...slotWords(slot),
+        ...slotIcon(slot),
+      };
       const declared = this.sharedParameters.get(slot.tileId);
       if (declared !== undefined && declared !== dataType) {
         throw new EntryProblem(PackBindingCode.SHARED_TILE_CONFLICT, slot.tileId);
@@ -508,6 +522,7 @@ class PackBinder {
         label: slotLabel(slot),
         hidden: false,
         userArg: { namespace: pack, actionId: tile, argName: slot.tileId },
+        ...slotWords(slot),
         ...slotIcon(slot),
       };
     }
@@ -638,6 +653,7 @@ class PackBinder {
         hidden: parameter.hidden,
         metadata: {
           label: parameter.label,
+          ...(parameter.language === undefined ? {} : { language: parameter.language }),
           ...(parameter.iconUrl === undefined ? {} : { iconUrl: parameter.iconUrl }),
         },
         ...(parameter.userArg === undefined ? {} : { userArg: parameter.userArg }),

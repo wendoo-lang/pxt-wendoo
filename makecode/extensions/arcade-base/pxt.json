@@ -18,6 +18,7 @@
         "player-value.ts",
         "named-choice.ts",
         "effect-value.ts",
+        "particle-effect-value.ts",
         "sound-value.ts",
         "icons.ts",
         "icon-encoder.ts",

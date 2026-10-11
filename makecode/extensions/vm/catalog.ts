@@ -39,23 +39,23 @@
  *   `tileId` (the identity of the tile that fills it), then `modifier` or
  *   `type`, then `optional` (the item is the slot wrapped in an optional), or
  *   `repeated` and `min` (the slot wrapped in a repeat with no upper bound),
- *   then the slot's argument options, then its `label`, then, on a modifier
- *   slot, its `language`, then its `icon`. An item has a flat form when it
+ *   then the slot's argument options, then its `label`, then its
+ *   `language`, then its `icon`. An item has a flat form when it
  *   is a slot, or an unnamed optional or unnamed unbounded repeat directly
  *   around a slot.
  * - `call` holds one grammar node per item. Every node carries `kind` (`arg`,
  *   `seq`, `choice`, `optional`, `repeat`, `bag` or `conditional`) and
  *   `name`. An `arg` node carries `tileId`, then `modifier` or `type`, then
- *   its argument options, then its `label`, then, on a modifier slot, its
- *   `language`, then its `icon`; `seq` and `bag` carry `items`;
+ *   its argument options, then its `label`, then its `language`, then its
+ *   `icon`; `seq` and `bag` carry `items`;
  *   `choice` carries `options`; `optional` carries `item`; `repeat` carries
  *   `item`, `min` and `max`; and `conditional` carries `condition` (the name
  *   it tests), `then` and `else`.
  * - The argument options are `required`, `anonymous`, `default` (a tagged
  *   value), `derived`, `range` (`min`, `max` and `onExceed`) and `unit`. A
  *   slot's `label` is the display label of the tile that fills it, a
- *   modifier slot's `language` the sentence words of that tile, and a slot's
- *   `icon` that tile's icon, in the encoder's text form.
+ *   modifier or parameter slot's `language` the sentence words of that tile,
+ *   and a slot's `icon` that tile's icon, in the encoder's text form.
  * - A `language` object holds the sentence words the Wendoo editor reads a
  *   tile with: `form` (the tile's word), `frame` (`verb`, `state` or
  *   `event`: the template a sensor heading a WHEN side reads through) and
@@ -275,14 +275,13 @@ namespace wendoo {
   type SlotIconText = (slot: ArgSlotSpec) => string;
 
   /**
-   * The slot's `"label"` field, then a modifier slot's `"language"` field,
-   * then the slot's `"icon"` field as `iconText` renders it, each prefixed by
-   * its separating comma and each left out when the slot declares none.
+   * The slot's `"label"` field, then its `"language"` field, then its
+   * `"icon"` field as `iconText` renders it, each prefixed by its separating
+   * comma and each left out when the slot declares none.
    */
   function slotDisplayText(slot: ArgSlotSpec, iconText: SlotIconText): string {
     const label = slot.label.length > 0 ? `,"label":${jsonQuote(slot.label)}` : "";
-    const words = slot.isModifier ? languageText(slot.language) : "";
-    return `${label}${words}${iconText(slot)}`;
+    return `${label}${languageText(slot.language)}${iconText(slot)}`;
   }
 
   /**
