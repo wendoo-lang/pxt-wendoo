@@ -940,6 +940,7 @@ namespace wendoo {
   const spriteFieldSpecs = spriteFields();
   arcadePack.defineStruct(TYPE_SPRITE, spriteFieldSpecs, spriteBinding, spriteMeta);
   const imageMeta = new TypeMeta();
+  imageMeta.label = "image";
   arcadePack.defineAssetType(TYPE_IMAGE, imageBinding, imageMeta);
   const brainMeta = new TypeMeta();
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);

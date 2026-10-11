@@ -666,6 +666,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       [
         ["Vector2", true],
         ["Sprite", true],
+        ["Image", false],
         ["Player", false],
         ["Effect", false],
         ["Sound", false],
