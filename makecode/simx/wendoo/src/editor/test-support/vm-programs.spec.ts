@@ -624,13 +624,13 @@ describe("the MakeCode VM extension's compiled programs", () => {
   const held = `${VARIABLE_ENTRY_PREFIX}Sprite.held`;
   const xOf = `${ACCESSOR_ENTRY_PREFIX}Vector2.x`;
 
-  it("binds a variable factory for Sprite and for Vector2 alone, each producing its own type", () => {
+  it("binds a variable factory for Sprite, Vector2 and Player alone, each producing its own type", () => {
     assert.deepEqual(arcadeVariableFactories(), [
       { name: "Vector2", produces: mkTypeId(NativeType.Struct, "Vector2") },
       { name: "Sprite", produces: mkTypeId(NativeType.Struct, "Sprite") },
       { name: "Image", produces: undefined },
       { name: "Brain", produces: undefined },
-      { name: "Player", produces: undefined },
+      { name: "Player", produces: mkTypeId(NativeType.Struct, "Player") },
       { name: "Effect", produces: undefined },
       { name: "Sound", produces: undefined },
     ]);
@@ -649,7 +649,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
 
     assert.deepEqual(
       faces.map((face) => face.name),
-      ["Vector2", "Sprite"]
+      ["Vector2", "Sprite", "Player"]
     );
     for (const face of faces) {
       assert.notEqual(face.typeIcon, undefined, face.name);
@@ -667,7 +667,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
         ["Vector2", true],
         ["Sprite", true],
         ["Image", false],
-        ["Player", false],
+        ["Player", true],
         ["Effect", false],
         ["Sound", false],
       ]
@@ -840,6 +840,25 @@ describe("the MakeCode VM extension's compiled programs", () => {
       );
     }
   });
+
+  const playerVariable = `${VARIABLE_ENTRY_PREFIX}Player.player`;
+
+  it("offers a player variable at the dpad, and equality and inequality after one", () => {
+    assert.ok(arcadeOffersLiteral(`${FACTORY_ENTRY_PREFIX}Player`, [dpad]));
+    assert.ok(arcadeOffersLiteral(equalTo, [playerVariable]));
+    assert.ok(arcadeOffersLiteral(notEqualTo, [playerVariable]));
+  });
+
+  for (const [sentence, when, act] of [
+    ["a dpad given a player variable", [dpad, playerVariable], [move]],
+    ["a WHEN comparing a player variable equal to player one", [playerVariable, equalTo, playerOne], [move]],
+    ["a WHEN comparing a player variable unequal to player one", [playerVariable, notEqualTo, playerOne], [move]],
+    ["a WHEN comparing player two equal to player one", [playerTwo, equalTo, playerOne], [move]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
 
   it("offers and takes an assignment to a player's score, its field routed though its player is a literal", () => {
     assert.equal(arcadeOffersLiteral(ASSIGN, [], [playerOne, scoreOf]), true);

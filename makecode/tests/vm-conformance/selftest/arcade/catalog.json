@@ -131,6 +131,7 @@
         {
           "name": "Player",
           "native": true,
+          "variableFactory": true,
           "fields": [
             {
               "name": "number",
@@ -203,7 +204,7 @@
             }
           ],
           "label": "player",
-          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Player>->1\",\n    \"tile.literal->struct:<Player>->2\",\n    \"tile.literal->struct:<Player>->3\",\n    \"tile.literal->struct:<Player>->4\"\n  ]\n}\n```\n\n# Player\n\nOne of the four players in your game.\n\n---\n\n**player one**, **player two**, **player three** and **player four** are the players of an Arcade game,\neach with a controller of its own. Give one to **dpad**, **A button** or **B button** to read that\nplayer's controller, or to **add score** to change that player's score. Without one, each uses player\none.\n\n## Score\n\n`tile:tile.accessor->struct:<Player>->score` is a player's score. Put it after a player to read it, and\nuse **add score** to change it.\n\nPlayer one's score shows on the screen once it changes. Once a rule reads or changes the score of\nplayer two, three or four, the game shows scores the way Arcade does for several players: each in a\ncorner of its own.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.add-score`\n`tile:tile.sensor->sensor.arcade.dpad`\n",
+          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Player>->1\",\n    \"tile.literal->struct:<Player>->2\",\n    \"tile.literal->struct:<Player>->3\",\n    \"tile.literal->struct:<Player>->4\"\n  ]\n}\n```\n\n# Player\n\nOne of the four players in your game.\n\n---\n\n**player one**, **player two**, **player three** and **player four** are the players of an Arcade game,\neach with a controller of its own. Give one to **dpad**, **A button** or **B button** to read that\nplayer's controller, or to **add score** to change that player's score. Without one, each uses player\none.\n\nA **player** variable holds one, and your game can put a player into it with **set brain player**.\n\n## Score\n\n`tile:tile.accessor->struct:<Player>->score` is a player's score. Put it after a player to read it, and\nuse **add score** to change it.\n\nPlayer one's score shows on the screen once it changes. Once a rule reads or changes the score of\nplayer two, three or four, the game shows scores the way Arcade does for several players: each in a\ncorner of its own.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.add-score`\n`tile:tile.sensor->sensor.arcade.dpad`\n",
           "icon": "87041000100000000000000000000000000000000080880800000000008888080000000080888808008088008088880800888808808888088088888880888808808888888088880880888888808888088088888880888808008888088088880800808800808888080000000080888808000000000088880800000000008088080000000000000000"
         },
         {
@@ -1465,6 +1466,18 @@
           "operator": "mul",
           "operands": ["Vector2", "number"],
           "returns": "Vector2"
+        },
+        {
+          "name": "eq(Player,Player)",
+          "operator": "eq",
+          "operands": ["Player", "Player"],
+          "returns": "boolean"
+        },
+        {
+          "name": "ne(Player,Player)",
+          "operator": "ne",
+          "operands": ["Player", "Player"],
+          "returns": "boolean"
         }
       ],
       "coreTileIcons": [

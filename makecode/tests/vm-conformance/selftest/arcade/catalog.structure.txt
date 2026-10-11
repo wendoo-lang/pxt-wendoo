@@ -14,7 +14,7 @@ pack arcade
     field asset string readOnly
   type Brain brain icon
     field id string readOnly
-  type Player native icon
+  type Player native variableFactory icon
     field number number readOnly
     field score number routed accessor accessor-icon
     literal 1
@@ -236,6 +236,8 @@ pack arcade
   overload add(Vector2,Vector2) operator=add operands=Vector2,Vector2 returns=Vector2
   overload sub(Vector2,Vector2) operator=sub operands=Vector2,Vector2 returns=Vector2
   overload mul(Vector2,number) operator=mul operands=Vector2,number returns=Vector2
+  overload eq(Player,Player) operator=eq operands=Player,Player returns=boolean
+  overload ne(Player,Player) operator=ne operands=Player,Player returns=boolean
   core-tile-icon tile.sensor->on-page-entered icon
   core-tile-icon tile.actuator->switch-page icon
   core-tile-icon tile.actuator->restart-page icon

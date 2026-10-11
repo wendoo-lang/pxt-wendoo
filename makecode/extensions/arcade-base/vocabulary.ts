@@ -7,12 +7,13 @@
  * `A button`, `B button`, `bump`, `in range`, `out of range` and `myself`
  * sensors, the `move`, `add score`
  * and `game over` actuators, the core equality and inequality
- * operators' overloads over two images, two sprites, two brains and two
- * `Vector2`s, and the core addition
+ * operators' overloads over two images, two sprites, two brains, two
+ * `Vector2`s and two players, and the core addition
  * and subtraction operators' overloads over two `Vector2`s and the core
  * multiplication operator's over a `Vector2` and a number, registered from
- * this file's top-level code at program start, `Vector2` and `Sprite` each
- * with the label the editor calls it by and a variable factory. In the
+ * this file's top-level code at program start, `Vector2`, `Sprite` and
+ * `Player` each with the label the editor calls it by and a variable
+ * factory. In the
  * simulator only, {@link attachArcadeBaseIcons} gives each tile, modifier
  * tile, output and accessor its icon and the `Vector2`, `Sprite`, `Brain`,
  * `Player`, `Effect` and `Sound` types theirs, and gives icons to the core tiles (the page
@@ -125,7 +126,9 @@
  *   changes nothing.
  * - `[player one]` to `[player four]` name Arcade's four players, and a
  *   player's `score` reads that player's score: `WHEN [player one] [score]
- *   [greater than] 9 DO [move]` moves once player one scores 10.
+ *   [greater than] 9 DO [move]` moves once player one scores 10. Two
+ *   players are equal when they are the same player, as {@link samePlayer}
+ *   reads them, and a value naming no player, nil included, equals nothing.
  * - `DO [add score]` adds 1 to player one's score; given a number, it adds
  *   that number, a negative number taking it away, and given a player, it
  *   changes that player's score: `DO [add score] 5 [player two]`.
@@ -135,13 +138,17 @@
  *   such as `[power up]`, the outcome it ends the game with shows that effect
  *   and plays that sound, and otherwise keeps the ones it has. Arcade ends a
  *   game once: `DO [game over] [win] [hearts]` ends it as a win with hearts.
- * - A brain may hold variables of the `Vector2` and `Sprite` types. A
+ * - A brain may hold variables of the `Vector2`, `Sprite` and `Player`
+ *   types. A `Vector2` variable starts at `origin`; a `Sprite` or `Player`
  *   variable never written reads nil. A `Vector2` variable holds the point
  *   written to it, whatever happens after: `DO [$home] [=] [myself][position]`
  *   remembers where the sprite stood. A `Sprite` variable holds the sprite
  *   written to it, read where it is at every read: `DO [$target] [=]
  *   [bumped sprite]` remembers the sprite bumped, and once that sprite is
- *   destroyed, its fields read nil and writes through it change nothing.
+ *   destroyed, its fields read nil and writes through it change nothing. A
+ *   `Player` variable holds the player written to it, by the brain or by
+ *   game code: `WHEN [dpad] [$player] DO [move]` follows the dpad of the
+ *   player its sprite's game code gives it, and nothing while it holds none.
  */
 namespace wendoo {
   /** Name the arcade base pack's registrations are reported under. */
@@ -952,7 +959,7 @@ namespace wendoo {
   function buttonSpec(label: string, letter: string): TileSpec {
     const spec = new TileSpec(TILE_KIND_SENSOR, [optional(anonymousArg(TYPE_PLAYER))], TYPE_BOOLEAN);
     spec.label = label;
-    spec.language.form = "press " + letter;
+    spec.language.form = `press ${letter}`;
     spec.language.bare = "button";
     return spec;
   }
@@ -995,6 +1002,7 @@ namespace wendoo {
   const brainMeta = new TypeMeta();
   arcadePack.defineBrainType(TYPE_BRAIN, brainBinding, brainMeta);
   const playerMeta = literalTypeMeta("player", playerLiterals());
+  playerMeta.variableFactory = true;
   const playerFieldSpecs = playerFields();
   arcadePack.defineStruct(TYPE_PLAYER, playerFieldSpecs, playerBinding, playerMeta);
   const effectMeta = literalTypeMeta("effect", effectLiterals());
@@ -1105,6 +1113,7 @@ namespace wendoo {
     new Vector2ScaleOverload(),
     new OperatorSpec([TYPE_VECTOR2, TYPE_NUMBER], TYPE_VECTOR2)
   );
+  defineEquality(arcadePack, TYPE_PLAYER, samePlayer);
 
   /**
    * Give every argument slot among `nodes`, and among the nodes under them,

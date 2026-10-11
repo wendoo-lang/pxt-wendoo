@@ -1,10 +1,11 @@
 /**
  * Players as Wendoo values: the `Player` type a program names one of
- * Arcade's four players by, the player a value names, and the player's
- * score. A `Player` value holds its player's number, 1 to 4, in its
- * read-only `number` field; its `score` field holds nothing of its own, and
- * is read from and written to that player's score in Arcade's head-up
- * display through `info.playerN.impl`.
+ * Arcade's four players by, the value naming a player, the player a value
+ * names, whether two values name the same player, and the player's score.
+ * A `Player` value holds its player's number, 1 to 4, in its read-only
+ * `number` field; its `score` field holds nothing of its own, and is read
+ * from and written to that player's score in Arcade's head-up display
+ * through `info.playerN.impl`.
  */
 namespace wendoo {
   /** Wendoo type name of a player value: a struct naming one of Arcade's four players by number. */
@@ -69,6 +70,43 @@ namespace wendoo {
     }
     const held = value.fields[playerBinding.fieldIds[PLAYER_FIELD_NUMBER]];
     return held && held.t === ValueTag.Number ? held.num : 0;
+  }
+
+  /**
+   * The `Player` value naming the player numbered `player`, as the type's
+   * literal of that player holds it: a struct of the type's declared fields,
+   * its `number` field holding `player` and every other field nil. Its
+   * layout is the project's id manifest's ({@link projectIds}), so it may be
+   * made before the program host drains registrations.
+   *
+   * @param player - A player number, 1 to 4.
+   */
+  //% hidden
+  export function playerValue(player: number): Value {
+    const numberId = projectIds().fieldId(TYPE_PLAYER, PLAYER_NUMBER_FIELD);
+    const width = Math.max(playerFields().length, numberId + 1);
+    const slots: Value[] = [];
+    for (let i = 0; i < width; i++) {
+      slots.push(NIL_VALUE);
+    }
+    if (numberId >= 0) {
+      slots[numberId] = mkNumber(player);
+    }
+    return mkStruct(structTypeId(TYPE_PLAYER), slots);
+  }
+
+  /**
+   * Whether `a` and `b` name the same player: both `Player` values whose
+   * `number` fields hold the same player number. `false` when either names
+   * no player, nil included.
+   *
+   * @param a - Any value a program produced.
+   * @param b - Any value a program produced.
+   */
+  //% hidden
+  export function samePlayer(a: Value, b: Value): boolean {
+    const player = playerNumberOf(a);
+    return player > 0 && player === playerNumberOf(b);
   }
 
   /**

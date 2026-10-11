@@ -37,7 +37,8 @@
  * that order and no other, the unusable move-smoothing lines in
  * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
- * other, no unusable effect or sound line, no
+ * other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
+ * order and no other, no unusable effect or sound line, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
  * `CHECKS failed 0`, its `SIMCAP PASS` verdict, and exactly two
  * messages on the simulator extension's channel: the startup ping, then one
@@ -522,6 +523,26 @@ const EXPECTED_ARCADE_CHECKS = [
   "an-a-button-given-player-two-fires-on-player-twos-a-and-not-on-player-ones",
   "a-bare-a-button-ignores-player-twos-a",
   "a-button-sensor-reads-true-while-its-players-button-is-held-and-nil-otherwise",
+  "a-brain-variable-written-before-its-brain-starts-is-held-and-read-by-the-first-think",
+  "a-held-brain-variable-write-dies-with-the-run-request-it-rode",
+  "a-sprite-running-no-brain-reads-empty-and-takes-no-write",
+  "a-game-write-on-a-brain-variables-name-reaches-the-variable-the-brain-shows-by-that-name",
+  "a-brain-variable-written-between-thinks-is-read-at-the-next-think-and-not-before",
+  "a-brain-variable-name-matches-exactly-and-an-unknown-name-gets-a-slot-of-its-own",
+  "one-brain-follows-the-dpad-of-the-player-game-code-gives-each-sprite-and-none-on-a-sprite-given-none",
+  "a-brain-variable-holding-nothing-or-another-type-reads-the-empty-value",
+  "text-and-boolean-brain-variables-read-back-what-game-code-wrote",
+  "player-equality-overloads-take-their-ids-from-the-manifest",
+  "player-equality-compares-player-numbers-the-block-written-player-equals-its-literal-and-nil-equals-nothing",
+  "a-rule-comparing-a-player-variable-with-player-one-is-equal-only-while-it-holds-player-one",
+  "an-update-restart-keeps-the-player-game-code-gave-each-sprite",
+  "an-update-restart-keeps-the-values-a-brain-gave-its-own-variables",
+  "a-variable-new-to-an-update-starts-at-its-starting-value",
+  "a-slot-a-game-write-gave-carries-into-an-update-declaring-its-name",
+  "a-slot-a-game-write-gave-is-dropped-by-an-update-declaring-no-variable-by-its-name",
+  "a-variable-an-update-drops-is-gone-and-a-later-update-declaring-it-starts-it-fresh",
+  "running-another-brain-on-a-sprite-starts-its-variables-fresh",
+  "a-brains-first-start-and-a-start-after-the-empty-program-carry-nothing",
   "effect-and-sound-types-take-their-atoms-and-fields-from-the-manifest",
   "each-effect-literal-names-the-arcade-effect-of-its-key-and-an-empty-effect-slot-names-none",
   "each-sound-literal-names-the-arcade-melody-of-its-key-and-an-empty-sound-slot-names-none",
@@ -572,6 +593,30 @@ const EXPECTED_ARCADE_SCORE_LINES = ["WENDOO_SCORE_UNUSABLE"];
 
 /** The line the arcade base pack logs for a score write or addition holding no finite number. */
 const SCORE_LINE = "wendoo WENDOO_SCORE_UNUSABLE";
+
+/**
+ * Every brain variable line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one for the whole run the first
+ * time game code reads a sprite whose brain has not started, then one per
+ * name the keeper program declares no variable by, as game code first writes
+ * it -- ` lives ` and `Lives` -- one for the whole run the first time game
+ * code reads a variable holding a value of another type, then the two names
+ * the text and boolean round trips write, then the two names game code
+ * writes on the counted paddle program before updates carry or drop them.
+ */
+const EXPECTED_ARCADE_VARIABLE_LINES = [
+  "WENDOO_VARIABLE_NO_PROGRAM",
+  'WENDOO_VARIABLE_UNKNOWN " lives "',
+  'WENDOO_VARIABLE_UNKNOWN "Lives"',
+  "WENDOO_VARIABLE_TYPE_MISMATCH",
+  'WENDOO_VARIABLE_UNKNOWN "motto"',
+  'WENDOO_VARIABLE_UNKNOWN "ready"',
+  'WENDOO_VARIABLE_UNKNOWN "bonus"',
+  'WENDOO_VARIABLE_UNKNOWN "extra"',
+];
+
+/** The prefix of the lines the VM extension logs for brain variables game code reads and writes. */
+const VARIABLE_LINE_PREFIX = "wendoo WENDOO_VARIABLE_";
 
 /** The lines the arcade base pack logs for an effect and for a sound naming nothing Arcade holds. */
 const CHOICE_LINES = ["wendoo WENDOO_EFFECT_UNUSABLE", "wendoo WENDOO_SOUND_UNUSABLE"];
@@ -724,10 +769,13 @@ const ARCADE_HOST_REJECTIONS = [
  * overloads, the overloads over `Vector2`s, the programs holding
  * variables, the programs writing one number of a position, the programs
  * adding to and reading player one's score, the program reading player
- * two's score, the dpad's player, the A and B buttons, and the game over's
- * gate on a placed value reading nothing.
+ * two's score, the dpad's player, the A and B buttons, the brain variables
+ * game code reads and writes, the variables an update restart carries, and
+ * the game over's gate on a placed value reading nothing.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -762,8 +810,10 @@ const EXPECTED_ARCADE_REJECTIONS = [
  * updates refused -- a foreign device profile, then an action id and a type
  * atom the project's ids module does not hold -- the three messages refused,
  * the paused scene's program update taken, the removal taken, the bump
- * rule's update taken, the pursuit rule's update to flight taken, and the
- * in-range rule's update to out of range taken.
+ * rule's update taken, the pursuit rule's update to flight taken, the
+ * in-range rule's update to out of range taken, and the paddle program's
+ * four updates taken -- to the counted paddle, to the bonus paddle, back to
+ * the counted paddle, and to the bonus paddle again.
  */
 const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated driftBareMove001 0000000a",
@@ -778,6 +828,10 @@ const EXPECTED_ARCADE_UPDATE_LINES = [
   "program-updated fleeBumpLeftUp01 00000011",
   "program-updated chaseBumpToward1 00000012",
   "program-updated nearInRangeMove1 00000013",
+  "program-updated brainVarPaddle01 00000014",
+  "program-updated brainVarPaddle01 00000015",
+  "program-updated brainVarPaddle01 00000016",
+  "program-updated brainVarPaddle01 00000017",
 ];
 
 /** The prefixes of the lines the VM extension logs for program updates and the messages carrying them. */
@@ -944,6 +998,13 @@ function reportedSmoothingLines(log) {
 function reportedScoreLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(SCORE_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every brain variable line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedVariableLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(VARIABLE_LINE_PREFIX))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1268,6 +1329,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const scoreLines = reportedScoreLines(log);
   if (scoreLines.join("\n") !== EXPECTED_ARCADE_SCORE_LINES.join("\n")) {
     failures.push(`unusable scores logged: ${scoreLines.join(" | ")}`);
+  }
+  const variableLines = reportedVariableLines(log);
+  if (variableLines.join("\n") !== EXPECTED_ARCADE_VARIABLE_LINES.join("\n")) {
+    failures.push(`brain variable lines logged: ${variableLines.join(" | ")}`);
   }
   const choiceLines = reportedChoiceLines(log);
   if (choiceLines.length > 0) {

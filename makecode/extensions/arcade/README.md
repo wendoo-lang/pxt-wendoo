@@ -20,6 +20,28 @@ To add it to a project:
 
    https://github.com/wendoo-lang/pxt-wendoo/makecode/extensions/arcade
 
+## Brain variables
+
+Your game can read and change a brain's variables. **set brain number**,
+**set brain text** and **set brain boolean** put a value into a variable of
+the brain a sprite runs, and **brain number**, **brain text** and **brain
+boolean** read one back. Type the variable's name exactly as the brain shows
+it. The brain sees the new value the next time it thinks, and a value set
+right after **run brain** is there from the brain's start. Edit a brain
+while your game is running and its variables keep their values.
+
+**set brain player** puts one of the four players into a brain's **player**
+variable, so one brain can drive a sprite for each player. A Paddle brain
+with the rule **WHEN dpad player DO move** moves each paddle with its own
+player's controller:
+
+```
+run brain Paddle on leftPaddle
+set brain player "player" of leftPaddle to player one
+run brain Paddle on rightPaddle
+set brain player "player" of rightPaddle to player two
+```
+
 ---
 
 Developers: the source lives in the

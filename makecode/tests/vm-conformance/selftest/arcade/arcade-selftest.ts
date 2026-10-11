@@ -20,7 +20,9 @@
  * literals, images resolved through an image factory registered the way a
  * project's images module registers one, and the move tile's body with
  * sprite and point targets and with wander destinations picked from random
- * sources it scripts.
+ * sources it scripts. It reads and writes the variables of the brains
+ * sprites run through the arcade extension's brain variable block
+ * functions.
  *
  * Output grammar, one line each:
  *
@@ -44,6 +46,13 @@
  *   -- one each for the whole run, the first time a sprite's move smoothing
  *   is written, and a score written or added to, with no usable number, as
  *   the arcade base pack logs them.
+ * - `wendoo WENDOO_VARIABLE_NO_PROGRAM` and
+ *   `wendoo WENDOO_VARIABLE_TYPE_MISMATCH` -- one each for the whole run,
+ *   the first time game code reads or writes a brain variable of a sprite
+ *   running no brain, and reads one holding a value of another type; and
+ *   `wendoo WENDOO_VARIABLE_UNKNOWN <name>` -- one per name, as a JSON
+ *   string literal, that game code first read or wrote on a brain declaring
+ *   no variable by it, as the VM extension logs them.
  * - `wendoo program-faulted <code> <id>` -- one per fault code a running
  *   program raised, the first time it raised it, as its scene's host logs it;
  *   a run whose programs all run without a fault logs none.
@@ -4507,6 +4516,319 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** Document id of the keeper program: it moves while its number variable `lives` holds more than 2, and copies `lives` into its number variable `copy` at every think. */
+  const KEEPER_ID = "brainVarKeeper01";
+
+  /**
+   * In a scene of its own, check game code reading and writing the variables
+   * of the brains sprites run, through the arcade extension's block
+   * functions, around the keeper program:
+   *
+   * - a number written right after the sprite is given its brain is held,
+   *   the brain's variable not read before it starts, and the brain's first
+   *   think reads it; a later request to run a brain on the same sprite
+   *   drops the writes held for the earlier one;
+   * - a sprite running no brain, or the empty program, reads every type's
+   *   empty value and takes no write;
+   * - a write on a variable's name reaches the variable the brain shows by
+   *   that name, read at the brain's next think and not before;
+   * - a name matches exactly: ` lives ` and `Lives` never reach `lives`,
+   *   each reaching a variable of its own;
+   * - one brain whose dpad reads its `player` variable, run on three
+   *   sprites, follows player one's dpad on the sprite given player one at
+   *   once, player two's on the sprite given player two a frame later, and
+   *   nothing on the sprite given no player;
+   * - a variable holding nothing reads the empty value, one holding another
+   *   type reads the empty value too, and text and booleans make the round
+   *   trip;
+   * - the equality overload over two players is bound under its manifest
+   *   id, the player a block writes equals that player's literal, and nil
+   *   equals nothing, as compiled rules comparing a `player` variable with
+   *   player one read it.
+   */
+  function checkBrainVariables(): void {
+    game.pushScene();
+    const early = solidSprite(8, 20, 10);
+    wendoo.runBrain(early, wendooBrains.p_brainVarKeeper01);
+    wendoo.setBrainNumber(early, "lives", 3);
+    const unstartedReadsNothing = wendoo.readBrainNumber(early, "lives") === 0;
+    let firstThinkCopy = -1;
+    game.onUpdate(() => {
+      if (firstThinkCopy < 0 && ticksOf(early) === 1) {
+        firstThinkCopy = wendoo.readBrainNumber(early, "copy");
+      }
+    });
+    const dropped = solidSprite(8, 20, 25);
+    wendoo.runBrain(dropped, wendooBrains.p_brainVarKeeper01);
+    wendoo.setBrainNumber(dropped, "lives", 3);
+    wendoo.runBrain(dropped, wendooBrains.p_brainVarKeeper01);
+    const idle = solidSprite(8, 20, 40);
+    wendoo.runBrain(idle, wendooBrains.none);
+    wendoo.setBrainNumber(idle, "lives", 3);
+    const bare = solidSprite(8, 20, 55);
+    wendoo.setBrainNumber(bare, "lives", 3);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-variable-written-before-its-brain-starts-is-held-and-read-by-the-first-think",
+      unstartedReadsNothing && firstThinkCopy === 3 && movesAt(early, DEFAULT_MOVE_SPEED, 0)
+    );
+    check(
+      "a-held-brain-variable-write-dies-with-the-run-request-it-rode",
+      programOf(dropped) === KEEPER_ID && movesAt(dropped, 0, 0) && wendoo.readBrainNumber(dropped, "lives") === 0
+    );
+    wendoo.setBrainNumber(idle, "lives", 3);
+    const idleHosted = hostedOf(idle);
+    check(
+      "a-sprite-running-no-brain-reads-empty-and-takes-no-write",
+      wendoo.readBrainNumber(bare, "lives") === 0 &&
+        wendoo.readBrainString(bare, "lives") === "" &&
+        !wendoo.readBrainBoolean(bare, "lives") &&
+        programOf(idle) === wendooBrains.none.id &&
+        wendoo.readBrainNumber(idle, "lives") === 0 &&
+        idleHosted !== undefined &&
+        idleHosted.runtime.getVariable("lives").t === wendoo.ValueTag.Nil
+    );
+
+    const late = solidSprite(8, 20, 70);
+    wendoo.runBrain(late, wendooBrains.p_brainVarKeeper01);
+    pause(FRAMES_MS);
+    const stillUnwritten = movesAt(late, 0, 0) && wendoo.readBrainNumber(late, "copy") === 0;
+    wendoo.setBrainNumber(late, "lives", 3);
+    const peeked = wendoo.readBrainNumber(late, "lives") === 3;
+    const notYetThought = wendoo.readBrainNumber(late, "copy") === 0 && movesAt(late, 0, 0);
+    pause(FRAMES_MS);
+    check(
+      "a-game-write-on-a-brain-variables-name-reaches-the-variable-the-brain-shows-by-that-name",
+      stillUnwritten && movesAt(late, DEFAULT_MOVE_SPEED, 0)
+    );
+    check(
+      "a-brain-variable-written-between-thinks-is-read-at-the-next-think-and-not-before",
+      peeked && notYetThought && wendoo.readBrainNumber(late, "copy") === 3
+    );
+
+    const exact = solidSprite(8, 20, 85);
+    wendoo.runBrain(exact, wendooBrains.p_brainVarKeeper01);
+    pause(FRAMES_MS);
+    wendoo.setBrainNumber(exact, " lives ", 5);
+    wendoo.setBrainNumber(exact, " lives ", 5);
+    wendoo.setBrainNumber(exact, "Lives", 5);
+    pause(FRAMES_MS);
+    check(
+      "a-brain-variable-name-matches-exactly-and-an-unknown-name-gets-a-slot-of-its-own",
+      movesAt(exact, 0, 0) &&
+        wendoo.readBrainNumber(exact, "lives") === 0 &&
+        wendoo.readBrainNumber(exact, " lives ") === 5 &&
+        wendoo.readBrainNumber(exact, "Lives") === 5
+    );
+
+    const first = solidSprite(8, 100, 20);
+    const second = solidSprite(8, 100, 50);
+    const unset = solidSprite(8, 100, 80);
+    wendoo.runBrain(first, wendooBrains.p_brainVarPaddle01);
+    wendoo.setBrainPlayer(first, "player", BrainPlayer.One);
+    wendoo.runBrain(second, wendooBrains.p_brainVarPaddle01);
+    wendoo.runBrain(unset, wendooBrains.p_brainVarPaddle01);
+    pause(FRAMES_MS);
+    wendoo.setBrainPlayer(second, "player", BrainPlayer.Two);
+    pause(FRAMES_MS);
+    const untouched = movesAt(first, 0, 0) && movesAt(second, 0, 0) && movesAt(unset, 0, 0);
+    controller.player2.right.setPressed(true);
+    pause(FRAMES_MS);
+    const twoOnly = movesAt(second, DEFAULT_MOVE_SPEED, 0) && movesAt(first, 0, 0) && movesAt(unset, 0, 0);
+    controller.player2.right.setPressed(false);
+    controller.right.setPressed(true);
+    pause(FRAMES_MS);
+    const oneOnly = movesAt(first, DEFAULT_MOVE_SPEED, 0) && movesAt(second, 0, 0) && movesAt(unset, 0, 0);
+    controller.right.setPressed(false);
+    pause(FRAMES_MS);
+    check(
+      "one-brain-follows-the-dpad-of-the-player-game-code-gives-each-sprite-and-none-on-a-sprite-given-none",
+      untouched && twoOnly && oneOnly
+    );
+
+    const nilReadsEmpty =
+      wendoo.readBrainNumber(unset, "player") === 0 && wendoo.readBrainString(unset, "player") === "";
+    const mismatchedText = wendoo.readBrainString(late, "lives");
+    const mismatchedBoolean = wendoo.readBrainBoolean(late, "lives");
+    const mismatchedPlayer = wendoo.readBrainNumber(first, "player");
+    wendoo.setBrainString(late, "motto", "go");
+    wendoo.setBrainBoolean(late, "ready", true);
+    check(
+      "a-brain-variable-holding-nothing-or-another-type-reads-the-empty-value",
+      nilReadsEmpty &&
+        mismatchedText === "" &&
+        !mismatchedBoolean &&
+        mismatchedPlayer === 0 &&
+        wendoo.readBrainNumber(late, "lives") === 3
+    );
+    check(
+      "text-and-boolean-brain-variables-read-back-what-game-code-wrote",
+      wendoo.readBrainString(late, "motto") === "go" &&
+        wendoo.readBrainBoolean(late, "ready") &&
+        wendoo.readBrainNumber(late, "motto") === 0
+    );
+
+    const nil = wendoo.NIL_VALUE;
+    const operands = [PLAYER_TYPE, PLAYER_TYPE];
+    check(
+      "player-equality-overloads-take-their-ids-from-the-manifest",
+      !!overloadBody(wendoo.OPERATOR_EQUAL_TO, operands) && !!overloadBody(wendoo.OPERATOR_NOT_EQUAL_TO, operands)
+    );
+    check(
+      "player-equality-compares-player-numbers-the-block-written-player-equals-its-literal-and-nil-equals-nothing",
+      comparesBoth(PLAYER_TYPE, first, wendoo.playerValue(1), playerLiteral(1), true) &&
+        comparesBoth(PLAYER_TYPE, first, playerLiteral(2), playerLiteral(2), true) &&
+        comparesBoth(PLAYER_TYPE, first, playerLiteral(1), playerLiteral(2), false) &&
+        comparesBoth(PLAYER_TYPE, first, nil, nil, false) &&
+        comparesBoth(PLAYER_TYPE, first, playerLiteral(1), nil, false)
+    );
+    const pickNone = solidSprite(8, 60, 20);
+    const pickOne = solidSprite(8, 60, 50);
+    const pickTwo = solidSprite(8, 60, 80);
+    wendoo.runBrain(pickNone, wendooBrains.p_playerEqualPick1);
+    wendoo.runBrain(pickOne, wendooBrains.p_playerEqualPick1);
+    wendoo.setBrainPlayer(pickOne, "player", BrainPlayer.One);
+    wendoo.runBrain(pickTwo, wendooBrains.p_playerEqualPick1);
+    wendoo.setBrainPlayer(pickTwo, "player", BrainPlayer.Two);
+    pause(FRAMES_MS);
+    check(
+      "a-rule-comparing-a-player-variable-with-player-one-is-equal-only-while-it-holds-player-one",
+      movesAt(pickOne, 0, -DEFAULT_MOVE_SPEED) &&
+        movesAt(pickTwo, 0, DEFAULT_MOVE_SPEED) &&
+        movesAt(pickNone, 0, DEFAULT_MOVE_SPEED)
+    );
+    game.popScene();
+  }
+
+  /** Whether the program `sprite` runs reads nil for its variable named `name`. */
+  function holdsNothing(sprite: Sprite, name: string): boolean {
+    return hostedOf(sprite).runtime.getVariable(name).t === wendoo.ValueTag.Nil;
+  }
+
+  /**
+   * In a scene of its own, check that a brain updated while the game runs
+   * keeps its variables, by name, through updates of the paddle program to
+   * the counted paddle program -- the paddle's dpad rule, and a rule adding 1
+   * to its number variable `count` at every think -- and to the bonus paddle
+   * program, which adds 1 to its number variable `bonus` at every think too:
+   *
+   * - an update restart keeps the player game code gave each sprite, and the
+   *   value the brain gave its own variable;
+   * - a variable new to an update starts at its starting value;
+   * - a slot a game write gave a name the brain declares no variable by
+   *   carries into an update declaring that name, and is dropped by an
+   *   update declaring none;
+   * - a variable an update drops is gone, and a later update declaring it
+   *   again starts it at its starting value;
+   * - running another brain on a sprite, a brain's first start, and a start
+   *   after the empty program each start every variable fresh.
+   */
+  function checkBrainVariableCarry(): void {
+    game.pushScene();
+    const paddle = wendooBrains.p_brainVarPaddle01;
+    const counted = wendooBrains.p_paddleCounted001;
+    const bonused = wendooBrains.p_paddleBonus00001;
+    const one = solidSprite(8, 40, 30);
+    const two = solidSprite(8, 40, 70);
+    wendoo.runBrain(one, paddle);
+    wendoo.setBrainPlayer(one, "player", BrainPlayer.One);
+    wendoo.runBrain(two, paddle);
+    wendoo.setBrainPlayer(two, "player", BrainPlayer.Two);
+    pause(FRAMES_MS);
+    const original = hostedOf(two).runtime;
+
+    postUpdate(paddle, counted.bytecode, "00000014");
+    pause(FRAMES_MS);
+    const restarted = hostedOf(two).runtime !== original && hostedOf(two).loaded.registration === paddle;
+    controller.player2.right.setPressed(true);
+    pause(FRAMES_MS);
+    const twoFollowsTwo = movesAt(two, DEFAULT_MOVE_SPEED, 0) && movesAt(one, 0, 0);
+    controller.player2.right.setPressed(false);
+    controller.right.setPressed(true);
+    pause(FRAMES_MS);
+    const oneFollowsOne = movesAt(one, DEFAULT_MOVE_SPEED, 0) && movesAt(two, 0, 0);
+    controller.right.setPressed(false);
+    check(
+      "an-update-restart-keeps-the-player-game-code-gave-each-sprite",
+      restarted && twoFollowsTwo && oneFollowsOne
+    );
+
+    wendoo.setBrainNumber(one, "bonus", 500);
+    wendoo.setBrainNumber(one, "extra", 9);
+    const mintedHeld = wendoo.readBrainNumber(one, "bonus") === 500 && wendoo.readBrainNumber(one, "extra") === 9;
+    const bonusUndeclared = holdsNothing(two, "bonus");
+    const countOne = wendoo.readBrainNumber(one, "count");
+    const countTwo = wendoo.readBrainNumber(two, "count");
+    postUpdate(paddle, bonused.bytecode, "00000015");
+    pause(FRAMES_MS);
+    const bonusTwo = wendoo.readBrainNumber(two, "bonus");
+    check(
+      "an-update-restart-keeps-the-values-a-brain-gave-its-own-variables",
+      countTwo > 0 && wendoo.readBrainNumber(two, "count") > countTwo && wendoo.readBrainNumber(one, "count") > countOne
+    );
+    check(
+      "a-variable-new-to-an-update-starts-at-its-starting-value",
+      bonusUndeclared && bonusTwo > 0 && wendoo.readBrainNumber(two, "count") === countTwo + bonusTwo
+    );
+    check(
+      "a-slot-a-game-write-gave-carries-into-an-update-declaring-its-name",
+      mintedHeld &&
+        wendoo.readBrainNumber(one, "count") > countOne &&
+        wendoo.readBrainNumber(one, "bonus") - 500 === wendoo.readBrainNumber(one, "count") - countOne
+    );
+    check(
+      "a-slot-a-game-write-gave-is-dropped-by-an-update-declaring-no-variable-by-its-name",
+      mintedHeld && holdsNothing(one, "extra") && wendoo.readBrainNumber(one, "extra") === 0
+    );
+
+    postUpdate(paddle, counted.bytecode, "00000016");
+    pause(FRAMES_MS);
+    const bonusGone = holdsNothing(two, "bonus") && wendoo.readBrainNumber(two, "bonus") === 0;
+    const countBeforeReturn = wendoo.readBrainNumber(two, "count");
+    postUpdate(paddle, bonused.bytecode, "00000017");
+    pause(FRAMES_MS);
+    const bonusReturned = wendoo.readBrainNumber(two, "bonus");
+    check(
+      "a-variable-an-update-drops-is-gone-and-a-later-update-declaring-it-starts-it-fresh",
+      bonusGone &&
+        bonusReturned > 0 &&
+        wendoo.readBrainNumber(two, "count") === countBeforeReturn + bonusReturned
+    );
+
+    const countBeforeSwitch = wendoo.readBrainNumber(two, "count");
+    wendoo.runBrain(two, counted);
+    pause(FRAMES_MS);
+    check(
+      "running-another-brain-on-a-sprite-starts-its-variables-fresh",
+      countBeforeSwitch > 0 &&
+        programOf(two) === counted.id &&
+        wendoo.readBrainNumber(two, "count") === ticksOf(two) &&
+        holdsNothing(two, "player")
+    );
+
+    const fresh = solidSprite(8, 120, 30);
+    wendoo.runBrain(fresh, paddle);
+    wendoo.runBrain(one, wendooBrains.none);
+    pause(FRAMES_MS);
+    const emptied = programOf(one) === wendooBrains.none.id;
+    wendoo.runBrain(one, paddle);
+    pause(FRAMES_MS);
+    check(
+      "a-brains-first-start-and-a-start-after-the-empty-program-carry-nothing",
+      emptied &&
+        ticksOf(fresh) > 0 &&
+        wendoo.readBrainNumber(fresh, "count") === ticksOf(fresh) &&
+        wendoo.readBrainNumber(fresh, "bonus") === ticksOf(fresh) &&
+        holdsNothing(fresh, "player") &&
+        ticksOf(one) > 0 &&
+        wendoo.readBrainNumber(one, "count") === ticksOf(one) &&
+        wendoo.readBrainNumber(one, "bonus") === ticksOf(one) &&
+        holdsNothing(one, "player") &&
+        holdsNothing(one, "extra")
+    );
+    game.popScene();
+  }
+
   /** Whether `value` is the boolean `true`. */
   function readsTrue(value: wendoo.Value): boolean {
     return value.t === wendoo.ValueTag.Boolean && value.b;
@@ -4982,9 +5304,10 @@ namespace arcadeSelftest {
    * the move's toward and away carry, the move's wander, its speed limit,
    * move smoothing, non-finite motion, the equality operators, the operators
    * over `Vector2`s, programs holding variables, players' scores and dpads,
-   * the A and B buttons, the effects and sounds a game over takes, the game
-   * over's gate on a placed value reading nothing, and the arcade icon
-   * encoder.
+   * the A and B buttons, the brain variables game code reads and writes, the
+   * variables an update restart carries, the effects and sounds a game over
+   * takes, the game over's gate on a placed value reading nothing, and the
+   * arcade icon encoder.
    */
   export function run(): void {
     console.log(`SIMCAP START ${SELFTEST_CASE_ID}`);
@@ -5066,6 +5389,8 @@ namespace arcadeSelftest {
     checkScorePrograms();
     checkPlayerDpad();
     checkButtonSensors();
+    checkBrainVariables();
+    checkBrainVariableCarry();
     checkEndingChoices();
     checkGameOverGates();
     checkIconEncoder();

@@ -321,6 +321,10 @@ namespace wendoo {
      * @param observer - Passive observer of the run's visible effects.
      * @param caps - Per-fiber and per-round capacity caps.
      * @param attachment - Opaque per-run payload the host profile attaches to the context.
+     * @param previousVariables - Optional snapshot of the variable storage of
+     *   the runtime this one replaces, taken by {@link BrainRuntime.snapshotVariables},
+     *   used to carry variable values by name across a re-initialization
+     *   (hot reload); `undefined` for a fresh start.
      */
     constructor(
       program: Program,
@@ -329,13 +333,14 @@ namespace wendoo {
       types: StructTypeRegistry,
       observer: VmObserver,
       caps: VmCaps,
-      attachment: HostAttachment
+      attachment: HostAttachment,
+      previousVariables?: VariableSnapshot
     ) {
       this.program = program;
       this.hostActions = hostActions;
       this.observer = observer;
       const variables = new VariableStore();
-      variables.install(program);
+      variables.install(program, previousVariables);
       this.vm = new VM(program, hostFunctions, hostActions, types, observer, caps);
       this.scheduler = new FiberScheduler(this.vm, caps);
       const services = new BrainServices(
@@ -349,6 +354,39 @@ namespace wendoo {
     /** How many thinks have run a page since construction: the tick count the program's context carries. */
     tickCount(): number {
       return this.ctx.currentTick;
+    }
+
+    /**
+     * The value of the brain-global variable named `name`, matched exactly
+     * and case-sensitively; nil when no slot carries that name.
+     *
+     * @param name - Variable name.
+     */
+    getVariable(name: string): Value {
+      return this.ctx.variables.getByName(name);
+    }
+
+    /**
+     * Write the brain-global variable named `name`, matched exactly and
+     * case-sensitively. A name the program declares no variable by gets a
+     * slot of its own, which no bytecode addresses and only a by-name read
+     * reaches.
+     *
+     * @param name - Variable name.
+     * @param value - Value to store.
+     */
+    setVariable(name: string, value: Value): void {
+      this.ctx.variables.setByName(name, value);
+    }
+
+    /**
+     * Returns a snapshot of the current variable storage for carry-forward
+     * across a re-initialization. The snapshot holds live references to the
+     * current slots and their names; the caller consumes it immediately to
+     * construct the next runtime and then drops this one.
+     */
+    snapshotVariables(): VariableSnapshot {
+      return this.ctx.variables.snapshot();
     }
 
     /** Activate the first page and spawn a fiber for each of its root rules. */

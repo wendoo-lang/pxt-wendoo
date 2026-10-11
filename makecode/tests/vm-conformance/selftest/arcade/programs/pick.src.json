@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "id": "playerEqualPick1",
+  "name": "Pick",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0playerEqPick",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "player",
+      "varType": "struct:<Player>",
+      "uniqueId": "fVr0pickPlayer00"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0playerEqPick",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0pickPlayer00",
+            "tile.op->eq",
+            "tile.literal->struct:<Player>->1"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.up"
+          ],
+          "children": [],
+          "ruleId": "fRu0playerEqPik0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0pickPlayer00",
+            "tile.op->ne",
+            "tile.literal->struct:<Player>->1"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move",
+            "tile.modifier->modifier.direction.down"
+          ],
+          "children": [],
+          "ruleId": "fRu0playerEqPik1"
+        }
+      ]
+    }
+  ]
+}

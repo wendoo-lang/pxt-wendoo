@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "id": "brainVarKeeper01",
+  "name": "Keeper",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0brainVarKeep",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "lives",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0keeperLives0"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "copy",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0keeperCopy00"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 2,
+      "valueLabel": "2",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0brainVarKeep",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0keeperLives0",
+            "tile.op->gt",
+            "tile.literal->number:<number>->2"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.move"
+          ],
+          "children": [],
+          "ruleId": "fRu0brainVarKee0"
+        },
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.var->fVr0keeperCopy00",
+            "tile.op->assign",
+            "tile.var->fVr0keeperLives0"
+          ],
+          "children": [],
+          "ruleId": "fRu0brainVarKee1"
+        }
+      ]
+    }
+  ]
+}

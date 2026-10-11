@@ -66,6 +66,8 @@ namespace wendoo {
                 "player's controller, or to **add score** to change that player's score. Without one, each uses player\n" +
                 "one.\n" +
                 "\n" +
+                "A **player** variable holds one, and your game can put a player into it with **set brain player**.\n" +
+                "\n" +
                 "## Score\n" +
                 "\n" +
                 "`tile:tile.accessor->struct:<Player>->score` is a player's score. Put it after a player to read it, and\n" +

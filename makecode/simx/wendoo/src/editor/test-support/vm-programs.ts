@@ -280,6 +280,11 @@ const ARCADE_SOURCES = [
   "press-a.src.json",
   "press-b.src.json",
   "press-a-two.src.json",
+  "keeper.src.json",
+  "paddle.src.json",
+  "pick.src.json",
+  "paddle-counted.src.json",
+  "paddle-bonus.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

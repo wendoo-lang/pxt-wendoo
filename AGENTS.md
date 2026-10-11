@@ -379,13 +379,33 @@ the current slice alone.
       of a program run shares the one drain of every pack's registrations
       through the project's id manifest, `hostRegistries`; each actor's
       attachment names the host that started its program, which lists the
-      actors running a given brain; each program's faults reach the host's
+      actors running a given brain; a running program an update replaces
+      restarts on its actor with its variables carried forward by name from
+      the program it replaces -- a variable the update declares keeps the
+      value the replaced program held by its name, a slot a game write gave
+      that name included, any other takes its starting value, and a name the
+      update does not declare is dropped -- while every other start, a run
+      of another brain included, takes starting values; each program's
+      faults reach the host's
       observer as they are raised, retained nowhere, and are logged once
       per fault code through `debugLog`; a throw out of a program's start
       or think faults that program, which stays on its actor, and the
       drain goes on; a throw out of a page-activation hook faults the
       program and the page's activation goes on, every later hook running
-      and every rule spawning), and the
+      and every rule spawning; game code reads and writes the variables of
+      the program an actor runs by name, matched exactly, through the host:
+      a read peeks at the store between thinks, typed by the caller, and
+      reads nothing while the actor runs no program or the empty one, while
+      the variable holds nothing, and while it holds another type; a write
+      is a store mutation the program reads at its next think, and a write
+      for an actor whose requested program has not started is held on the
+      latest request and applied once, in write order, after the program's
+      variables take their starting values and before its first think,
+      dying with a request a later one for the actor supersedes; a name the
+      program declares no variable by gets a slot of its own; an access to
+      an actor running no program and a read of another type are each
+      logged once per run, and an undeclared name once per name per run,
+      through `debugLog`), and the
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `makecode/simx/wendoo`).
       NO block definitions -- the compiled-brain type's
@@ -466,7 +486,9 @@ the current slice alone.
       the project's brains by document id), the `Player` type (a struct
       naming one of Arcade's four players by the number its read-only
       `number` field holds, with four declared literals -- keys `1` to `4`,
-      labelled `player one` to `player four` -- and no variable factory; its
+      labelled `player one` to `player four` -- and a variable factory, a
+      `Player` variable declaring no initial and holding nothing until a
+      brain or game code writes a player into it; its
       writable `score` accessor reads and writes that player's score through
       `info.playerN.impl` alone, never the `parts="multiplayer"` sugar, which
       would mark every game multiplayer, so Arcade's head-up display behaves
@@ -488,8 +510,10 @@ the current slice alone.
       factory holds, or a value naming no image, equals nothing), two
       sprites (equal when they are the same sprite, not destroyed), two
       brains (equal when they name the same document id, whether or not the
-      project holds that brain) and two `Vector2`s (equal when both
-      components are, a value holding no point equalling nothing),
+      project holds that brain), two `Vector2`s (equal when both
+      components are, a value holding no point equalling nothing) and two
+      players (equal when they name the same player number, a value naming
+      no player, nil included, equalling nothing),
       inequality holding exactly when equality does not, the core addition
       and subtraction operators' overloads over two `Vector2`s and the core
       multiplication operator's over a `Vector2` and a number on its right
@@ -502,8 +526,8 @@ the current slice alone.
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
       `Sprite`, `Image`, `Brain`, `Player`, `Effect` and `Sound` types, the
-      variable factory flag and editor label (`position`, `sprite`) of its
-      `Vector2` and `Sprite` types (a
+      variable factory flag and editor label (`position`, `sprite`,
+      `player`) of its `Vector2`, `Sprite` and `Player` types (a
       `Vector2` variable starts at `origin` and holds the point written to
       it -- the store's deep copy is the snapshot; a `Sprite` variable
       declares no initial, holding nothing until a brain writes it, and
@@ -611,7 +635,15 @@ the current slice alone.
       depends on the VM extension, Arcade's `device` library, and the
       arcade base pack, and declares no vocabulary of its own. It owns the
       arcade-bound pieces: the spawn block (`wendoo.runBrain`, its
-      program picked by name from the project's compiled brains), sprite
+      program picked by name from the project's compiled brains), the
+      brain variable blocks (`wendoo.setBrainNumber`,
+      `wendoo.readBrainNumber`, and the same pairs for text and booleans,
+      reading and writing a variable of the brain a sprite runs by its
+      name exactly as given, through the current scene's program host, a
+      reporter reading its type's empty value -- 0, empty text, false --
+      wherever the host reads nothing; and `wendoo.setBrainPlayer`,
+      writing the `Player` value one of four dropdown players names, with
+      no reporter), sprite
       pairing and hosting (one program host per game scene, drained from
       the scene's own update loop), and the catalog publication on the
       game's first frame, icons rendered by the base pack's arcade icon
@@ -623,7 +655,11 @@ the current slice alone.
       atop the base. Block text and every API identifier a kid meets
       in the JavaScript view say "brain"; block IDs are never shown
       and are permanent, because saved blocks match on them (the
-      spawn block's is `wendoo_run_program`).
+      spawn block's is `wendoo_run_program`; the brain variable blocks'
+      are `wendoo_set_brain_number`, `wendoo_brain_number`,
+      `wendoo_set_brain_text`, `wendoo_brain_text`,
+      `wendoo_set_brain_boolean`, `wendoo_brain_boolean` and
+      `wendoo_set_brain_player`).
     - FEATURE PACKS supply host-bound tiles for one genre of game. A
       feature pack depends on its target's base pack (and through it the
       VM extension), never on another feature pack; packs compose by

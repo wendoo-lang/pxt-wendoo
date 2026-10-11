@@ -132,7 +132,8 @@ namespace wendoo {
    * and every non-printing or non-ASCII code unit escaped to `\n`, `\r`,
    * `\t` or `\uXXXX`, so the literal is pure ASCII.
    */
-  function jsonQuote(text: string): string {
+  //% hidden
+  export function jsonQuote(text: string): string {
     let out = '"';
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);

@@ -293,6 +293,30 @@ namespace wendoo {
   }
 
   /**
+   * The variable storage of one store, taken to carry its values into the
+   * store of a program that replaces it on the same actor: the values the
+   * next {@link VariableStore.install} keeps, by name, for every variable the
+   * new program declares by a name the snapshot holds. It holds the store's
+   * live slots, not a copy; consume it at once, before anything else writes
+   * the store it was taken from.
+   */
+  export class VariableSnapshot {
+    /** Value of each slot, by the slot id the snapshot's program assigned it. */
+    values: Value[];
+    /** Variable name of each slot, by the same slot id: the program's names, then each name a by-name write added. */
+    names: string[];
+
+    /**
+     * @param values - Value of each slot, by slot id.
+     * @param names - Variable name of each slot, by slot id.
+     */
+    constructor(values: Value[], names: string[]) {
+      this.values = values;
+      this.names = names;
+    }
+  }
+
+  /**
    * Brain-global variable storage, indexed by the compiler-assigned slot id
    * that `LOAD_VAR_SLOT` and `STORE_VAR_SLOT` carry. Each slot is seeded at
    * program load with a fresh copy of the starting value the program
@@ -310,15 +334,27 @@ namespace wendoo {
     constructor() {}
 
     /**
-     * Allocate one slot per entry in `program.variableNames` and seed it
-     * with a fresh copy of the program's declared starting value for it.
+     * Allocate one slot per entry in `program.variableNames`. A slot whose
+     * name `previousVariables` holds keeps that slot's value, the same value
+     * and not a copy, whatever its type; every other slot is seeded with a
+     * fresh copy of the program's declared starting value for it, or nil
+     * when the program declares none. A name `previousVariables` holds and
+     * the program does not declare is dropped.
      *
      * @param program - The loaded program.
+     * @param previousVariables - The snapshot of the store of the program this one replaces on the same actor, or `undefined` for a fresh start.
      */
-    install(program: Program): void {
+    install(program: Program, previousVariables?: VariableSnapshot): void {
+      const previousValues = previousVariables ? previousVariables.values : [];
+      const previousNames = previousVariables ? previousVariables.names : [];
       this.values = [];
       this.names = program.variableNames.slice(0);
       for (let i = 0; i < program.variableNames.length; i++) {
+        const oldSlot = previousNames.indexOf(program.variableNames[i]);
+        if (oldSlot >= 0 && oldSlot < previousValues.length) {
+          this.values.push(previousValues[oldSlot]);
+          continue;
+        }
         const initIdx = i < program.variableInitValues.length ? program.variableInitValues[i] : NO_VARIABLE_INIT;
         const seed =
           initIdx === NO_VARIABLE_INIT || initIdx >= program.constValues.length
@@ -326,6 +362,14 @@ namespace wendoo {
             : freshSeed(program.constValues[initIdx]);
         this.values.push(seed);
       }
+    }
+
+    /**
+     * The store's slots and their names, live: the snapshot a replacing
+     * program's {@link VariableStore.install} carries values forward from.
+     */
+    snapshot(): VariableSnapshot {
+      return new VariableSnapshot(this.values, this.names);
     }
 
     /**
