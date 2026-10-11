@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "sayFarewell00001",
+  "name": "Farewell",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayFarewell0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "farewell",
+      "valueLabel": "farewell",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayFarewell0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say",
+            "tile.literal->string:<string>->farewell"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayFarewell0"
+        }
+      ]
+    }
+  ]
+}

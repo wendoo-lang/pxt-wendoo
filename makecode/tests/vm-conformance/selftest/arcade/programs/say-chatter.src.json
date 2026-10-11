@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "id": "sayChatterHiBye1",
+  "name": "Chatter",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayChatter01",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "hi",
+      "valueLabel": "hi",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "bye",
+      "valueLabel": "bye",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0.5,
+      "valueLabel": "0.5",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayChatter01",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say",
+            "tile.literal->string:<string>->hi"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayChatter00"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-b"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say",
+            "tile.literal->string:<string>->bye",
+            "tile.parameter->parameter.duration",
+            "tile.literal->number:<number>->0.5"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayChatter01"
+        }
+      ]
+    }
+  ]
+}

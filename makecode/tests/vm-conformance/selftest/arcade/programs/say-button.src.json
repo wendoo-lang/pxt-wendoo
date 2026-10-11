@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "sayButtonBare001",
+  "name": "Shout",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayButtonBar",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayButtonBar",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayButtonBa0"
+        }
+      ]
+    }
+  ]
+}

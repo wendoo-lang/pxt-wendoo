@@ -295,6 +295,13 @@ const ARCADE_SOURCES = [
   "destroy-unset.src.json",
   "grudge.src.json",
   "ending-destroyed.src.json",
+  "say-chatter.src.json",
+  "say-score.src.json",
+  "say-motto.src.json",
+  "say-button.src.json",
+  "say-bumped.src.json",
+  "say-ouch.src.json",
+  "say-farewell.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -893,6 +900,9 @@ export const IMAGE_LITERAL = "<image literal>";
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding the number 40. */
 export const NUMBER_LITERAL = "<number literal>";
 
+/** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for a literal tile holding the text `ouch`. */
+export const TEXT_LITERAL = "<text literal>";
+
 /** The entry of {@link arcadeImageRuleDiagnosticCodes}'s sides standing for the core nil literal tile. */
 export const NIL_LITERAL = "<nil literal>";
 
@@ -1052,7 +1062,8 @@ const IMAGE_ASSET: MakeCodeAsset = {
  * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
  * brain {@link BRAIN_LITERAL_ID}, which the environment's brain literals
  * hold, {@link NUMBER_LITERAL} for a number literal held in the brain's own
- * catalog, {@link NIL_LITERAL} for the core nil literal, an entry starting
+ * catalog, {@link TEXT_LITERAL} for a text literal held there once a side
+ * names it, {@link NIL_LITERAL} for the core nil literal, an entry starting
  * {@link LITERAL_ENTRY_PREFIX} for a declared type's literal tile,
  * {@link OPEN_PAREN} and
  * {@link CLOSE_PAREN} for the parenthesis tiles, an entry starting {@link OUTPUT_ENTRY_PREFIX} for a `Sprite`
@@ -1082,6 +1093,14 @@ function arcadeImageRuleBrain(when: string[], act: string[], child?: RuleSides, 
   brainDef.catalog().registerTileDef(number);
   const literalId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Image"), IMAGE_LITERAL_ASSET_ID);
   const brainLiteralId = mkLiteralTileId(mkTypeId(NativeType.Struct, "Brain"), BRAIN_LITERAL_ID);
+  let text: BrainTileLiteralDef | undefined;
+  const textOf = () => {
+    if (text === undefined) {
+      text = new BrainTileLiteralDef(CoreTypeIds.String, "ouch", {}, environment.brainServices);
+      brainDef.catalog().registerTileDef(text);
+    }
+    return text;
+  };
   const variables = new Map<string, IBrainTileDef>();
   const variableOf = (entry: string) => {
     const held = variables.get(entry);
@@ -1093,6 +1112,7 @@ function arcadeImageRuleBrain(when: string[], act: string[], child?: RuleSides, 
   };
   const tileOf = (entry: string, tileId: (name: string) => string) => {
     if (entry === NUMBER_LITERAL) return number;
+    if (entry === TEXT_LITERAL) return textOf();
     if (entry.startsWith(VARIABLE_ENTRY_PREFIX)) return variableOf(entry);
     const id = entryTileId(entry, tileId, literalId, brainLiteralId);
     const found = environment
@@ -1179,7 +1199,8 @@ export function arcadeOperatorResultType(operatorId: string, operandTypeIds: str
  * for the image whose id is {@link IMAGE_LITERAL_ASSET_ID},
  * {@link BRAIN_LITERAL} for the literal tile of the brain
  * {@link BRAIN_LITERAL_ID}, {@link NUMBER_LITERAL} for a literal tile
- * holding the number 40, {@link NIL_LITERAL} for the core nil literal tile,
+ * holding the number 40, {@link TEXT_LITERAL} for a literal tile holding
+ * the text `ouch`, {@link NIL_LITERAL} for the core nil literal tile,
  * {@link OPEN_PAREN} and {@link CLOSE_PAREN} for the parenthesis tiles,
  * an entry starting {@link OUTPUT_ENTRY_PREFIX} for a
  * `Sprite` output's tile, an entry starting {@link MODIFIER_ENTRY_PREFIX}

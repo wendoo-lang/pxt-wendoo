@@ -53,6 +53,7 @@ import {
   type RenderedFile,
   renderVmPrograms,
   SENSOR_ENTRY_PREFIX,
+  TEXT_LITERAL,
   VARIABLE_ENTRY_PREFIX,
 } from "./vm-programs.js";
 
@@ -965,6 +966,64 @@ describe("the MakeCode VM extension's compiled programs", () => {
       [destroy, bumped, `${SENSOR_ENTRY_PREFIX}sensor.arcade.myself`],
       [destroy, confettiBurst, fireBurst],
       [destroy, confetti],
+    ]) {
+      assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
+    }
+  });
+
+  const say = "actuator.arcade.say";
+
+  it("offers the duration at say", () => {
+    assert.ok(arcadeOffersLiteral(duration, [], [say]));
+    assert.ok(arcadeOffersLiteral(duration, [], [say, TEXT_LITERAL]));
+  });
+
+  for (const [sentence, when, act] of [
+    ["a bare say under bump", [bump], [say]],
+    ["a bare say under player one's score", [playerOne, scoreOf], [say]],
+    ["say given a text", [bump], [say, TEXT_LITERAL]],
+    ["say given a text and a duration", [bump], [say, TEXT_LITERAL, duration, NUMBER_LITERAL]],
+    ["say given a duration, then a text", [bump], [say, duration, NUMBER_LITERAL, TEXT_LITERAL]],
+    ["say given a text variable", [], [say, `${VARIABLE_ENTRY_PREFIX}string.motto`]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("declares say's duration as destroy's: the shared duration tile, one label and one set of words", () => {
+    assert.deepEqual(arcadeBindingDiagnosticCodes(), []);
+    assert.equal(
+      arcadeCarriedSlotLabel(say, "parameter.duration"),
+      arcadeCarriedSlotLabel(destroy, "parameter.duration")
+    );
+    assert.deepEqual(
+      arcadeCarriedSlotLanguage(say, "parameter.duration"),
+      arcadeCarriedSlotLanguage(destroy, "parameter.duration")
+    );
+  });
+
+  it("projects say bare, given a text, and given a text and a duration with the words its catalog entries carry", () => {
+    const sayWord = arcadeCarriedTileLanguage(say)?.form ?? arcadeCarriedTileLabel(say);
+    const durationWords = arcadeCarriedSlotLanguage(say, "parameter.duration");
+    const textOf = (act: string[]) => arcadeRuleSentence([], act).words.map((word) => word.text);
+
+    const said = textOf([say, TEXT_LITERAL]);
+    const timed = textOf([say, TEXT_LITERAL, duration, NUMBER_LITERAL]);
+
+    assert.deepEqual(textOf([say]), [sayWord]);
+    assert.equal(said.length, 2);
+    assert.equal(said[0], sayWord);
+    assert.ok(said[1]?.includes("ouch"), "the text literal's word carries its text");
+    assert.deepEqual(timed, [sayWord, said[1], durationWords?.form, "40"]);
+  });
+
+  it("refuses say given two texts, two durations or a sprite", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [say, TEXT_LITERAL, TEXT_LITERAL],
+      [say, duration, NUMBER_LITERAL, duration, NUMBER_LITERAL],
+      [say, bumped],
     ]) {
       assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
     }

@@ -27,6 +27,7 @@
         "motion.ts",
         "wander.ts",
         "docs.g.ts",
+        "speech.ts",
         "vocabulary.ts"
     ],
     "supportedTargets": [

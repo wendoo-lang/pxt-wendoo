@@ -47,6 +47,9 @@
  * - `wendoo WENDOO_PARTICLE_EFFECT_UNUSABLE` -- one for the whole run, the
  *   first time the destroy tile is given a particle effect naming nothing
  *   Arcade holds, as the arcade base pack logs it.
+ * - `wendoo WENDOO_SAY_UNSPEAKABLE` -- one for the whole run, the first time
+ *   the say tile, given no text, finds its rule's WHEN result holding no
+ *   number, text or switch, as the arcade base pack logs it.
  * - `wendoo WENDOO_MOVE_SMOOTHING_UNUSABLE` and `wendoo WENDOO_SCORE_UNUSABLE`
  *   -- one each for the whole run, the first time a sprite's move smoothing
  *   is written, and a score written or added to, with no usable number, as
@@ -5414,6 +5417,238 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** The action id the arcade selftest's ids module allocates the say actuator. */
+  const SAY_ACTION = 1037;
+
+  /** A scene time far past any the selftest's scenes reach, at which its direct says are made. */
+  const SAY_TIME = 1000000;
+
+  /** A speech voice recording every bubble it shows or clears, in order, then showing or clearing it through Arcade's own `sayText`. */
+  class RecordingVoice extends wendoo.SpeechVoice {
+    /** The sprite of each call, in call order. */
+    speakers: Sprite[];
+    /** The text of each call, in call order; `""` for a clear. */
+    texts: string[];
+
+    constructor() {
+      super();
+      this.speakers = [];
+      this.texts = [];
+    }
+
+    say(sprite: Sprite, text: string): void {
+      this.speakers.push(sprite);
+      this.texts.push(text);
+      super.say(sprite, text);
+    }
+
+    /** The text of each call made for `sprite`, in call order, joined by `|`. */
+    saidBy(sprite: Sprite): string {
+      const said: string[] = [];
+      for (let i = 0; i < this.speakers.length; i++) {
+        if (this.speakers[i] === sprite) {
+          said.push(this.texts[i]);
+        }
+      }
+      return said.join("|");
+    }
+  }
+
+  /** A recording voice in place of the current scene's own. */
+  function recordSpeech(): RecordingVoice {
+    const voice = new RecordingVoice();
+    wendoo.sceneSpeech(game.currentScene()).voice = voice;
+    return voice;
+  }
+
+  /** Call the say tile's body on `sprite`'s behalf at the scene time `time`, given `args`. */
+  function sayAt(sprite: Sprite, time: number, args: wendoo.Value[]): void {
+    const ctx = contextOn(sprite);
+    ctx.time = time;
+    tileBody(wendoo.SAY_TILE).execSync(ctx, args);
+  }
+
+  /**
+   * In a scene of its own, check the say tile, its body called directly at
+   * scripted scene times and its scene's bubbles cleared at scripted times:
+   * the tile takes its action id from the project's ids module; a number, a
+   * text and a switch are said as Arcade prints them and any other value is
+   * not; a text said again and again is shown once and its bubble kept up,
+   * and another text is shown at once in its place; the bubble clears 5
+   * seconds after the last say given no duration, the duration's seconds
+   * after given one, and at the first time after the last say given 0 or a
+   * duration below 0; empty text clears it at once; a say given no text
+   * under no WHEN says nothing; and a destroyed sprite says nothing, its
+   * bubble forgotten without a clear.
+   */
+  function checkSayTile(): void {
+    game.pushScene();
+    const voice = recordSpeech();
+    const speech = wendoo.sceneSpeech(game.currentScene());
+    const nil = wendoo.NIL_VALUE;
+    check(
+      "say-tile-takes-its-action-id-from-the-manifest",
+      wendoo.projectIds().actionId(wendoo.SAY_TILE) === SAY_ACTION && tileBody(wendoo.SAY_TILE) !== undefined
+    );
+
+    const point = wendoo.vector2Value(new wendoo.DirectionVector(1, 2));
+    check(
+      "say-prints-a-number-a-text-and-a-switch-as-arcade-does-and-nothing-else",
+      wendoo.spokenText(wendoo.mkNumber(3)) === "3" &&
+        wendoo.spokenText(wendoo.mkNumber(2.5)) === "2.5" &&
+        wendoo.spokenText(wendoo.mkNumber(-1)) === "-1" &&
+        wendoo.spokenText(wendoo.mkString("hello")) === "hello" &&
+        wendoo.spokenText(wendoo.mkString("")) === "" &&
+        wendoo.spokenText(wendoo.TRUE_VALUE) === "true" &&
+        wendoo.spokenText(wendoo.FALSE_VALUE) === "false" &&
+        wendoo.spokenText(point) === undefined &&
+        wendoo.spokenText(wendoo.spriteValue(newSprite(SpriteKind.Player))) === undefined &&
+        wendoo.spokenText(nil) === undefined
+    );
+
+    const talker = newSprite(SpriteKind.Player);
+    for (let i = 0; i < 10; i++) {
+      sayAt(talker, SAY_TIME + i * 20, [wendoo.mkString("hello")]);
+    }
+    check("a-text-said-again-and-again-is-shown-once", voice.saidBy(talker) === "hello");
+    sayAt(talker, SAY_TIME + 200, [wendoo.mkString("bye")]);
+    sayAt(talker, SAY_TIME + 220, [wendoo.mkString("bye"), nil]);
+    check("another-text-is-shown-at-once-in-its-place", voice.saidBy(talker) === "hello|bye");
+    speech.expire(SAY_TIME + 5220);
+    const upAtFive = voice.saidBy(talker) === "hello|bye";
+    speech.expire(SAY_TIME + 5221);
+    check(
+      "a-bubble-given-no-duration-clears-five-seconds-after-the-last-say",
+      upAtFive && voice.saidBy(talker) === "hello|bye|"
+    );
+
+    const half = newSprite(SpriteKind.Player);
+    sayAt(half, SAY_TIME, [wendoo.mkString("hi"), wendoo.mkNumber(0.5)]);
+    sayAt(half, SAY_TIME + 100, [wendoo.mkString("hi"), wendoo.mkNumber(0.5)]);
+    speech.expire(SAY_TIME + 600);
+    const upAtHalf = voice.saidBy(half) === "hi";
+    speech.expire(SAY_TIME + 601);
+    check(
+      "a-bubble-given-a-duration-clears-that-many-seconds-after-the-last-say",
+      upAtHalf && voice.saidBy(half) === "hi|"
+    );
+
+    const zero = newSprite(SpriteKind.Player);
+    const negative = newSprite(SpriteKind.Player);
+    sayAt(zero, SAY_TIME, [wendoo.mkString("now"), wendoo.mkNumber(0)]);
+    sayAt(negative, SAY_TIME, [wendoo.mkNumber(-3), wendoo.mkNumber(-2)]);
+    speech.expire(SAY_TIME);
+    const upWhileSaid = voice.saidBy(zero) === "now" && voice.saidBy(negative) === "-3";
+    speech.expire(SAY_TIME + 1);
+    check(
+      "a-bubble-given-0-or-a-duration-below-0-clears-at-the-first-time-after-the-last-say",
+      upWhileSaid && voice.saidBy(zero) === "now|" && voice.saidBy(negative) === "-3|"
+    );
+
+    const hushed = newSprite(SpriteKind.Player);
+    sayAt(hushed, SAY_TIME, [wendoo.mkString("shh")]);
+    sayAt(hushed, SAY_TIME + 20, [wendoo.mkString("")]);
+    speech.expire(SAY_TIME + 100000);
+    check("empty-text-clears-the-bubble-at-once", voice.saidBy(hushed) === "shh|");
+
+    const mute = newSprite(SpriteKind.Player);
+    sayAt(mute, SAY_TIME, []);
+    check("a-say-given-no-text-under-no-when-says-nothing", voice.saidBy(mute) === "");
+
+    const gone = newSprite(SpriteKind.Player);
+    sayAt(gone, SAY_TIME, [wendoo.mkString("hi")]);
+    sprites.destroy(gone);
+    sayAt(gone, SAY_TIME + 20, [wendoo.mkString("bye")]);
+    speech.expire(SAY_TIME + 100000);
+    check("a-destroyed-sprite-says-nothing-and-its-bubble-is-forgotten", voice.saidBy(gone) === "hi");
+    game.popScene();
+  }
+
+  /**
+   * In a scene of its own, check programs placing the say tile: a rule held
+   * for many frames shows its text once and keeps the bubble up; a rule
+   * saying another text replaces it at once; a bubble given half a second
+   * clears half a second after its rule stops; a say given no text says its
+   * WHEN result -- the score, a text variable, `true` under the A button --
+   * and says nothing under a bump, whose WHEN result is a sprite; the walk's
+   * ouch rule says ouch while its sprite touches another; and a say in the
+   * final think of a destroyed sprite says nothing.
+   */
+  function checkSayPrograms(): void {
+    game.pushScene();
+    const voice = recordSpeech();
+    const chatter = spriteRunning(wendooBrains.p_sayChatterHiBye1);
+    const shout = spriteRunning(wendooBrains.p_sayButtonBare001);
+    pause(FRAMES_MS);
+    const quiet = voice.saidBy(chatter) === "" && voice.saidBy(shout) === "";
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    const ticksHeld = ticksOf(chatter);
+    pause(2 * FRAMES_MS);
+    check(
+      "a-say-rule-held-for-many-frames-shows-its-text-once",
+      quiet && ticksOf(chatter) > ticksHeld + 2 && voice.saidBy(chatter) === "hi"
+    );
+    check("a-bare-say-under-the-a-button-says-true", voice.saidBy(shout) === "true");
+    controller.A.setPressed(false);
+    controller.B.setPressed(true);
+    pause(FRAMES_MS);
+    controller.B.setPressed(false);
+    check("a-say-rule-saying-another-text-replaces-the-bubble-at-once", voice.saidBy(chatter) === "hi|bye");
+    pause(250);
+    const upAfterRelease = voice.saidBy(chatter) === "hi|bye";
+    pause(500);
+    check(
+      "a-bubble-given-half-a-second-clears-half-a-second-after-its-rule-stops",
+      upAfterRelease && voice.saidBy(chatter) === "hi|bye|"
+    );
+
+    const announcer = spriteRunning(wendooBrains.p_sayScoreBare0001);
+    info.setScore(42);
+    pause(FRAMES_MS);
+    const saidFortyTwo = voice.saidBy(announcer) === "42";
+    info.setScore(43);
+    pause(FRAMES_MS);
+    check(
+      "a-bare-say-under-a-score-says-the-score-and-each-new-score-at-once",
+      saidFortyTwo && voice.saidBy(announcer) === "42|43"
+    );
+
+    const motto = spriteRunning(wendooBrains.p_sayMottoBare0001);
+    pause(FRAMES_MS);
+    const silent = voice.saidBy(motto) === "";
+    wendoo.setBrainString(motto, "motto", "onward");
+    pause(FRAMES_MS);
+    check(
+      "a-bare-say-under-a-text-variable-says-its-text-once-it-holds-some",
+      silent && voice.saidBy(motto) === "onward"
+    );
+
+    const ouch = solidSprite(8, 40, 100);
+    wendoo.runBrain(ouch, wendooBrains.p_sayOuchBump00001);
+    const mumble = solidSprite(8, 44, 100);
+    wendoo.runBrain(mumble, wendooBrains.p_sayBumpedBare001);
+    pause(2 * FRAMES_MS);
+    check(
+      "an-ouch-rule-says-ouch-once-while-its-sprite-touches-another",
+      ticksOf(ouch) > 2 && voice.saidBy(ouch) === "ouch"
+    );
+    check(
+      "a-bare-say-under-a-bump-whose-when-result-is-a-sprite-says-nothing",
+      ticksOf(mumble) > 2 && voice.saidBy(mumble) === ""
+    );
+
+    const farewell = spriteRunning(wendooBrains.p_sayFarewell00001);
+    pause(FRAMES_MS);
+    sprites.destroy(farewell);
+    pause(FRAMES_MS);
+    check(
+      "a-say-in-the-final-think-of-a-destroyed-sprite-says-nothing",
+      programOf(farewell) === NOT_RUNNING && voice.saidBy(farewell) === ""
+    );
+    game.popScene();
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -5783,6 +6018,8 @@ namespace arcadeSelftest {
     checkFinalThink();
     checkDestroyPrograms();
     checkDestroyedSpriteWatch();
+    checkSayTile();
+    checkSayPrograms();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

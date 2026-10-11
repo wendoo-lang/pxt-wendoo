@@ -562,9 +562,13 @@ the current slice alone.
       proximity read's scan), the wander module (one module owning each
       wandering move's random on-screen destination, kept per call site in
       the sprite's attachment, its re-picks on arrival or deadline, and the random
-      source picking it), the `dpad`, `A button`, `B button`, `bump`,
+      source picking it), the speech module (one module owning each scene's
+      speech bubbles: per sprite, the text its bubble shows and the scene
+      time it clears at, the text shown through Arcade's own `sayText` once
+      per change of it with no time on screen, and the bubble cleared on the
+      scene's first frame past that time), the `dpad`, `A button`, `B button`, `bump`,
       `in range`, `out of range`, `myself` and `destroyed` sensors and the
-      `move`, `add score`, `game over` and `destroy` actuators (dpad
+      `move`, `add score`, `game over`, `destroy` and `say` actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
       reading player one's too; `A button` and `B button` are on while that
@@ -588,7 +592,15 @@ the current slice alone.
       destroyed from the call on, and a sprite already destroyed stays as
       it is; `destroyed` is on while the program's own sprite is destroyed,
       which the program sees only in its final think, its WHEN result
-      `true`; `myself` reads the
+      `true`; say shows its optional anonymous text, else its rule's WHEN
+      result -- a number, a text or a switch, printed as Arcade prints them,
+      any other value saying nothing, logged once per run -- in the speech
+      bubble of the program's own sprite, through the speech module: the
+      same text said again keeps the bubble up without showing it again,
+      another text replaces it at once, empty text clears it at once, and
+      the bubble clears its optional `duration` parameter in seconds after
+      the last say of its text, held at 0 or above, else 5 seconds after --
+      the two in either order; a destroyed sprite says nothing; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,

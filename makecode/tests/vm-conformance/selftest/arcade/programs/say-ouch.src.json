@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "sayOuchBump00001",
+  "name": "Ouch",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayOuchBump0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "ouch",
+      "valueLabel": "ouch",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayOuchBump0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say",
+            "tile.literal->string:<string>->ouch"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayOuchBump0"
+        }
+      ]
+    }
+  ]
+}

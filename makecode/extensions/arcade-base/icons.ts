@@ -1709,26 +1709,30 @@ namespace wendoo {
     `;
   }
 
-  /** Icon of the destroy actuator: a red sprite struck through by a black X. */
+  /**
+   * Icon of the destroy actuator: the `Sprite` type's red character
+   * dissolving from left to right -- whole on its left, breaking into
+   * scattered red pixels that drift off to its right.
+   */
   //% hidden
   export function destroyIcon(): Image {
     return img`
-      f f . . . . . . . . . . . . f f
-      f f f . . . . . . . . . . f f f
-      . f f f 2 2 2 2 2 2 2 2 f f f .
-      . . f f f 2 2 2 2 2 2 f f f . .
-      . . . f f f 1 2 2 1 f f f . . .
-      . . . 2 f f f 2 2 f f f 2 . . .
-      . . . 2 2 f f f f f f 2 2 . . .
-      . . . 2 2 2 f f f f 2 2 2 . . .
-      . . . 2 2 2 f f f f 2 2 2 . . .
-      . . . 2 2 f f f f f f 2 2 . . .
-      . . . 2 f f f 2 2 f f f 2 . . .
-      . . . f f f 2 2 2 2 f f f . . .
-      . . f f f . . . . . . f f f . .
-      . f f f . . . . . . . . f f f .
-      f f f . . . . . . . . . . f f f
-      f f . . . . . . . . . . . . f f
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . 2 2 2 2 2 . 2 . . . 2 .
+      . . . 2 2 2 2 2 2 2 . 2 . . . .
+      . . . 2 2 1 1 2 2 1 . . 2 . . .
+      . . . 2 2 1 1 2 2 1 2 . . . 2 .
+      . . . 2 2 2 2 2 2 . 2 . 2 . . .
+      . . . 2 2 2 2 2 2 2 . . . . . 2
+      . . . 2 2 2 2 2 . 2 . 2 . . . .
+      . . . 2 2 2 2 2 2 . . . . 2 . .
+      . . . 2 2 . 2 2 2 . 2 . . . . .
+      . . . 2 2 . 2 2 . . . . 2 . . .
+      . . . 2 2 . . . . . . . . . 2 .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
     `;
   }
 
@@ -1778,7 +1782,7 @@ namespace wendoo {
     `;
   }
 
-  /** Icon of the destroy's `duration` parameter: a clock face, the span from twelve to four shaded between its hands. */
+  /** Icon of the shared `duration` parameter: a clock face, the span from twelve to four shaded between its hands. */
   //% hidden
   export function durationParameterIcon(): Image {
     return img`
@@ -1797,6 +1801,29 @@ namespace wendoo {
       . . c 1 1 1 1 1 1 1 1 1 1 c . .
       . . . c c 1 1 1 1 1 1 c c . . .
       . . . . . c c c c c c . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the say actuator: a white speech bubble, its tail at the lower left, holding three black dots. */
+  //% hidden
+  export function sayIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . f f f f f f f f f f f f . .
+      . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 1 f f 1 1 f f 1 1 f f 1 1 f
+      f 1 1 f f 1 1 f f 1 1 f f 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      . f 1 1 1 1 1 1 1 1 1 1 1 1 f .
+      . . f f f 1 1 f f f f f f f . .
+      . . . . f 1 f . . . . . . . . .
+      . . . f 1 f . . . . . . . . . .
+      . . f f f . . . . . . . . . . .
       . . . . . . . . . . . . . . . .
     `;
   }

@@ -275,6 +275,15 @@ pack arcade
             optional
               arg parameter.duration type=number range={"min":0,"onExceed":"clamp"} icon
   tile sensor sensor.arcade.destroyed returns=boolean icon
+  tile actuator actuator.arcade.say icon
+    call
+      optional
+        choice
+          bag
+            optional
+              arg anon.string type=string anonymous derived
+            optional
+              arg parameter.duration type=number range={"min":0,"onExceed":"clamp"} icon
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

@@ -3,7 +3,7 @@
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
 shares: the tiles a brain uses to read the controllers, notice what its
 sprite touches and what is near it, move its sprite, change how it looks,
-keep score, destroy sprites, and end the game.
+keep score, talk, destroy sprites, and end the game.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -63,6 +63,11 @@ keep score, destroy sprites, and end the game.
 - **destroyed** -- a WHEN tile that is on once, when your own sprite is
   destroyed, for its brain's last turn: **WHEN destroyed DO game over** ends
   the game when your sprite is destroyed, by a brain or by the game's code.
+- **say** -- a DO tile that shows text in your sprite's speech bubble:
+  **WHEN bump DO say "ouch"**. The bubble stays up while the rule keeps
+  firing and for 5 seconds after, or for the **duration** you give it. With
+  no text, it shows what its WHEN found -- **WHEN player one score DO say**
+  shows the score.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or

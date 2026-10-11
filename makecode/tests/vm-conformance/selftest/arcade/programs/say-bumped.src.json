@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "sayBumpedBare001",
+  "name": "Mumble",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayBumpedBar",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayBumpedBar",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayBumpedBa0"
+        }
+      ]
+    }
+  ]
+}

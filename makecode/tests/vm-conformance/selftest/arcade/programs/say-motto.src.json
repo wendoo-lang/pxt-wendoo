@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "sayMottoBare0001",
+  "name": "Motto",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0sayMottoBare",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "motto",
+      "varType": "string:<string>",
+      "uniqueId": "fVr0sayMottoText"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0sayMottoBare",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0sayMottoText"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.say"
+          ],
+          "children": [],
+          "ruleId": "fRu0sayMottoBar0"
+        }
+      ]
+    }
+  ]
+}

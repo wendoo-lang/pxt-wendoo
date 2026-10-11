@@ -912,6 +912,65 @@ namespace wendooBrains {
         08
     `);
 
+    // source-hash e3a8c5b0
+    //% fixedInstance block="Mumble"
+    export const p_sayBumpedBare001 = wendoo.registerCompiledBrain("sayBumpedBare001", "Mumble", hex`
+        894d425004d10f070100106650673073617942756d7065644261720100810800
+        010101000000114600000000000000000000000000002c82080700470c480000
+        00002c8d0802014900001f00000100000100000100020000820800018d08
+    `);
+
+    // source-hash 971cc34f
+    //% fixedInstance block="Shout"
+    export const p_sayButtonBare001 = wendoo.registerCompiledBrain("sayButtonBare001", "Shout", hex`
+        894d425004d10f0701001066506730736179427574746f6e4261720000010101
+        0000000b4600002c89080100470c48000000002c8d0802014900001f00000100
+        000100000100020000890800018d08
+    `);
+
+    // source-hash e87a0f5b
+    //% fixedInstance block="Chatter"
+    export const p_sayChatterHiBye1 = wendoo.registerCompiledBrain("sayChatterHiBye1", "Chatter", hex`
+        894d425004d10f07030202686903627965106650673073617943686174746572
+        3031000102000000000000e03f0101020000000d4600002c8908010047104800
+        000000050006012c8d0802014900001f0000000f4600002c8a08010247144800
+        00000005010601040006002c8d0802034900001f000002000100010002020001
+        040000890800018d0800028a0800038d08
+    `);
+
+    // source-hash e50113ed
+    //% fixedInstance block="Farewell"
+    export const p_sayFarewell00001 = wendoo.registerCompiledBrain("sayFarewell00001", "Farewell", hex`
+        894d425004d10f070201086661726577656c6c10665067307361794661726577
+        656c6c3000000101010000000c462c8c08000047104800000000050006012c8d
+        0802014900001f000001000001000101000200008c0800018d08
+    `);
+
+    // source-hash 4af75c5f
+    //% fixedInstance block="Motto"
+    export const p_sayMottoBare0001 = wendoo.registerCompiledBrain("sayMottoBare0001", "Motto", hex`
+        894d425004d10f07030000056d6f74746f10665067307361794d6f74746f4261
+        7265000002040001010000000a460a00470c48000100012c8d0802004900011f
+        0101010001000001000201000100008d08
+    `);
+
+    // source-hash 7c56d36c
+    //% fixedInstance block="Ouch"
+    export const p_sayOuchBump00001 = wendoo.registerCompiledBrain("sayOuchBump00001", "Ouch", hex`
+        894d425004d10f070201046f75636810665067307361794f75636842756d7030
+        0100810800010101000000134600000000000000000000000000002c82080700
+        47104800000000050006012c8d0802014900001f000001000001000101000200
+        00820800018d08
+    `);
+
+    // source-hash cfa8bf5b
+    //% fixedInstance block="Announce"
+    export const p_sayScoreBare0001 = wendoo.registerCompiledBrain("sayScoreBare0001", "Announce", hex`
+        894d425004d10f070100106650673073617953636f7265426172650100840800
+        020800020300020101010000001046000002150672011406010001470c480001
+        00012c8d0802004900011f000001000001000001000100008d08
+    `);
+
     // source-hash 5d75f050
     //% fixedInstance block="Award flipped"
     export const p_scoreAwardFlip01 = wendoo.registerCompiledBrain("scoreAwardFlip01", "Award flipped", hex`

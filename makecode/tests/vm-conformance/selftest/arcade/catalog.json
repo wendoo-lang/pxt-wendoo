@@ -1705,7 +1705,7 @@
           ],
           "label": "destroy",
           "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Destroy\n\nRemoves a sprite from the game.\n\n---\n\nPlace **destroy** on the **DO** side of a rule to remove a sprite from the game. The bare tile destroys\nyour own sprite. Give it a sprite to destroy that one instead: **WHEN bump DO destroy bumped sprite**\neats whatever your sprite bumps.\n\nGive it a particle effect to make the sprite vanish in it, and a **duration** for how many seconds the\neffect plays: **DO destroy bumped sprite confetti duration 0.5**. Without an effect, the sprite is gone\nat once, whatever the duration.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n      \"children\": [],\n      \"comment\": \"Eat whatever this sprite bumps.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nGrammar of destroy, as the editor offers it:\n- In any order, each at most once: an optional Sprite (the target), an optional ParticleEffect, and the\n  optional duration parameter, a Number of seconds. Nothing else: no modifier, no output tile.\n- No Sprite: it destroys this program's own sprite; [destroy] [myself] does the same. [destroy]\n  [bumped sprite] destroys the sprite bump found -- the \"eat\" rule.\n- A ParticleEffect: the sprite vanishes in that effect over duration seconds, or over the effect's own\n  length when no duration, or a duration of 0, is given. A duration below 0 reads as 0.\n- duration without a ParticleEffect changes nothing: the sprite is gone at once.\n- A Sprite or ParticleEffect placed as anything but a literal tile that reads as nothing leaves the action\n  undone for that frame. A ParticleEffect naming nothing Arcade holds is read as none.\n- A target already destroyed stays as it is: destroying it again does nothing.\n\nWhat it does:\n- It is Arcade's own destroy. The sprite counts as destroyed at once, even while its effect plays: every\n  value standing for it reads as nothing, a sprite variable holding it reads nothing, and bump, in range\n  and out of range never read it again. The brain it runs, if any, gets one final think, where\n  [destroyed] is on, then stops.\n- It acts on every frame its rule fires, on the sprite it is given then.\n- Destroying this program's own sprite: put destroy last in the rule. The rest of the think still runs,\n  against a sprite already gone -- [myself] reads nothing and writes through it change nothing -- and the\n  brain stops after its final think.\n```\n\n## See Also\n\n`tile:tile.sensor->sensor.arcade.destroyed`\n`tile:tile.var.factory->struct:<ParticleEffect>`\n`tile:tile.var.factory->struct:<Sprite>`\n`tile:tile.sensor->sensor.arcade.bump`\n",
-          "icon": "8704100010000000ff000000000000ffff0f00000000f0fff0ff00000000ff0f00ff2f2222f2ff0000f2ff2222ff0f000022ff2ff2ff00000022f1ffff2f0000002222ffff220000002222ffff2200000022f1ffff2f00000022ff2ff2ff000000f2ff2222ff0f0000ff2f2222f2ff00f0ff00000000ff0fff0f00000000f0ffff000000000000ff"
+          "icon": "87041000100000000000000000000000000000000000000000000000000000000020222222220200002222222222020000221122220000000022112222220000002222222222000000222222200200000020112002000000000220020002000000200000020000000000020200200000000000002000000000022000000002000000002000000000"
         },
         {
           "name": "sensor.arcade.destroyed",
@@ -1717,6 +1717,56 @@
           "language": {
             "frame": "state"
           }
+        },
+        {
+          "name": "actuator.arcade.say",
+          "kind": "actuator",
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.string",
+                          "type": "string",
+                          "anonymous": true,
+                          "derived": true
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "parameter.duration",
+                          "type": "number",
+                          "range": {
+                            "min": 0,
+                            "onExceed": "clamp"
+                          },
+                          "unit": "s",
+                          "label": "duration",
+                          "language": {
+                            "form": "for"
+                          },
+                          "icon": "87041000100000000000c0cccc00000000c01c1111cc0000001c111111110c00c01111111111c100c01111111111c1001c1111111111110c1c1111111111110c1cffffff1111110c9c9999f91111110c9c9999991f11110c9c9999991f11110cc0999999f911c100c0999999f911c100009c9999991f0c0000c09c9999cc00000000c0cccc000000"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "say",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Say\n\nShows text in a speech bubble over your sprite.\n\n---\n\nPlace **say** on the **DO** side of a rule and give it some text to show in your sprite's speech\nbubble: **WHEN bump DO say \"ouch\"**. Give it a **duration** to pick how many seconds the bubble stays\nafter the rule stops: **DO say \"hi\" duration 2**. Without one, it stays 5 seconds.\n\nWhile the rule keeps firing, the bubble stays up. Without any text, say shows what the WHEN found:\n**WHEN player one score DO say** shows the score.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.say\", \"tile.literal->string:<string>->ouch\"],\n      \"children\": [],\n      \"comment\": \"Say ouch while touching another sprite, and for 5 seconds after.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->ouch\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"ouch\",\n      \"valueLabel\": \"ouch\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of say, as the editor offers it:\n- In either order, each at most once: an optional text value and the optional duration parameter, a\n  Number of seconds. Nothing else: no modifier, no Sprite, no output tile.\n- It always speaks through this program's own sprite; it cannot make another sprite talk.\n\nWhat it does:\n- It shows the text in the sprite's speech bubble, the way Arcade's own say does.\n- A rule that keeps firing with the same text keeps the bubble up without restarting it. A different\n  text replaces the bubble at once.\n- The bubble clears duration seconds after the last frame that said its text: 5 seconds with no\n  duration. A duration below 0 reads as 0, which keeps the bubble only while the rule fires.\n- Empty text clears the bubble at once.\n- With no text placed, it says the rule's WHEN value: a number, a text or a switch, printed as Arcade\n  prints them ([A button] says true). Any other WHEN value -- a sprite, a position, or nothing, as in a\n  rule with no WHEN -- says nothing.\n- Once its own sprite is destroyed, say does nothing; a bubble already up goes when Arcade removes the\n  sprite.\n```\n\n## See Also\n\n`tile:tile.lit.factory->string`\n`tile:tile.var.factory->string`\n`tile:tile.sensor->sensor.arcade.bump`\n`tile:tile.actuator->actuator.arcade.destroy`\n",
+          "icon": "870410001000000000f0ffffff000000001f1111110f0000f011111111f1000ff01111ff11f1f00ff01111ff11f11f0ff01111111111f100f011111111110f00f01111ff11f10000f01111ff11f10000f011111111f10000f011111111f10000f01111ff11f10000f01111ff11f10000f011111111f10000001f1111110f000000f0ffffff000000"
         }
       ],
       "overloads": [

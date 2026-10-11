@@ -37,7 +37,8 @@
  * that order and no other, the unusable move-smoothing lines in
  * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
- * other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
+ * other, the unspeakable say lines in `EXPECTED_ARCADE_SAY_LINES` in that
+ * order and no other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
  * order and no other, the unusable effect, sound and particle effect lines in
  * `EXPECTED_ARCADE_CHOICE_LINES` in that order and no other, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
@@ -572,6 +573,25 @@ const EXPECTED_ARCADE_CHECKS = [
   "an-eat-rule-given-confetti-and-half-a-second-leaves-a-ghost-that-is-gone-after-half-a-second",
   "a-sprite-variable-holding-the-sprite-its-brain-destroyed-reads-nothing-from-that-moment-on",
   "another-brain-reads-a-sprite-destroyed-with-an-effect-as-nothing-and-its-range-rules-stop",
+  "say-tile-takes-its-action-id-from-the-manifest",
+  "say-prints-a-number-a-text-and-a-switch-as-arcade-does-and-nothing-else",
+  "a-text-said-again-and-again-is-shown-once",
+  "another-text-is-shown-at-once-in-its-place",
+  "a-bubble-given-no-duration-clears-five-seconds-after-the-last-say",
+  "a-bubble-given-a-duration-clears-that-many-seconds-after-the-last-say",
+  "a-bubble-given-0-or-a-duration-below-0-clears-at-the-first-time-after-the-last-say",
+  "empty-text-clears-the-bubble-at-once",
+  "a-say-given-no-text-under-no-when-says-nothing",
+  "a-destroyed-sprite-says-nothing-and-its-bubble-is-forgotten",
+  "a-say-rule-held-for-many-frames-shows-its-text-once",
+  "a-bare-say-under-the-a-button-says-true",
+  "a-say-rule-saying-another-text-replaces-the-bubble-at-once",
+  "a-bubble-given-half-a-second-clears-half-a-second-after-its-rule-stops",
+  "a-bare-say-under-a-score-says-the-score-and-each-new-score-at-once",
+  "a-bare-say-under-a-text-variable-says-its-text-once-it-holds-some",
+  "an-ouch-rule-says-ouch-once-while-its-sprite-touches-another",
+  "a-bare-say-under-a-bump-whose-when-result-is-a-sprite-says-nothing",
+  "a-say-in-the-final-think-of-a-destroyed-sprite-says-nothing",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -618,6 +638,17 @@ const EXPECTED_ARCADE_SCORE_LINES = ["WENDOO_SCORE_UNUSABLE"];
 
 /** The line the arcade base pack logs for a score write or addition holding no finite number. */
 const SCORE_LINE = "wendoo WENDOO_SCORE_UNUSABLE";
+
+/**
+ * Every unspeakable say line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one for the whole run, however
+ * many says given no text find a WHEN result holding no number, text or
+ * switch.
+ */
+const EXPECTED_ARCADE_SAY_LINES = ["WENDOO_SAY_UNSPEAKABLE"];
+
+/** The line the arcade base pack logs for a say given no text whose WHEN result holds no number, text or switch. */
+const SAY_LINE = "wendoo WENDOO_SAY_UNSPEAKABLE";
 
 /**
  * Every brain variable line the arcade selftest is expected to log, in
@@ -708,6 +739,7 @@ const ARCADE_ICONED_TILES = [
   "actuator.arcade.game-over",
   "actuator.arcade.destroy",
   "sensor.arcade.destroyed",
+  "actuator.arcade.say",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -816,11 +848,13 @@ const ARCADE_HOST_REJECTIONS = [
  * two's score, the dpad's player, the A and B buttons, the brain variables
  * game code reads and writes, the variables an update restart carries, the
  * game over's gate on a placed value reading nothing, the destroy and
- * destroyed tiles' programs, and a brain watching a sprite destroyed with an
- * effect -- with the host the final-think check drains by hand, between the
- * game over's scene and the destroy programs' scene.
+ * destroyed tiles' programs, a brain watching a sprite destroyed with an
+ * effect, and the say tile's programs -- with the host the final-think check
+ * drains by hand, between the game over's scene and the destroy programs'
+ * scene.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -1050,6 +1084,13 @@ function reportedSmoothingLines(log) {
 function reportedScoreLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(SCORE_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every unspeakable say line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedSayLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(SAY_LINE))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1416,6 +1457,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const scoreLines = reportedScoreLines(log);
   if (scoreLines.join("\n") !== EXPECTED_ARCADE_SCORE_LINES.join("\n")) {
     failures.push(`unusable scores logged: ${scoreLines.join(" | ")}`);
+  }
+  const sayLines = reportedSayLines(log);
+  if (sayLines.join("\n") !== EXPECTED_ARCADE_SAY_LINES.join("\n")) {
+    failures.push(`unspeakable says logged: ${sayLines.join(" | ")}`);
   }
   const variableLines = reportedVariableLines(log);
   if (variableLines.join("\n") !== EXPECTED_ARCADE_VARIABLE_LINES.join("\n")) {

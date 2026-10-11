@@ -1070,6 +1070,78 @@ namespace wendoo {
                 "`tile:tile.sensor->sensor.arcade.in-range`\n" +
                 "`tile:tile.sensor->sensor.arcade.out-of-range`\n";
         }
+        if (name === "actuator.arcade.say") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Say\n" +
+                "\n" +
+                "Shows text in a speech bubble over your sprite.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **say** on the **DO** side of a rule and give it some text to show in your sprite's speech\n" +
+                "bubble: **WHEN bump DO say \"ouch\"**. Give it a **duration** to pick how many seconds the bubble stays\n" +
+                "after the rule stops: **DO say \"hi\" duration 2**. Without one, it stays 5 seconds.\n" +
+                "\n" +
+                "While the rule keeps firing, the bubble stays up. Without any text, say shows what the WHEN found:\n" +
+                "**WHEN player one score DO say** shows the score.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.say\", \"tile.literal->string:<string>->ouch\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Say ouch while touching another sprite, and for 5 seconds after.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->string:<string>->ouch\",\n" +
+                "      \"valueType\": \"string:<string>\",\n" +
+                "      \"value\": \"ouch\",\n" +
+                "      \"valueLabel\": \"ouch\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of say, as the editor offers it:\n" +
+                "- In either order, each at most once: an optional text value and the optional duration parameter, a\n" +
+                "  Number of seconds. Nothing else: no modifier, no Sprite, no output tile.\n" +
+                "- It always speaks through this program's own sprite; it cannot make another sprite talk.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It shows the text in the sprite's speech bubble, the way Arcade's own say does.\n" +
+                "- A rule that keeps firing with the same text keeps the bubble up without restarting it. A different\n" +
+                "  text replaces the bubble at once.\n" +
+                "- The bubble clears duration seconds after the last frame that said its text: 5 seconds with no\n" +
+                "  duration. A duration below 0 reads as 0, which keeps the bubble only while the rule fires.\n" +
+                "- Empty text clears the bubble at once.\n" +
+                "- With no text placed, it says the rule's WHEN value: a number, a text or a switch, printed as Arcade\n" +
+                "  prints them ([A button] says true). Any other WHEN value -- a sprite, a position, or nothing, as in a\n" +
+                "  rule with no WHEN -- says nothing.\n" +
+                "- Once its own sprite is destroyed, say does nothing; a bubble already up goes when Arcade removes the\n" +
+                "  sprite.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.lit.factory->string`\n" +
+                "`tile:tile.var.factory->string`\n" +
+                "`tile:tile.sensor->sensor.arcade.bump`\n" +
+                "`tile:tile.actuator->actuator.arcade.destroy`\n";
+        }
         if (name === "output.bumped") {
             return "```brain noframe do\n" +
                 "{ \"tile\": \"${tileId}\" }\n" +

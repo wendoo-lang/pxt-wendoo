@@ -60,6 +60,10 @@ namespace wendoo {
   //% hidden
   export const DESTROYED_TILE = "sensor.arcade.destroyed";
 
+  /** Tile name of the say actuator. */
+  //% hidden
+  export const SAY_TILE = "actuator.arcade.say";
+
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
   export const BUMPED_OUTPUT = "bumped";
@@ -83,6 +87,10 @@ namespace wendoo {
   /** Direction a move goes in when it is given none and its rule's WHEN produced none: rightward. */
   //% hidden
   export const MOVE_DEFAULT_DIRECTION = new DirectionVector(1, 0);
+
+  /** How long a say keeps its sprite's bubble up after it is said, when it is given no duration, in seconds. */
+  //% hidden
+  export const SAY_DEFAULT_DURATION = 5;
 
   /** Factor each `slowly` on a move multiplies its speed by. */
   //% hidden
@@ -127,6 +135,10 @@ namespace wendoo {
   const DESTROY_SLOT_TARGET = 0;
   const DESTROY_SLOT_EFFECT = 1;
   const DESTROY_SLOT_DURATION = 2;
+
+  /** Argument-buffer positions of the say actuator's text and its duration. */
+  const SAY_SLOT_TEXT = 0;
+  const SAY_SLOT_DURATION = 1;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -579,6 +591,57 @@ namespace wendoo {
   }
 
   /**
+   * How long a say keeps its sprite's bubble up after it is said, in
+   * milliseconds: the duration argument, in seconds, times 1000 when it
+   * carries a number -- 0 for a not-a-number or a number below 0; else
+   * {@link SAY_DEFAULT_DURATION} seconds.
+   *
+   * @param duration - The duration argument, in seconds: a number, or nil.
+   */
+  function sayDurationMs(duration: Value): number {
+    if (duration === undefined || duration.t !== ValueTag.Number) {
+      return SAY_DEFAULT_DURATION * 1000;
+    }
+    return duration.num > 0 ? duration.num * 1000 : 0;
+  }
+
+  /**
+   * `actuator.arcade.say`: says the text its text slot holds, else the
+   * value its rule's WHEN produced, through the program's own sprite's
+   * speech bubble, as its scene's {@link SceneSpeech} says it, the bubble
+   * kept up for the duration {@link sayDurationMs} reads after the say. A
+   * number, a text or a switch is said as {@link spokenText} prints it; any
+   * other value says nothing and is logged as {@link SAY_UNSPEAKABLE}, the
+   * first time in this game run. A destroyed sprite says nothing.
+   */
+  class SayActuator extends HostActionBinding {
+    /** Whether a value saying nothing has been logged in this game run. */
+    private unspeakableLogged = false;
+
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      const sprite = (ctx.data as SpriteAttachment).sprite;
+      if (isDestroyed(sprite)) {
+        return VOID_VALUE;
+      }
+      const said = isFilled(args, SAY_SLOT_TEXT) ? args[SAY_SLOT_TEXT] : getWhenResult(ctx);
+      const text = spokenText(said);
+      if (text === undefined) {
+        if (!this.unspeakableLogged) {
+          this.unspeakableLogged = true;
+          debugLog(`wendoo ${SAY_UNSPEAKABLE}`);
+        }
+        return VOID_VALUE;
+      }
+      sceneSpeech(game.currentScene()).say(sprite, text, sayDurationMs(args[SAY_SLOT_DURATION]), ctx.time);
+      return VOID_VALUE;
+    }
+  }
+
+  /**
    * `sensor.arcade.destroyed`: `true` while the program's own sprite is
    * destroyed, and nil otherwise. A program sees its sprite destroyed only in
    * its final think.
@@ -871,25 +934,46 @@ namespace wendoo {
     ];
   }
 
-  /**
-   * The argument grammar the destroy actuator declares: an optional target
-   * sprite, an optional particle effect and an optional duration, in any
-   * order, each anonymous value filling the slot of its type -- a sprite the
-   * target, a particle effect the effect -- and the duration its own named
-   * number of seconds, held at 0 or above, read as "for" in a sentence.
-   */
-  function destroyArgs(): TileArgSpec[] {
+  /** The shared `duration` parameter slot: a named number of seconds, held at 0 or above, read as "for" in a sentence. */
+  function durationSlot(): ArgSlotSpec {
     const duration = arg("parameter.duration", TYPE_NUMBER, "duration");
     duration.language = tileLanguage("for");
     duration.unit = "s";
     duration.range = argRangeAtLeast(0, ARG_ON_EXCEED_CLAMP);
+    return duration;
+  }
+
+  /**
+   * The argument grammar the destroy actuator declares: an optional target
+   * sprite, an optional particle effect and an optional duration, in any
+   * order, each anonymous value filling the slot of its type -- a sprite the
+   * target, a particle effect the effect -- and the duration the shared
+   * {@link durationSlot}.
+   */
+  function destroyArgs(): TileArgSpec[] {
     return [
       optional(
         choice([
-          bag([optional(anonymousArg(TYPE_SPRITE)), optional(anonymousArg(TYPE_PARTICLE_EFFECT)), optional(duration)]),
+          bag([
+            optional(anonymousArg(TYPE_SPRITE)),
+            optional(anonymousArg(TYPE_PARTICLE_EFFECT)),
+            optional(durationSlot()),
+          ]),
         ])
       ),
     ];
+  }
+
+  /**
+   * The argument grammar the say actuator declares: an optional text and an
+   * optional duration, in either order -- the text an anonymous value filling
+   * it, derived from the rule's WHEN result when it is empty, and the
+   * duration the shared {@link durationSlot}.
+   */
+  function sayArgs(): TileArgSpec[] {
+    const text = anonymousArg(TYPE_STRING);
+    text.derived = true;
+    return [optional(choice([bag([optional(text), optional(durationSlot())])]))];
   }
 
   /** The four optional direction modifier slots, up, down, left then right. */
@@ -1055,6 +1139,10 @@ namespace wendoo {
   destroyedSpec.language.frame = SENTENCE_FRAME_STATE;
   arcadePack.bind(DESTROYED_TILE, new DestroyedSensor(), destroyedSpec);
 
+  const saySpec = new TileSpec(TILE_KIND_ACTUATOR, sayArgs(), "");
+  saySpec.label = "say";
+  arcadePack.bind(SAY_TILE, new SayActuator(), saySpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -1164,6 +1252,7 @@ namespace wendoo {
     gameOverSpec.icon = gameOverIcon();
     destroySpec.icon = destroyIcon();
     destroyedSpec.icon = destroyedIcon();
+    saySpec.icon = sayIcon();
     const tiles = [
       dpadSpec,
       moveSpec,
@@ -1174,6 +1263,7 @@ namespace wendoo {
       addScoreSpec,
       gameOverSpec,
       destroySpec,
+      saySpec,
     ];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
@@ -1284,6 +1374,7 @@ namespace wendoo {
     gameOverSpec.docs = arcadeBaseDocs(GAME_OVER_TILE);
     destroySpec.docs = arcadeBaseDocs(DESTROY_TILE);
     destroyedSpec.docs = arcadeBaseDocs(DESTROYED_TILE);
+    saySpec.docs = arcadeBaseDocs(SAY_TILE);
   }
 
   attachArcadeBaseIcons();
