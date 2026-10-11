@@ -944,12 +944,16 @@ namespace wendoo {
     ];
   }
 
-  /** The spec of a button sensor labelled `label`, read with the word `bare`: one optional anonymous player. */
-  function buttonSpec(label: string, bare: string): TileSpec {
+  /**
+   * The spec of a button sensor labelled `label` for the button lettered
+   * `letter`, read as "press <letter>" with "button" completing a WHEN side
+   * it heads alone: one optional anonymous player.
+   */
+  function buttonSpec(label: string, letter: string): TileSpec {
     const spec = new TileSpec(TILE_KIND_SENSOR, [optional(anonymousArg(TYPE_PLAYER))], TYPE_BOOLEAN);
     spec.label = label;
-    spec.language.form = "press";
-    spec.language.bare = bare;
+    spec.language.form = "press " + letter;
+    spec.language.bare = "button";
     return spec;
   }
 
@@ -1004,8 +1008,8 @@ namespace wendoo {
     TYPE_VECTOR2
   );
   dpadSpec.label = "dpad";
-  dpadSpec.language.form = "press";
-  dpadSpec.language.bare = "the dpad";
+  dpadSpec.language.form = "press the dpad";
+  dpadSpec.language.bare = "in any direction";
   arcadePack.bind(DPAD_TILE, new DpadSensor(), dpadSpec);
 
   const moveDirectionSlot = anonymousArg(TYPE_VECTOR2);
