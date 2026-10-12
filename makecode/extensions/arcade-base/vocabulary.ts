@@ -72,6 +72,18 @@ namespace wendoo {
   //% hidden
   export const ASK_TILE = "actuator.arcade.ask";
 
+  /** Tile name of the play-sound actuator. */
+  //% hidden
+  export const PLAY_SOUND_TILE = "actuator.arcade.play-sound";
+
+  /** Tile name of the play-tone actuator. */
+  //% hidden
+  export const PLAY_TONE_TILE = "actuator.arcade.play-tone";
+
+  /** Tile name of the stop-sounds actuator. */
+  //% hidden
+  export const STOP_SOUNDS_TILE = "actuator.arcade.stop-sounds";
+
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
   export const BUMPED_OUTPUT = "bumped";
@@ -103,6 +115,28 @@ namespace wendoo {
   /** How long a say keeps its sprite's bubble up after it is said, when it is given no duration, in seconds. */
   //% hidden
   export const SAY_DEFAULT_DURATION = 5;
+
+  /** Pitch a play tone plays when it is given none, in hertz. */
+  //% hidden
+  export const TONE_DEFAULT_FREQUENCY = 440;
+
+  /** How long a play tone plays when it is given no duration, in seconds. */
+  //% hidden
+  export const TONE_DEFAULT_DURATION = 0.5;
+
+  /** Loudness a play tone plays at when it is given no volume, from 0 (silent) to 1 (full). */
+  //% hidden
+  export const TONE_DEFAULT_VOLUME = 1;
+
+  /** Loudness Arcade's shaped tones take for full volume: the top of their 0 to 255 scale. */
+  const TONE_FULL_VOLUME = 255;
+
+  /**
+   * Shortest shaped tone, in milliseconds, Arcade shapes with a vibrato,
+   * tremolo or warble: one step of the effect. A shorter one plays with no
+   * effect.
+   */
+  const TONE_EFFECT_MIN_MS = 5;
 
   /** Factor each `slowly` on a move multiplies its speed by. */
   //% hidden
@@ -160,6 +194,28 @@ namespace wendoo {
 
   /** Argument-buffer position of the ask actuator's question. */
   const ASK_SLOT_QUESTION = 0;
+
+  /** Argument-buffer positions of the play-sound actuator's sound and its `in background` modifier; `looping` follows `in background`. */
+  const PLAY_SOUND_SLOT_SOUND = 0;
+  const PLAY_SOUND_SLOT_BACKGROUND = 1;
+
+  /** Argument-buffer positions of the play-tone actuator's pitch, its `to`, its duration and its volume. */
+  const PLAY_TONE_SLOT_FREQUENCY = 0;
+  const PLAY_TONE_SLOT_TO = 1;
+  const PLAY_TONE_SLOT_DURATION = 2;
+  const PLAY_TONE_SLOT_VOLUME = 3;
+
+  /** Argument-buffer position of the play-tone actuator's first wave modifier; `square`, `sawtooth`, `triangle` and `noise` follow `sine`. */
+  const PLAY_TONE_SLOT_SINE = 4;
+
+  /** Argument-buffer position of the play-tone actuator's first effect modifier; `tremolo` and `warble` follow `vibrato`. */
+  const PLAY_TONE_SLOT_VIBRATO = 9;
+
+  /** Argument-buffer position of the play-tone actuator's `in background` modifier; `looping` follows it. */
+  const PLAY_TONE_SLOT_BACKGROUND = 12;
+
+  /** Offset of the `looping` modifier from a play actuator's `in background` modifier. */
+  const PLAYBACK_LOOPING = 1;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -784,6 +840,174 @@ namespace wendoo {
   }
 
   /**
+   * Play `playable` for the play actuator running in `ctx` as its playback
+   * modifiers in `args` say, through its scene's {@link SceneSounds}, and
+   * settle `handle`. Given `in background`, a copy plays in the background
+   * for the actuator's call site and the handle resolves at once; given
+   * `looping`, the call site's loop starts and the handle resolves at once;
+   * either starts nothing while the call site's last copy still plays or its
+   * loop still runs. Given neither, the sound plays to its end and the handle
+   * resolves once it has.
+   *
+   * @param ctx - Execution context of the play actuator.
+   * @param args - The actuator's argument buffer.
+   * @param backgroundSlot - Argument-buffer position of the actuator's `in background` modifier, `looping` following it.
+   * @param playable - The sound to play.
+   * @param handle - The actuator's handle.
+   */
+  function playThrough(
+    ctx: ExecutionContext,
+    args: Value[],
+    backgroundSlot: number,
+    playable: music.Playable,
+    handle: AsyncHandle
+  ): void {
+    const sounds = sceneSounds(game.currentScene());
+    const background = isFilled(args, backgroundSlot);
+    if (background || isFilled(args, backgroundSlot + PLAYBACK_LOOPING)) {
+      const site = (ctx.data as SpriteAttachment).sounds.site(ctx.currentCallSiteId);
+      if (background) {
+        sounds.playInBackground(site, playable);
+      } else {
+        sounds.playLooping(site, playable);
+      }
+      handle.resolve(VOID_VALUE);
+      return;
+    }
+    sounds.playUntilDone(playable, () => handle.resolve(VOID_VALUE));
+  }
+
+  /**
+   * `actuator.arcade.play-sound`: plays the Arcade melody its sound slot
+   * names, as {@link SoundBinding.melodyOf} reads it, else `ba ding`, through
+   * {@link playThrough}. Each play plays a copy of the melody of its own, so
+   * plays of one melody from different places overlap. A sound naming no
+   * melody plays nothing and resolves the handle at once.
+   */
+  class PlaySoundActuator extends HostActionBinding {
+    constructor() {
+      super(true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      let melody = music.baDing;
+      if (isFilled(args, PLAY_SOUND_SLOT_SOUND)) {
+        melody = soundBinding.melodyOf(args[PLAY_SOUND_SLOT_SOUND]);
+        if (!melody) {
+          handle.resolve(VOID_VALUE);
+          return;
+        }
+      }
+      const copy = new music.Melody(melody.text);
+      playThrough(ctx, args, PLAY_SOUND_SLOT_BACKGROUND, music.melodyPlayable(copy), handle);
+    }
+  }
+
+  /** The wave shape each wave modifier of the play-tone actuator picks, in slot order from `sine`. */
+  const TONE_WAVES = [WaveShape.Sine, WaveShape.Square, WaveShape.Sawtooth, WaveShape.Triangle, WaveShape.Noise];
+
+  /** The effect each effect modifier of the play-tone actuator picks, in slot order from `vibrato`. */
+  const TONE_EFFECTS = [SoundExpressionEffect.Vibrato, SoundExpressionEffect.Tremolo, SoundExpressionEffect.Warble];
+
+  /** The position, counted from `first`, of the one filled slot among the `count` slots of `args` from `first`, or -1 when none is filled. */
+  function filledAmong(args: Value[], first: number, count: number): number {
+    for (let i = 0; i < count; i++) {
+      if (isFilled(args, first + i)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * `actuator.arcade.play-tone`: plays a tone through {@link playThrough}:
+   * its pitch slot's number of hertz, else {@link TONE_DEFAULT_FREQUENCY},
+   * for its duration in seconds, else {@link TONE_DEFAULT_DURATION}, at its
+   * volume, else {@link TONE_DEFAULT_VOLUME}. Given no `to`, no wave, no
+   * effect and full volume, the tone is Arcade's own plain tone, as
+   * `music.tonePlayable` plays it; otherwise it is Arcade's shaped tone, as
+   * `music.createSoundEffect` makes it: sweeping in a straight line from the
+   * pitch to `to`'s, in the wave its wave modifier picks, else sine, with
+   * the effect its effect modifier picks, else none -- none, too, for a tone
+   * shorter than one step of the effect -- at the volume times 255 from
+   * start to end. The pitch, `to` and the duration are held at 0 or above
+   * and the volume from 0 to 1; a number that is no finite number reads as
+   * its slot's default, `to`'s being none, and is logged as
+   * {@link TONE_UNUSABLE}, the first time in this game run. A tone lasting
+   * no time plays nothing and resolves the handle at once.
+   */
+  class PlayToneActuator extends HostActionBinding {
+    /** Whether a number that is no finite number has been logged in this game run. */
+    private unusableLogged = false;
+
+    constructor() {
+      super(true);
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const hz = Math.max(0, this.numberOr(args[PLAY_TONE_SLOT_FREQUENCY], TONE_DEFAULT_FREQUENCY));
+      const to = this.numberOr(args[PLAY_TONE_SLOT_TO], undefined);
+      const ms = Math.max(0, this.numberOr(args[PLAY_TONE_SLOT_DURATION], TONE_DEFAULT_DURATION)) * 1000;
+      const volume = Math.min(1, Math.max(0, this.numberOr(args[PLAY_TONE_SLOT_VOLUME], TONE_DEFAULT_VOLUME)));
+      if (ms <= 0) {
+        handle.resolve(VOID_VALUE);
+        return;
+      }
+      const wave = filledAmong(args, PLAY_TONE_SLOT_SINE, TONE_WAVES.length);
+      const shaping = filledAmong(args, PLAY_TONE_SLOT_VIBRATO, TONE_EFFECTS.length);
+      let playable: music.Playable;
+      if (to === undefined && wave < 0 && shaping < 0 && volume === 1) {
+        playable = music.tonePlayable(hz, ms);
+      } else {
+        const level = Math.round(volume * TONE_FULL_VOLUME);
+        const effect = shaping < 0 || ms < TONE_EFFECT_MIN_MS ? SoundExpressionEffect.None : TONE_EFFECTS[shaping];
+        playable = music.createSoundEffect(
+          wave < 0 ? WaveShape.Sine : TONE_WAVES[wave],
+          hz,
+          to === undefined ? hz : Math.max(0, to),
+          level,
+          level,
+          ms,
+          effect,
+          InterpolationCurve.Linear
+        );
+      }
+      playThrough(ctx, args, PLAY_TONE_SLOT_BACKGROUND, playable, handle);
+    }
+
+    /**
+     * The number `value` carries, or `fallback` when it carries none or one
+     * that is no finite number, the latter logged as {@link TONE_UNUSABLE}
+     * the first time in this game run.
+     */
+    private numberOr(value: Value, fallback: number): number {
+      if (value === undefined || value.t !== ValueTag.Number) {
+        return fallback;
+      }
+      if (!isFiniteNumber(value.num)) {
+        if (!this.unusableLogged) {
+          this.unusableLogged = true;
+          debugLog(`wendoo ${TONE_UNUSABLE}`);
+        }
+        return fallback;
+      }
+      return value.num;
+    }
+  }
+
+  /** `actuator.arcade.stop-sounds`: stops every sound playing and every loop running, through its scene's {@link SceneSounds}. */
+  class StopSoundsActuator extends HostActionBinding {
+    constructor() {
+      super(false);
+    }
+
+    execSync(ctx: ExecutionContext, args: Value[]): Value {
+      sceneSounds(game.currentScene()).stopAll();
+      return VOID_VALUE;
+    }
+  }
+
+  /**
    * `sensor.arcade.destroyed`: `true` while the program's own sprite is
    * destroyed, and nil otherwise. A program sees its sprite destroyed only in
    * its final think.
@@ -1151,6 +1375,75 @@ namespace wendoo {
     return [optional(choice([bag([optional(derivedTextSlot())])]))];
   }
 
+  /** The shared playback modifier slot every play actuator declares: an optional choice of `in background` or `looping`. */
+  function playbackSlot(): TileArgSpec {
+    return optional(
+      choice([
+        modifier("modifier.playback.background", "in background"),
+        modifier("modifier.playback.looping", "looping"),
+      ])
+    );
+  }
+
+  /**
+   * The argument grammar the play-sound actuator declares: an optional
+   * sound and the shared {@link playbackSlot}, in either order.
+   */
+  function playSoundArgs(): TileArgSpec[] {
+    return [optional(choice([bag([optional(anonymousArg(TYPE_SOUND)), playbackSlot()])]))];
+  }
+
+  /** A pitch slot of the play-tone actuator, measured in hertz and held at 0 or above. */
+  function pitched(slot: ArgSlotSpec): ArgSlotSpec {
+    slot.unit = "Hz";
+    slot.range = argRangeAtLeast(0, ARG_ON_EXCEED_CLAMP);
+    return slot;
+  }
+
+  /**
+   * The argument grammar the play-tone actuator declares, in any order: an
+   * optional pitch -- an anonymous number of hertz -- the shared `to`
+   * parameter, the shared {@link durationSlot}, the shared `volume`
+   * parameter, an optional choice of one wave modifier, an optional choice
+   * of one effect modifier, and the shared {@link playbackSlot}.
+   */
+  function playToneArgs(): TileArgSpec[] {
+    const to = pitched(arg("parameter.to", TYPE_NUMBER, "to"));
+    to.language = tileLanguage("to");
+    const volume = arg("parameter.volume", TYPE_NUMBER, "volume");
+    volume.language = tileLanguage("at volume");
+    volume.range = argRange(0, 1, ARG_ON_EXCEED_CLAMP);
+    return [
+      optional(
+        choice([
+          bag([
+            optional(pitched(anonymousArg(TYPE_NUMBER))),
+            optional(to),
+            optional(durationSlot()),
+            optional(volume),
+            optional(
+              choice([
+                modifier("modifier.wave.sine", "sine"),
+                modifier("modifier.wave.square", "square"),
+                modifier("modifier.wave.sawtooth", "sawtooth"),
+                modifier("modifier.wave.triangle", "triangle"),
+                modifier("modifier.wave.noise", "noise"),
+              ])
+            ),
+            optional(
+              choice([
+                modifier("modifier.tone.vibrato", "vibrato", tileLanguage("with vibrato")),
+                modifier("modifier.tone.tremolo", "tremolo", tileLanguage("with tremolo")),
+                modifier("modifier.tone.warble", "warble", tileLanguage("with warble")),
+              ])
+            ),
+            playbackSlot(),
+          ]),
+        ])
+      ),
+    ];
+  }
+
   /** The four optional direction modifier slots, up, down, left then right. */
   function directionModifiers(): TileArgSpec[] {
     return [
@@ -1329,6 +1622,16 @@ namespace wendoo {
   askSpec.outputs = [answerOutput];
   arcadePack.bind(ASK_TILE, new AskActuator(dialogTextReader), askSpec);
 
+  const playSoundSpec = new TileSpec(TILE_KIND_ACTUATOR, playSoundArgs(), "");
+  playSoundSpec.label = "play sound";
+  arcadePack.bind(PLAY_SOUND_TILE, new PlaySoundActuator(), playSoundSpec);
+  const playToneSpec = new TileSpec(TILE_KIND_ACTUATOR, playToneArgs(), "");
+  playToneSpec.label = "play tone";
+  arcadePack.bind(PLAY_TONE_TILE, new PlayToneActuator(), playToneSpec);
+  const stopSoundsSpec = new TileSpec(TILE_KIND_ACTUATOR, [], "");
+  stopSoundsSpec.label = "stop sounds";
+  arcadePack.bind(STOP_SOUNDS_TILE, new StopSoundsActuator(), stopSoundsSpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -1442,6 +1745,9 @@ namespace wendoo {
     showTextSpec.icon = showTextIcon();
     askSpec.icon = askIcon();
     askSpec.outputs[0].icon = answerIcon();
+    playSoundSpec.icon = playSoundIcon();
+    playToneSpec.icon = playToneIcon();
+    stopSoundsSpec.icon = stopSoundsIcon();
     const tiles = [
       dpadSpec,
       buttonASpec,
@@ -1458,6 +1764,9 @@ namespace wendoo {
       saySpec,
       showTextSpec,
       askSpec,
+      playSoundSpec,
+      playToneSpec,
+      stopSoundsSpec,
     ];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
@@ -1479,6 +1788,18 @@ namespace wendoo {
     attachSlotIcon(tiles, "modifier.layout.top", layoutTopIcon());
     attachSlotIcon(tiles, "modifier.layout.center", layoutCenterIcon());
     attachSlotIcon(tiles, "modifier.layout.full", layoutFullIcon());
+    attachSlotIcon(tiles, "parameter.to", toParameterIcon());
+    attachSlotIcon(tiles, "parameter.volume", volumeParameterIcon());
+    attachSlotIcon(tiles, "modifier.wave.sine", sineWaveIcon());
+    attachSlotIcon(tiles, "modifier.wave.square", squareWaveIcon());
+    attachSlotIcon(tiles, "modifier.wave.sawtooth", sawtoothWaveIcon());
+    attachSlotIcon(tiles, "modifier.wave.triangle", triangleWaveIcon());
+    attachSlotIcon(tiles, "modifier.wave.noise", noiseWaveIcon());
+    attachSlotIcon(tiles, "modifier.tone.vibrato", vibratoIcon());
+    attachSlotIcon(tiles, "modifier.tone.tremolo", tremoloIcon());
+    attachSlotIcon(tiles, "modifier.tone.warble", warbleIcon());
+    attachSlotIcon(tiles, "modifier.playback.background", inBackgroundIcon());
+    attachSlotIcon(tiles, "modifier.playback.looping", loopingIcon());
 
     arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", coreOnPageEnteredIcon());
     arcadePack.defineCoreTileIcon("tile.actuator->switch-page", coreSwitchPageIcon());
@@ -1575,6 +1896,9 @@ namespace wendoo {
     showTextSpec.docs = arcadeBaseDocs(SHOW_TEXT_TILE);
     askSpec.docs = arcadeBaseDocs(ASK_TILE);
     askSpec.outputs[0].docs = arcadeBaseDocs("output.answer");
+    playSoundSpec.docs = arcadeBaseDocs(PLAY_SOUND_TILE);
+    playToneSpec.docs = arcadeBaseDocs(PLAY_TONE_TILE);
+    stopSoundsSpec.docs = arcadeBaseDocs(STOP_SOUNDS_TILE);
   }
 
   attachArcadeBaseIcons();

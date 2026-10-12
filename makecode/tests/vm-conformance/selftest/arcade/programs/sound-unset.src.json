@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "soundUnsetVar001",
+  "name": "Unset sound",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundUnset00",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "jingle",
+      "varType": "struct:<Sound>",
+      "uniqueId": "fVr0soundJingle0"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundUnset00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.var->fVr0soundJingle0"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundUnset00"
+        }
+      ]
+    }
+  ]
+}

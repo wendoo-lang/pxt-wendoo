@@ -26,14 +26,16 @@
 
 # Sound
 
-A sound for the end of your game.
+One of Arcade's own sounds.
 
 ---
 
-Each of these is one of Arcade's own sounds. Give one to **game over** to play it as the game ends:
-**DO game over win power up** plays power up for a win.
+Each of these is one of Arcade's own sounds. Give one to **play sound** to play it: **WHEN bump DO play
+sound ba ding**. Give one to **game over** to play it as the game ends: **DO game over win power up**
+plays power up for a win.
 
 ## See Also
 
+`tile:tile.actuator->actuator.arcade.play-sound`
 `tile:tile.actuator->actuator.arcade.game-over`
 `tile:tile.var.factory->struct:<Effect>`

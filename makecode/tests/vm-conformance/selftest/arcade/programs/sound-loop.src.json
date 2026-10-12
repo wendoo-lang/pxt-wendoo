@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "soundLoopSiren01",
+  "name": "Looper",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundLoop000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 220,
+      "valueLabel": "220",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 0.1,
+      "valueLabel": "0.1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundLoop000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.literal->struct:<Sound>->siren",
+            "tile.modifier->modifier.playback.looping"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundLoop000"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-tone",
+            "tile.literal->number:<number>->220",
+            "tile.parameter->parameter.duration",
+            "tile.literal->number:<number>->0.1",
+            "tile.modifier->modifier.playback.looping"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundLoop001"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-b"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.stop-sounds"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundLoop002"
+        }
+      ]
+    }
+  ]
+}

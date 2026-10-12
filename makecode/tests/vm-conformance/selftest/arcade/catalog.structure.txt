@@ -304,6 +304,47 @@ pack arcade
           bag
             optional
               arg anon.string type=string anonymous derived
+  tile actuator actuator.arcade.play-sound async icon
+    call
+      optional
+        choice
+          bag
+            optional
+              arg anon.Sound type=Sound anonymous
+            optional
+              choice
+                arg modifier.playback.background modifier icon
+                arg modifier.playback.looping modifier icon
+  tile actuator actuator.arcade.play-tone async icon
+    call
+      optional
+        choice
+          bag
+            optional
+              arg anon.number type=number anonymous range={"min":0,"onExceed":"clamp"}
+            optional
+              arg parameter.to type=number range={"min":0,"onExceed":"clamp"} icon
+            optional
+              arg parameter.duration type=number range={"min":0,"onExceed":"clamp"} icon
+            optional
+              arg parameter.volume type=number range={"max":1,"min":0,"onExceed":"clamp"} icon
+            optional
+              choice
+                arg modifier.wave.sine modifier icon
+                arg modifier.wave.square modifier icon
+                arg modifier.wave.sawtooth modifier icon
+                arg modifier.wave.triangle modifier icon
+                arg modifier.wave.noise modifier icon
+            optional
+              choice
+                arg modifier.tone.vibrato modifier icon
+                arg modifier.tone.tremolo modifier icon
+                arg modifier.tone.warble modifier icon
+            optional
+              choice
+                arg modifier.playback.background modifier icon
+                arg modifier.playback.looping modifier icon
+  tile actuator actuator.arcade.stop-sounds icon
   overload eq(Image,Image) operator=eq operands=Image,Image returns=boolean
   overload ne(Image,Image) operator=ne operands=Image,Image returns=boolean
   overload eq(Sprite,Sprite) operator=eq operands=Sprite,Sprite returns=boolean

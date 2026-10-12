@@ -39,7 +39,9 @@
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
  * other, the unspeakable say lines in `EXPECTED_ARCADE_SAY_LINES` in that
  * order and no other, the unspeakable dialog lines in
- * `EXPECTED_ARCADE_DIALOG_LINES` in that order and no other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
+ * `EXPECTED_ARCADE_DIALOG_LINES` in that order and no other, the unusable
+ * tone number lines in `EXPECTED_ARCADE_TONE_LINES` in that order and no
+ * other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
  * order and no other, the unusable effect, sound and particle effect lines in
  * `EXPECTED_ARCADE_CHOICE_LINES` in that order and no other, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
@@ -618,6 +620,29 @@ const EXPECTED_ARCADE_CHECKS = [
   "a-bare-show-text-under-a-text-variable-shows-its-text-once-it-holds-some",
   "a-bare-show-text-under-the-a-button-shows-true",
   "a-bare-show-text-under-a-bump-whose-when-result-is-a-sprite-opens-nothing-and-its-rule-goes-on-at-once",
+  "sound-tiles-take-their-action-ids-from-the-manifest-the-play-tiles-asynchronous",
+  "a-bare-play-sound-plays-a-copy-of-ba-ding-of-its-own-and-resolves-once-it-has-played",
+  "play-sound-plays-the-melody-its-sound-names-and-a-sound-naming-none-plays-nothing-and-resolves-at-once",
+  "play-tone-given-nothing-but-a-pitch-a-duration-or-full-volume-plays-arcades-plain-tone",
+  "play-tone-given-to-a-wave-an-effect-or-a-lower-volume-plays-arcades-shaped-tone-with-them",
+  "play-tone-holds-its-pitch-and-to-at-0-or-above-and-its-volume-from-0-to-1",
+  "play-tone-reads-a-number-that-is-no-finite-number-as-its-default",
+  "a-tone-lasting-no-time-plays-nothing-and-resolves-at-once",
+  "a-shaped-tone-shorter-than-one-effect-step-plays-without-its-effect",
+  "in-background-resolves-at-once-and-a-call-site-starts-its-next-copy-only-once-its-last-has-ended",
+  "call-sites-in-the-background-play-independently",
+  "looping-starts-one-loop-per-call-site-replayed-until-stop-sounds",
+  "stop-sounds-stops-every-sound-and-ends-every-loop",
+  "a-call-sites-loop-starts-again-after-stop-sounds",
+  "a-bare-play-sound-rule-holds-until-ba-ding-ends-every-program-thinking-meanwhile",
+  "a-held-play-sound-rule-plays-once-per-completion-its-child-running-after-each",
+  "an-in-background-rule-goes-on-at-once-a-held-one-starting-its-next-copy-only-once-its-last-has-ended",
+  "an-in-background-rules-two-call-sites-play-independently",
+  "two-brains-playing-at-once-both-play",
+  "a-looping-rule-starts-one-loop-of-a-melody-and-of-a-tone-which-play-on-until-a-stop-sounds-rule",
+  "a-play-sound-placing-a-sound-variable-never-set-does-not-run",
+  "a-tone-rule-plays-arcades-shaped-tone-once-per-completion",
+  "a-brain-whose-sprite-is-destroyed-mid-sound-thinks-its-final-think-at-the-next-frame-without-waiting-for-it",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -688,6 +713,16 @@ const EXPECTED_ARCADE_DIALOG_LINES = ["WENDOO_DIALOG_UNSPEAKABLE"];
 const DIALOG_LINE = "wendoo WENDOO_DIALOG_UNSPEAKABLE";
 
 /**
+ * Every unusable tone number line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one for the whole run, however
+ * many play tones are given a number that is no finite number.
+ */
+const EXPECTED_ARCADE_TONE_LINES = ["WENDOO_TONE_UNUSABLE"];
+
+/** The line the arcade base pack logs for a play tone given a number that is no finite number. */
+const TONE_LINE = "wendoo WENDOO_TONE_UNUSABLE";
+
+/**
  * Every brain variable line the arcade selftest is expected to log, in
  * order, each without its `wendoo ` prefix: one for the whole run the first
  * time game code reads a sprite whose brain has not started, then one per
@@ -720,11 +755,11 @@ const CHOICE_LINES = [
 
 /**
  * Every unusable effect, sound and particle effect line the arcade selftest
- * is expected to log, in order, each without its `wendoo ` prefix: one for
- * the whole run, however many times the destroy tile is given a particle
- * effect naming nothing.
+ * is expected to log, in order, each without its `wendoo ` prefix: one each
+ * for the whole run, however many times the destroy tile is given a particle
+ * effect naming nothing, and the play-sound tile a sound naming nothing.
  */
-const EXPECTED_ARCADE_CHOICE_LINES = ["WENDOO_PARTICLE_EFFECT_UNUSABLE"];
+const EXPECTED_ARCADE_CHOICE_LINES = ["WENDOO_PARTICLE_EFFECT_UNUSABLE", "WENDOO_SOUND_UNUSABLE"];
 
 /**
  * Every check each arcade ending project is expected to report, by the
@@ -779,6 +814,9 @@ const ARCADE_ICONED_TILES = [
   "actuator.arcade.say",
   "actuator.arcade.show-text",
   "actuator.arcade.ask",
+  "actuator.arcade.play-sound",
+  "actuator.arcade.play-tone",
+  "actuator.arcade.stop-sounds",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -801,6 +839,16 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.layout.top",
   "modifier.layout.center",
   "modifier.layout.full",
+  "modifier.wave.sine",
+  "modifier.wave.square",
+  "modifier.wave.sawtooth",
+  "modifier.wave.triangle",
+  "modifier.wave.noise",
+  "modifier.tone.vibrato",
+  "modifier.tone.tremolo",
+  "modifier.tone.warble",
+  "modifier.playback.background",
+  "modifier.playback.looping",
 ];
 
 /** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id, and every page's own tile by the page family id `tile.page`. */
@@ -891,12 +939,13 @@ const ARCADE_HOST_REJECTIONS = [
  * game code reads and writes, the variables an update restart carries, the
  * game over's gate on a placed value reading nothing, the destroy and
  * destroyed tiles' programs, a brain watching a sprite destroyed with an
- * effect, the say tile's programs, and the show-text and ask tiles'
- * programs -- with the host the final-think check
+ * effect, the say tile's programs, the show-text and ask tiles' programs,
+ * and the sound tiles' programs -- with the host the final-think check
  * drains by hand, between the game over's scene and the destroy programs'
  * scene.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -1142,6 +1191,13 @@ function reportedSayLines(log) {
 function reportedDialogLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(DIALOG_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every unusable tone number line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedToneLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(TONE_LINE))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1516,6 +1572,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const dialogLines = reportedDialogLines(log);
   if (dialogLines.join("\n") !== EXPECTED_ARCADE_DIALOG_LINES.join("\n")) {
     failures.push(`unspeakable dialogs logged: ${dialogLines.join(" | ")}`);
+  }
+  const toneLines = reportedToneLines(log);
+  if (toneLines.join("\n") !== EXPECTED_ARCADE_TONE_LINES.join("\n")) {
+    failures.push(`unusable tone numbers logged: ${toneLines.join(" | ")}`);
   }
   const variableLines = reportedVariableLines(log);
   if (variableLines.join("\n") !== EXPECTED_ARCADE_VARIABLE_LINES.join("\n")) {

@@ -19,6 +19,8 @@ namespace wendoo {
     sprite: Sprite;
     /** The destinations the program's wandering moves head for, one per call site, and the random source picking them. */
     wander: WanderState;
+    /** The program's sound records: the copy each call site of a play plays in the background, and the loop it drives. */
+    sounds: SoundSites;
 
     /**
      * @param sprite - The sprite the program runs on.
@@ -27,6 +29,7 @@ namespace wendoo {
       super();
       this.sprite = sprite;
       this.wander = new WanderState();
+      this.sounds = new SoundSites();
     }
 
     /** Whether the sprite has been destroyed. */

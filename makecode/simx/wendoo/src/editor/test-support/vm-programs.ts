@@ -311,6 +311,12 @@ const ARCADE_SOURCES = [
   "dialog-motto.src.json",
   "dialog-button.src.json",
   "dialog-bumped.src.json",
+  "sound-ding.src.json",
+  "sound-background.src.json",
+  "sound-loop.src.json",
+  "sound-unset.src.json",
+  "tone-sweep.src.json",
+  "sound-doomed.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */

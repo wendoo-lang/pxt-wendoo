@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "soundSirenBack01",
+  "name": "Siren",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundBack000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "passes",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0soundPasses0"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundBack000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.literal->struct:<Sound>->siren",
+            "tile.modifier->modifier.playback.background"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0soundPasses0",
+                "tile.op->assign",
+                "tile.var->fVr0soundPasses0",
+                "tile.op->add",
+                "tile.literal->number:<number>->1"
+              ],
+              "children": [],
+              "ruleId": "fRu0soundBack001"
+            }
+          ],
+          "ruleId": "fRu0soundBack000"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.modifier->modifier.playback.background",
+            "tile.literal->struct:<Sound>->pewPew"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundBack002"
+        }
+      ]
+    }
+  ]
+}

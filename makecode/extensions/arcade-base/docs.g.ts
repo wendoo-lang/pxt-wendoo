@@ -151,15 +151,17 @@ namespace wendoo {
                 "\n" +
                 "# Sound\n" +
                 "\n" +
-                "A sound for the end of your game.\n" +
+                "One of Arcade's own sounds.\n" +
                 "\n" +
                 "---\n" +
                 "\n" +
-                "Each of these is one of Arcade's own sounds. Give one to **game over** to play it as the game ends:\n" +
-                "**DO game over win power up** plays power up for a win.\n" +
+                "Each of these is one of Arcade's own sounds. Give one to **play sound** to play it: **WHEN bump DO play\n" +
+                "sound ba ding**. Give one to **game over** to play it as the game ends: **DO game over win power up**\n" +
+                "plays power up for a win.\n" +
                 "\n" +
                 "## See Also\n" +
                 "\n" +
+                "`tile:tile.actuator->actuator.arcade.play-sound`\n" +
                 "`tile:tile.actuator->actuator.arcade.game-over`\n" +
                 "`tile:tile.var.factory->struct:<Effect>`\n";
         }
@@ -1149,6 +1151,175 @@ namespace wendoo {
                 "`tile:tile.sensor->sensor.arcade.in-range`\n" +
                 "`tile:tile.sensor->sensor.arcade.out-of-range`\n";
         }
+        if (name === "actuator.arcade.play-sound") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Play Sound\n" +
+                "\n" +
+                "Plays one of Arcade's sounds.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba\n" +
+                "ding**. On its own it plays ba ding. The rule waits for the sound to end, so a rule that stays on plays\n" +
+                "its sound again each time it finishes.\n" +
+                "\n" +
+                "Add **in background** to let the rule go on while the sound plays, or **looping** to play the sound over\n" +
+                "and over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same\n" +
+                "time.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.play-sound\", \"tile.literal->struct:<Sound>->baDing\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Ding when the sprite bumps something.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": []\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of play sound, as the editor offers it:\n" +
+                "- In either order, each at most once: an optional Sound value, and one of the modifiers [in background]\n" +
+                "  or [looping]. Nothing else: no duration, no volume, no Number, no output tile. To play a pitch, use\n" +
+                "  [play tone].\n" +
+                "- A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --\n" +
+                "  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- Bare, it plays ba ding. Sounds mix: plays from other rules, other sprites and other brains sound at\n" +
+                "  the same time, up to the five melodies Arcade plays at once.\n" +
+                "- With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the\n" +
+                "  rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never\n" +
+                "  once per frame. Other rules and brains keep running meanwhile.\n" +
+                "- [in background]: the rule goes on at once. While the copy this same tile last started is still\n" +
+                "  playing, the tile starts nothing, so a rule that stays on starts the next copy only after the last\n" +
+                "  one ends. Each placed tile keeps its own copy, and so does each sprite running the brain.\n" +
+                "- [looping]: the rule goes on at once, and the sound plays over and over until [stop sounds]. While its\n" +
+                "  loop runs, the same tile starts nothing more, so a rule that stays on keeps one loop; after [stop\n" +
+                "  sounds], its next firing starts the loop again.\n" +
+                "- A sound keeps playing after the brain or sprite that started it is gone, and a loop keeps playing\n" +
+                "  through Arcade's game-over screen, until [stop sounds] or the game restarts.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.var.factory->struct:<Sound>`\n" +
+                "`tile:tile.actuator->actuator.arcade.play-tone`\n" +
+                "`tile:tile.actuator->actuator.arcade.stop-sounds`\n";
+        }
+        if (name === "actuator.arcade.play-tone") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Play Tone\n" +
+                "\n" +
+                "Plays a tone at a pitch.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **play tone** on the **DO** side of a rule and give it a pitch in hertz: **DO play tone 440**\n" +
+                "plays an A for half a second. Give it a **duration** in seconds, a **volume** from 0 to 1, and **to**\n" +
+                "with a second pitch to slide between them: **DO play tone 440 to 880 for 1** swoops up for a second.\n" +
+                "\n" +
+                "Add a wave -- **sine**, **square**, **sawtooth**, **triangle** or **noise** -- to change how the tone\n" +
+                "sounds, and **vibrato**, **tremolo** or **warble** to make it shake. The rule waits for the tone to end,\n" +
+                "and **in background** and **looping** work as they do on **play sound**.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.button-a\"],\n" +
+                "      \"do\": [\n" +
+                "        \"tile.actuator->actuator.arcade.play-tone\",\n" +
+                "        \"tile.literal->number:<number>->440\",\n" +
+                "        \"tile.parameter->parameter.to\",\n" +
+                "        \"tile.literal->number:<number>->880\",\n" +
+                "        \"tile.parameter->parameter.duration\",\n" +
+                "        \"tile.literal->number:<number>->1\"\n" +
+                "      ],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Swoop up from 440 to 880 hertz over a second while A is held.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->440\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 440,\n" +
+                "      \"valueLabel\": \"440\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->880\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 880,\n" +
+                "      \"valueLabel\": \"880\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->number:<number>->1\",\n" +
+                "      \"valueType\": \"number:<number>\",\n" +
+                "      \"value\": 1,\n" +
+                "      \"valueLabel\": \"1\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of play tone, as the editor offers it:\n" +
+                "- In any order, each at most once: an optional Number, the pitch in hertz; the optional parameters [to]\n" +
+                "  (a Number, the pitch in hertz to slide to), [duration] (a Number of seconds) and [volume] (a Number\n" +
+                "  from 0 to 1); one wave modifier -- [sine], [square], [sawtooth], [triangle] or [noise]; one effect\n" +
+                "  modifier -- [vibrato], [tremolo] or [warble]; and one of [in background] or [looping]. A wave, an\n" +
+                "  effect and a playback modifier go together; two waves, two effects, or [in background] with [looping]\n" +
+                "  do not. No Sound value: to play one of Arcade's sounds, use [play sound].\n" +
+                "- [duration] is the shared parameter [say] and [destroy] also take; [play sound] takes none.\n" +
+                "- Defaults: pitch 440, duration 0.5 seconds, volume 1, no slide, no effect. A pitch or [to] below 0\n" +
+                "  reads as 0, which is silent; a duration below 0 reads as 0; a volume reads as 0 below 0 and as 1\n" +
+                "  above 1. A number that is no finite number -- an infinity or not-a-number -- reads as its default,\n" +
+                "  [to]'s being no slide.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- With nothing but a pitch and a duration, it is Arcade's own plain tone, a sine wave. With [to], a\n" +
+                "  wave, an effect or a volume below 1, it is Arcade's sound effect instead: it slides in a straight line\n" +
+                "  from the pitch to [to]'s, in the wave (sine when none is given), with the effect, at the volume.\n" +
+                "  Arcade plays its sound effects quieter than its plain tone.\n" +
+                "- A tone lasting 0 seconds plays nothing, and the rule goes on at once.\n" +
+                "- Holding, [in background] and [looping] work as they do on [play sound]: with no modifier the rule\n" +
+                "  holds until the tone ends, so a rule that stays on plays once per completion; [in background] goes on\n" +
+                "  at once and the same tile starts its next copy only after its last one ends; [looping] repeats the\n" +
+                "  tone until [stop sounds]. Tones mix with every other sound.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.parameter->parameter.duration`\n" +
+                "`tile:tile.actuator->actuator.arcade.play-sound`\n" +
+                "`tile:tile.actuator->actuator.arcade.stop-sounds`\n";
+        }
         if (name === "actuator.arcade.say") {
             return "```brain noframe do\n" +
                 "{ \"tile\": \"${tileId}\" }\n" +
@@ -1292,6 +1463,55 @@ namespace wendoo {
                 "`tile:tile.actuator->actuator.arcade.ask`\n" +
                 "`tile:tile.actuator->actuator.arcade.say`\n" +
                 "`tile:tile.sensor->sensor.arcade.button-a`\n";
+        }
+        if (name === "actuator.arcade.stop-sounds") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Stop Sounds\n" +
+                "\n" +
+                "Stops every sound.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **stop sounds** on the **DO** side of a rule to silence the game: **WHEN B button DO stop\n" +
+                "sounds**. It stops what **play sound** and **play tone** are playing and ends every **looping** sound.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.button-b\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.stop-sounds\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Silence every sound when B is pressed.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": []\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of stop sounds, as the editor offers it:\n" +
+                "- It takes nothing: no value, no modifier, no parameter.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It is Arcade's own stop all sounds: every melody and tone playing stops, every [looping] sound from\n" +
+                "  [play sound] or [play tone] ends, and so do the sounds and songs the game's own code plays.\n" +
+                "- It stops what is playing on the frame its rule fires, nothing started later: a rule that keeps firing\n" +
+                "  [play sound] [looping] starts its loop again on its next firing.\n" +
+                "- A rule waiting on a sound with no modifier goes on once that sound stops: a melody stops at once, a\n" +
+                "  tone at the end of its own time.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.play-sound`\n" +
+                "`tile:tile.actuator->actuator.arcade.play-tone`\n";
         }
         if (name === "output.answer") {
             return "```brain noframe do\n" +

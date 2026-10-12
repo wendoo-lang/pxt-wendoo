@@ -3,8 +3,8 @@
 The [Wendoo](https://wendoo.com) vocabulary every MakeCode Arcade game
 shares: the tiles a brain uses to read the controllers, notice what its
 sprite touches and what is near it, move its sprite, change how it looks,
-keep score, talk, show text and ask questions, destroy sprites, and end the
-game.
+keep score, talk, show text and ask questions, play sounds, destroy sprites,
+and end the game.
 
 - **dpad** -- a WHEN tile that is on while the dpad is held, carrying the
   direction it points. Add **up**, **down**, **left** or **right** to listen
@@ -77,6 +77,18 @@ game.
   and B for no: **WHEN bump DO ask "Eat it?"**. The game pauses until the
   player answers, and the rules tucked under it read the answer with
   **answer**: **WHEN answer DO destroy bumped sprite**.
+- **play sound** -- a DO tile that plays one of Arcade's sounds: **WHEN bump
+  DO play sound ba ding**. On its own it plays ba ding. The rule waits for
+  the sound to end; add **in background** to let it go on at once, or
+  **looping** to play the sound over and over until **stop sounds**.
+- **play tone** -- a DO tile that plays a tone at a pitch in hertz, 440 on
+  its own, for half a second or the **duration** you give it: **DO play tone
+  440 to 880 for 1** slides up for a second. Give it a **volume** from 0 to
+  1, a wave -- **sine**, **square**, **sawtooth**, **triangle** or **noise**
+  -- and **vibrato**, **tremolo** or **warble**. **in background** and
+  **looping** work as they do on **play sound**.
+- **stop sounds** -- a DO tile that stops every sound playing and ends every
+  **looping** sound: **WHEN B button DO stop sounds**.
 - **move** -- a DO tile that moves the sprite. Add **up**, **down**,
   **left** or **right** to pick its direction -- **up** and **right**
   together move on the diagonal. Add **toward** or **away from** to chase or

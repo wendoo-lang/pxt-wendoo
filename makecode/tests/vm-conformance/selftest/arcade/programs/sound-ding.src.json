@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "id": "soundDingHeld001",
+  "name": "Ding",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundDing000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "dings",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0soundDings00"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundDing000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0soundDings00",
+                "tile.op->assign",
+                "tile.var->fVr0soundDings00",
+                "tile.op->add",
+                "tile.literal->number:<number>->1"
+              ],
+              "children": [],
+              "ruleId": "fRu0soundDing001"
+            }
+          ],
+          "ruleId": "fRu0soundDing000"
+        }
+      ]
+    }
+  ]
+}

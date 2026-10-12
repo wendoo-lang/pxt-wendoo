@@ -1104,4 +1104,133 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
     }
   });
+
+  const playSound = "actuator.arcade.play-sound";
+  const playTone = "actuator.arcade.play-tone";
+  const stopSounds = "actuator.arcade.stop-sounds";
+  const buttonB = "sensor.arcade.button-b";
+  const baDing = `${LITERAL_ENTRY_PREFIX}Sound.baDing`;
+  const siren = `${LITERAL_ENTRY_PREFIX}Sound.siren`;
+  const inBackground = `${MODIFIER_ENTRY_PREFIX}playback.background`;
+  const looping = `${MODIFIER_ENTRY_PREFIX}playback.looping`;
+  const toPitch = `${PARAMETER_ENTRY_PREFIX}to`;
+  const toneDuration = `${PARAMETER_ENTRY_PREFIX}duration`;
+  const toneVolume = `${PARAMETER_ENTRY_PREFIX}volume`;
+  const waves = ["sine", "square", "sawtooth", "triangle", "noise"].map(
+    (wave) => `${MODIFIER_ENTRY_PREFIX}wave.${wave}`
+  );
+  const toneEffects = ["vibrato", "tremolo", "warble"].map((effect) => `${MODIFIER_ENTRY_PREFIX}tone.${effect}`);
+  const [sine = "", square = ""] = waves;
+  const [vibrato = "", tremolo = ""] = toneEffects;
+
+  it("offers each playback modifier at play sound and play tone until one is placed, and none at stop sounds", () => {
+    for (const playback of [inBackground, looping]) {
+      for (const play of [playSound, playTone]) {
+        assert.ok(arcadeOffersLiteral(playback, [], [play]), `${play} ${playback}`);
+        assert.equal(arcadeOffersLiteral(playback, [], [play, inBackground]), false, `${play} ${playback}`);
+      }
+      assert.ok(arcadeOffersLiteral(playback, [], [playSound, siren]), playback);
+      assert.equal(arcadeOffersLiteral(playback, [], [stopSounds]), false, playback);
+    }
+  });
+
+  it("offers each wave and effect modifier at play tone until one of its kind is placed, and none at play sound", () => {
+    for (const modifier of [...waves, ...toneEffects]) {
+      assert.ok(arcadeOffersLiteral(modifier, [], [playTone]), modifier);
+      assert.ok(arcadeOffersLiteral(modifier, [], [playTone, NUMBER_LITERAL, looping]), modifier);
+      assert.equal(arcadeOffersLiteral(modifier, [], [playSound]), false, modifier);
+    }
+    for (const wave of waves) assert.equal(arcadeOffersLiteral(wave, [], [playTone, square]), false, wave);
+    for (const effect of toneEffects) assert.equal(arcadeOffersLiteral(effect, [], [playTone, tremolo]), false, effect);
+    assert.ok(arcadeOffersLiteral(vibrato, [], [playTone, square]));
+    assert.ok(arcadeOffersLiteral(sine, [], [playTone, vibrato]));
+  });
+
+  it("offers the to, duration and volume parameters at play tone, and none at play sound", () => {
+    for (const parameter of [toPitch, toneDuration, toneVolume]) {
+      assert.ok(arcadeOffersLiteral(parameter, [], [playTone]), parameter);
+      assert.equal(arcadeOffersLiteral(parameter, [], [playSound]), false, parameter);
+    }
+  });
+
+  for (const [sentence, when, act] of [
+    ["a bare play sound under the A button", [buttonA], [playSound]],
+    ["play sound given a sound under bump", [bump], [playSound, baDing]],
+    ["play sound given a sound, then in background", [buttonA], [playSound, siren, inBackground]],
+    ["play sound looping, then a sound", [buttonA], [playSound, looping, siren]],
+    ["a bare play tone", [buttonA], [playTone]],
+    ["play tone given a pitch", [buttonA], [playTone, NUMBER_LITERAL]],
+    [
+      "play tone given a pitch, to, a duration, a wave and an effect",
+      [buttonA],
+      [playTone, NUMBER_LITERAL, toPitch, NUMBER_LITERAL, toneDuration, NUMBER_LITERAL, square, vibrato],
+    ],
+    [
+      "play tone given an effect, a volume, a wave, then a pitch, looping",
+      [buttonA],
+      [playTone, tremolo, toneVolume, NUMBER_LITERAL, sine, NUMBER_LITERAL, looping],
+    ],
+    ["stop sounds under the B button", [buttonB], [stopSounds]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("refuses play sound given two sounds, a number or both playback modifiers, play tone given a sound, two waves or two effects, and stop sounds given anything", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [playSound, baDing, siren],
+      [playSound, NUMBER_LITERAL],
+      [playSound, inBackground, looping],
+      [playSound, toneDuration, NUMBER_LITERAL],
+      [playTone, baDing],
+      [playTone, NUMBER_LITERAL, NUMBER_LITERAL],
+      [playTone, sine, square],
+      [playTone, vibrato, tremolo],
+      [playTone, inBackground, looping],
+      [stopSounds, baDing],
+      [stopSounds, looping],
+    ]) {
+      assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([buttonA], act), [], act.join(" "));
+    }
+  });
+
+  it("projects play sound, play tone and stop sounds with the words their catalog entries carry", () => {
+    const wordOf = (tileName: string) => arcadeCarriedTileLanguage(tileName)?.form ?? arcadeCarriedTileLabel(tileName);
+    const slotWord = (tileName: string, slot: string) =>
+      arcadeCarriedSlotLanguage(tileName, slot)?.form ?? arcadeCarriedSlotLabel(tileName, slot);
+    const textOf = (act: string[]) => arcadeRuleSentence([], act).words.map((word) => word.text);
+
+    const pitched = textOf([playTone, NUMBER_LITERAL]);
+    const dinged = textOf([playSound, baDing]);
+
+    assert.equal(pitched.length, 2);
+    assert.equal(dinged.length, 2);
+    assert.deepEqual(textOf([playSound, siren, inBackground]), [
+      wordOf(playSound),
+      textOf([playSound, siren])[1],
+      slotWord(playSound, "modifier.playback.background"),
+    ]);
+    assert.deepEqual(
+      textOf([playTone, NUMBER_LITERAL, toPitch, NUMBER_LITERAL, toneDuration, NUMBER_LITERAL, square, vibrato]),
+      [
+        wordOf(playTone),
+        pitched[1],
+        slotWord(playTone, "parameter.to"),
+        pitched[1],
+        slotWord(playTone, "parameter.duration"),
+        pitched[1],
+        slotWord(playTone, "modifier.wave.square"),
+        slotWord(playTone, "modifier.tone.vibrato"),
+      ]
+    );
+    assert.deepEqual(textOf([playTone, toneVolume, NUMBER_LITERAL, looping]), [
+      wordOf(playTone),
+      slotWord(playTone, "parameter.volume"),
+      pitched[1],
+      slotWord(playTone, "modifier.playback.looping"),
+    ]);
+    assert.deepEqual(textOf([stopSounds]), [wordOf(stopSounds)]);
+  });
 });

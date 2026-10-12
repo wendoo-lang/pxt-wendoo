@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "soundDoomedDing1",
+  "name": "Doomed",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundDoomed0",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundDoomed0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.literal->struct:<Sound>->bigCrash"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundDoomed0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score"
+          ],
+          "children": [],
+          "ruleId": "fRu0soundDoomed1"
+        }
+      ]
+    }
+  ]
+}

@@ -1969,4 +1969,349 @@ namespace wendoo {
       . . . . . . . . . . . . . . . .
     `;
   }
+
+  /** Icon of the play-sound actuator: a gray speaker, a teal musical note beside it. */
+  //% hidden
+  export function playSoundIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . 6 . . .
+      . . . . . f . . . . . . 6 6 . .
+      . . . . f f . . . . . . 6 6 6 .
+      . . . f c f . . . . . . 6 . 6 6
+      f f f c c f . . . . . . 6 . . 6
+      f c c c c f . . . . . . 6 . . 6
+      f c c c c f . . . . . . 6 . 6 .
+      f c c c c f . . . . . . 6 . . .
+      f c c c c f . . . 6 6 6 6 . . .
+      f f f c c f . . 6 6 6 6 6 . . .
+      . . . f c f . . 6 6 6 6 . . . .
+      . . . . f f . . . . 6 . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the play-tone actuator: a gray speaker, a blue wave beside it. */
+  //% hidden
+  export function playToneIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . f f . . . . . . . . . .
+      . . . f c f . . . 8 8 . . . . .
+      f f f c c f . . 8 8 8 8 . . . .
+      f c c c c f . . 8 . . 8 . . . .
+      f c c c c f . 8 8 . . 8 8 . . .
+      f c c c c f . 8 . . . . 8 . . .
+      f c c c c f . . . . . . 8 8 . .
+      f f f c c f . . . . . . . 8 8 8
+      . . . f c f . . . . . . . 8 8 8
+      . . . . f f . . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the stop-sounds actuator: a gray speaker, a red stop square beside it. */
+  //% hidden
+  export function stopSoundsIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . f f . . . . . . . . . .
+      . . . f c f . . . . . . . . . .
+      f f f c c f . . . 2 2 2 2 2 2 .
+      f c c c c f . . . 2 2 2 2 2 2 .
+      f c c c c f . . . 2 2 2 2 2 2 .
+      f c c c c f . . . 2 2 2 2 2 2 .
+      f c c c c f . . . 2 2 2 2 2 2 .
+      f f f c c f . . . 2 2 2 2 2 2 .
+      . . . f c f . . . . . . . . . .
+      . . . . f f . . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the shared `to` parameter: a low blue bar at the lower left, a high one at the upper right, a black arrow rising from the low one to the high one. */
+  //% hidden
+  export function toParameterIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . 8 8 8 8 8
+      . . . . . . . . . . . 8 8 8 8 8
+      . . . . . . . f f f f . . . . .
+      . . . . . . . . . f f . . . . .
+      . . . . . . . . f . f . . . . .
+      . . . . . . . f . . f . . . . .
+      . . . . . . f . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . f . . . . . . . . . . .
+      . . . f . . . . . . . . . . . .
+      8 8 8 8 . . . . . . . . . . . .
+      8 8 8 8 . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the shared `volume` parameter: a gray speaker, three green level bars rising beside it. */
+  //% hidden
+  export function volumeParameterIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . f . . . . . . . . . .
+      . . . . f f . . . . . . . . . .
+      . . . f c f . . . . . . . 7 7 .
+      f f f c c f . . . . . . . 7 7 .
+      f c c c c f . . . . . . . 7 7 .
+      f c c c c f . . . . 7 7 . 7 7 .
+      f c c c c f . . . . 7 7 . 7 7 .
+      f c c c c f . . . . 7 7 . 7 7 .
+      f f f c c f . 7 7 . 7 7 . 7 7 .
+      . . . f c f . 7 7 . 7 7 . 7 7 .
+      . . . . f f . 7 7 . 7 7 . 7 7 .
+      . . . . . f . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `sine` wave modifier: one smooth blue wave, a hump up then a hump down. */
+  //% hidden
+  export function sineWaveIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . 8 . . . . . . . . . . .
+      . . . 8 8 8 . . . . . . . . . .
+      . . 8 8 . 8 8 . . . . . . . . .
+      . 8 8 . . . 8 8 . . . . . . . .
+      . 8 . . . . . 8 . . . . . . . .
+      8 . . . . . . . 8 . . . . . . .
+      8 . . . . . . . 8 . . . . . . .
+      . . . . . . . . . 8 . . . . . 8
+      . . . . . . . . . 8 8 . . . 8 8
+      . . . . . . . . . . 8 8 . 8 8 .
+      . . . . . . . . . . . 8 8 8 . .
+      . . . . . . . . . . . . 8 . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `square` wave modifier: a blue wave stepping straight up and down between two levels. */
+  //% hidden
+  export function squareWaveIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . 8 8 8 8 8 8 8 . . 8 8 8 8
+      . . . 8 8 8 8 8 8 8 . . 8 8 8 8
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      . . . 8 8 . . . 8 8 . . 8 8 . .
+      8 8 8 8 8 . . . 8 8 8 8 8 8 . .
+      8 8 8 8 8 . . . 8 8 8 8 8 8 . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `sawtooth` wave modifier: a blue wave ramping up and dropping straight down, twice. */
+  //% hidden
+  export function sawtoothWaveIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . 8 8 . . . . . . 8 8
+      . . . . . 8 8 8 . . . . . 8 8 8
+      . . . . 8 8 8 8 . . . . 8 8 8 8
+      . . . . 8 . 8 8 . . . . 8 . 8 8
+      . . . 8 8 . 8 8 . . . 8 8 . 8 8
+      . . 8 8 . . 8 8 . . 8 8 . . 8 8
+      . . 8 . . . 8 8 . . 8 . . . 8 8
+      . 8 8 . . . 8 8 . 8 8 . . . 8 8
+      8 8 . . . . 8 8 8 8 . . . . 8 8
+      8 . . . . . 8 8 8 . . . . . 8 8
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `triangle` wave modifier: a blue zigzag of straight slopes, two peaks. */
+  //% hidden
+  export function triangleWaveIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . 8 . . . . . . . 8 . . .
+      . . . . 8 . . . . . . . 8 . . .
+      . . . 8 8 8 . . . . . 8 8 8 . .
+      . . 8 8 . 8 8 . . . 8 8 . 8 8 .
+      . . 8 . . . 8 . . . 8 . . . 8 .
+      . . 8 . . . 8 . . . 8 . . . 8 .
+      . 8 8 . . . 8 8 . 8 8 . . . 8 8
+      8 8 . . . . . 8 8 8 . . . . . 8
+      8 . . . . . . . 8 . . . . . . .
+      8 . . . . . . . 8 . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `noise` wave modifier: blue and light blue static, columns of uneven height. */
+  //% hidden
+  export function noiseWaveIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . 8 . . . . . . . . .
+      . . . 9 . . 8 . . . 8 . . . 8 .
+      . 9 . 9 . . 8 . 8 . 8 . 8 . 8 .
+      . 9 . 9 8 . 8 . 8 9 8 . 8 . 8 9
+      8 9 . 9 8 . 8 9 8 9 8 . 8 9 8 9
+      8 9 8 9 8 9 8 9 8 9 8 9 8 9 8 9
+      8 9 8 9 8 9 8 9 8 9 8 9 8 9 8 9
+      8 9 8 9 8 9 8 9 8 9 8 9 8 9 8 9
+      8 9 8 9 8 . 8 9 8 9 8 9 8 . 8 9
+      8 9 . 9 8 . 8 9 . 9 8 9 8 . 8 9
+      . 9 . 9 8 . 8 9 . 9 . 9 8 . 8 .
+      . 9 . 9 . . 8 . . 9 . . 8 . . .
+      . . . 9 . . 8 . . . . . 8 . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `vibrato` effect modifier: a purple line wiggling quickly up and down. */
+  //% hidden
+  export function vibratoIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . a . . . a . . . a . . . a . .
+      a a a . a a a . a a a . a a a .
+      a . a a a . a a a . a a a . a a
+      . . . a . . . a . . . a . . . a
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `tremolo` effect modifier: a purple line pulsing between thick and thin. */
+  //% hidden
+  export function tremoloIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      a a . . a a . . a a . . a a . .
+      a a . . a a . . a a . . a a . .
+      a a a a a a a a a a a a a a a a
+      a a a a a a a a a a a a a a a a
+      a a . . a a . . a a . . a a . .
+      a a . . a a . . a a . . a a . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `warble` effect modifier: a purple line wobbling in wide swings. */
+  //% hidden
+  export function warbleIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . a a . . . . . . a a . . . .
+      . . a a . . . . . . a a . . . .
+      . a a a a . . . . a a a a . . .
+      . a . a a . . . . a . a a . . .
+      . a . . a . . . . a . . a . . .
+      a a . . a a . . a a . . a a . .
+      a . . . a a a a a . . . a a a a
+      . . . . . a a a . . . . . a a a
+      . . . . . . a . . . . . . . a .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `in background` playback modifier: a teal musical note, a black arrow pointing on past it. */
+  //% hidden
+  export function inBackgroundIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . 6 . . . . . . . . . . .
+      . . . . 6 6 . . . . . . . . . .
+      . . . . 6 6 6 . . . . . . . . .
+      . . . . 6 . 6 6 . . . . . . . .
+      . . . . 6 . . 6 . . . . . . . .
+      . . . . 6 . . 6 . . . . . . . .
+      . . . . 6 . 6 . . . . . . . . .
+      . 6 6 6 6 . . . . . . . . . . .
+      6 6 6 6 6 . . . . . . . f . . .
+      6 6 6 6 . . . . . . . . f f . .
+      . . 6 . . . f f f f f f f f f .
+      . . . . . . f f f f f f f f f .
+      . . . . . . . . . . . . f f . .
+      . . . . . . . . . . . . f . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `looping` playback modifier: a green ring of an arrow turning round to its own tail. */
+  //% hidden
+  export function loopingIcon(): Image {
+    return img`
+      . . . . . . . . . 7 . . . . . .
+      . . . . . . . 7 7 7 7 . . . . .
+      . . . . 7 7 7 7 7 7 7 7 . . . .
+      . . . 7 7 7 7 7 7 7 7 . . . . .
+      . . 7 7 7 . . . . 7 . . . . . .
+      . . 7 7 . . . . . . . . . . . .
+      . . 7 7 . . . . . . . . 7 7 . .
+      . 7 7 7 . . . . . . . . 7 7 7 .
+      . 7 7 7 . . . . . . . . 7 7 7 .
+      . . 7 7 . . . . . . . . 7 7 . .
+      . . 7 7 . . . . . . . . 7 7 . .
+      . . 7 7 7 . . . . . . 7 7 7 . .
+      . . . 7 7 7 7 7 7 7 7 7 7 . . .
+      . . . . 7 7 7 7 7 7 7 7 . . . .
+      . . . . . . . 7 7 . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
 }

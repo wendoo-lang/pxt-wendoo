@@ -570,10 +570,16 @@ the current slice alone.
       owning each scene's dialogs: one queue per scene, its dialogs shown
       one at a time in the order asked for, from a fiber of the queue's own,
       through Arcade's own `game.showLongText` and `game.ask`; asking never
-      blocks the drain), the `dpad`, `A button`, `B button`, `bump`,
-      `in range`, `out of range`, `myself` and `destroyed` sensors and the
-      `move`, `add score`, `game over`, `destroy`, `say`, `show text` and
-      `ask` actuators (dpad
+      blocks the drain), the sound module (one module owning the sounds
+      programs play: every sound an Arcade playable played through Arcade's
+      own `music.play`, so sounds from different call sites mix; per call
+      site of a play, in the sprite's attachment, the copy it plays in the
+      background and the loop it drives; a play its rule waits on played
+      from a fiber of its own, so playing never blocks the drain), the
+      `dpad`, `A button`, `B button`, `bump`, `in range`, `out of range`,
+      `myself` and `destroyed` sensors and the `move`, `add score`, `game
+      over`, `destroy`, `say`, `show text`, `ask`, `play sound`, `play tone`
+      and `stop sounds` actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
       reading player one's too; `A button` and `B button` are on while that
@@ -624,7 +630,31 @@ the current slice alone.
       no, and writes the answer, a switch, to its declared output `answer`
       once the button that answered is let go, before its rule resumes, so
       the rules below it read it once they run -- an ask opening nothing
-      writes nil to it; `myself` reads the
+      writes nil to it; play sound and play tone are asynchronous too:
+      play sound plays its optional anonymous `Sound`, else ba ding, each
+      play a copy of the melody of its own, a value naming no melody playing
+      nothing; play tone plays its optional anonymous number of hertz, else
+      440, for the shared `duration` parameter in seconds, else 0.5, at its
+      shared `volume` parameter from 0 to 1, else 1 -- Arcade's own plain
+      tone, `music.tonePlayable`, given no shared `to` parameter, no wave and
+      no effect at full volume, else Arcade's shaped tone,
+      `music.createSoundEffect`, sliding in a straight line from the pitch
+      to `to`'s, in the wave one of the shared `modifier.wave.*` fragments
+      picks (sine, square, sawtooth, triangle or noise; sine by default),
+      with the effect one of the shared `modifier.tone.*` fragments picks
+      (vibrato, tremolo or warble), at the volume times 255 -- the pitch,
+      `to` and the duration held at 0 or above and the volume from 0 to 1, a
+      number that is no finite number reading as its slot's default, logged
+      once per run, and a tone lasting no time playing nothing; given
+      neither of the shared `modifier.playback.*` fragments, each holds its
+      rule until its sound has played, so a held rule plays once per
+      completion; given `in background` it goes on at once, its call site
+      starting no copy while its last one plays; given `looping` it starts
+      its call site's loop, Arcade's own loop of a playable, unless that
+      loop still runs, and goes on at once; stop sounds stops every sound
+      and every loop of the current scene through Arcade's own
+      `music.stopAllSounds`; a sound plays on after the program that played
+      it ends; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,

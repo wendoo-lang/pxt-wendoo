@@ -637,7 +637,7 @@
             }
           ],
           "label": "sound",
-          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Sound>->baDing\",\n    \"tile.literal->struct:<Sound>->wawawawaa\",\n    \"tile.literal->struct:<Sound>->jumpUp\",\n    \"tile.literal->struct:<Sound>->jumpDown\",\n    \"tile.literal->struct:<Sound>->powerUp\",\n    \"tile.literal->struct:<Sound>->powerDown\",\n    \"tile.literal->struct:<Sound>->magicWand\",\n    \"tile.literal->struct:<Sound>->siren\",\n    \"tile.literal->struct:<Sound>->pewPew\",\n    \"tile.literal->struct:<Sound>->knock\",\n    \"tile.literal->struct:<Sound>->footstep\",\n    \"tile.literal->struct:<Sound>->thump\",\n    \"tile.literal->struct:<Sound>->smallCrash\",\n    \"tile.literal->struct:<Sound>->bigCrash\",\n    \"tile.literal->struct:<Sound>->zapped\",\n    \"tile.literal->struct:<Sound>->buzzer\",\n    \"tile.literal->struct:<Sound>->sonar\",\n    \"tile.literal->struct:<Sound>->spooky\",\n    \"tile.literal->struct:<Sound>->beamUp\"\n  ]\n}\n```\n\n# Sound\n\nA sound for the end of your game.\n\n---\n\nEach of these is one of Arcade's own sounds. Give one to **game over** to play it as the game ends:\n**DO game over win power up** plays power up for a win.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.game-over`\n`tile:tile.var.factory->struct:<Effect>`\n",
+          "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<Sound>->baDing\",\n    \"tile.literal->struct:<Sound>->wawawawaa\",\n    \"tile.literal->struct:<Sound>->jumpUp\",\n    \"tile.literal->struct:<Sound>->jumpDown\",\n    \"tile.literal->struct:<Sound>->powerUp\",\n    \"tile.literal->struct:<Sound>->powerDown\",\n    \"tile.literal->struct:<Sound>->magicWand\",\n    \"tile.literal->struct:<Sound>->siren\",\n    \"tile.literal->struct:<Sound>->pewPew\",\n    \"tile.literal->struct:<Sound>->knock\",\n    \"tile.literal->struct:<Sound>->footstep\",\n    \"tile.literal->struct:<Sound>->thump\",\n    \"tile.literal->struct:<Sound>->smallCrash\",\n    \"tile.literal->struct:<Sound>->bigCrash\",\n    \"tile.literal->struct:<Sound>->zapped\",\n    \"tile.literal->struct:<Sound>->buzzer\",\n    \"tile.literal->struct:<Sound>->sonar\",\n    \"tile.literal->struct:<Sound>->spooky\",\n    \"tile.literal->struct:<Sound>->beamUp\"\n  ]\n}\n```\n\n# Sound\n\nOne of Arcade's own sounds.\n\n---\n\nEach of these is one of Arcade's own sounds. Give one to **play sound** to play it: **WHEN bump DO play\nsound ba ding**. Give one to **game over** to play it as the game ends: **DO game over win power up**\nplays power up for a win.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.play-sound`\n`tile:tile.actuator->actuator.arcade.game-over`\n`tile:tile.var.factory->struct:<Effect>`\n",
           "icon": "87041000100000000000000000000000000000000000660000000000006066060000000000666606000000000066660600000000006666060000000000666606606666666666660060666666666606000006000000000000006600000000000000600000000000000060066006000000000066660000000000000000000000000000000000000000"
         },
         {
@@ -1880,6 +1880,261 @@
           "label": "ask",
           "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Ask\n\nAsks the player a yes-or-no question.\n\n---\n\nPlace **ask** on the **DO** side of a rule and give it a question: **WHEN bump DO ask \"Eat it?\"**. The\nplayer answers with A for yes or B for no. While the question is up, the whole game pauses, and the\nrule waits for the answer. Without any text, ask asks what the WHEN found.\n\n## Answer\n\nThe answer goes into `tile:tile.out->boolean:<boolean>.answer`, for the rules tucked under the **ask**\nto read once it is given: **WHEN answer DO destroy bumped sprite** eats only on a yes.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.ask\", \"tile.literal->string:<string>->Eat it?\"],\n      \"children\": [\n        {\n          \"version\": 1,\n          \"when\": [\"tile.out->boolean:<boolean>.answer\"],\n          \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n          \"children\": [],\n          \"comment\": \"Eat what this sprite bumps, but only on a yes.\"\n        }\n      ]\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->Eat it?\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"Eat it?\",\n      \"valueLabel\": \"Eat it?\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of ask, as the editor offers it:\n- At most one optional text value: the question. Nothing else: no modifier, no Sprite.\n\nWhat it does:\n- It asks the question in Arcade's own yes-or-no dialog: A answers yes, B answers no.\n- The rule holds until the question is answered: a rule under it does not get its turn, and the rule\n  cannot fire again until then.\n- The whole game pauses while the question is up: every brain stops thinking and every sprite stops,\n  the way Arcade pauses the game for any dialog. Questions and boxes asked for at once open one after\n  another, in the order they were asked for.\n- It writes the answer to its answer output, tile.out->boolean:<boolean>.answer, whose own page holds\n  its notes.\n- The rule goes on once the button that answered the question is let go.\n- With no text placed, it asks the rule's WHEN value: a number, a text or a switch, printed as Arcade\n  prints them. Any other WHEN value -- a sprite, a position, or nothing -- and empty text ask nothing:\n  answer holds nothing, and the rule goes on at once.\n```\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.show-text`\n`tile:tile.actuator->actuator.arcade.destroy`\n`tile:tile.sensor->sensor.arcade.bump`\n",
           "icon": "87041000100000000000000000000000f0ffffffffffff0ff09999999999990ff09999999999990ff09999999999990ff09911999999990ff01911999999990ff01999991119910ff01999191119910ff01911119999990ff09911919999990ff09999999999990ff09999999999990ff09999999999990ff0ffffffffffff0f0000000000000000"
+        },
+        {
+          "name": "actuator.arcade.play-sound",
+          "kind": "actuator",
+          "async": true,
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.Sound",
+                          "type": "Sound",
+                          "anonymous": true
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.playback.background",
+                              "modifier": true,
+                              "label": "in background",
+                              "icon": "87041000100000000000000060060000000000006606000000000000666600000000000066060000606666666600000000660000000000000060066000f00f000000660600f00f000000000000f00f000000000000f00f000000000000f00f000000000000f00f0000000000f0ffff0f0000000000ffff000000000000f00f000000000000000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.playback.looping",
+                              "modifier": true,
+                              "label": "looping",
+                              "icon": "87041000100000000000000000000000000000700700000000007777777700000070777777770700007707000070770000770000000077000077000000007700707700000000770770770000000077077777070000007700707700000000770000070000007077000000007777770700000000777777000000000070070000000000000000000000"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "play sound",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Play Sound\n\nPlays one of Arcade's sounds.\n\n---\n\nPlace **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba\nding**. On its own it plays ba ding. The rule waits for the sound to end, so a rule that stays on plays\nits sound again each time it finishes.\n\nAdd **in background** to let the rule go on while the sound plays, or **looping** to play the sound over\nand over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same\ntime.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.play-sound\", \"tile.literal->struct:<Sound>->baDing\"],\n      \"children\": [],\n      \"comment\": \"Ding when the sprite bumps something.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nGrammar of play sound, as the editor offers it:\n- In either order, each at most once: an optional Sound value, and one of the modifiers [in background]\n  or [looping]. Nothing else: no duration, no volume, no Number, no output tile. To play a pitch, use\n  [play tone].\n- A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --\n  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing.\n\nWhat it does:\n- Bare, it plays ba ding. Sounds mix: plays from other rules, other sprites and other brains sound at\n  the same time, up to the five melodies Arcade plays at once.\n- With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the\n  rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never\n  once per frame. Other rules and brains keep running meanwhile.\n- [in background]: the rule goes on at once. While the copy this same tile last started is still\n  playing, the tile starts nothing, so a rule that stays on starts the next copy only after the last\n  one ends. Each placed tile keeps its own copy, and so does each sprite running the brain.\n- [looping]: the rule goes on at once, and the sound plays over and over until [stop sounds]. While its\n  loop runs, the same tile starts nothing more, so a rule that stays on keeps one loop; after [stop\n  sounds], its next firing starts the loop again.\n- A sound keeps playing after the brain or sprite that started it is gone, and a loop keeps playing\n  through Arcade's game-over screen, until [stop sounds] or the game restarts.\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Sound>`\n`tile:tile.actuator->actuator.arcade.play-tone`\n`tile:tile.actuator->actuator.arcade.stop-sounds`\n",
+          "icon": "87041000100000000000f0ffff0f00000000f0cccc0f00000000f0cccc0f00000000cfccccfc000000f0cccccccc0f0000ffffffffffff000000000000000000000000000000000000000000006600000000000060660000000000006066060000000000606600006066666666060000006600000000000000600660000000000000660600000000"
+        },
+        {
+          "name": "actuator.arcade.play-tone",
+          "kind": "actuator",
+          "async": true,
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.number",
+                          "type": "number",
+                          "anonymous": true,
+                          "range": {
+                            "min": 0,
+                            "onExceed": "clamp"
+                          },
+                          "unit": "Hz"
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "parameter.to",
+                          "type": "number",
+                          "range": {
+                            "min": 0,
+                            "onExceed": "clamp"
+                          },
+                          "unit": "Hz",
+                          "label": "to",
+                          "language": {
+                            "form": "to"
+                          },
+                          "icon": "87041000100000000000000000008800000000000000880000000000000088000000000000f0880000000000000f000000000000f0000000000000000f00000000000ff00000000000000f0f000000000000ff00000000000000ffff0000000000880000000000000088000000000000008800000000000000880000000000000088000000000000"
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "parameter.duration",
+                          "type": "number",
+                          "range": {
+                            "min": 0,
+                            "onExceed": "clamp"
+                          },
+                          "unit": "s",
+                          "label": "duration",
+                          "language": {
+                            "form": "for"
+                          },
+                          "icon": "87041000100000000000c0cccc00000000c01c1111cc0000001c111111110c00c01111111111c100c01111111111c1001c1111111111110c1c1111111111110c1cffffff1111110c9c9999f91111110c9c9999991f11110c9c9999991f11110cc0999999f911c100c0999999f911c100009c9999991f0c0000c09c9999cc00000000c0cccc000000"
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "parameter.volume",
+                          "type": "number",
+                          "range": {
+                            "min": 0,
+                            "max": 1,
+                            "onExceed": "clamp"
+                          },
+                          "label": "volume",
+                          "language": {
+                            "form": "at volume"
+                          },
+                          "icon": "87041000100000000000f0ffff0f00000000f0cccc0f00000000f0cccc0f00000000cfccccfc000000f0cccccccc0f0000ffffffffffff000000000000000000000000000077070000000000007707000000000000000000000000707777070000000070777707000000000000000000000077777777070000007777777707000000000000000000"
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.wave.sine",
+                              "modifier": true,
+                              "label": "sine",
+                              "icon": "87041000100000000000008008000000000080080000000000008800000000000080080000000000008800000000000000800800000000000000880000000000000080080000000000000080080000000000000080080000000000000088000000000000008008000000000000008800000000000080080000000000008800000000000080080000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.wave.square",
+                              "modifier": true,
+                              "label": "square",
+                              "icon": "87041000100000000000000000800800000000000080080000000000008008000080888888880800008088888888080000800800000000000080080000000000008008000000000000808888888808000080888888880800000000000080080000000000008008000080888888880800008088888888080000800800000000000080080000000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.wave.sawtooth",
+                              "modifier": true,
+                              "label": "sawtooth",
+                              "icon": "87041000100000000000000000800800000000000088000000000000880800000000008008000000000080880000000000008800000000000080888888880800008088888888080000000000008008000000000000880000000000008808000000000080080000000000808800000000000088000000000000808888888808000080888888880800"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.wave.triangle",
+                              "modifier": true,
+                              "label": "triangle",
+                              "icon": "87041000100000000000000000880800000000008008000000000088880000000000800800000000008088000000000000008008000000000000008888000000000000008008000000000000008808000000000080080000000000888800000000008008000000000080880000000000000080080000000000000088880000000000000080080000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.wave.noise",
+                              "modifier": true,
+                              "label": "noise",
+                              "icon": "87041000100000000000808888080000009099999999090000000088880000000099999999999900000088888888000000000099090000008088888888888800000090999999000000808888880000000000999999990900008888888808000000000099999900000080888888888800000090990900000000888888888800000000999999090000"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.tone.vibrato",
+                              "modifier": true,
+                              "label": "vibrato",
+                              "language": {
+                                "form": "with vibrato"
+                              },
+                              "icon": "8704100010000000000000a00a000000000000aa00000000000000a00a00000000000000aa000000000000a00a000000000000aa00000000000000a00a00000000000000aa000000000000a00a000000000000aa00000000000000a00a00000000000000aa000000000000a00a000000000000aa00000000000000a00a00000000000000aa000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.tone.tremolo",
+                              "modifier": true,
+                              "label": "tremolo",
+                              "language": {
+                                "form": "with tremolo"
+                              },
+                              "icon": "87041000100000000000a0aaaa0a00000000a0aaaa0a0000000000a00a000000000000a00a0000000000a0aaaa0a00000000a0aaaa0a0000000000a00a000000000000a00a0000000000a0aaaa0a00000000a0aaaa0a0000000000a00a000000000000a00a0000000000a0aaaa0a00000000a0aaaa0a0000000000a00a000000000000a00a000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.tone.warble",
+                              "modifier": true,
+                              "label": "warble",
+                              "language": {
+                                "form": "with warble"
+                              },
+                              "icon": "8704100010000000000000a00a0000000000aaaa0000000000aa0a000000000000aaaa00000000000000aaaa0a000000000000a0aa00000000000000aa0a000000000000aa000000000000a00a0000000000aaaa0000000000aa0a000000000000aaaa00000000000000aaaa0a000000000000a0aa00000000000000aa0a000000000000aa000000"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.playback.background",
+                              "modifier": true,
+                              "label": "in background",
+                              "icon": "87041000100000000000000060060000000000006606000000000000666600000000000066060000606666666600000000660000000000000060066000f00f000000660600f00f000000000000f00f000000000000f00f000000000000f00f000000000000f00f0000000000f0ffff0f0000000000ffff000000000000f00f000000000000000000"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.playback.looping",
+                              "modifier": true,
+                              "label": "looping",
+                              "icon": "87041000100000000000000000000000000000700700000000007777777700000070777777770700007707000070770000770000000077000077000000007700707700000000770770770000000077077777070000007700707700000000770000070000007077000000007777770700000000777777000000000070070000000000000000000000"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "play tone",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Play Tone\n\nPlays a tone at a pitch.\n\n---\n\nPlace **play tone** on the **DO** side of a rule and give it a pitch in hertz: **DO play tone 440**\nplays an A for half a second. Give it a **duration** in seconds, a **volume** from 0 to 1, and **to**\nwith a second pitch to slide between them: **DO play tone 440 to 880 for 1** swoops up for a second.\n\nAdd a wave -- **sine**, **square**, **sawtooth**, **triangle** or **noise** -- to change how the tone\nsounds, and **vibrato**, **tremolo** or **warble** to make it shake. The rule waits for the tone to end,\nand **in background** and **looping** work as they do on **play sound**.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.button-a\"],\n      \"do\": [\n        \"tile.actuator->actuator.arcade.play-tone\",\n        \"tile.literal->number:<number>->440\",\n        \"tile.parameter->parameter.to\",\n        \"tile.literal->number:<number>->880\",\n        \"tile.parameter->parameter.duration\",\n        \"tile.literal->number:<number>->1\"\n      ],\n      \"children\": [],\n      \"comment\": \"Swoop up from 440 to 880 hertz over a second while A is held.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->number:<number>->440\",\n      \"valueType\": \"number:<number>\",\n      \"value\": 440,\n      \"valueLabel\": \"440\",\n      \"displayFormat\": \"default\"\n    },\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->number:<number>->880\",\n      \"valueType\": \"number:<number>\",\n      \"value\": 880,\n      \"valueLabel\": \"880\",\n      \"displayFormat\": \"default\"\n    },\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->number:<number>->1\",\n      \"valueType\": \"number:<number>\",\n      \"value\": 1,\n      \"valueLabel\": \"1\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of play tone, as the editor offers it:\n- In any order, each at most once: an optional Number, the pitch in hertz; the optional parameters [to]\n  (a Number, the pitch in hertz to slide to), [duration] (a Number of seconds) and [volume] (a Number\n  from 0 to 1); one wave modifier -- [sine], [square], [sawtooth], [triangle] or [noise]; one effect\n  modifier -- [vibrato], [tremolo] or [warble]; and one of [in background] or [looping]. A wave, an\n  effect and a playback modifier go together; two waves, two effects, or [in background] with [looping]\n  do not. No Sound value: to play one of Arcade's sounds, use [play sound].\n- [duration] is the shared parameter [say] and [destroy] also take; [play sound] takes none.\n- Defaults: pitch 440, duration 0.5 seconds, volume 1, no slide, no effect. A pitch or [to] below 0\n  reads as 0, which is silent; a duration below 0 reads as 0; a volume reads as 0 below 0 and as 1\n  above 1. A number that is no finite number -- an infinity or not-a-number -- reads as its default,\n  [to]'s being no slide.\n\nWhat it does:\n- With nothing but a pitch and a duration, it is Arcade's own plain tone, a sine wave. With [to], a\n  wave, an effect or a volume below 1, it is Arcade's sound effect instead: it slides in a straight line\n  from the pitch to [to]'s, in the wave (sine when none is given), with the effect, at the volume.\n  Arcade plays its sound effects quieter than its plain tone.\n- A tone lasting 0 seconds plays nothing, and the rule goes on at once.\n- Holding, [in background] and [looping] work as they do on [play sound]: with no modifier the rule\n  holds until the tone ends, so a rule that stays on plays once per completion; [in background] goes on\n  at once and the same tile starts its next copy only after its last one ends; [looping] repeats the\n  tone until [stop sounds]. Tones mix with every other sound.\n```\n\n## See Also\n\n`tile:tile.parameter->parameter.duration`\n`tile:tile.actuator->actuator.arcade.play-sound`\n`tile:tile.actuator->actuator.arcade.stop-sounds`\n",
+          "icon": "87041000100000000000f0ffff0f00000000f0cccc0f00000000f0cccc0f00000000cfccccfc000000f0cccccccc0f0000ffffffffffff000000000000000000000000800800000000008088000000000000880000000000000088000000000000008088000000000000008088000000000000008088000000000000008800000000000000880000"
+        },
+        {
+          "name": "actuator.arcade.stop-sounds",
+          "kind": "actuator",
+          "label": "stop sounds",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Stop Sounds\n\nStops every sound.\n\n---\n\nPlace **stop sounds** on the **DO** side of a rule to silence the game: **WHEN B button DO stop\nsounds**. It stops what **play sound** and **play tone** are playing and ends every **looping** sound.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.button-b\"],\n      \"do\": [\"tile.actuator->actuator.arcade.stop-sounds\"],\n      \"children\": [],\n      \"comment\": \"Silence every sound when B is pressed.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nGrammar of stop sounds, as the editor offers it:\n- It takes nothing: no value, no modifier, no parameter.\n\nWhat it does:\n- It is Arcade's own stop all sounds: every melody and tone playing stops, every [looping] sound from\n  [play sound] or [play tone] ends, and so do the sounds and songs the game's own code plays.\n- It stops what is playing on the frame its rule fires, nothing started later: a rule that keeps firing\n  [play sound] [looping] starts its loop again on its next firing.\n- A rule waiting on a sound with no modifier goes on once that sound stops: a melody stops at once, a\n  tone at the end of its own time.\n```\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.play-sound`\n`tile:tile.actuator->actuator.arcade.play-tone`\n",
+          "icon": "87041000100000000000f0ffff0f00000000f0cccc0f00000000f0cccc0f00000000cfccccfc000000f0cccccccc0f0000ffffffffffff000000000000000000000000000000000000000000000000000000202222020000000020222202000000002022220200000000202222020000000020222202000000002022220200000000000000000000"
         }
       ],
       "overloads": [

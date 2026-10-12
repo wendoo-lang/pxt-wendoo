@@ -29,6 +29,7 @@
         "docs.g.ts",
         "speech.ts",
         "dialog.ts",
+        "sound.ts",
         "vocabulary.ts"
     ],
     "supportedTargets": [
