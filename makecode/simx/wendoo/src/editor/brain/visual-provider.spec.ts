@@ -21,6 +21,7 @@ import {
   assetCatalogIds,
   BLANK_ICON,
   catalogTile,
+  PICTURE_KIND,
   PICTURE_TYPE,
   picture,
   SHOW,
@@ -240,6 +241,25 @@ describe("createTileVisualProvider", () => {
     built.assetLiterals.applySnapshot([]);
     assert.equal(resolve()?.iconUrl, pictureIcon);
     assert.equal(resolve()?.label, "hero");
+  });
+
+  it("resolves a listed asset literal whose asset has no preview to its name as its label and its type's icon as its face", () => {
+    const pictureIcon = "data:image/svg+xml;base64,cGljdHVyZQ==";
+    const catalog = JSON.parse(ASSET_CATALOG);
+    catalog.packs[0].types[0].iconUrl = pictureIcon;
+    const built = buildAuthoringEnvironment(JSON.stringify(catalog), assetCatalogIds());
+    built.assetLiterals.applySnapshot([{ kind: PICTURE_KIND, id: "img1", name: "hero" }]);
+    const literal = catalogTile(built.environment, mkLiteralTileId(PICTURE_TYPE, "img1"));
+
+    const visual = createTileVisualProvider(
+      built.environment.tileCatalogs(),
+      built.assetLiterals.view,
+      built.typeIcons
+    )(literal);
+
+    assert.equal(built.assetLiterals.view.get(literal.tileId)?.resolved, true);
+    assert.equal(visual?.iconUrl, pictureIcon);
+    assert.equal(visual?.label, "hero");
   });
 
   it("fills every tile in the pair the tile colors hold for its kind, keeping the rest of how it shows", () => {

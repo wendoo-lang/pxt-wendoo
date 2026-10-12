@@ -23,8 +23,11 @@ export interface MakeCodeAsset {
   width?: number;
   /** Height of the asset, in pixels; present for a kind with a pixel form, absent for one without. */
   height?: number;
-  /** A data URI rendering the asset, usable as an image source as it is. */
-  previewUrl: string;
+  /**
+   * A data URI rendering the asset, usable as an image source as it is;
+   * present for a kind with a visual form, absent for one without.
+   */
+  previewUrl?: string;
 }
 
 /** Payload of a {@link MakeCodeAssetsMessage}. */

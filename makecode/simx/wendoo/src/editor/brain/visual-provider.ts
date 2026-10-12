@@ -32,8 +32,8 @@ function boundMetadata(tileCatalogs: readonly ITileCatalog[], tileDef: IBrainTil
 /**
  * The editor's one tile visual provider: resolves any tile to how it shows.
  * An asset literal shows its asset's name as its label and its asset's
- * preview as its face while the snapshot lists the asset, and its label
- * alone while it is unresolved. A page's own tile shows its metadata with
+ * preview, when the asset has one, as its face while the snapshot lists the
+ * asset, and its label alone while it is unresolved. A page's own tile shows its metadata with
  * `pageIcon` as its face, and its metadata alone while no page icon is given.
  * Every other tile shows the display metadata the environment binds under its
  * tile id, the icon its catalog entry carries included -- whichever
@@ -135,8 +135,8 @@ function assetIdOf(types: AssetTypeRegistry, typeId: TypeId, value: unknown): st
  * literals of, one per type: each display-only, formatting a value -- or a
  * literal's value label -- as its literal's label, and drawing a placed literal's value box as its asset's
  * preview, an image source filling the value box's content height as a
- * candidate chip's face fills its slot, while the snapshot lists the asset -- and as that
- * label's text while it is unresolved.
+ * candidate chip's face fills its slot, while the snapshot lists the asset with a preview -- and as that
+ * label's text while it is unresolved or its asset has no preview.
  *
  * Build new types whenever the asset literals change.
  *

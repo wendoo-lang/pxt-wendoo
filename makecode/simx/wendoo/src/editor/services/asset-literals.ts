@@ -38,7 +38,7 @@ export interface AssetLiteral {
   readonly id: string;
   /** What the literal reads as: the asset's name, else its short id; kept from the last snapshot listing it while it is unresolved. */
   readonly label: string;
-  /** The asset's preview, a data URI for an image source; `undefined` while the literal is unresolved. */
+  /** The asset's preview, a data URI for an image source; `undefined` while the literal is unresolved or its asset has none. */
   readonly previewUrl: string | undefined;
   /** Whether the held asset snapshot lists the asset. */
   readonly resolved: boolean;

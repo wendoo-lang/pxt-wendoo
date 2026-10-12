@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Session Management in pxt-wendoo
@@ -308,7 +308,7 @@ project publishes whole snapshots, a later snapshot replaces an earlier
 one, and nothing is requested or answered.
 
 - `makecode:assets` (project -> editor) carries `{ assets: [{ kind, id,
-  name?, width?, height?, previewUrl }] }`: every asset the snapshot holds,
+  name?, width?, height?, previewUrl? }] }`: every asset the snapshot holds,
   in no particular order. An empty list is a snapshot holding none.
 - `kind` is the asset's kind as MakeCode names it, for example `image`.
   The set is open: a party skips an entry whose kind it does not handle,
@@ -320,7 +320,8 @@ one, and nothing is requested or answered.
 - `name` is the asset's display name, absent when it has none; `width`
   and `height` are its size in pixels, present for a kind with a pixel
   form and absent for one without; `previewUrl` is a data URI in any image
-  format, rendering the asset, usable as an image source as it is.
+  format, rendering the asset, usable as an image source as it is, present
+  for a kind with a visual form and absent for one without.
 - Which assets a snapshot holds and when one is published -- exclusions,
   debouncing, skipping an unchanged snapshot -- is the publisher's policy.
   A handshake receives only the snapshots published into it, so the
@@ -726,13 +727,15 @@ it always shows the session view.
 - The TILE VISUAL PROVIDER is the editor's one function resolving any
   tile to how it shows, wired into the brain editor's `resolveTileVisual`:
   a resolved asset literal shows its asset's name and its `previewUrl`
-  as its face, an unresolved one its label alone; every other tile shows
+  as its face, one whose asset has no preview and an unresolved one their
+  label alone; every other tile shows
   the display metadata pack binding gave it, the catalog's `iconUrl`
   included -- a core tile the icon a pack gives it, the first one given
   standing, and a brain literal its brain type's icon beside its name. A
   placed asset literal's value box draws its asset's preview through a
   display-only literal type per asset type (`customLiteralTypes`, no
-  dialog members), and its label as text while unresolved. Each new
+  dialog members), and its label as text while unresolved or while its
+  asset has no preview. Each new
   editor config also carries a fresh localizer identity, so rule sentences
   re-read the words of literals relabelled in place. Icons and previews are
   data URIs from session data, rendered only as an image source, never

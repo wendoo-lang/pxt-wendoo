@@ -94,7 +94,7 @@ describe("asset literals", () => {
     });
 
     it("mints nothing for an asset of a kind no catalog asset type declares", () => {
-      const built = environmentWith([{ kind: "song", id: "song1", name: "tune", previewUrl: "data:," }]);
+      const built = environmentWith([{ kind: "song", id: "song1", name: "tune" }]);
 
       assert.equal(built.assetLiterals.view.size, 0);
     });

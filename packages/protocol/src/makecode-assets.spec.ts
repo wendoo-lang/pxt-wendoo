@@ -14,13 +14,13 @@ const PNG_PREVIEW =
 
 /**
  * A snapshot whose first entry carries a name needing escapes on a JSON wire,
- * whose second carries no name, and whose third, of a kind with no pixel
- * form, carries no dimensions.
+ * whose second carries no name, and whose third, of a kind with no visual
+ * form, carries no dimensions and no preview.
  */
 const SNAPSHOT: MakeCodeAsset[] = [
   { kind: "image", id: "image1", name: 'hero "jumping" café 😀', width: 16, height: 16, previewUrl: SVG_PREVIEW },
   { kind: "image", id: "image2", width: 160, height: 120, previewUrl: PNG_PREVIEW },
-  { kind: "song", id: "song1", name: "theme", previewUrl: SVG_PREVIEW },
+  { kind: "song", id: "song1", name: "theme" },
 ];
 
 /** A port whose sent messages the spec can read, and into which it can deliver messages from the peer. */
@@ -125,6 +125,7 @@ describe("makecode session assets", () => {
     assert.equal("name" in received[0][1], false);
     assert.equal("width" in received[0][2], false);
     assert.equal("height" in received[0][2], false);
+    assert.equal("previewUrl" in received[0][2], false);
     editor.dispose();
     simx.dispose();
   });
