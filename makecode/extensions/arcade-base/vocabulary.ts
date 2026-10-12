@@ -64,6 +64,14 @@ namespace wendoo {
   //% hidden
   export const SAY_TILE = "actuator.arcade.say";
 
+  /** Tile name of the show-text actuator. */
+  //% hidden
+  export const SHOW_TEXT_TILE = "actuator.arcade.show-text";
+
+  /** Tile name of the ask actuator. */
+  //% hidden
+  export const ASK_TILE = "actuator.arcade.ask";
+
   /** Name of the bump sensor's output: the sprite it reads. */
   //% hidden
   export const BUMPED_OUTPUT = "bumped";
@@ -75,6 +83,10 @@ namespace wendoo {
   /** Name of the out-of-range sensor's output: the sprite it reads. */
   //% hidden
   export const OUT_OF_RANGE_OUTPUT = "outOfRange";
+
+  /** Name of the ask actuator's output: the answer its question was given. */
+  //% hidden
+  export const ANSWER_OUTPUT = "answer";
 
   /** Range the in-range and out-of-range sensors sense within when they are given none, in pixels between sprite centers. */
   //% hidden
@@ -139,6 +151,15 @@ namespace wendoo {
   /** Argument-buffer positions of the say actuator's text and its duration. */
   const SAY_SLOT_TEXT = 0;
   const SAY_SLOT_DURATION = 1;
+
+  /** Argument-buffer positions of the show-text actuator's text and its `top`, `center` and `full` layout modifiers. */
+  const SHOW_TEXT_SLOT_TEXT = 0;
+  const SHOW_TEXT_SLOT_TOP = 1;
+  const SHOW_TEXT_SLOT_CENTER = 2;
+  const SHOW_TEXT_SLOT_FULL = 3;
+
+  /** Argument-buffer position of the ask actuator's question. */
+  const ASK_SLOT_QUESTION = 0;
 
   /**
    * Argument-buffer position of the move's first target slot. Four follow
@@ -642,6 +663,127 @@ namespace wendoo {
   }
 
   /**
+   * The text a show text or an ask shows, read from its text slot, else from
+   * its rule's WHEN result, as {@link spokenText} prints it. One reader
+   * serves both tiles, so a value showing nothing is logged as
+   * {@link DIALOG_UNSPEAKABLE} once in a game run, whichever tile meets it
+   * first.
+   */
+  class DialogTextReader {
+    /** Whether a value showing nothing has been logged in this game run. */
+    private unspeakableLogged = false;
+
+    constructor() {}
+
+    /**
+     * The text the dialog tile running in `ctx` shows: the value its text
+     * slot at `slot` of `args` holds, else the value its rule's WHEN
+     * produced, printed as {@link spokenText} prints it; `undefined` for a
+     * value it prints nothing for, logged the first time in this game run.
+     *
+     * @param ctx - Execution context of the dialog tile.
+     * @param args - The tile's argument buffer.
+     * @param slot - Argument-buffer position of the tile's text.
+     */
+    read(ctx: ExecutionContext, args: Value[], slot: number): string {
+      const text = spokenText(isFilled(args, slot) ? args[slot] : getWhenResult(ctx));
+      if (text === undefined && !this.unspeakableLogged) {
+        this.unspeakableLogged = true;
+        debugLog(`wendoo ${DIALOG_UNSPEAKABLE}`);
+      }
+      return text;
+    }
+  }
+
+  /**
+   * Where a show text's box goes, read from its layout modifiers in `args`:
+   * the top of the screen given `top`, its center given `center`, the whole
+   * screen given `full`, else the bottom.
+   *
+   * @param args - The show-text actuator's argument buffer.
+   */
+  function showTextLayout(args: Value[]): DialogLayout {
+    if (isFilled(args, SHOW_TEXT_SLOT_TOP)) {
+      return DialogLayout.Top;
+    }
+    if (isFilled(args, SHOW_TEXT_SLOT_CENTER)) {
+      return DialogLayout.Center;
+    }
+    return isFilled(args, SHOW_TEXT_SLOT_FULL) ? DialogLayout.Full : DialogLayout.Bottom;
+  }
+
+  /**
+   * `actuator.arcade.show-text`: shows the text {@link DialogTextReader}
+   * reads in a paged text box laid out as {@link showTextLayout} reads it,
+   * through its scene's {@link SceneDialogs}, after every dialog asked for
+   * before it. Asynchronous: its handle resolves once the box is dismissed
+   * and neither A nor down, the buttons that close it, reads pressed, so the
+   * rule holds until then. An empty text, or a value showing nothing, opens
+   * no box and resolves the handle at once.
+   */
+  class ShowTextActuator extends HostActionBinding {
+    /** Reads the text the box shows. */
+    private reader: DialogTextReader;
+
+    /**
+     * @param reader - Reads the text the box shows.
+     */
+    constructor(reader: DialogTextReader) {
+      super(true);
+      this.reader = reader;
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const text = this.reader.read(ctx, args, SHOW_TEXT_SLOT_TEXT);
+      if (!text) {
+        handle.resolve(VOID_VALUE);
+        return;
+      }
+      sceneDialogs(game.currentScene()).showText(text, showTextLayout(args), () => handle.resolve(VOID_VALUE));
+    }
+  }
+
+  /**
+   * `actuator.arcade.ask`: asks the question {@link DialogTextReader} reads,
+   * through its scene's {@link SceneDialogs}, after every dialog asked for
+   * before it. Asynchronous: once the question is answered and the button
+   * that answered it is let go, it writes the answer -- `true` for A, `false`
+   * for B -- to its {@link ANSWER_OUTPUT} output on its rule and then
+   * resolves its handle, so the rule holds until then and the rules below it
+   * read the answer once it runs on. The answer is written on the dialog
+   * queue's fiber in the step that resolves the handle, before that fiber
+   * yields. An empty question, or a value showing nothing, asks nothing: it
+   * writes nil to the output and resolves the handle at once.
+   */
+  class AskActuator extends HostActionBinding {
+    /** Reads the question asked. */
+    private reader: DialogTextReader;
+
+    /**
+     * @param reader - Reads the question asked.
+     */
+    constructor(reader: DialogTextReader) {
+      super(true);
+      this.reader = reader;
+    }
+
+    execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
+      const question = this.reader.read(ctx, args, ASK_SLOT_QUESTION);
+      if (!question) {
+        setActionOutput(ctx, TYPE_ID_BOOLEAN, ANSWER_OUTPUT, NIL_VALUE);
+        handle.resolve(VOID_VALUE);
+        return;
+      }
+      const ruleVars = ctx.services.ruleVars;
+      const ruleFuncId = ctx.currentRuleFuncId;
+      sceneDialogs(game.currentScene()).ask(question, (answer: boolean) => {
+        ruleVars.setByName(ruleFuncId, actionOutputVariableName(TYPE_ID_BOOLEAN, ANSWER_OUTPUT), mkBoolean(answer));
+        handle.resolve(VOID_VALUE);
+      });
+    }
+  }
+
+  /**
    * `sensor.arcade.destroyed`: `true` while the program's own sprite is
    * destroyed, and nil otherwise. A program sees its sprite destroyed only in
    * its final think.
@@ -964,16 +1106,49 @@ namespace wendoo {
     ];
   }
 
-  /**
-   * The argument grammar the say actuator declares: an optional text and an
-   * optional duration, in either order -- the text an anonymous value filling
-   * it, derived from the rule's WHEN result when it is empty, and the
-   * duration the shared {@link durationSlot}.
-   */
-  function sayArgs(): TileArgSpec[] {
+  /** An anonymous text slot derived from the rule's WHEN result when it is empty. */
+  function derivedTextSlot(): ArgSlotSpec {
     const text = anonymousArg(TYPE_STRING);
     text.derived = true;
-    return [optional(choice([bag([optional(text), optional(durationSlot())])]))];
+    return text;
+  }
+
+  /**
+   * The argument grammar the say actuator declares: an optional text and an
+   * optional duration, in either order -- the text the shared
+   * {@link derivedTextSlot}, and the duration the shared {@link durationSlot}.
+   */
+  function sayArgs(): TileArgSpec[] {
+    return [optional(choice([bag([optional(derivedTextSlot()), optional(durationSlot())])]))];
+  }
+
+  /**
+   * The argument grammar the show-text actuator declares: an optional text,
+   * the shared {@link derivedTextSlot}, and an optional choice of the shared
+   * `top`, `center` or `full` layout modifier, in either order.
+   */
+  function showTextArgs(): TileArgSpec[] {
+    return [
+      optional(
+        choice([
+          bag([
+            optional(derivedTextSlot()),
+            optional(
+              choice([
+                modifier("modifier.layout.top", "top", tileLanguage("at the top")),
+                modifier("modifier.layout.center", "center", tileLanguage("in the center")),
+                modifier("modifier.layout.full", "full", tileLanguage("full screen")),
+              ])
+            ),
+          ]),
+        ])
+      ),
+    ];
+  }
+
+  /** The argument grammar the ask actuator declares: an optional question, the shared {@link derivedTextSlot}. */
+  function askArgs(): TileArgSpec[] {
+    return [optional(choice([bag([optional(derivedTextSlot())])]))];
   }
 
   /** The four optional direction modifier slots, up, down, left then right. */
@@ -1143,6 +1318,17 @@ namespace wendoo {
   saySpec.label = "say";
   arcadePack.bind(SAY_TILE, new SayActuator(), saySpec);
 
+  const dialogTextReader = new DialogTextReader();
+  const showTextSpec = new TileSpec(TILE_KIND_ACTUATOR, showTextArgs(), "");
+  showTextSpec.label = "show text";
+  arcadePack.bind(SHOW_TEXT_TILE, new ShowTextActuator(dialogTextReader), showTextSpec);
+  const askSpec = new TileSpec(TILE_KIND_ACTUATOR, askArgs(), "");
+  askSpec.label = "ask";
+  const answerOutput = output(ANSWER_OUTPUT, TYPE_BOOLEAN);
+  answerOutput.label = "answer";
+  askSpec.outputs = [answerOutput];
+  arcadePack.bind(ASK_TILE, new AskActuator(dialogTextReader), askSpec);
+
   defineEquality(arcadePack, TYPE_IMAGE, sameImage);
   defineEquality(arcadePack, TYPE_SPRITE, sameSprite);
   defineEquality(arcadePack, TYPE_BRAIN, sameBrain);
@@ -1213,7 +1399,7 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, the modifier and parameter tiles filling
-   * their slots, its sensors' outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
+   * their slots, their outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
    * `Effect`, `Sound` and `ParticleEffect` types and their accessor tiles
    * their icons, and give
    * the core tiles and the core number, text and switch types the pack's icons
@@ -1253,8 +1439,13 @@ namespace wendoo {
     destroySpec.icon = destroyIcon();
     destroyedSpec.icon = destroyedIcon();
     saySpec.icon = sayIcon();
+    showTextSpec.icon = showTextIcon();
+    askSpec.icon = askIcon();
+    askSpec.outputs[0].icon = answerIcon();
     const tiles = [
       dpadSpec,
+      buttonASpec,
+      buttonBSpec,
       moveSpec,
       bumpSpec,
       inRangeSpec,
@@ -1263,7 +1454,10 @@ namespace wendoo {
       addScoreSpec,
       gameOverSpec,
       destroySpec,
+      destroyedSpec,
       saySpec,
+      showTextSpec,
+      askSpec,
     ];
     attachSlotIcon(tiles, "modifier.direction.up", upIcon());
     attachSlotIcon(tiles, "modifier.direction.down", downIcon());
@@ -1282,6 +1476,9 @@ namespace wendoo {
     attachSlotIcon(tiles, "modifier.outcome.lose", loseIcon());
     attachSlotIcon(tiles, "parameter.speed", speedParameterIcon());
     attachSlotIcon(tiles, "parameter.duration", durationParameterIcon());
+    attachSlotIcon(tiles, "modifier.layout.top", layoutTopIcon());
+    attachSlotIcon(tiles, "modifier.layout.center", layoutCenterIcon());
+    attachSlotIcon(tiles, "modifier.layout.full", layoutFullIcon());
 
     arcadePack.defineCoreTileIcon("tile.sensor->on-page-entered", coreOnPageEnteredIcon());
     arcadePack.defineCoreTileIcon("tile.actuator->switch-page", coreSwitchPageIcon());
@@ -1335,7 +1532,7 @@ namespace wendoo {
   }
 
   /**
-   * Give each of the pack's tiles, its sensors' outputs, its `Vector2`,
+   * Give each of the pack's tiles, their outputs, its `Vector2`,
    * `Sprite`, `Player`, `Effect`, `Sound` and `ParticleEffect` types and their
    * accessor tiles the docs page {@link arcadeBaseDocs}
    * holds under the key it is wired to: a tile's or type's name, and
@@ -1375,6 +1572,9 @@ namespace wendoo {
     destroySpec.docs = arcadeBaseDocs(DESTROY_TILE);
     destroyedSpec.docs = arcadeBaseDocs(DESTROYED_TILE);
     saySpec.docs = arcadeBaseDocs(SAY_TILE);
+    showTextSpec.docs = arcadeBaseDocs(SHOW_TEXT_TILE);
+    askSpec.docs = arcadeBaseDocs(ASK_TILE);
+    askSpec.outputs[0].docs = arcadeBaseDocs("output.answer");
   }
 
   attachArcadeBaseIcons();

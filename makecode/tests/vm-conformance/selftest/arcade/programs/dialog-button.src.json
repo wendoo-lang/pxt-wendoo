@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "dialogButtonBare",
+  "name": "Shout box",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgButtonBar",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgButtonBar",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgButtonBr0"
+        }
+      ]
+    }
+  ]
+}

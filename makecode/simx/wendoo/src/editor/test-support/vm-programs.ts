@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ObservableTraceWriter, observableTraceVmEvents } from "@wendoo/conformance";
 import { List, stream } from "@wendoo/core";
-import type { IBrainTileDef } from "@wendoo/core/app";
+import type { IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
 import {
   BrainDef,
   CoreControlFlowId,
@@ -302,6 +302,15 @@ const ARCADE_SOURCES = [
   "say-bumped.src.json",
   "say-ouch.src.json",
   "say-farewell.src.json",
+  "dialog-greeter.src.json",
+  "dialog-nag.src.json",
+  "dialog-asker.src.json",
+  "dialog-ask-first.src.json",
+  "dialog-ask-second.src.json",
+  "dialog-score.src.json",
+  "dialog-motto.src.json",
+  "dialog-button.src.json",
+  "dialog-bumped.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -921,6 +930,13 @@ export const OUTPUT_ENTRY_PREFIX = "output:";
 
 /**
  * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
+ * standing for the output tile of the switch output named by the rest of the
+ * entry, such as `switch-output:answer`.
+ */
+export const SWITCH_OUTPUT_ENTRY_PREFIX = "switch-output:";
+
+/**
+ * The prefix of an entry of {@link arcadeImageRuleDiagnosticCodes}'s sides
  * standing for the shared modifier tile the whole entry declares, such as
  * `modifier.position.above`.
  */
@@ -1028,6 +1044,9 @@ function entryTileId(entry: string, bareTileId: (name: string) => string, litera
   if (entry.startsWith(PARAMETER_ENTRY_PREFIX)) return mkParameterTileId(entry);
   if (entry.startsWith(OUTPUT_ENTRY_PREFIX)) {
     return mkOutputTileId(mkTypeId(NativeType.Struct, "Sprite"), entry.slice(OUTPUT_ENTRY_PREFIX.length));
+  }
+  if (entry.startsWith(SWITCH_OUTPUT_ENTRY_PREFIX)) {
+    return mkOutputTileId(CoreTypeIds.Boolean, entry.slice(SWITCH_OUTPUT_ENTRY_PREFIX.length));
   }
   if (entry.startsWith(SENSOR_ENTRY_PREFIX)) return mkSensorTileId(entry.slice(SENSOR_ENTRY_PREFIX.length));
   if (entry.startsWith(ACCESSOR_ENTRY_PREFIX)) {
@@ -1161,7 +1180,31 @@ export function arcadeOffersLiteral(literal: string, when: string[], act?: strin
   const { environment, brainDef, rule, literalId, brainLiteralId } = arcadeImageRuleBrain(when, act ?? []);
   brainDef.typecheck();
   const wanted = entryTileId(literal, () => literalId, literalId, brainLiteralId);
-  const side = act === undefined ? RuleSide.When : RuleSide.Do;
+  return offersAtEnd(environment, rule, act === undefined ? RuleSide.When : RuleSide.Do, wanted);
+}
+
+/**
+ * Whether the candidate strip offers the tile `entry`, named as
+ * {@link arcadeOffersLiteral} names it, at the end of the WHEN side of the
+ * one child rule of a rule whose sides `parent` names, the child's WHEN
+ * side holding the tiles `childWhen` names, given the side's typechecked
+ * expression and the outputs the child's rule hierarchy provides, as the
+ * brain editor gives them.
+ *
+ * @param entry - The entry looked for.
+ * @param parent - The parent rule's WHEN and DO sides' entries.
+ * @param childWhen - The child rule's WHEN side's entries.
+ */
+export function arcadeOffersInChild(entry: string, parent: RuleSides, childWhen: string[]): boolean {
+  const built = arcadeImageRuleBrain(parent.when, parent.act, { when: childWhen, act: [] });
+  built.brainDef.typecheck();
+  const child = built.rule.children().get(0) as BrainRuleDef;
+  const wanted = entryTileId(entry, () => built.literalId, built.literalId, built.brainLiteralId);
+  return offersAtEnd(built.environment, child, RuleSide.When, wanted);
+}
+
+/** Whether the candidate strip offers the tile `wanted` at the end of `side` of `rule`, in `environment`. */
+function offersAtEnd(environment: WendooEnvironment, rule: BrainRuleDef, side: RuleSide, wanted: string): boolean {
   const tileSet = side === RuleSide.When ? rule.when() : rule.do();
   const context = buildInsertionContext({
     side,

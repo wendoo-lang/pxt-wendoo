@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "dialogScoreBare1",
+  "name": "Scoreboard",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgScoreBare",
+      "label": "Unnamed Page"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgScoreBare",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.literal->struct:<Player>->1",
+            "tile.accessor->struct:<Player>->score"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgScoreBar0"
+        }
+      ]
+    }
+  ]
+}

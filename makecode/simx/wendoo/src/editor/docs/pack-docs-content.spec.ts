@@ -31,6 +31,7 @@ import { kTileIdPlaceholder } from "@wendoo/docs/DocsRegistry";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import type { ParsedCatalog } from "../services/catalog.js";
 import { parseCatalog } from "../services/catalog.js";
+import { CORE_TYPE_IDS } from "../services/pack-binding.js";
 import { absolutePath, arcadeCatalog, arcadeIds } from "../test-support/vm-programs.js";
 import { createDocsTileCatalog, createEditorDocsRegistry } from "./docs-registry.js";
 
@@ -96,7 +97,8 @@ function arcadeCatalogParsed(): ParsedCatalog {
 /**
  * The entry the page keyed `key` under {@link TILE_PAGE_DIR} documents: for
  * `output.<name>`, the output named `<name>` some tile of the arcade
- * selftest's catalog declares, under the struct type it declares, unlisted;
+ * selftest's catalog declares, under the core or struct type it declares,
+ * unlisted;
  * else the tile named `key`, listed.
  */
 function tilePageEntries(key: string): { tileId: string; listing: Listing }[] {
@@ -105,7 +107,8 @@ function tilePageEntries(key: string): { tileId: string; listing: Listing }[] {
     const name = unprefixed(key, OUTPUT_PAGE_PREFIX);
     const output = tiles.flatMap((entry) => entry.outputs).find((entry) => entry.name === name);
     assert.ok(output, `the catalog declares an output named ${name}`);
-    return [{ tileId: mkOutputTileId(mkTypeId(NativeType.Struct, output.type), name), listing: "unlisted" }];
+    const typeId = CORE_TYPE_IDS.get(output.type) ?? mkTypeId(NativeType.Struct, output.type);
+    return [{ tileId: mkOutputTileId(typeId, name), listing: "unlisted" }];
   }
   const tile = tiles.find((entry) => entry.name === key);
   assert.ok(tile, `the catalog declares a tile named ${key}`);

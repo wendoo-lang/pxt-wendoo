@@ -99,24 +99,28 @@ namespace wendoo {
     `;
   }
 
-  /** Icon of the bump sensor: two blocks touching under a spark. */
+  /**
+   * Icon of the bump sensor: two copies of the `Sprite` type's figure, red on
+   * the left and blue on the right, bumping side to side, a yellow flash where
+   * they meet and two yellow sparks flying up from it.
+   */
   //% hidden
   export function bumpIcon(): Image {
     return img`
-      . . . . . . . . . . . . . . . .
-      . . . . 5 . . 5 5 . . 5 . . . .
-      . . . . . 5 . 5 5 . 5 . . . . .
+      . . . . . 5 . . . . 5 . . . . .
       . . . . . . 5 . . 5 . . . . . .
       . . . . . . . . . . . . . . . .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . 2 2 2 2 2 2 2 8 8 8 8 8 8 8 .
-      . . . . . . . . . . . . . . . .
+      . 2 2 2 2 2 2 . . 8 8 8 8 8 8 .
+      2 2 2 2 2 2 2 2 8 8 8 8 8 8 8 8
+      2 1 1 2 2 1 1 2 8 1 1 8 8 1 1 8
+      2 1 1 2 2 1 1 2 8 1 1 8 8 1 1 8
+      2 2 2 2 2 2 2 2 8 8 8 8 8 8 8 8
+      2 2 2 2 2 2 2 5 5 8 8 8 8 8 8 8
+      2 2 2 2 2 2 2 5 5 8 8 8 8 8 8 8
+      2 2 2 2 2 2 2 2 8 8 8 8 8 8 8 8
+      2 . 2 2 2 2 . 2 8 . 8 8 8 8 . 8
+      2 . 2 2 2 2 . 2 8 . 8 8 8 8 . 8
+      2 . . . . . . 2 8 . . . . . . 8
       . . . . . . . . . . . . . . . .
       . . . . . . . . . . . . . . . .
     `;
@@ -1824,6 +1828,144 @@ namespace wendoo {
       . . . . f 1 f . . . . . . . . .
       . . . f 1 f . . . . . . . . . .
       . . f f f . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the show-text actuator: a white text box framed in black, four gray lines of text in it, a small red arrow pointing down at its lower right. */
+  //% hidden
+  export function showTextIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      f f f f f f f f f f f f f f f f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 c c c c c c c c c c c 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 c c c c c c c c c c c c 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 c c c c c c c c c 1 1 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 c c c c c c 1 1 1 2 2 2 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 2 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f f f f f f f f f f f f f f f f
+      . . . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the ask actuator: a light blue box framed in black, holding a white question mark. */
+  //% hidden
+  export function askIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . f f f f f f f f f f f f f f .
+      . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
+      . f 9 9 9 9 1 1 1 1 9 9 9 9 f .
+      . f 9 9 9 1 1 9 9 1 1 9 9 9 f .
+      . f 9 9 9 1 1 9 9 1 1 9 9 9 f .
+      . f 9 9 9 9 9 9 9 1 1 9 9 9 f .
+      . f 9 9 9 9 9 9 1 1 9 9 9 9 f .
+      . f 9 9 9 9 9 1 1 9 9 9 9 9 f .
+      . f 9 9 9 9 9 1 1 9 9 9 9 9 f .
+      . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
+      . f 9 9 9 9 9 1 1 9 9 9 9 9 f .
+      . f 9 9 9 9 9 1 1 9 9 9 9 9 f .
+      . f 9 9 9 9 9 9 9 9 9 9 9 9 f .
+      . f f f f f f f f f f f f f f .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the ask's `answer` output: a green check mark at the upper left and a red cross at the lower right, a dark slash between them. */
+  //% hidden
+  export function answerIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . 7 7 . . . . . . c .
+      . . . . . 7 7 . . . . . . c . .
+      . . . . 7 7 . . . . . . c . . .
+      . 7 7 . 7 7 . . . . . c . . . .
+      . . 7 7 7 . . . . . c . . . . .
+      . . . 7 . . . . . c . . . . . .
+      . . . . . . . . c . . . . . . .
+      . . . . . . . c . . . . . . . .
+      . . . . . . c . . 2 2 . . 2 2 .
+      . . . . . c . . . . 2 2 2 2 . .
+      . . . . c . . . . . . 2 2 . . .
+      . . . c . . . . . . 2 2 2 2 . .
+      . . c . . . . . . 2 2 . . 2 2 .
+      . c . . . . . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `top` layout modifier: a tiny screen on a stand, a white text box across its top above a teal game. */
+  //% hidden
+  export function layoutTopIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      f f f f f f f f f f f f f f f f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f 1 f f f f f f f f 1 1 1 1 1 f
+      f 1 1 1 1 1 1 1 1 1 1 1 1 1 1 f
+      f c c c c c c c c c c c c c c f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f f f f f f f f f f f f f f f f
+      . . . . . . . f f . . . . . . .
+      . . . . . f f f f f f . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `center` layout modifier: a tiny screen on a stand, a white text box in the middle of a teal game. */
+  //% hidden
+  export function layoutCenterIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      f f f f f f f f f f f f f f f f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f 6 6 6 c c c c c c c c 6 6 6 f
+      f 6 6 6 c 1 1 1 1 1 1 c 6 6 6 f
+      f 6 6 6 c 1 f f f f 1 c 6 6 6 f
+      f 6 6 6 c 1 1 1 1 1 1 c 6 6 6 f
+      f 6 6 6 c 1 f f f 1 1 c 6 6 6 f
+      f 6 6 6 c 1 1 1 1 1 1 c 6 6 6 f
+      f 6 6 6 c c c c c c c c 6 6 6 f
+      f 6 6 6 6 6 6 6 6 6 6 6 6 6 6 f
+      f f f f f f f f f f f f f f f f
+      . . . . . . . f f . . . . . . .
+      . . . . . f f f f f f . . . . .
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
+  /** Icon of the `full` layout modifier: a tiny screen on a stand, a white text box filling all of it. */
+  //% hidden
+  export function layoutFullIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      f f f f f f f f f f f f f f f f
+      f c c c c c c c c c c c c c c f
+      f c 1 1 1 1 1 1 1 1 1 1 1 1 c f
+      f c 1 f f f f f f f f f 1 1 c f
+      f c 1 1 1 1 1 1 1 1 1 1 1 1 c f
+      f c 1 f f f f f f f f f f 1 c f
+      f c 1 1 1 1 1 1 1 1 1 1 1 1 c f
+      f c 1 f f f f f f f 1 1 1 1 c f
+      f c 1 1 1 1 1 1 1 1 1 1 1 1 c f
+      f c 1 1 1 1 1 1 1 1 1 1 1 1 c f
+      f c c c c c c c c c c c c c c f
+      f f f f f f f f f f f f f f f f
+      . . . . . . . f f . . . . . . .
+      . . . . . f f f f f f . . . . .
       . . . . . . . . . . . . . . . .
     `;
   }

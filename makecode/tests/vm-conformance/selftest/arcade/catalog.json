@@ -1212,12 +1212,12 @@
               "writableResult": true,
               "label": "bumped sprite",
               "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Bumped Sprite\n\nThe sprite **bump** found.\n\n---\n\nEvery time **bump** runs, it puts the sprite your sprite touches into **bumped sprite** -- or nothing,\nwhen it touches none. When **bump** is given an image, a sprite, a brain or a side to watch for, that\nis the sprite it found.\n\nUse **bumped sprite** later in the same rule as the **bump**, or in the rules tucked under it:\n**WHEN bump DO myself image gets bumped sprite image** dresses your sprite just like whatever it\nbumps. Put **image**, **position**, **brain** or **move smoothing** after it to read that part of the\nsprite.\n\nIt can change the sprite it holds, too. Put a part after it and add **gets**: **WHEN bump DO bumped\nsprite brain gets** another brain switches the sprite yours touches to that brain from the next\nframe. While it holds nothing, changing a part of it changes nothing.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\n        \"tile.sensor->sensor.arcade.myself\",\n        \"tile.accessor->struct:<Sprite>->image\",\n        \"tile.op->assign\",\n        \"tile.out->struct:<Sprite>.bumped\",\n        \"tile.accessor->struct:<Sprite>->image\"\n      ],\n      \"children\": [],\n      \"comment\": \"Dress this sprite like whatever it bumps.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nThe bumped sprite output, tile.out->struct:<Sprite>.bumped:\n- Written every time bump runs: the sprite read, or nothing. Placeable on the DO side of bump's rule and\n  anywhere in the rules under it.\n- Writable: [bumped sprite] [image | position | brain | move smoothing] [gets] <value> changes that\n  sprite, and [bumped sprite] [position] [x | y] [gets] <number> moves it along one axis. Holding\n  nothing, a write through it changes nothing.\n- On bump's DO side it holds the same sprite as the WHEN result, so move toward or away from with no\n  target placed chases or flees it.\n```\n\n## Provided By\n\n`tile:tile.sensor->sensor.arcade.bump`\n\n## See Also\n\n`tile:tile.var.factory->struct:<Sprite>`\n`tile:tile.sensor->sensor.arcade.myself`\n`tile:tile.out->struct:<Sprite>.inRange`\n`tile:tile.out->struct:<Sprite>.outOfRange`\n",
-              "icon": "87041000100000000000000000000000000020222222020000002022222202000000202222220200500020222222020000052022222202000050202222220200500520222222020050058088888808000050808888880800000580888888080050008088888808000000808888880800000080888888080000008088888808000000000000000000"
+              "icon": "87041000100000000000222222222200002012212202000000201221222202000020222222220200002022222222020005201221222202005020122122020000000022225522220000008888558888005080188188080000058018818888080000808888888808000080888888880800008018818888080000801881880800000000888888888800"
             }
           ],
           "label": "bump",
           "docs": "```brain noframe when\n{ \"tile\": \"${tileId}\" }\n```\n\n# Bump\n\nOn while your sprite touches another sprite, carrying the sprite it touches.\n\n---\n\nPlace **bump** on the **WHEN** side of a rule to act while your sprite touches another one. When it\ntouches several at once, **bump** carries the nearest. **WHEN bump DO move away from** runs from\nwhatever it touches.\n\nGive **bump** one of your project's images to notice only sprites that look exactly like it, a sprite\nto notice only that sprite, or one of your brains to notice only sprites running it. Add **above** or\n**below**, and **left of** or **right of**, to notice only sprites on that side of yours, center to\ncenter. Your own sprite never counts.\n\n## Bumped Sprite\n\nEvery time **bump** runs, it puts the sprite it found into `tile:tile.out->struct:<Sprite>.bumped`, for\nthe rest of the rule and the rules tucked under it to read and change. Open it to see how.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\n        \"tile.sensor->sensor.arcade.myself\",\n        \"tile.accessor->struct:<Sprite>->image\",\n        \"tile.op->assign\",\n        \"tile.out->struct:<Sprite>.bumped\",\n        \"tile.accessor->struct:<Sprite>->image\"\n      ],\n      \"children\": [],\n      \"comment\": \"Dress this sprite like whatever it bumps.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n## Modifiers & Parameters\n\n| Modifier                                       | Description                          |\n| ---------------------------------------------- | ------------------------------------ |\n| `tile:tile.modifier->modifier.position.above`  | Only sprites above yours             |\n| `tile:tile.modifier->modifier.position.below`  | Only sprites below yours             |\n| `tile:tile.modifier->modifier.position.left`   | Only sprites to the left of yours    |\n| `tile:tile.modifier->modifier.position.right`  | Only sprites to the right of yours   |\n\n| Parameter   | Type     | Description                            |\n| ----------- | -------- | -------------------------------------- |\n| (anonymous) | `Image`  | Only sprites that look like this image |\n| (anonymous) | `Sprite` | Only this sprite                       |\n| (anonymous) | `Brain`  | Only sprites running this brain        |\n\n```assistant\nGrammar of bump, as the editor offers it:\n- One optional filter, a bare value placed after bump: an Image, a Sprite, or a Brain. At most one.\n- above or below: at most one. left of or right of: at most one. Any order with the filter.\n\nWhat it reads:\n- On while this sprite overlaps an admitted sprite; the WHEN result is that Sprite. Touching several:\n  the nearest center wins, ties going to the sprite created first. Off while it touches none.\n- An Image filter admits the sprites whose image has the same pixels, whichever image object they wear;\n  a Sprite admits that sprite alone; a Brain admits the sprites running it. An image the project does\n  not hold, a destroyed sprite, or a brain no sprite runs admits none, so bump stays off.\n- above, below, left of, right of admit only sprites whose center is strictly on that side of this\n  sprite's center; two of them together must both hold.\n- This sprite itself is never read.\n\nbump writes what it reads to its bumped sprite output, tile.out->struct:<Sprite>.bumped, whose own page\nholds its notes.\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Sprite>`\n`tile:tile.sensor->sensor.arcade.myself`\n`tile:tile.sensor->sensor.arcade.in-range`\n`tile:tile.actuator->actuator.arcade.move`\n",
-          "icon": "87041000100000000000000000000000000020222222020000002022222202000000202222220200500020222222020000052022222202000050202222220200500520222222020050058088888808000050808888880800000580888888080050008088888808000000808888880800000080888888080000008088888808000000000000000000",
+          "icon": "87041000100000000000222222222200002012212202000000201221222202000020222222220200002022222222020005201221222202005020122122020000000022225522220000008888558888005080188188080000058018818888080000808888888808000080888888880800008018818888080000801881880800000000888888888800",
           "language": {
             "bare": "anything"
           }
@@ -1767,6 +1767,119 @@
           "label": "say",
           "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Say\n\nShows text in a speech bubble over your sprite.\n\n---\n\nPlace **say** on the **DO** side of a rule and give it some text to show in your sprite's speech\nbubble: **WHEN bump DO say \"ouch\"**. Give it a **duration** to pick how many seconds the bubble stays\nafter the rule stops: **DO say \"hi\" duration 2**. Without one, it stays 5 seconds.\n\nWhile the rule keeps firing, the bubble stays up. Without any text, say shows what the WHEN found:\n**WHEN player one score DO say** shows the score.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.say\", \"tile.literal->string:<string>->ouch\"],\n      \"children\": [],\n      \"comment\": \"Say ouch while touching another sprite, and for 5 seconds after.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->ouch\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"ouch\",\n      \"valueLabel\": \"ouch\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of say, as the editor offers it:\n- In either order, each at most once: an optional text value and the optional duration parameter, a\n  Number of seconds. Nothing else: no modifier, no Sprite, no output tile.\n- It always speaks through this program's own sprite; it cannot make another sprite talk.\n\nWhat it does:\n- It shows the text in the sprite's speech bubble, the way Arcade's own say does.\n- A rule that keeps firing with the same text keeps the bubble up without restarting it. A different\n  text replaces the bubble at once.\n- The bubble clears duration seconds after the last frame that said its text: 5 seconds with no\n  duration. A duration below 0 reads as 0, which keeps the bubble only while the rule fires.\n- Empty text clears the bubble at once.\n- With no text placed, it says the rule's WHEN value: a number, a text or a switch, printed as Arcade\n  prints them ([A button] says true). Any other WHEN value -- a sprite, a position, or nothing, as in a\n  rule with no WHEN -- says nothing.\n- Once its own sprite is destroyed, say does nothing; a bubble already up goes when Arcade removes the\n  sprite.\n```\n\n## See Also\n\n`tile:tile.lit.factory->string`\n`tile:tile.var.factory->string`\n`tile:tile.sensor->sensor.arcade.bump`\n`tile:tile.actuator->actuator.arcade.destroy`\n",
           "icon": "870410001000000000f0ffffff000000001f1111110f0000f011111111f1000ff01111ff11f1f00ff01111ff11f11f0ff01111111111f100f011111111110f00f01111ff11f10000f01111ff11f10000f011111111f10000f011111111f10000f01111ff11f10000f01111ff11f10000f011111111f10000001f1111110f000000f0ffffff000000"
+        },
+        {
+          "name": "actuator.arcade.show-text",
+          "kind": "actuator",
+          "async": true,
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.string",
+                          "type": "string",
+                          "anonymous": true,
+                          "derived": true
+                        }
+                      },
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.layout.top",
+                              "modifier": true,
+                              "label": "top",
+                              "language": {
+                                "form": "at the top"
+                              },
+                              "icon": "8704100010000000f0ffffffffff0f00f011c16666660f00f0f1c16666660f00f0f1c16666660f00f0f1c16666660f00f0f1c16666660f0ff0f1c16666660f0ff0f1c1666666ff0ff0f1c1666666ff0ff0f1c16666660f0ff011c16666660f0ff011c16666660f00f011c16666660f00f011c16666660f00f011c16666660f00f0ffffffffff0f00"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.layout.center",
+                              "modifier": true,
+                              "label": "center",
+                              "language": {
+                                "form": "in the center"
+                              },
+                              "icon": "8704100010000000f0ffffffffff0f00f066666666660f00f066666666660f00f066666666660f00f066cccccc6c0f00f0661c11116c0f0ff0661c1f1f6c0f0ff0661c1f1f6cff0ff0661c1f1f6cff0ff0661c1f116c0f0ff0661c11116c0f0ff066cccccc6c0f00f066666666660f00f066666666660f00f066666666660f00f0ffffffffff0f00"
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "modifier.layout.full",
+                              "modifier": true,
+                              "label": "full",
+                              "language": {
+                                "form": "full screen"
+                              },
+                              "icon": "8704100010000000f0ffffffffff0f00f0cccccccccc0f00f01c111111c10f00f01c1f1f1fc10f00f01c1f1f1fc10f00f01c1f1f1fc10f0ff01c1f1f1fc10f0ff01c1f1f1fc1ff0ff01c1f1f1fc1ff0ff01c1f1f1fc10f0ff01c1f1f11c10f0ff01c1f1f11c10f00f01c111f11c10f00f01c111111c10f00f0cccccccccc0f00f0ffffffffff0f00"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "show text",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Show Text\n\nShows text in a box on the screen until the player presses A.\n\n---\n\nPlace **show text** on the **DO** side of a rule and give it some text: **WHEN A button DO show text\n\"Welcome!\"**. The box opens at the bottom of the screen; add **top**, **center** or **full** to put it\nsomewhere else. Long text shows a page at a time, and A turns the page.\n\nWhile the box is up, the whole game pauses, and the rule waits until A closes it. Without any text,\nshow text shows what the WHEN found: **WHEN player one score DO show text** shows the score.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.button-a\"],\n      \"do\": [\"tile.actuator->actuator.arcade.show-text\", \"tile.literal->string:<string>->Welcome!\"],\n      \"children\": [],\n      \"comment\": \"Show a welcome when A is pressed.\"\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->Welcome!\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"Welcome!\",\n      \"valueLabel\": \"Welcome!\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of show text, as the editor offers it:\n- In either order, each at most once: an optional text value, and one of the modifiers top, center or\n  full. Nothing else: no duration, no Sprite, no output tile.\n\nWhat it does:\n- It opens Arcade's own long-text box: at the bottom of the screen bare, or at the top, in the center,\n  or over the whole screen. Long text shows a page at a time; A turns the page and closes the box after\n  the last page.\n- The rule holds until the box is closed: a rule under it does not get its turn, and the rule cannot\n  fire again until then.\n- The whole game pauses while the box is up: every brain stops thinking and every sprite stops, the way\n  Arcade pauses the game for any dialog. Boxes and questions asked for at once open one after another, in\n  the order they were asked for.\n- With no text placed, it shows the rule's WHEN value: a number, a text or a switch, printed as Arcade\n  prints them ([A button] shows true). Any other WHEN value -- a sprite, a position, or nothing -- and\n  empty text open no box, and the rule goes on at once.\n- The rule goes on once the button that closed the box is let go. The down button turns the page and\n  closes the box too, without firing WHEN [A button].\n```\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.ask`\n`tile:tile.actuator->actuator.arcade.say`\n`tile:tile.sensor->sensor.arcade.button-a`\n",
+          "icon": "870410001000000000ffffffffffff00001f11111111f100001f1c1c1c1cf100001f1c1c1c1cf100001f1c1c1c1cf100001f1c1c1c1cf100001f1c1c1c1cf100001f1c1c1c1cf100001f1c1c1c11f100001f1c1c1c11f100001f1c1c1c11f100001f1c1c1112f100001f1c1c1122f100001f111c1112f100001f11111111f10000ffffffffffff00"
+        },
+        {
+          "name": "actuator.arcade.ask",
+          "kind": "actuator",
+          "async": true,
+          "call": [
+            {
+              "kind": "optional",
+              "item": {
+                "kind": "choice",
+                "options": [
+                  {
+                    "kind": "bag",
+                    "items": [
+                      {
+                        "kind": "optional",
+                        "item": {
+                          "kind": "arg",
+                          "tileId": "anon.string",
+                          "type": "string",
+                          "anonymous": true,
+                          "derived": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "name": "answer",
+              "type": "boolean",
+              "label": "answer",
+              "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Answer\n\nThe answer the player gave to **ask**.\n\n---\n\nOnce the player answers an **ask**, **answer** holds yes -- true -- for A, or no -- false -- for B. Read\nit in the rules tucked under the **ask**, which run only after the answer is given: **WHEN answer DO\ndestroy bumped sprite** eats on a yes, and **WHEN not answer** acts on a no.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.ask\", \"tile.literal->string:<string>->Eat it?\"],\n      \"children\": [\n        {\n          \"version\": 1,\n          \"when\": [\"tile.out->boolean:<boolean>.answer\"],\n          \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n          \"children\": [],\n          \"comment\": \"Eat what this sprite bumps, but only on a yes.\"\n        }\n      ]\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->Eat it?\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"Eat it?\",\n      \"valueLabel\": \"Eat it?\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nThe answer output, tile.out->boolean:<boolean>.answer:\n- A switch: true when the player answered with A, false with B. Written once the question is answered\n  and the button that answered it is let go, before the rules under the ask run. Placeable in the rules\n  under ask's rule.\n- An ask that asks nothing -- empty text, or a WHEN value that is no number, text or switch -- clears\n  it: answer then holds nothing, and WHEN [answer] does not fire.\n- Before the first answer, it holds nothing.\n```\n\n## Provided By\n\n`tile:tile.actuator->actuator.arcade.ask`\n\n## See Also\n\n`tile:tile.op->not`\n",
+              "icon": "87041000100000000000000000000000000007000000000c000077000000c0000000700700000c000070770000c0000000770700000c000070070000c0000000700000000c000000000000c0000000000000000c200020000000c0002002220000000c000022020000c0000000220200000c000020022200c0000000200020000000000000000000"
+            }
+          ],
+          "label": "ask",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Ask\n\nAsks the player a yes-or-no question.\n\n---\n\nPlace **ask** on the **DO** side of a rule and give it a question: **WHEN bump DO ask \"Eat it?\"**. The\nplayer answers with A for yes or B for no. While the question is up, the whole game pauses, and the\nrule waits for the answer. Without any text, ask asks what the WHEN found.\n\n## Answer\n\nThe answer goes into `tile:tile.out->boolean:<boolean>.answer`, for the rules tucked under the **ask**\nto read once it is given: **WHEN answer DO destroy bumped sprite** eats only on a yes.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.ask\", \"tile.literal->string:<string>->Eat it?\"],\n      \"children\": [\n        {\n          \"version\": 1,\n          \"when\": [\"tile.out->boolean:<boolean>.answer\"],\n          \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n          \"children\": [],\n          \"comment\": \"Eat what this sprite bumps, but only on a yes.\"\n        }\n      ]\n    }\n  ],\n  \"catalog\": [\n    {\n      \"version\": 2,\n      \"kind\": \"literal\",\n      \"tileId\": \"tile.literal->string:<string>->Eat it?\",\n      \"valueType\": \"string:<string>\",\n      \"value\": \"Eat it?\",\n      \"valueLabel\": \"Eat it?\",\n      \"displayFormat\": \"default\"\n    }\n  ]\n}\n```\n\n```assistant\nGrammar of ask, as the editor offers it:\n- At most one optional text value: the question. Nothing else: no modifier, no Sprite.\n\nWhat it does:\n- It asks the question in Arcade's own yes-or-no dialog: A answers yes, B answers no.\n- The rule holds until the question is answered: a rule under it does not get its turn, and the rule\n  cannot fire again until then.\n- The whole game pauses while the question is up: every brain stops thinking and every sprite stops,\n  the way Arcade pauses the game for any dialog. Questions and boxes asked for at once open one after\n  another, in the order they were asked for.\n- It writes the answer to its answer output, tile.out->boolean:<boolean>.answer, whose own page holds\n  its notes.\n- The rule goes on once the button that answered the question is let go.\n- With no text placed, it asks the rule's WHEN value: a number, a text or a switch, printed as Arcade\n  prints them. Any other WHEN value -- a sprite, a position, or nothing -- and empty text ask nothing:\n  answer holds nothing, and the rule goes on at once.\n```\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.show-text`\n`tile:tile.actuator->actuator.arcade.destroy`\n`tile:tile.sensor->sensor.arcade.bump`\n",
+          "icon": "87041000100000000000000000000000f0ffffffffffff0ff09999999999990ff09999999999990ff09999999999990ff09911999999990ff01911999999990ff01999991119910ff01999191119910ff01911119999990ff09911919999990ff09999999999990ff09999999999990ff09999999999990ff0ffffffffffff0f0000000000000000"
         }
       ],
       "overloads": [

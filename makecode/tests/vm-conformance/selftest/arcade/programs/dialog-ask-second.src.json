@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "dialogAskSecond1",
+  "name": "Ask second",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgAskSecnd0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "second?",
+      "valueLabel": "second?",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgAskSecnd0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.ask",
+            "tile.literal->string:<string>->second?"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgAskSecnd0"
+        }
+      ]
+    }
+  ]
+}

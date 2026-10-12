@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "id": "dialogGreeter001",
+  "name": "Greeter",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgGreeter00",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "greeted",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0dlgGreeted00"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "Welcome!",
+      "valueLabel": "Welcome!",
+      "displayFormat": "default"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgGreeter00",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text",
+            "tile.literal->string:<string>->Welcome!",
+            "tile.modifier->modifier.layout.top"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0dlgGreeted00",
+                "tile.op->assign",
+                "tile.var->fVr0dlgGreeted00",
+                "tile.op->add",
+                "tile.literal->number:<number>->1"
+              ],
+              "children": [],
+              "ruleId": "fRu0dlgGreeter01"
+            }
+          ],
+          "ruleId": "fRu0dlgGreeter00"
+        }
+      ]
+    }
+  ]
+}

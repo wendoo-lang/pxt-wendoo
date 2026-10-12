@@ -21,6 +21,7 @@ import {
   arcadeImageRulePrograms,
   arcadeLoneSensorSentence,
   arcadeModifierLabel,
+  arcadeOffersInChild,
   arcadeOffersLiteral,
   arcadeOperatorResultType,
   arcadeReadOfTileReference,
@@ -53,6 +54,7 @@ import {
   type RenderedFile,
   renderVmPrograms,
   SENSOR_ENTRY_PREFIX,
+  SWITCH_OUTPUT_ENTRY_PREFIX,
   TEXT_LITERAL,
   VARIABLE_ENTRY_PREFIX,
 } from "./vm-programs.js";
@@ -1024,6 +1026,80 @@ describe("the MakeCode VM extension's compiled programs", () => {
       [say, TEXT_LITERAL, TEXT_LITERAL],
       [say, duration, NUMBER_LITERAL, duration, NUMBER_LITERAL],
       [say, bumped],
+    ]) {
+      assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
+    }
+  });
+
+  const showText = "actuator.arcade.show-text";
+  const ask = "actuator.arcade.ask";
+  const answer = `${SWITCH_OUTPUT_ENTRY_PREFIX}answer`;
+  const layoutTop = `${MODIFIER_ENTRY_PREFIX}layout.top`;
+  const layoutCenter = `${MODIFIER_ENTRY_PREFIX}layout.center`;
+  const layoutFull = `${MODIFIER_ENTRY_PREFIX}layout.full`;
+  const buttonA = "sensor.arcade.button-a";
+
+  it("offers each layout modifier at show text until one is placed, and none at ask", () => {
+    for (const layout of [layoutTop, layoutCenter, layoutFull]) {
+      assert.ok(arcadeOffersLiteral(layout, [], [showText]), layout);
+      assert.ok(arcadeOffersLiteral(layout, [], [showText, TEXT_LITERAL]), layout);
+      assert.equal(arcadeOffersLiteral(layout, [], [showText, layoutTop]), false, layout);
+      assert.equal(arcadeOffersLiteral(layout, [], [ask]), false, layout);
+    }
+  });
+
+  for (const [sentence, when, act] of [
+    ["a bare show text under the A button", [buttonA], [showText]],
+    ["a bare show text under player one's score", [playerOne, scoreOf], [showText]],
+    ["show text given a text", [buttonA], [showText, TEXT_LITERAL]],
+    ["show text given a text, then the top", [buttonA], [showText, TEXT_LITERAL, layoutTop]],
+    ["show text given the center, then a text", [buttonA], [showText, layoutCenter, TEXT_LITERAL]],
+    ["show text given the full screen", [buttonA], [showText, layoutFull]],
+    ["show text given a text variable", [], [showText, `${VARIABLE_ENTRY_PREFIX}string.motto`]],
+    ["a bare ask under bump", [bump], [ask]],
+    ["ask given a text", [bump], [ask, TEXT_LITERAL]],
+  ] as const) {
+    it(`compiles ${sentence}`, () => {
+      assert.deepEqual(arcadeImageRuleDiagnosticCodes([...when], [...act]), []);
+    });
+  }
+
+  it("offers ask's answer in a child of its rule as bump's bumped sprite is offered in a child of bump's, and in no child of a rule without ask", () => {
+    assert.ok(arcadeOffersInChild(bumped, { when: [bump], act: [] }, []));
+    assert.ok(arcadeOffersInChild(answer, { when: [bump], act: [ask, TEXT_LITERAL] }, []));
+    assert.equal(arcadeOffersInChild(answer, { when: [bump], act: [showText, TEXT_LITERAL] }, []), false);
+  });
+
+  it("compiles a child destroying the bumped sprite under ask's answer, the program reading the answer's key", () => {
+    const { codes, bytecode } = arcadeChainCompile([bump], [ask, TEXT_LITERAL], {
+      when: [answer],
+      act: [destroy, bumped],
+    });
+
+    assert.deepEqual(codes, []);
+    assert.ok(bytecode && new TextDecoder().decode(bytecode).includes("__out.boolean:<boolean>.answer"));
+  });
+
+  it("projects show text given a text and the top, and ask given a text, with the words their catalog entries carry", () => {
+    const showWord = arcadeCarriedTileLanguage(showText)?.form ?? arcadeCarriedTileLabel(showText);
+    const askWord = arcadeCarriedTileLanguage(ask)?.form ?? arcadeCarriedTileLabel(ask);
+    const topWords = arcadeCarriedSlotLanguage(showText, "modifier.layout.top");
+    const textOf = (act: string[]) => arcadeRuleSentence([], act).words.map((word) => word.text);
+
+    const asked = textOf([ask, TEXT_LITERAL]);
+
+    assert.equal(asked.length, 2);
+    assert.equal(asked[0], askWord);
+    assert.deepEqual(textOf([showText, TEXT_LITERAL, layoutTop]), [showWord, asked[1], topWords?.form]);
+  });
+
+  it("refuses show text given two layouts or two texts, and ask given a layout or two texts", (t) => {
+    t.mock.method(console, "warn", () => {});
+    for (const act of [
+      [showText, layoutTop, layoutCenter],
+      [showText, TEXT_LITERAL, TEXT_LITERAL],
+      [ask, layoutTop],
+      [ask, TEXT_LITERAL, TEXT_LITERAL],
     ]) {
       assert.notDeepEqual(arcadeImageRuleDiagnosticCodes([bump], act), [], act.join(" "));
     }

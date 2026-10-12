@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "id": "dialogAskEat0001",
+  "name": "Asker",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgAskEat000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "last",
+      "varType": "boolean:<boolean>",
+      "uniqueId": "fVr0dlgAskLast00"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "Eat it?",
+      "valueLabel": "Eat it?",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgAskEat000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.ask",
+            "tile.literal->string:<string>->Eat it?"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [
+                "tile.out->boolean:<boolean>.answer"
+              ],
+              "do": [
+                "tile.actuator->actuator.arcade.destroy",
+                "tile.out->struct:<Sprite>.bumped"
+              ],
+              "children": [],
+              "ruleId": "fRu0dlgAskEat001"
+            },
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0dlgAskLast00",
+                "tile.op->assign",
+                "tile.out->boolean:<boolean>.answer"
+              ],
+              "children": [],
+              "ruleId": "fRu0dlgAskEat002"
+            }
+          ],
+          "ruleId": "fRu0dlgAskEat000"
+        }
+      ]
+    }
+  ]
+}

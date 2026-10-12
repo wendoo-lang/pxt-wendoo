@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "dialogMottoBare1",
+  "name": "Banner",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgMottoBare",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "motto",
+      "varType": "string:<string>",
+      "uniqueId": "fVr0dlgMottoText"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgMottoBare",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.var->fVr0dlgMottoText"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgMottoBar0"
+        }
+      ]
+    }
+  ]
+}

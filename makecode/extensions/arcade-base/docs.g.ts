@@ -798,6 +798,85 @@ namespace wendoo {
                 "`tile:tile.var.factory->struct:<Player>`\n" +
                 "`tile:tile.accessor->struct:<Player>->score`\n";
         }
+        if (name === "actuator.arcade.ask") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Ask\n" +
+                "\n" +
+                "Asks the player a yes-or-no question.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **ask** on the **DO** side of a rule and give it a question: **WHEN bump DO ask \"Eat it?\"**. The\n" +
+                "player answers with A for yes or B for no. While the question is up, the whole game pauses, and the\n" +
+                "rule waits for the answer. Without any text, ask asks what the WHEN found.\n" +
+                "\n" +
+                "## Answer\n" +
+                "\n" +
+                "The answer goes into `tile:tile.out->boolean:<boolean>.answer`, for the rules tucked under the **ask**\n" +
+                "to read once it is given: **WHEN answer DO destroy bumped sprite** eats only on a yes.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.ask\", \"tile.literal->string:<string>->Eat it?\"],\n" +
+                "      \"children\": [\n" +
+                "        {\n" +
+                "          \"version\": 1,\n" +
+                "          \"when\": [\"tile.out->boolean:<boolean>.answer\"],\n" +
+                "          \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n" +
+                "          \"children\": [],\n" +
+                "          \"comment\": \"Eat what this sprite bumps, but only on a yes.\"\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->string:<string>->Eat it?\",\n" +
+                "      \"valueType\": \"string:<string>\",\n" +
+                "      \"value\": \"Eat it?\",\n" +
+                "      \"valueLabel\": \"Eat it?\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of ask, as the editor offers it:\n" +
+                "- At most one optional text value: the question. Nothing else: no modifier, no Sprite.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It asks the question in Arcade's own yes-or-no dialog: A answers yes, B answers no.\n" +
+                "- The rule holds until the question is answered: a rule under it does not get its turn, and the rule\n" +
+                "  cannot fire again until then.\n" +
+                "- The whole game pauses while the question is up: every brain stops thinking and every sprite stops,\n" +
+                "  the way Arcade pauses the game for any dialog. Questions and boxes asked for at once open one after\n" +
+                "  another, in the order they were asked for.\n" +
+                "- It writes the answer to its answer output, tile.out->boolean:<boolean>.answer, whose own page holds\n" +
+                "  its notes.\n" +
+                "- The rule goes on once the button that answered the question is let go.\n" +
+                "- With no text placed, it asks the rule's WHEN value: a number, a text or a switch, printed as Arcade\n" +
+                "  prints them. Any other WHEN value -- a sprite, a position, or nothing -- and empty text ask nothing:\n" +
+                "  answer holds nothing, and the rule goes on at once.\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.show-text`\n" +
+                "`tile:tile.actuator->actuator.arcade.destroy`\n" +
+                "`tile:tile.sensor->sensor.arcade.bump`\n";
+        }
         if (name === "actuator.arcade.destroy") {
             return "```brain noframe do\n" +
                 "{ \"tile\": \"${tileId}\" }\n" +
@@ -1141,6 +1220,145 @@ namespace wendoo {
                 "`tile:tile.var.factory->string`\n" +
                 "`tile:tile.sensor->sensor.arcade.bump`\n" +
                 "`tile:tile.actuator->actuator.arcade.destroy`\n";
+        }
+        if (name === "actuator.arcade.show-text") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Show Text\n" +
+                "\n" +
+                "Shows text in a box on the screen until the player presses A.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Place **show text** on the **DO** side of a rule and give it some text: **WHEN A button DO show text\n" +
+                "\"Welcome!\"**. The box opens at the bottom of the screen; add **top**, **center** or **full** to put it\n" +
+                "somewhere else. Long text shows a page at a time, and A turns the page.\n" +
+                "\n" +
+                "While the box is up, the whole game pauses, and the rule waits until A closes it. Without any text,\n" +
+                "show text shows what the WHEN found: **WHEN player one score DO show text** shows the score.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.button-a\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.show-text\", \"tile.literal->string:<string>->Welcome!\"],\n" +
+                "      \"children\": [],\n" +
+                "      \"comment\": \"Show a welcome when A is pressed.\"\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->string:<string>->Welcome!\",\n" +
+                "      \"valueType\": \"string:<string>\",\n" +
+                "      \"value\": \"Welcome!\",\n" +
+                "      \"valueLabel\": \"Welcome!\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "Grammar of show text, as the editor offers it:\n" +
+                "- In either order, each at most once: an optional text value, and one of the modifiers top, center or\n" +
+                "  full. Nothing else: no duration, no Sprite, no output tile.\n" +
+                "\n" +
+                "What it does:\n" +
+                "- It opens Arcade's own long-text box: at the bottom of the screen bare, or at the top, in the center,\n" +
+                "  or over the whole screen. Long text shows a page at a time; A turns the page and closes the box after\n" +
+                "  the last page.\n" +
+                "- The rule holds until the box is closed: a rule under it does not get its turn, and the rule cannot\n" +
+                "  fire again until then.\n" +
+                "- The whole game pauses while the box is up: every brain stops thinking and every sprite stops, the way\n" +
+                "  Arcade pauses the game for any dialog. Boxes and questions asked for at once open one after another, in\n" +
+                "  the order they were asked for.\n" +
+                "- With no text placed, it shows the rule's WHEN value: a number, a text or a switch, printed as Arcade\n" +
+                "  prints them ([A button] shows true). Any other WHEN value -- a sprite, a position, or nothing -- and\n" +
+                "  empty text open no box, and the rule goes on at once.\n" +
+                "- The rule goes on once the button that closed the box is let go. The down button turns the page and\n" +
+                "  closes the box too, without firing WHEN [A button].\n" +
+                "```\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.ask`\n" +
+                "`tile:tile.actuator->actuator.arcade.say`\n" +
+                "`tile:tile.sensor->sensor.arcade.button-a`\n";
+        }
+        if (name === "output.answer") {
+            return "```brain noframe do\n" +
+                "{ \"tile\": \"${tileId}\" }\n" +
+                "```\n" +
+                "\n" +
+                "# Answer\n" +
+                "\n" +
+                "The answer the player gave to **ask**.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Once the player answers an **ask**, **answer** holds yes -- true -- for A, or no -- false -- for B. Read\n" +
+                "it in the rules tucked under the **ask**, which run only after the answer is given: **WHEN answer DO\n" +
+                "destroy bumped sprite** eats on a yes, and **WHEN not answer** acts on a no.\n" +
+                "\n" +
+                "## Example\n" +
+                "\n" +
+                "```brain\n" +
+                "{\n" +
+                "  \"ruleJsons\": [\n" +
+                "    {\n" +
+                "      \"version\": 1,\n" +
+                "      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n" +
+                "      \"do\": [\"tile.actuator->actuator.arcade.ask\", \"tile.literal->string:<string>->Eat it?\"],\n" +
+                "      \"children\": [\n" +
+                "        {\n" +
+                "          \"version\": 1,\n" +
+                "          \"when\": [\"tile.out->boolean:<boolean>.answer\"],\n" +
+                "          \"do\": [\"tile.actuator->actuator.arcade.destroy\", \"tile.out->struct:<Sprite>.bumped\"],\n" +
+                "          \"children\": [],\n" +
+                "          \"comment\": \"Eat what this sprite bumps, but only on a yes.\"\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    }\n" +
+                "  ],\n" +
+                "  \"catalog\": [\n" +
+                "    {\n" +
+                "      \"version\": 2,\n" +
+                "      \"kind\": \"literal\",\n" +
+                "      \"tileId\": \"tile.literal->string:<string>->Eat it?\",\n" +
+                "      \"valueType\": \"string:<string>\",\n" +
+                "      \"value\": \"Eat it?\",\n" +
+                "      \"valueLabel\": \"Eat it?\",\n" +
+                "      \"displayFormat\": \"default\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}\n" +
+                "```\n" +
+                "\n" +
+                "```assistant\n" +
+                "The answer output, tile.out->boolean:<boolean>.answer:\n" +
+                "- A switch: true when the player answered with A, false with B. Written once the question is answered\n" +
+                "  and the button that answered it is let go, before the rules under the ask run. Placeable in the rules\n" +
+                "  under ask's rule.\n" +
+                "- An ask that asks nothing -- empty text, or a WHEN value that is no number, text or switch -- clears\n" +
+                "  it: answer then holds nothing, and WHEN [answer] does not fire.\n" +
+                "- Before the first answer, it holds nothing.\n" +
+                "```\n" +
+                "\n" +
+                "## Provided By\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.ask`\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.op->not`\n";
         }
         if (name === "output.bumped") {
             return "```brain noframe do\n" +

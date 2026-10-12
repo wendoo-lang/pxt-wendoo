@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "id": "dialogBumpedBare",
+  "name": "Mumble box",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgBumpedBar",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "passes",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0dlgPasses000"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgBumpedBar",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.bump"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0dlgPasses000",
+                "tile.op->assign",
+                "tile.var->fVr0dlgPasses000",
+                "tile.op->add",
+                "tile.literal->number:<number>->1"
+              ],
+              "children": [],
+              "ruleId": "fRu0dlgBumpedBr1"
+            }
+          ],
+          "ruleId": "fRu0dlgBumpedBr0"
+        }
+      ]
+    }
+  ]
+}

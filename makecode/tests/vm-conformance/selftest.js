@@ -38,7 +38,8 @@
  * `EXPECTED_ARCADE_SMOOTHING_LINES` in that order and no other, the
  * unusable score lines in `EXPECTED_ARCADE_SCORE_LINES` in that order and no
  * other, the unspeakable say lines in `EXPECTED_ARCADE_SAY_LINES` in that
- * order and no other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
+ * order and no other, the unspeakable dialog lines in
+ * `EXPECTED_ARCADE_DIALOG_LINES` in that order and no other, the brain variable lines in `EXPECTED_ARCADE_VARIABLE_LINES` in that
  * order and no other, the unusable effect, sound and particle effect lines in
  * `EXPECTED_ARCADE_CHOICE_LINES` in that order and no other, no
  * program-fault line, a `DEBUG ON` line no line the Wendoo extensions log precedes,
@@ -592,6 +593,31 @@ const EXPECTED_ARCADE_CHECKS = [
   "an-ouch-rule-says-ouch-once-while-its-sprite-touches-another",
   "a-bare-say-under-a-bump-whose-when-result-is-a-sprite-says-nothing",
   "a-say-in-the-final-think-of-a-destroyed-sprite-says-nothing",
+  "dialog-tiles-take-their-action-ids-from-the-manifest-and-are-asynchronous",
+  "dialogs-asked-for-at-once-show-in-the-order-asked-each-resolving-once-it-closes",
+  "show-text-lays-its-box-out-at-the-bottom-bare-and-at-the-top-center-or-full-screen-given-a-modifier",
+  "dialog-tiles-given-no-text-show-their-when-result-as-arcade-prints-it",
+  "ask-writes-its-answer-to-its-output-on-its-rule-before-it-resolves",
+  "an-ask-answered-with-b-held-writes-its-answer-and-resolves-only-once-b-is-let-go",
+  "an-empty-text-or-question-opens-nothing-and-resolves-at-once-an-empty-question-clearing-the-answer",
+  "a-dialog-tile-given-no-text-under-no-when-opens-nothing-and-resolves-at-once",
+  "show-text-opens-arcades-long-text-on-a-pushed-scene-laid-out-by-its-modifier",
+  "no-program-thinks-while-a-text-box-is-up",
+  "closing-a-text-box-resumes-its-rule-and-its-child-rule-runs-only-after",
+  "programs-think-while-the-button-that-closed-a-box-is-held-its-rule-holding",
+  "a-rule-under-an-a-button-held-as-its-box-closes-opens-it-again-only-on-a-new-press",
+  "a-box-closed-with-down-holds-its-rule-until-down-is-let-go",
+  "a-box-closed-with-a-let-go-opens-no-other",
+  "a-rule-asking-for-a-box-every-frame-opens-one-per-dismissal",
+  "a-brain-whose-sprite-is-destroyed-while-its-box-is-up-thinks-its-final-think-once-the-box-closes",
+  "ask-asks-through-arcades-ask-and-no-program-thinks-while-it-is-up",
+  "an-ask-answered-with-a-reads-true-in-its-child-rules-which-eat-the-bumped-sprite",
+  "an-ask-answered-with-b-reads-false-in-its-child-rules-which-eat-nothing",
+  "two-brains-asking-in-one-pass-ask-in-the-order-they-asked",
+  "a-bare-show-text-under-a-score-shows-the-score",
+  "a-bare-show-text-under-a-text-variable-shows-its-text-once-it-holds-some",
+  "a-bare-show-text-under-the-a-button-shows-true",
+  "a-bare-show-text-under-a-bump-whose-when-result-is-a-sprite-opens-nothing-and-its-rule-goes-on-at-once",
   "icon-encoder-writes-makecodes-image-buffer",
   "icon-encoder-buffer-reads-back-as-the-same-image",
   "icon-encoder-renders-nothing-for-what-is-no-image",
@@ -649,6 +675,17 @@ const EXPECTED_ARCADE_SAY_LINES = ["WENDOO_SAY_UNSPEAKABLE"];
 
 /** The line the arcade base pack logs for a say given no text whose WHEN result holds no number, text or switch. */
 const SAY_LINE = "wendoo WENDOO_SAY_UNSPEAKABLE";
+
+/**
+ * Every unspeakable dialog line the arcade selftest is expected to log, in
+ * order, each without its `wendoo ` prefix: one for the whole run, however
+ * many show texts and asks given no text find a WHEN result holding no
+ * number, text or switch.
+ */
+const EXPECTED_ARCADE_DIALOG_LINES = ["WENDOO_DIALOG_UNSPEAKABLE"];
+
+/** The line the arcade base pack logs for a show text or an ask given no text whose WHEN result holds no number, text or switch. */
+const DIALOG_LINE = "wendoo WENDOO_DIALOG_UNSPEAKABLE";
 
 /**
  * Every brain variable line the arcade selftest is expected to log, in
@@ -740,6 +777,8 @@ const ARCADE_ICONED_TILES = [
   "actuator.arcade.destroy",
   "sensor.arcade.destroyed",
   "actuator.arcade.say",
+  "actuator.arcade.show-text",
+  "actuator.arcade.ask",
 ];
 
 /** The modifier tiles whose every slot in the arcade base pack's catalog must carry an icon. */
@@ -759,6 +798,9 @@ const ARCADE_ICONED_MODIFIERS = [
   "modifier.position.right",
   "modifier.outcome.win",
   "modifier.outcome.lose",
+  "modifier.layout.top",
+  "modifier.layout.center",
+  "modifier.layout.full",
 ];
 
 /** The core tiles the arcade base pack's catalog must give a 16 by 16 icon, each by its tile id, and every page's own tile by the page family id `tile.page`. */
@@ -849,11 +891,13 @@ const ARCADE_HOST_REJECTIONS = [
  * game code reads and writes, the variables an update restart carries, the
  * game over's gate on a placed value reading nothing, the destroy and
  * destroyed tiles' programs, a brain watching a sprite destroyed with an
- * effect, and the say tile's programs -- with the host the final-think check
+ * effect, the say tile's programs, and the show-text and ask tiles'
+ * programs -- with the host the final-think check
  * drains by hand, between the game over's scene and the destroy programs'
  * scene.
  */
 const EXPECTED_ARCADE_REJECTIONS = [
+  ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
   ...ARCADE_HOST_REJECTIONS,
@@ -1091,6 +1135,13 @@ function reportedScoreLines(log) {
 function reportedSayLines(log) {
   return linesOf(log)
     .filter((line) => line.startsWith(SAY_LINE))
+    .map((line) => line.slice("wendoo ".length));
+}
+
+/** Every unspeakable dialog line the capture logged, in order, each without its `wendoo ` prefix. */
+function reportedDialogLines(log) {
+  return linesOf(log)
+    .filter((line) => line.startsWith(DIALOG_LINE))
     .map((line) => line.slice("wendoo ".length));
 }
 
@@ -1461,6 +1512,10 @@ function arcadeContractFailures(exitCode, log, simxLog) {
   const sayLines = reportedSayLines(log);
   if (sayLines.join("\n") !== EXPECTED_ARCADE_SAY_LINES.join("\n")) {
     failures.push(`unspeakable says logged: ${sayLines.join(" | ")}`);
+  }
+  const dialogLines = reportedDialogLines(log);
+  if (dialogLines.join("\n") !== EXPECTED_ARCADE_DIALOG_LINES.join("\n")) {
+    failures.push(`unspeakable dialogs logged: ${dialogLines.join(" | ")}`);
   }
   const variableLines = reportedVariableLines(log);
   if (variableLines.join("\n") !== EXPECTED_ARCADE_VARIABLE_LINES.join("\n")) {

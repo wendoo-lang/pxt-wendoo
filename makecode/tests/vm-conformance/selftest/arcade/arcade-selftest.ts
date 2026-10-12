@@ -5649,6 +5649,512 @@ namespace arcadeSelftest {
     game.popScene();
   }
 
+  /** The action ids the arcade selftest's ids module allocates the show-text and ask actuators. */
+  const SHOW_TEXT_ACTION = 1038;
+  const ASK_ACTION = 1039;
+
+  /** Milliseconds a check waits after a question opens before answering it: past the half second Arcade's ask ignores the buttons for. */
+  const ASK_SETTLE_MS = 700;
+
+  /** Milliseconds a check holds a button down to press it: several of Arcade's button polls. */
+  const PRESS_MS = 150;
+
+  /** The rule funcId the direct dialog calls run under. */
+  const DIALOG_RULE = 3;
+
+  /**
+   * A dialog presenter recording every dialog it is asked to show, in order.
+   * While {@link RecordingPresenter.live}, it shows each through Arcade's own
+   * dialogs; otherwise a text box closes at once and a question is answered
+   * {@link RecordingPresenter.answer} at once.
+   */
+  class RecordingPresenter extends wendoo.DialogPresenter {
+    /** The text of each dialog, in call order: a text box's text or a question. */
+    texts: string[];
+    /** The layout of each text box, in call order; -1 for a question. */
+    layouts: number[];
+    /** Whether each dialog is shown through Arcade's own. */
+    live: boolean;
+    /** The answer each question gets while not {@link RecordingPresenter.live}. */
+    answer: boolean;
+
+    constructor(live: boolean) {
+      super();
+      this.texts = [];
+      this.layouts = [];
+      this.live = live;
+      this.answer = false;
+    }
+
+    showText(text: string, layout: DialogLayout): void {
+      this.texts.push(text);
+      this.layouts.push(layout);
+      if (this.live) {
+        super.showText(text, layout);
+      }
+    }
+
+    ask(question: string): boolean {
+      this.texts.push(question);
+      this.layouts.push(-1);
+      return this.live ? super.ask(question) : this.answer;
+    }
+
+    /** Forget every dialog recorded so far. */
+    reset(): void {
+      this.texts = [];
+      this.layouts = [];
+    }
+
+    /** The text of every dialog recorded, in call order, joined by `|`. */
+    shown(): string {
+      return this.texts.join("|");
+    }
+  }
+
+  /** A recording presenter in place of the current scene's own. */
+  function recordDialogs(live: boolean): RecordingPresenter {
+    const presenter = new RecordingPresenter(live);
+    wendoo.sceneDialogs(game.currentScene()).presenter = presenter;
+    return presenter;
+  }
+
+  /** What a direct call of a dialog tile's body left: its context and its handle. */
+  class DialogCall {
+    ctx: wendoo.ExecutionContext;
+    table: wendoo.HandleTable;
+    id: number;
+
+    constructor(ctx: wendoo.ExecutionContext, table: wendoo.HandleTable, id: number) {
+      this.ctx = ctx;
+      this.table = table;
+      this.id = id;
+    }
+
+    /** Whether the call's handle has resolved. */
+    resolved(): boolean {
+      const handle = this.table.get(this.id);
+      return handle !== undefined && handle.state === wendoo.HandleState.Resolved;
+    }
+
+    /** The answer output the call's rule holds. */
+    answer(): wendoo.Value {
+      return this.ctx.services.ruleVars.getByName(
+        DIALOG_RULE,
+        wendoo.actionOutputVariableName(wendoo.TYPE_ID_BOOLEAN, wendoo.ANSWER_OUTPUT)
+      );
+    }
+  }
+
+  /** A context on `sprite`'s behalf under the rule {@link DIALOG_RULE}, whose WHEN result is `whenResult` when given. */
+  function dialogContext(sprite: Sprite, whenResult?: wendoo.Value): wendoo.ExecutionContext {
+    const ctx = contextOn(sprite);
+    ctx.currentRuleFuncId = DIALOG_RULE;
+    if (whenResult) {
+      ctx.services.ruleVars.setByName(DIALOG_RULE, wendoo.WHEN_RESULT_VAR, whenResult);
+    }
+    return ctx;
+  }
+
+  /** Call the body of the dialog tile `tileName` in `ctx`, given `args`, with a fresh handle. */
+  function callDialog(tileName: string, ctx: wendoo.ExecutionContext, args: wendoo.Value[]): DialogCall {
+    const table = new wendoo.HandleTable(4);
+    const id = table.createPending(true);
+    tileBody(tileName).execAsync(ctx, args, new wendoo.AsyncHandle(table, id));
+    return new DialogCall(ctx, table, id);
+  }
+
+  /** Call the body of the dialog tile `tileName` on `sprite`'s behalf, given `args`, as {@link dialogContext} sets it up. */
+  function dialogCall(tileName: string, sprite: Sprite, args: wendoo.Value[], whenResult?: wendoo.Value): DialogCall {
+    return callDialog(tileName, dialogContext(sprite, whenResult), args);
+  }
+
+  /** Whether `value` is the switch `expected`. */
+  function isSwitch(value: wendoo.Value, expected: boolean): boolean {
+    return value !== undefined && value.t === wendoo.ValueTag.Boolean && value.b === expected;
+  }
+
+  /**
+   * In a scene of its own, check the show-text and ask tiles, their bodies
+   * called directly and their dialogs recorded, closed and answered at once:
+   * the tiles take their action ids from the project's ids module and are
+   * asynchronous; dialogs asked for at once show in the order asked for,
+   * each handle resolving only once its dialog has closed; show text hands
+   * Arcade its layout -- the bottom bare, else the top, the center or the
+   * whole screen; a WHEN result shows as Arcade prints it; ask writes its
+   * answer to its output on its rule before its handle resolves, and an ask
+   * answered with B held does both only once B is let go; and an empty
+   * text, or no text under no WHEN, opens nothing and resolves at once, an
+   * empty question clearing the answer.
+   */
+  function checkDialogTiles(): void {
+    game.pushScene();
+    const presenter = recordDialogs(false);
+    const nil = wendoo.NIL_VALUE;
+    const placed = wendoo.mkNumber(1);
+    const showText = tileBody(wendoo.SHOW_TEXT_TILE);
+    const ask = tileBody(wendoo.ASK_TILE);
+    check(
+      "dialog-tiles-take-their-action-ids-from-the-manifest-and-are-asynchronous",
+      wendoo.projectIds().actionId(wendoo.SHOW_TEXT_TILE) === SHOW_TEXT_ACTION &&
+        wendoo.projectIds().actionId(wendoo.ASK_TILE) === ASK_ACTION &&
+        showText !== undefined &&
+        showText.isAsync &&
+        ask !== undefined &&
+        ask.isAsync
+    );
+
+    const speaker = newSprite(SpriteKind.Player);
+    const calls = [
+      dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [wendoo.mkString("a")]),
+      dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [wendoo.mkString("b"), placed]),
+      dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [wendoo.mkString("c"), nil, placed]),
+      dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [wendoo.mkString("d"), nil, nil, placed]),
+    ];
+    let pendingAtCall = presenter.shown() === "";
+    for (const call of calls) {
+      pendingAtCall = pendingAtCall && !call.resolved();
+    }
+    pause(FRAMES_MS);
+    let resolvedAfter = true;
+    for (const call of calls) {
+      resolvedAfter = resolvedAfter && call.resolved();
+    }
+    check(
+      "dialogs-asked-for-at-once-show-in-the-order-asked-each-resolving-once-it-closes",
+      pendingAtCall && resolvedAfter && presenter.shown() === "a|b|c|d"
+    );
+    check(
+      "show-text-lays-its-box-out-at-the-bottom-bare-and-at-the-top-center-or-full-screen-given-a-modifier",
+      presenter.layouts.join(",") ===
+        [DialogLayout.Bottom, DialogLayout.Top, DialogLayout.Center, DialogLayout.Full].join(",")
+    );
+
+    presenter.reset();
+    dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [], wendoo.mkNumber(7));
+    dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [], wendoo.TRUE_VALUE);
+    dialogCall(wendoo.ASK_TILE, speaker, [], wendoo.mkString("sure?"));
+    pause(FRAMES_MS);
+    check(
+      "dialog-tiles-given-no-text-show-their-when-result-as-arcade-prints-it",
+      presenter.shown() === "7|true|sure?"
+    );
+
+    presenter.reset();
+    presenter.answer = true;
+    const yes = dialogCall(wendoo.ASK_TILE, speaker, [wendoo.mkString("yes?")]);
+    const unansweredAtCall = !yes.resolved() && yes.answer().t === wendoo.ValueTag.Nil;
+    pause(FRAMES_MS);
+    const yesAnswered = yes.resolved() && isSwitch(yes.answer(), true);
+    presenter.answer = false;
+    const no = dialogCall(wendoo.ASK_TILE, speaker, [wendoo.mkString("no?")]);
+    pause(FRAMES_MS);
+    check(
+      "ask-writes-its-answer-to-its-output-on-its-rule-before-it-resolves",
+      unansweredAtCall &&
+        yesAnswered &&
+        no.resolved() &&
+        isSwitch(no.answer(), false) &&
+        presenter.shown() === "yes?|no?"
+    );
+
+    presenter.reset();
+    controller.B.setPressed(true);
+    const held = dialogCall(wendoo.ASK_TILE, speaker, [wendoo.mkString("held?")]);
+    pause(FRAMES_MS);
+    const unansweredWhileHeld =
+      presenter.shown() === "held?" && !held.resolved() && held.answer().t === wendoo.ValueTag.Nil;
+    controller.B.setPressed(false);
+    pause(FRAMES_MS);
+    check(
+      "an-ask-answered-with-b-held-writes-its-answer-and-resolves-only-once-b-is-let-go",
+      unansweredWhileHeld && held.resolved() && isSwitch(held.answer(), false)
+    );
+
+    presenter.reset();
+    const blank = dialogCall(wendoo.SHOW_TEXT_TILE, speaker, [wendoo.mkString("")]);
+    const answeredBefore = dialogContext(speaker);
+    wendoo.setActionOutput(answeredBefore, wendoo.TYPE_ID_BOOLEAN, wendoo.ANSWER_OUTPUT, wendoo.TRUE_VALUE);
+    const cleared = callDialog(wendoo.ASK_TILE, answeredBefore, [wendoo.mkString("")]);
+    const atOnce = blank.resolved() && cleared.resolved() && cleared.answer().t === wendoo.ValueTag.Nil;
+    const bareShow = dialogCall(wendoo.SHOW_TEXT_TILE, speaker, []);
+    const bareAsk = dialogCall(wendoo.ASK_TILE, speaker, []);
+    const bareAtOnce = bareShow.resolved() && bareAsk.resolved() && bareAsk.answer().t === wendoo.ValueTag.Nil;
+    pause(FRAMES_MS);
+    check(
+      "an-empty-text-or-question-opens-nothing-and-resolves-at-once-an-empty-question-clearing-the-answer",
+      atOnce && presenter.shown() === ""
+    );
+    check(
+      "a-dialog-tile-given-no-text-under-no-when-opens-nothing-and-resolves-at-once",
+      bareAtOnce && presenter.shown() === ""
+    );
+    game.popScene();
+  }
+
+  /** The program `sprite` runs in the scene `gameScene`, or `undefined` when it runs none. */
+  function hostedIn(gameScene: scene.Scene, sprite: Sprite): wendoo.HostedProgram {
+    const hosted = wendoo.sceneProgramHost(gameScene).hostedPrograms();
+    for (let i = 0; i < hosted.length; i++) {
+      if ((hosted[i].attachment as wendoo.SpriteAttachment).sprite === sprite) {
+        return hosted[i];
+      }
+    }
+    return undefined;
+  }
+
+  /** How many thinks the program `sprite` runs in `gameScene` has had, or -1 when it runs none. */
+  function ticksIn(gameScene: scene.Scene, sprite: Sprite): number {
+    const hosted = hostedIn(gameScene, sprite);
+    return hosted === undefined ? -1 : hosted.runtime.tickCount();
+  }
+
+  /** The variable `name` of the program `sprite` runs in `gameScene`, or nil when it runs none. */
+  function variableIn(gameScene: scene.Scene, sprite: Sprite, name: string): wendoo.Value {
+    const hosted = hostedIn(gameScene, sprite);
+    return hosted === undefined ? wendoo.NIL_VALUE : hosted.runtime.getVariable(name);
+  }
+
+  /** Whether the variable `name` of the program `sprite` runs in `gameScene` holds the number `expected`. */
+  function numberIn(gameScene: scene.Scene, sprite: Sprite, name: string, expected: number): boolean {
+    const value = variableIn(gameScene, sprite, name);
+    return value.t === wendoo.ValueTag.Number && value.num === expected;
+  }
+
+  /** Press `button` and let it go, holding it {@link PRESS_MS} and waiting as long after. */
+  function pressAndRelease(button: controller.Button): void {
+    button.setPressed(true);
+    pause(PRESS_MS);
+    button.setPressed(false);
+    pause(PRESS_MS);
+  }
+
+  /**
+   * In a scene of its own, check programs placing the show-text and ask
+   * tiles, their dialogs shown through Arcade's own and closed and answered
+   * by pressing the controller's buttons: a box opens on a pushed scene,
+   * laid out by its modifier, and no program thinks while it is up; closing
+   * it resumes its rule, whose child rule runs only after, once the button
+   * that closed it is let go, the game's programs thinking while it is held;
+   * a rule under an A button held as the box closes opens it again only on
+   * a new press of A; a box closed by the down button, which pages the box
+   * as A does, holds its rule until down is let go, and opens no other; a
+   * rule asking for a box every frame opens one per dismissal; a brain
+   * whose sprite is destroyed while its box is up thinks its final think
+   * once the box closes; a question asked through
+   * Arcade's ask holds every program still, and its answer reads true for A
+   * and false for B in its child rules; two brains asking in one pass ask
+   * in the order they asked; and, their dialogs recorded and closed at once,
+   * bare show texts show a score, a text variable and the A button's `true`,
+   * and show nothing under a bump, whose rule goes on at once.
+   */
+  function checkDialogPrograms(): void {
+    game.pushScene();
+    const gameScene = game.currentScene();
+    const dialogs = wendoo.sceneDialogs(gameScene);
+    const presenter = recordDialogs(true);
+
+    const greeter = spriteRunning(wendooBrains.p_dialogGreeter001);
+    pause(FRAMES_MS);
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    const opened =
+      game.currentScene() !== gameScene &&
+      presenter.shown() === "Welcome!" &&
+      presenter.layouts.join(",") === `${DialogLayout.Top}`;
+    const ticksUp = ticksIn(gameScene, greeter);
+    pause(3 * FRAMES_MS);
+    check("show-text-opens-arcades-long-text-on-a-pushed-scene-laid-out-by-its-modifier", opened);
+    check(
+      "no-program-thinks-while-a-text-box-is-up",
+      ticksUp > 0 && ticksIn(gameScene, greeter) === ticksUp && numberIn(gameScene, greeter, "greeted", 0)
+    );
+    controller.A.setPressed(false);
+    pause(FRAMES_MS);
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    const ticksClosed = ticksIn(gameScene, greeter);
+    pause(2 * FRAMES_MS);
+    const heldAfterClose =
+      game.currentScene() === gameScene &&
+      presenter.shown() === "Welcome!" &&
+      numberIn(gameScene, greeter, "greeted", 0);
+    const thoughtWhileHeld = ticksIn(gameScene, greeter) > ticksClosed;
+    controller.A.setPressed(false);
+    pause(2 * FRAMES_MS);
+    check(
+      "closing-a-text-box-resumes-its-rule-and-its-child-rule-runs-only-after",
+      heldAfterClose && numberIn(gameScene, greeter, "greeted", 1)
+    );
+    check(
+      "programs-think-while-the-button-that-closed-a-box-is-held-its-rule-holding",
+      heldAfterClose && thoughtWhileHeld
+    );
+    const noReopen = presenter.shown() === "Welcome!" && game.currentScene() === gameScene;
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    controller.A.setPressed(false);
+    pause(2 * FRAMES_MS);
+    check(
+      "a-rule-under-an-a-button-held-as-its-box-closes-opens-it-again-only-on-a-new-press",
+      noReopen && presenter.shown() === "Welcome!|Welcome!" && game.currentScene() !== gameScene
+    );
+    controller.down.setPressed(true);
+    pause(3 * FRAMES_MS);
+    check(
+      "a-box-closed-with-down-holds-its-rule-until-down-is-let-go",
+      game.currentScene() === gameScene && numberIn(gameScene, greeter, "greeted", 1)
+    );
+    controller.down.setPressed(false);
+    pause(2 * FRAMES_MS);
+    check(
+      "a-box-closed-with-a-let-go-opens-no-other",
+      presenter.shown() === "Welcome!|Welcome!" &&
+        game.currentScene() === gameScene &&
+        numberIn(gameScene, greeter, "greeted", 2)
+    );
+    sprites.destroy(greeter);
+    pause(FRAMES_MS);
+
+    presenter.reset();
+    info.setScore(0);
+    const nag = spriteRunning(wendooBrains.p_dialogNagEvery01);
+    pause(2 * FRAMES_MS);
+    const first = presenter.texts.length === 1 && dialogs.waitingCount() === 0;
+    pressAndRelease(controller.A);
+    pause(2 * FRAMES_MS);
+    const second = presenter.texts.length === 2 && dialogs.waitingCount() === 0;
+    pressAndRelease(controller.A);
+    pause(2 * FRAMES_MS);
+    check(
+      "a-rule-asking-for-a-box-every-frame-opens-one-per-dismissal",
+      first && second && presenter.texts.length === 3 && dialogs.waitingCount() === 0
+    );
+    sprites.destroy(nag);
+    pause(2 * FRAMES_MS);
+    const heldThrough = hostedIn(gameScene, nag) !== undefined && info.score() === 0;
+    pressAndRelease(controller.A);
+    pause(3 * FRAMES_MS);
+    check(
+      "a-brain-whose-sprite-is-destroyed-while-its-box-is-up-thinks-its-final-think-once-the-box-closes",
+      heldThrough &&
+        info.score() === 1 &&
+        hostedIn(gameScene, nag) === undefined &&
+        presenter.texts.length === 3 &&
+        game.currentScene() === gameScene
+    );
+
+    presenter.reset();
+    const asker = solidSprite(8, 40, 100);
+    wendoo.runBrain(asker, wendooBrains.p_dialogAskEat0001);
+    const food = solidSprite(8, 44, 100);
+    pause(2 * FRAMES_MS);
+    const askTicks = ticksIn(gameScene, asker);
+    pause(3 * FRAMES_MS);
+    check(
+      "ask-asks-through-arcades-ask-and-no-program-thinks-while-it-is-up",
+      presenter.shown() === "Eat it?" &&
+        presenter.layouts.join(",") === "-1" &&
+        askTicks > 0 &&
+        ticksIn(gameScene, asker) === askTicks &&
+        !wendoo.isDestroyed(food)
+    );
+    pause(ASK_SETTLE_MS);
+    pressAndRelease(controller.A);
+    pause(2 * FRAMES_MS);
+    check(
+      "an-ask-answered-with-a-reads-true-in-its-child-rules-which-eat-the-bumped-sprite",
+      wendoo.isDestroyed(food) && isSwitch(variableIn(gameScene, asker, "last"), true)
+    );
+    const spared = solidSprite(8, 44, 100);
+    pause(2 * FRAMES_MS);
+    const askedAgain = presenter.shown() === "Eat it?|Eat it?";
+    spared.x = 140;
+    pause(ASK_SETTLE_MS);
+    pressAndRelease(controller.B);
+    pause(2 * FRAMES_MS);
+    check(
+      "an-ask-answered-with-b-reads-false-in-its-child-rules-which-eat-nothing",
+      askedAgain &&
+        !wendoo.isDestroyed(spared) &&
+        isSwitch(variableIn(gameScene, asker, "last"), false) &&
+        presenter.texts.length === 2
+    );
+    sprites.destroy(asker);
+    sprites.destroy(spared);
+    pause(FRAMES_MS);
+
+    presenter.reset();
+    const firstAsker = spriteRunning(wendooBrains.p_dialogAskFirst01);
+    const secondAsker = spriteRunning(wendooBrains.p_dialogAskSecond1);
+    pause(FRAMES_MS);
+    controller.A.setPressed(true);
+    pause(FRAMES_MS);
+    controller.A.setPressed(false);
+    const queued = presenter.shown() === "first?" && dialogs.waitingCount() === 1;
+    pause(ASK_SETTLE_MS);
+    pressAndRelease(controller.B);
+    const inTurn = presenter.shown() === "first?|second?" && dialogs.waitingCount() === 0;
+    pause(ASK_SETTLE_MS);
+    pressAndRelease(controller.B);
+    pause(2 * FRAMES_MS);
+    check(
+      "two-brains-asking-in-one-pass-ask-in-the-order-they-asked",
+      queued && inTurn && presenter.texts.length === 2 && dialogs.waitingCount() === 0
+    );
+    sprites.destroy(firstAsker);
+    sprites.destroy(secondAsker);
+    pause(FRAMES_MS);
+
+    presenter.live = false;
+    presenter.reset();
+    info.setScore(0);
+    const board = spriteRunning(wendooBrains.p_dialogScoreBare1);
+    pause(FRAMES_MS);
+    const noScore = presenter.shown() === "";
+    info.setScore(42);
+    pause(FRAMES_MS);
+    check("a-bare-show-text-under-a-score-shows-the-score", noScore && presenter.texts[0] === "42");
+    sprites.destroy(board);
+    pause(FRAMES_MS);
+
+    presenter.reset();
+    const banner = spriteRunning(wendooBrains.p_dialogMottoBare1);
+    pause(FRAMES_MS);
+    const noMotto = presenter.shown() === "";
+    wendoo.setBrainString(banner, "motto", "onward");
+    pause(FRAMES_MS);
+    check(
+      "a-bare-show-text-under-a-text-variable-shows-its-text-once-it-holds-some",
+      noMotto && presenter.texts[0] === "onward"
+    );
+    sprites.destroy(banner);
+    pause(FRAMES_MS);
+
+    presenter.reset();
+    const shout = spriteRunning(wendooBrains.p_dialogButtonBare);
+    pause(FRAMES_MS);
+    pressAndRelease(controller.A);
+    check("a-bare-show-text-under-the-a-button-shows-true", presenter.texts[0] === "true");
+    sprites.destroy(shout);
+    pause(FRAMES_MS);
+
+    presenter.reset();
+    const mumble = solidSprite(8, 40, 100);
+    wendoo.runBrain(mumble, wendooBrains.p_dialogBumpedBare);
+    const other = solidSprite(8, 44, 100);
+    pause(3 * FRAMES_MS);
+    const passes = variableIn(gameScene, mumble, "passes");
+    check(
+      "a-bare-show-text-under-a-bump-whose-when-result-is-a-sprite-opens-nothing-and-its-rule-goes-on-at-once",
+      presenter.shown() === "" && passes.t === wendoo.ValueTag.Number && passes.num > 2
+    );
+    sprites.destroy(mumble);
+    sprites.destroy(other);
+    pause(FRAMES_MS);
+    game.popScene();
+  }
+
   /** A one-bit-per-pixel image 2 wide and 9 tall, as MakeCode's own image buffer: rows 0, 7 and 8 lit in column 0, rows 1 and 8 in column 1. */
   const MONO_ICON_HEX = "870102000900000081010201";
 
@@ -6020,6 +6526,8 @@ namespace arcadeSelftest {
     checkDestroyedSpriteWatch();
     checkSayTile();
     checkSayPrograms();
+    checkDialogTiles();
+    checkDialogPrograms();
     checkIconEncoder();
 
     console.log(`CHECKS failed ${failedChecks}`);

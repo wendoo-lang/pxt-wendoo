@@ -566,9 +566,14 @@ the current slice alone.
       speech bubbles: per sprite, the text its bubble shows and the scene
       time it clears at, the text shown through Arcade's own `sayText` once
       per change of it with no time on screen, and the bubble cleared on the
-      scene's first frame past that time), the `dpad`, `A button`, `B button`, `bump`,
+      scene's first frame past that time), the dialog module (one module
+      owning each scene's dialogs: one queue per scene, its dialogs shown
+      one at a time in the order asked for, from a fiber of the queue's own,
+      through Arcade's own `game.showLongText` and `game.ask`; asking never
+      blocks the drain), the `dpad`, `A button`, `B button`, `bump`,
       `in range`, `out of range`, `myself` and `destroyed` sensors and the
-      `move`, `add score`, `game over`, `destroy` and `say` actuators (dpad
+      `move`, `add score`, `game over`, `destroy`, `say`, `show text` and
+      `ask` actuators (dpad
       reads the controller of the player its optional anonymous `Player`
       names, else player one's, an argument buffer ending before that slot
       reading player one's too; `A button` and `B button` are on while that
@@ -600,7 +605,26 @@ the current slice alone.
       another text replaces it at once, empty text clears it at once, and
       the bubble clears its optional `duration` parameter in seconds after
       the last say of its text, held at 0 or above, else 5 seconds after --
-      the two in either order; a destroyed sprite says nothing; `myself` reads the
+      the two in either order; a destroyed sprite says nothing; show text and
+      ask are the pack's asynchronous actuators, each opening a dialog
+      through the dialog module and holding its rule until the dialog is
+      dismissed and the button that closed it is let go -- a rule under it
+      does not get its turn, and the rule cannot fire again until then, so
+      the press that closed the dialog is never read as a new one; while a
+      dialog is up Arcade suspends the scene's frame handlers, so no program
+      of the game thinks, the game's programs think again as it closes, and
+      the first pass after that button is let go resumes the rule; each
+      shows its optional anonymous text, else its rule's WHEN result printed
+      as say prints it, and an empty text or a value printing nothing --
+      logged once per run for the two tiles together -- opens nothing and
+      lets the rule go on at once; show text shows Arcade's paged long-text
+      box, at the bottom of the screen, or at the top, in the center or over
+      the whole screen given one of the shared `modifier.layout.*`
+      fragments, closed with A or down after its last page; ask asks Arcade's yes-or-no question, A for yes and B for
+      no, and writes the answer, a switch, to its declared output `answer`
+      once the button that answered is let go, before its rule resumes, so
+      the rules below it read it once they run -- an ask opening nothing
+      writes nil to it; `myself` reads the
       program's own sprite, inline and writable-result, so accessors follow
       it and `[myself][image] = ...` writes a field;
       the three proximity sensors share one optional anonymous filter,

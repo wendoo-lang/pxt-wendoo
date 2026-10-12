@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "dialogNagEvery01",
+  "name": "Nag",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0dlgNagEvery0",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "string:<string>",
+      "value": "hi",
+      "valueLabel": "hi",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0dlgNagEvery0",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [],
+          "do": [
+            "tile.actuator->actuator.arcade.show-text",
+            "tile.literal->string:<string>->hi"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgNagEvery0"
+        },
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.destroyed"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.add-score"
+          ],
+          "children": [],
+          "ruleId": "fRu0dlgNagEvery1"
+        }
+      ]
+    }
+  ]
+}

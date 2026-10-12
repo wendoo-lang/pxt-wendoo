@@ -28,6 +28,7 @@
         "wander.ts",
         "docs.g.ts",
         "speech.ts",
+        "dialog.ts",
         "vocabulary.ts"
     ],
     "supportedTargets": [
