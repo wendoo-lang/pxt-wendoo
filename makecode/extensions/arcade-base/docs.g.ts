@@ -122,6 +122,22 @@ namespace wendoo {
                 "`tile:tile.actuator->actuator.arcade.add-score`\n" +
                 "`tile:tile.sensor->sensor.arcade.dpad`\n";
         }
+        if (name === "Song") {
+            return "# Song\n" +
+                "\n" +
+                "One of your project's own songs.\n" +
+                "\n" +
+                "---\n" +
+                "\n" +
+                "Each of these is a song you made in your project's music editor, named the way you named it there. Give\n" +
+                "one to **play sound** to play it: **WHEN A button DO play sound** followed by your song plays it while A\n" +
+                "is held.\n" +
+                "\n" +
+                "## See Also\n" +
+                "\n" +
+                "`tile:tile.actuator->actuator.arcade.play-sound`\n" +
+                "`tile:tile.var.factory->struct:<Sound>`\n";
+        }
         if (name === "Sound") {
             return "```brain noframe\n" +
                 "{\n" +
@@ -1158,13 +1174,14 @@ namespace wendoo {
                 "\n" +
                 "# Play Sound\n" +
                 "\n" +
-                "Plays one of Arcade's sounds.\n" +
+                "Plays one of Arcade's sounds, or one of your songs.\n" +
                 "\n" +
                 "---\n" +
                 "\n" +
                 "Place **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba\n" +
-                "ding**. On its own it plays ba ding. The rule waits for the sound to end, so a rule that stays on plays\n" +
-                "its sound again each time it finishes.\n" +
+                "ding**. On its own it plays ba ding. Give it one of your project's songs instead to play that song:\n" +
+                "**WHEN A button DO play sound** followed by your song. The rule waits for the sound to end, so a rule\n" +
+                "that stays on plays its sound again each time it finishes.\n" +
                 "\n" +
                 "Add **in background** to let the rule go on while the sound plays, or **looping** to play the sound over\n" +
                 "and over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same\n" +
@@ -1189,15 +1206,19 @@ namespace wendoo {
                 "\n" +
                 "```assistant\n" +
                 "Grammar of play sound, as the editor offers it:\n" +
-                "- In either order, each at most once: an optional Sound value, and one of the modifiers [in background]\n" +
-                "  or [looping]. Nothing else: no duration, no volume, no Number, no output tile. To play a pitch, use\n" +
-                "  [play tone].\n" +
+                "- In either order, each at most once: an optional Sound value or Song value -- one of the two, never\n" +
+                "  both -- and one of the modifiers [in background] or [looping]. Nothing else: no duration, no volume,\n" +
+                "  no Number, no output tile. To play a pitch, use [play tone].\n" +
+                "- A Song value is one of the project's own songs, made in the music editor; the editor offers each as a\n" +
+                "  literal tile by the song's name. There are no Song variables.\n" +
                 "- A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --\n" +
-                "  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing.\n" +
+                "  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing, and so\n" +
+                "  does a Song whose song the project no longer holds.\n" +
                 "\n" +
                 "What it does:\n" +
-                "- Bare, it plays ba ding. Sounds mix: plays from other rules, other sprites and other brains sound at\n" +
-                "  the same time, up to the five melodies Arcade plays at once.\n" +
+                "- Bare, it plays ba ding; given a Song, that song, under the same modifiers as a Sound. Sounds mix:\n" +
+                "  plays from other rules, other sprites and other brains sound at the same time, up to the five melodies\n" +
+                "  Arcade plays at once.\n" +
                 "- With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the\n" +
                 "  rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never\n" +
                 "  once per frame. Other rules and brains keep running meanwhile.\n" +
@@ -1214,6 +1235,7 @@ namespace wendoo {
                 "## See Also\n" +
                 "\n" +
                 "`tile:tile.var.factory->struct:<Sound>`\n" +
+                "`tile:tile.var.factory->struct:<Song>`\n" +
                 "`tile:tile.actuator->actuator.arcade.play-tone`\n" +
                 "`tile:tile.actuator->actuator.arcade.stop-sounds`\n";
         }

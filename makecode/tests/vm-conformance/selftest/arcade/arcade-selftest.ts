@@ -11,7 +11,7 @@
  * A button, B button, bump, in-range, out-of-range, myself, destroyed, move,
  * add-score, game-over, destroy, say, show-text, ask, play-sound, play-tone
  * and stop-sounds tiles, its player, sound and particle effect
- * literals, and the `Sprite`, `Vector2` and `Player` accessors, driven by
+ * literals, a song literal, and the `Sprite`, `Vector2` and `Player` accessors, driven by
  * pressing the controllers' buttons, placing, moving and destroying sprites
  * and setting scores from game code, and programs updated while the game
  * runs, through the messages the Wendoo simulator extension posts -- and a
@@ -19,11 +19,12 @@
  * in-range, out-of-range, myself, dpad, A button, B button, add-score,
  * destroy, destroyed, say, show-text, ask, play-sound, play-tone and
  * stop-sounds tiles' bodies and the `Sprite` and `Player` types' field hooks
- * directly with image asset, sprite, brain, player, sound and particle
- * effect values, recording the sounds the sound tiles play through a mixer
+ * directly with image asset, song asset, sprite, brain, player, sound and
+ * particle effect values, recording the sounds the sound tiles play through a mixer
  * standing in for Arcade's, the `Effect`, `Sound` and `ParticleEffect` types' bindings
- * with each of their literals, images resolved through an image factory
- * registered the way a project's images module registers one, and the move
+ * with each of their literals, images and songs resolved through image and
+ * song factories registered the way a project's assets module registers
+ * them, and the move
  * tile's body with sprite and point targets and with wander destinations
  * picked from random sources it scripts. It reads and writes the variables
  * of the brains sprites run through the arcade extension's brain variable
@@ -41,9 +42,9 @@
  *   `wendoo sim-channel-rejected <code>` -- one per program update taken,
  *   removal taken, update refused, and message refused, as the VM extension
  *   logs them.
- * - `wendoo WENDOO_ASSET_UNRESOLVED image <id>` -- one per image asset id no
- *   factory held when a tile or a sprite's image first used it, as the VM
- *   extension logs it.
+ * - `wendoo WENDOO_ASSET_UNRESOLVED <kind> <id>` -- one per image or song
+ *   asset id no factory held when a tile or a sprite's image first used it,
+ *   as the VM extension logs it.
  * - `wendoo WENDOO_BRAIN_UNRESOLVED <id>` -- one per brain document id no
  *   compiled brain holds when a sprite's brain was first set to it, as the
  *   arcade base pack logs it.
@@ -6172,10 +6173,13 @@ namespace arcadeSelftest {
   /** Milliseconds a melody plays for through a {@link RecordingMixer} unless a check sets another length. */
   const MELODY_MS = 300;
 
-  /** What a {@link RecordingMixer} records for `playable`: `melody <text>`, `tone <hz> <ms>`, or `effect <wave> <hz> <to> <start volume> <end volume> <ms> <effect> <curve>`. */
+  /** What a {@link RecordingMixer} records for `playable`: `melody <text>`, `song <hex>`, `tone <hz> <ms>`, or `effect <wave> <hz> <to> <start volume> <end volume> <ms> <effect> <curve>`. */
   function describeSound(playable: music.Playable): string {
     if (playable instanceof music.MelodyPlayable) {
       return `melody ${(playable as music.MelodyPlayable).melody.text}`;
+    }
+    if (playable instanceof music.sequencer.Song) {
+      return `song ${(playable as music.sequencer.Song).buf.toHex()}`;
     }
     if (playable instanceof music.TonePlayable) {
       const tone = playable as music.TonePlayable;
@@ -6190,10 +6194,34 @@ namespace arcadeSelftest {
     return `melody ${melody.text}`;
   }
 
+  /** Asset id of the theme song the selftest's song factory holds, as a project's jres gives it. */
+  const THEME_SONG_ID = "song1";
+
+  /** Display name of the theme song, which the selftest's song factory also answers to. */
+  const THEME_SONG_NAME = "theme";
+
+  /** Song asset id no factory holds: a song the project has since deleted. */
+  const DELETED_SONG_ID = "song404";
+
+  /** The theme song as the music editor encodes it: 120 beats per minute, 4 beats per measure, 8 ticks per beat, one measure, no tracks. */
+  const THEME_SONG_HEX = "00780004080100";
+
+  /** The project's song factory, as the project's assets module registers it: by asset id and by display name. */
+  helpers._registerFactory("song", (name: string) => {
+    if (name === THEME_SONG_ID || name === THEME_SONG_NAME) {
+      return Buffer.fromHex(THEME_SONG_HEX);
+    }
+    return null;
+  });
+
+  /** What a {@link RecordingMixer} records for the theme song. */
+  const THEME_SONG_PLAY = `song ${THEME_SONG_HEX}`;
+
   /**
    * A sound mixer recording every sound it is asked to play and playing
    * none: a play records its sound and waits as long as the sound lasts -- a
-   * melody {@link RecordingMixer.melodyMs}, a tone its own duration -- and a
+   * melody or a song {@link RecordingMixer.melodyMs}, a tone its own
+   * duration -- and a
    * loop records its sound and replays it from a fiber of its own, each
    * replay recorded as a play, until every sound stops.
    */
@@ -6206,7 +6234,7 @@ namespace arcadeSelftest {
     loops: string[];
     /** How many times every sound was stopped. */
     stops: number;
-    /** Milliseconds a melody plays for. */
+    /** Milliseconds a melody or a song plays for. */
     melodyMs: number;
     /** The playables looping and not yet stopped. */
     private looping: music.Playable[];
@@ -6224,7 +6252,7 @@ namespace arcadeSelftest {
     play(playable: music.Playable): void {
       this.plays.push(describeSound(playable));
       this.played.push(playable);
-      if (playable instanceof music.MelodyPlayable) {
+      if (playable instanceof music.MelodyPlayable || playable instanceof music.sequencer.Song) {
         pause(this.melodyMs);
       } else if (playable instanceof music.TonePlayable) {
         pause((playable as music.TonePlayable).duration);
@@ -6309,9 +6337,14 @@ namespace arcadeSelftest {
   const TONE_VIBRATO = 9;
   const TONE_BACKGROUND = 12;
 
-  /** Argument-buffer positions of the play-sound actuator's sound and its `in background` modifier; `looping` follows it. */
+  /** Width of the play-sound actuator's argument buffer: sound, song, two playback modifiers. */
+  const SOUND_ARGS = 4;
+
+  /** Argument-buffer positions of the play-sound actuator's sound, its song and its `in background` modifier; `looping` follows it. */
   const SOUND_SLOT = 0;
-  const SOUND_BACKGROUND = 1;
+  const SONG_SLOT = 1;
+  const SOUND_BACKGROUND = 2;
+  const SOUND_LOOPING = 3;
 
   /** The `WaveShape` each wave modifier of the play tone picks, in slot order from `sine`. */
   const WAVES_IN_SLOT_ORDER = [
@@ -6341,6 +6374,11 @@ namespace arcadeSelftest {
     return args;
   }
 
+  /** A play-sound argument buffer, each of `slots` holding the value at the same index of `values`. */
+  function soundArgs(slots: number[], values: wendoo.Value[]): wendoo.Value[] {
+    return argBuffer(SOUND_ARGS, slots, values);
+  }
+
   /** A play-tone argument buffer, each of `slots` holding the value at the same index of `values`. */
   function toneArgs(slots: number[], values: wendoo.Value[]): wendoo.Value[] {
     return argBuffer(TONE_ARGS, slots, values);
@@ -6352,6 +6390,27 @@ namespace arcadeSelftest {
   /** The `Sound` value naming `name`, as a program compiled with a literal holding that name holds it. */
   function soundValue(name: string): wendoo.Value {
     return literalValue(SOUND_TYPE, wendoo.namedChoiceLiterals([name], [name])[0]);
+  }
+
+  /** Wendoo type name of the `Song` type. */
+  const SONG_TYPE = "Song";
+
+  /** The type-atom id the arcade selftest's ids module allocates the `Song` type. */
+  const SONG_ATOM = 1032;
+
+  /**
+   * The `Song` value a compiled program carries for the song asset
+   * `assetId`: a plain struct holding the asset id at the field id the
+   * project's ids module allocates the type's asset field.
+   */
+  function songLiteral(assetId: string): wendoo.Value {
+    const fieldId = wendoo.projectIds().fieldId(SONG_TYPE, wendoo.ASSET_FIELD);
+    const slots: wendoo.Value[] = [];
+    for (let i = 0; i <= fieldId; i++) {
+      slots.push(wendoo.NIL_VALUE);
+    }
+    slots[fieldId] = wendoo.mkString(assetId);
+    return wendoo.mkStruct(wendoo.structTypeId(SONG_TYPE), slots);
   }
 
   /** What a {@link RecordingMixer} records for a shaped tone: `effect <wave> <hz> <to> <volume> <volume> <ms> <effect> 0`, the curve linear. */
@@ -6382,7 +6441,11 @@ namespace arcadeSelftest {
    * take their action ids from the project's ids module, the play tiles
    * asynchronous and stop sounds not; a bare play sound plays a copy of ba
    * ding of its own and resolves once it has played, and a sound plays the
-   * melody it names, one naming none playing nothing; a play tone plays
+   * melody it names, one naming none playing nothing; the `Song` type takes
+   * its atom, kind and field from the project's ids module; a song plays a
+   * fresh playable of the song the project's song factory holds and resolves
+   * once it has played, one naming no song the project holds playing
+   * nothing and resolving at once; a play tone plays
    * Arcade's plain tone given nothing but a pitch, a duration or full
    * volume, and Arcade's shaped tone given `to`, a wave, an effect or a
    * lower volume, with its pitch, `to`, duration and volume held to their
@@ -6392,12 +6455,12 @@ namespace arcadeSelftest {
    * starts its next copy only once its last has ended, other call sites
    * playing meanwhile; looping starts one loop per call site, replayed until
    * stop sounds, which stops every sound and ends every loop, after which
-   * the call site's loop starts again.
+   * the call site's loop starts again; and a song plays in the background
+   * and looping as a melody does.
    */
   function checkSoundTiles(): void {
     game.pushScene();
     const mixer = recordSounds();
-    const nil = wendoo.NIL_VALUE;
     const playSound = tileBody(wendoo.PLAY_SOUND_TILE);
     const playTone = tileBody(wendoo.PLAY_TONE_TILE);
     const stopSounds = tileBody(wendoo.STOP_SOUNDS_TILE);
@@ -6433,14 +6496,57 @@ namespace arcadeSelftest {
     );
 
     mixer.plays = [];
-    const powered = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, [soundValue("powerUp"), nil, nil]);
-    const unusable = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, [soundValue("noSuchMelody"), nil, nil]);
+    const powered = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SOUND_SLOT], [soundValue("powerUp")]));
+    const unusable = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SOUND_SLOT], [soundValue("noSuchMelody")]));
     const unusableAgain = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, [soundValue("noSuchMelody")]);
     const nothingAtOnce = unusable.resolved() && unusableAgain.resolved();
     pause(MELODY_MS + FRAMES_MS);
     check(
       "play-sound-plays-the-melody-its-sound-names-and-a-sound-naming-none-plays-nothing-and-resolves-at-once",
       nothingAtOnce && powered.resolved() && mixer.plays.join("|") === melodyPlay(music.powerUp)
+    );
+
+    check(
+      "the-song-type-takes-its-atom-kind-and-field-from-the-manifest",
+      wendoo.songBinding.atomId === SONG_ATOM &&
+        wendoo.songBinding.typeId === wendoo.structTypeId(SONG_TYPE) &&
+        wendoo.songBinding.assetKind === "song" &&
+        wendoo.songBinding.fieldIds.length === 1 &&
+        wendoo.songBinding.fieldIds[0] === wendoo.projectIds().fieldId(SONG_TYPE, wendoo.ASSET_FIELD)
+    );
+
+    mixer.plays = [];
+    mixer.played = [];
+    const theme = songLiteral(THEME_SONG_ID);
+    const sung = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SONG_SLOT], [theme]));
+    const songPendingAtCall = !sung.resolved();
+    pause(MELODY_MS / 2);
+    const songPendingWhilePlaying = !sung.resolved();
+    pause(MELODY_MS);
+    const sungAgain = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SONG_SLOT], [theme]));
+    pause(MELODY_MS + FRAMES_MS);
+    check(
+      "play-sound-given-a-song-plays-a-fresh-playable-of-the-song-its-factory-holds-until-it-has-played",
+      songPendingAtCall &&
+        songPendingWhilePlaying &&
+        sung.resolved() &&
+        sungAgain.resolved() &&
+        mixer.plays.join("|") === `${THEME_SONG_PLAY}|${THEME_SONG_PLAY}` &&
+        mixer.played[0] instanceof music.sequencer.Song &&
+        mixer.played[1] instanceof music.sequencer.Song &&
+        mixer.played[0] !== mixer.played[1]
+    );
+
+    mixer.plays = [];
+    const gone = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SONG_SLOT], [songLiteral(DELETED_SONG_ID)]));
+    const goneAgain = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SONG_SLOT], [songLiteral(DELETED_SONG_ID)]));
+    const goneAtOnce = gone.resolved() && goneAgain.resolved();
+    const emptied = playIn(wendoo.PLAY_SOUND_TILE, ctx, 1, soundArgs([SONG_SLOT], [songLiteral("")]));
+    const emptiedAtOnce = emptied.resolved();
+    pause(FRAMES_MS);
+    check(
+      "a-song-naming-no-song-the-project-holds-plays-nothing-and-resolves-at-once",
+      goneAtOnce && emptiedAtOnce && mixer.plays.length === 0
     );
 
     const half = wendoo.mkNumber(0.25);
@@ -6515,20 +6621,21 @@ namespace arcadeSelftest {
 
     mixer.plays = [];
     const siren = soundValue("siren");
-    const first = playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, [siren, PLACED, nil]);
-    const second = playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, [siren, PLACED, nil]);
+    const sirenInBackground = soundArgs([SOUND_SLOT, SOUND_BACKGROUND], [siren, PLACED]);
+    const first = playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, sirenInBackground);
+    const second = playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, sirenInBackground);
     pause(1);
     const oneCopy = first.resolved() && second.resolved() && mixer.count(melodyPlay(music.siren)) === 1;
-    playIn(wendoo.PLAY_SOUND_TILE, ctx, 8, [siren, PLACED, nil]);
-    playIn(wendoo.PLAY_SOUND_TILE, ctx, 9, [soundValue("pewPew"), PLACED, nil]);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 8, sirenInBackground);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 9, soundArgs([SOUND_SLOT, SOUND_BACKGROUND], [soundValue("pewPew"), PLACED]));
     pause(1);
     const othersPlay = mixer.count(melodyPlay(music.siren)) === 2 && mixer.count(melodyPlay(music.pewPew)) === 1;
     pause(MELODY_MS / 2);
-    playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, [siren, PLACED, nil]);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, sirenInBackground);
     pause(1);
     const stillOne = mixer.count(melodyPlay(music.siren)) === 2;
     pause(MELODY_MS);
-    playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, [siren, PLACED, nil]);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 7, sirenInBackground);
     pause(1);
     check(
       "in-background-resolves-at-once-and-a-call-site-starts-its-next-copy-only-once-its-last-has-ended",
@@ -6544,7 +6651,7 @@ namespace arcadeSelftest {
     const loopedAtOnce = looped.resolved() && mixer.loops.join("|") === "tone 440 50";
     pause(250);
     const replays = mixer.count("tone 440 50");
-    playIn(wendoo.PLAY_SOUND_TILE, ctx, 11, [siren, nil, PLACED]);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 11, soundArgs([SOUND_SLOT, SOUND_LOOPING], [siren, PLACED]));
     pause(1);
     const loops = mixer.loops.join("|") === `tone 440 50|${melodyPlay(music.siren)}`;
     const stopped = stopSounds.execSync(ctx, []);
@@ -6565,6 +6672,40 @@ namespace arcadeSelftest {
     check("a-call-sites-loop-starts-again-after-stop-sounds", mixer.loops.length === 3);
     stopSounds.execSync(ctx, []);
     pause(FRAMES_MS);
+
+    mixer.plays = [];
+    mixer.loops = [];
+    const themeInBackground = soundArgs([SONG_SLOT, SOUND_BACKGROUND], [theme, PLACED]);
+    const backed = playIn(wendoo.PLAY_SOUND_TILE, ctx, 12, themeInBackground);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 12, themeInBackground);
+    pause(1);
+    const oneSongCopy = backed.resolved() && mixer.count(THEME_SONG_PLAY) === 1;
+    pause(MELODY_MS + FRAMES_MS);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 12, themeInBackground);
+    pause(1);
+    const nextSongCopy = mixer.count(THEME_SONG_PLAY) === 2;
+    pause(MELODY_MS + FRAMES_MS);
+    mixer.plays = [];
+    const themeLooping = soundArgs([SONG_SLOT, SOUND_LOOPING], [theme, PLACED]);
+    const songLooped = playIn(wendoo.PLAY_SOUND_TILE, ctx, 13, themeLooping);
+    playIn(wendoo.PLAY_SOUND_TILE, ctx, 13, themeLooping);
+    pause(1);
+    const oneSongLoop = songLooped.resolved() && mixer.loops.join("|") === THEME_SONG_PLAY;
+    pause(2 * MELODY_MS + FRAMES_MS);
+    const songReplays = mixer.count(THEME_SONG_PLAY);
+    stopSounds.execSync(ctx, []);
+    pause(MELODY_MS + FRAMES_MS);
+    const songSettled = mixer.plays.length;
+    pause(FRAMES_MS);
+    check(
+      "a-song-plays-in-the-background-and-looping-as-a-melody-does",
+      oneSongCopy &&
+        nextSongCopy &&
+        oneSongLoop &&
+        songReplays >= 2 &&
+        mixer.plays.length === songSettled &&
+        (ctx.data as wendoo.SpriteAttachment).sounds.site(13).loop.stopped
+    );
     game.popScene();
   }
 
@@ -6581,7 +6722,9 @@ namespace arcadeSelftest {
    * and two brains playing at once both play; a looping rule starts one loop
    * of a melody and one of a tone, which play on until a stop-sounds rule;
    * a play sound placing a sound variable never set does not run; a tone
-   * rule plays Arcade's shaped tone once per completion; and a brain whose
+   * rule plays Arcade's shaped tone once per completion; a held play sound
+   * rule given a song plays it once per completion, its child running after
+   * each; and a brain whose
    * sprite is destroyed mid-sound thinks its final think at the next frame
    * without waiting for the sound.
    */
@@ -6670,6 +6813,30 @@ namespace arcadeSelftest {
       sweeps >= 4 && sweeps <= 6 && mixer.plays.length === sweeps && numberIn(gameScene, sweeper, "sweeps", sweeps)
     );
     sprites.destroy(sweeper);
+    pause(FRAMES_MS);
+
+    mixer.plays = [];
+    mixer.played = [];
+    const singer = spriteRunning(wendooBrains.p_soundSongHeld001);
+    pause(FRAMES_MS);
+    controller.A.setPressed(true);
+    pause(MELODY_MS / 2);
+    const singerTicks = ticksOf(singer);
+    pause(MELODY_MS / 4);
+    const singing =
+      mixer.count(THEME_SONG_PLAY) === 1 &&
+      mixer.played[0] instanceof music.sequencer.Song &&
+      numberIn(gameScene, singer, "songs", 0) &&
+      ticksOf(singer) > singerTicks;
+    pause(HOLD_MS);
+    controller.A.setPressed(false);
+    pause(MELODY_MS + FRAMES_MS);
+    const songs = mixer.count(THEME_SONG_PLAY);
+    check(
+      "a-held-play-sound-rule-given-a-song-plays-it-once-per-completion-its-child-running-after-each",
+      singing && songs >= 3 && songs <= 5 && mixer.plays.length === songs && numberIn(gameScene, singer, "songs", songs)
+    );
+    sprites.destroy(singer);
     pause(FRAMES_MS);
 
     mixer.plays = [];

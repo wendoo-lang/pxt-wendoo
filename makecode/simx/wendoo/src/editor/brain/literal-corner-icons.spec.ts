@@ -7,8 +7,9 @@
  * own, alike -- and a number or text literal's face, as the candidate strip
  * reads it, is that icon too; an image literal wears the `Image` type's icon
  * in its corner and its asset's preview as its face, and the `image` accessor,
- * whose face is that same icon, draws no corner. Icons are identified by their
- * data URIs and tiles by their ids.
+ * whose face is that same icon, draws no corner; a song literal, its song
+ * carrying no preview, wears the `Song` type's icon as its face and in its
+ * corner. Icons are identified by their data URIs and tiles by their ids.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -159,5 +160,20 @@ describe("the Image type's icon over the arcade catalog", () => {
 
     assert.equal(resolveTileVisual(config, accessor).iconUrl, carriedPackTypeIcon("Image"));
     assert.deepEqual(cornerSources(config, accessor), []);
+  });
+});
+
+describe("the Song type's icon over the arcade catalog", () => {
+  const songType = mkTypeId(NativeType.Struct, "Song");
+  const theme: MakeCodeAsset = { kind: "song", id: "song1", name: "theme" };
+
+  it("is a song literal's face and corner, its song carrying no preview, its label the song's name", () => {
+    const { environment, config } = boundEditor([theme]);
+    const literal = catalogTile(environment, mkLiteralTileId(songType, "song1"));
+    const visual = resolveTileVisual(config, literal);
+
+    assert.equal(visual.iconUrl, carriedPackTypeIcon("Song"));
+    assert.equal(visual.label, "theme");
+    assert.deepEqual(cornerSources(config, literal), [carriedPackTypeIcon("Song")]);
   });
 });

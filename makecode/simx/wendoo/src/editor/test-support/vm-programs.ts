@@ -317,6 +317,7 @@ const ARCADE_SOURCES = [
   "sound-unset.src.json",
   "tone-sweep.src.json",
   "sound-doomed.src.json",
+  "sound-song.src.json",
 ];
 
 /** The arcade selftest's program source the compile path must refuse: a dpad given the same direction modifier twice. */
@@ -1078,10 +1079,21 @@ const IMAGE_ASSET: MakeCodeAsset = {
   previewUrl: "data:image/svg+xml;base64,aGVybw==",
 };
 
+/** Asset id of the song the snapshot of {@link arcadeImageRuleDiagnosticCodes} lists. */
+export const SONG_LITERAL_ASSET_ID = "song1";
+
+/** Display name of the song the snapshot of {@link arcadeImageRuleDiagnosticCodes} lists. */
+export const SONG_LITERAL_NAME = "theme";
+
+/** The snapshot entry of the song {@link SONG_LITERAL_ASSET_ID} names, carrying no preview. */
+const SONG_ASSET: MakeCodeAsset = { kind: "song", id: SONG_LITERAL_ASSET_ID, name: SONG_LITERAL_NAME };
+
 /**
  * The one-rule brain in the environment binding the arcade selftest's
  * catalog, its asset literals minted from a snapshot holding the image
- * {@link IMAGE_LITERAL} stands for: its WHEN side the tiles `when` names, its
+ * {@link IMAGE_LITERAL} stands for and the song {@link SONG_LITERAL_ASSET_ID}
+ * names, whose literal tile an entry starting {@link LITERAL_ENTRY_PREFIX}
+ * names as `Song.<id>`: its WHEN side the tiles `when` names, its
  * DO side the tiles `act` names, each entry the name of a sensor (on the WHEN
  * side) or an actuator (on the DO side), {@link IMAGE_LITERAL} for that
  * image's literal tile, {@link BRAIN_LITERAL} for the literal tile of the
@@ -1110,7 +1122,7 @@ const IMAGE_ASSET: MakeCodeAsset = {
  */
 function arcadeImageRuleBrain(when: string[], act: string[], child?: RuleSides, siblings: readonly RuleSides[] = []) {
   const built = buildAuthoringEnvironment(arcadeCatalog(), arcadeIds());
-  built.assetLiterals.applySnapshot([IMAGE_ASSET]);
+  built.assetLiterals.applySnapshot([IMAGE_ASSET, SONG_ASSET]);
   built.brainLiterals.applyBrains(new Map([[BRAIN_LITERAL_ID, { name: "Kin" }]]));
   const { environment } = built;
   const brainDef = BrainDef.emptyBrainDef(environment.brainServices, "image-rule");

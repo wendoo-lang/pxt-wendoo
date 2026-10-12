@@ -14,6 +14,7 @@
         "direction.ts",
         "sprite-value.ts",
         "image-asset.ts",
+        "song-asset.ts",
         "brain-value.ts",
         "player-value.ts",
         "named-choice.ts",

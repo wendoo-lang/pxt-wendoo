@@ -888,6 +888,20 @@
           "label": "particle effect",
           "docs": "```brain noframe\n{\n  \"tiles\": [\n    \"tile.literal->struct:<ParticleEffect>->spray\",\n    \"tile.literal->struct:<ParticleEffect>->trail\",\n    \"tile.literal->struct:<ParticleEffect>->fountain\",\n    \"tile.literal->struct:<ParticleEffect>->rings\",\n    \"tile.literal->struct:<ParticleEffect>->fire\",\n    \"tile.literal->struct:<ParticleEffect>->warmRadial\",\n    \"tile.literal->struct:<ParticleEffect>->coolRadial\",\n    \"tile.literal->struct:<ParticleEffect>->halo\",\n    \"tile.literal->struct:<ParticleEffect>->ashes\",\n    \"tile.literal->struct:<ParticleEffect>->disintegrate\",\n    \"tile.literal->struct:<ParticleEffect>->confetti\",\n    \"tile.literal->struct:<ParticleEffect>->hearts\",\n    \"tile.literal->struct:<ParticleEffect>->smiles\",\n    \"tile.literal->struct:<ParticleEffect>->blizzard\",\n    \"tile.literal->struct:<ParticleEffect>->bubbles\",\n    \"tile.literal->struct:<ParticleEffect>->starField\",\n    \"tile.literal->struct:<ParticleEffect>->clouds\",\n    \"tile.literal->struct:<ParticleEffect>->none\"\n  ]\n}\n```\n\n# Particle Effect\n\nA burst of particles for a sprite to vanish in.\n\n---\n\nEach of these is one of Arcade's own particle effects. Give one to **destroy** to make a sprite vanish\nin it: **DO destroy fire** burns your sprite away. **none** shows no particles.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.destroy`\n`tile:tile.var.factory->struct:<Effect>`\n",
           "icon": "87041000100000000000000000000000200000400000000200040000000040000000004000000000000004000040000000000050050000000000005555000000000050155105000040405015510504040000005555000000000000500500000000000400004000000000004000000000000400000000400020000040000000020000000000000000"
+        },
+        {
+          "name": "Song",
+          "asset": "song",
+          "fields": [
+            {
+              "name": "asset",
+              "type": "string",
+              "readOnly": true
+            }
+          ],
+          "label": "song",
+          "docs": "# Song\n\nOne of your project's own songs.\n\n---\n\nEach of these is a song you made in your project's music editor, named the way you named it there. Give\none to **play sound** to play it: **WHEN A button DO play sound** followed by your song plays it while A\nis held.\n\n## See Also\n\n`tile:tile.actuator->actuator.arcade.play-sound`\n`tile:tile.var.factory->struct:<Sound>`\n",
+          "icon": "8704100010000000000cc0000cc0000c000cc0000cc0000c000cc0000ca00a0c000cc0000caa0a0c000cc0000caa0a0c000cc0000caa0a0ca0aaaaaaaaaa000ca00ac0000cc0000ca00ac0000cc0000ca00ac000aac0000ca00ac0a0aac0000ca00ac0a0aac0000ca00ac0a0aac0000ca0aaaaaa0ac0000c000cc0000cc0000c000cc0000cc0000c"
         }
       ],
       "tiles": [
@@ -1897,10 +1911,21 @@
                       {
                         "kind": "optional",
                         "item": {
-                          "kind": "arg",
-                          "tileId": "anon.Sound",
-                          "type": "Sound",
-                          "anonymous": true
+                          "kind": "choice",
+                          "options": [
+                            {
+                              "kind": "arg",
+                              "tileId": "anon.Sound",
+                              "type": "Sound",
+                              "anonymous": true
+                            },
+                            {
+                              "kind": "arg",
+                              "tileId": "anon.Song",
+                              "type": "Song",
+                              "anonymous": true
+                            }
+                          ]
                         }
                       },
                       {
@@ -1932,7 +1957,7 @@
             }
           ],
           "label": "play sound",
-          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Play Sound\n\nPlays one of Arcade's sounds.\n\n---\n\nPlace **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba\nding**. On its own it plays ba ding. The rule waits for the sound to end, so a rule that stays on plays\nits sound again each time it finishes.\n\nAdd **in background** to let the rule go on while the sound plays, or **looping** to play the sound over\nand over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same\ntime.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.play-sound\", \"tile.literal->struct:<Sound>->baDing\"],\n      \"children\": [],\n      \"comment\": \"Ding when the sprite bumps something.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nGrammar of play sound, as the editor offers it:\n- In either order, each at most once: an optional Sound value, and one of the modifiers [in background]\n  or [looping]. Nothing else: no duration, no volume, no Number, no output tile. To play a pitch, use\n  [play tone].\n- A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --\n  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing.\n\nWhat it does:\n- Bare, it plays ba ding. Sounds mix: plays from other rules, other sprites and other brains sound at\n  the same time, up to the five melodies Arcade plays at once.\n- With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the\n  rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never\n  once per frame. Other rules and brains keep running meanwhile.\n- [in background]: the rule goes on at once. While the copy this same tile last started is still\n  playing, the tile starts nothing, so a rule that stays on starts the next copy only after the last\n  one ends. Each placed tile keeps its own copy, and so does each sprite running the brain.\n- [looping]: the rule goes on at once, and the sound plays over and over until [stop sounds]. While its\n  loop runs, the same tile starts nothing more, so a rule that stays on keeps one loop; after [stop\n  sounds], its next firing starts the loop again.\n- A sound keeps playing after the brain or sprite that started it is gone, and a loop keeps playing\n  through Arcade's game-over screen, until [stop sounds] or the game restarts.\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Sound>`\n`tile:tile.actuator->actuator.arcade.play-tone`\n`tile:tile.actuator->actuator.arcade.stop-sounds`\n",
+          "docs": "```brain noframe do\n{ \"tile\": \"${tileId}\" }\n```\n\n# Play Sound\n\nPlays one of Arcade's sounds, or one of your songs.\n\n---\n\nPlace **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba\nding**. On its own it plays ba ding. Give it one of your project's songs instead to play that song:\n**WHEN A button DO play sound** followed by your song. The rule waits for the sound to end, so a rule\nthat stays on plays its sound again each time it finishes.\n\nAdd **in background** to let the rule go on while the sound plays, or **looping** to play the sound over\nand over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same\ntime.\n\n## Example\n\n```brain\n{\n  \"ruleJsons\": [\n    {\n      \"version\": 1,\n      \"when\": [\"tile.sensor->sensor.arcade.bump\"],\n      \"do\": [\"tile.actuator->actuator.arcade.play-sound\", \"tile.literal->struct:<Sound>->baDing\"],\n      \"children\": [],\n      \"comment\": \"Ding when the sprite bumps something.\"\n    }\n  ],\n  \"catalog\": []\n}\n```\n\n```assistant\nGrammar of play sound, as the editor offers it:\n- In either order, each at most once: an optional Sound value or Song value -- one of the two, never\n  both -- and one of the modifiers [in background] or [looping]. Nothing else: no duration, no volume,\n  no Number, no output tile. To play a pitch, use [play tone].\n- A Song value is one of the project's own songs, made in the music editor; the editor offers each as a\n  literal tile by the song's name. There are no Song variables.\n- A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --\n  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing, and so\n  does a Song whose song the project no longer holds.\n\nWhat it does:\n- Bare, it plays ba ding; given a Song, that song, under the same modifiers as a Sound. Sounds mix:\n  plays from other rules, other sprites and other brains sound at the same time, up to the five melodies\n  Arcade plays at once.\n- With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the\n  rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never\n  once per frame. Other rules and brains keep running meanwhile.\n- [in background]: the rule goes on at once. While the copy this same tile last started is still\n  playing, the tile starts nothing, so a rule that stays on starts the next copy only after the last\n  one ends. Each placed tile keeps its own copy, and so does each sprite running the brain.\n- [looping]: the rule goes on at once, and the sound plays over and over until [stop sounds]. While its\n  loop runs, the same tile starts nothing more, so a rule that stays on keeps one loop; after [stop\n  sounds], its next firing starts the loop again.\n- A sound keeps playing after the brain or sprite that started it is gone, and a loop keeps playing\n  through Arcade's game-over screen, until [stop sounds] or the game restarts.\n```\n\n## See Also\n\n`tile:tile.var.factory->struct:<Sound>`\n`tile:tile.var.factory->struct:<Song>`\n`tile:tile.actuator->actuator.arcade.play-tone`\n`tile:tile.actuator->actuator.arcade.stop-sounds`\n",
           "icon": "87041000100000000000f0ffff0f00000000f0cccc0f00000000f0cccc0f00000000cfccccfc000000f0cccccccc0f0000ffffffffffff000000000000000000000000000000000000000000006600000000000060660000000000006066060000000000606600006066666666060000006600000000000000600660000000000000660600000000"
         },
         {

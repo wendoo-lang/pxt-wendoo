@@ -623,6 +623,9 @@ const EXPECTED_ARCADE_CHECKS = [
   "sound-tiles-take-their-action-ids-from-the-manifest-the-play-tiles-asynchronous",
   "a-bare-play-sound-plays-a-copy-of-ba-ding-of-its-own-and-resolves-once-it-has-played",
   "play-sound-plays-the-melody-its-sound-names-and-a-sound-naming-none-plays-nothing-and-resolves-at-once",
+  "the-song-type-takes-its-atom-kind-and-field-from-the-manifest",
+  "play-sound-given-a-song-plays-a-fresh-playable-of-the-song-its-factory-holds-until-it-has-played",
+  "a-song-naming-no-song-the-project-holds-plays-nothing-and-resolves-at-once",
   "play-tone-given-nothing-but-a-pitch-a-duration-or-full-volume-plays-arcades-plain-tone",
   "play-tone-given-to-a-wave-an-effect-or-a-lower-volume-plays-arcades-shaped-tone-with-them",
   "play-tone-holds-its-pitch-and-to-at-0-or-above-and-its-volume-from-0-to-1",
@@ -634,6 +637,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "looping-starts-one-loop-per-call-site-replayed-until-stop-sounds",
   "stop-sounds-stops-every-sound-and-ends-every-loop",
   "a-call-sites-loop-starts-again-after-stop-sounds",
+  "a-song-plays-in-the-background-and-looping-as-a-melody-does",
   "a-bare-play-sound-rule-holds-until-ba-ding-ends-every-program-thinking-meanwhile",
   "a-held-play-sound-rule-plays-once-per-completion-its-child-running-after-each",
   "an-in-background-rule-goes-on-at-once-a-held-one-starting-its-next-copy-only-once-its-last-has-ended",
@@ -641,6 +645,7 @@ const EXPECTED_ARCADE_CHECKS = [
   "two-brains-playing-at-once-both-play",
   "a-looping-rule-starts-one-loop-of-a-melody-and-of-a-tone-which-play-on-until-a-stop-sounds-rule",
   "a-play-sound-placing-a-sound-variable-never-set-does-not-run",
+  "a-held-play-sound-rule-given-a-song-plays-it-once-per-completion-its-child-running-after-each",
   "a-tone-rule-plays-arcades-shaped-tone-once-per-completion",
   "a-brain-whose-sprite-is-destroyed-mid-sound-thinks-its-final-think-at-the-next-frame-without-waiting-for-it",
   "icon-encoder-writes-makecodes-image-buffer",
@@ -652,9 +657,14 @@ const EXPECTED_ARCADE_CHECKS = [
  * Every unresolved-asset line the arcade selftest is expected to log, in
  * order, each without its `wendoo ` prefix: the late image, used once before
  * its factory is registered, then the deleted image, which writes to a
- * sprite's image and the proximity sensors' filters each use more than once.
+ * sprite's image and the proximity sensors' filters each use more than once,
+ * then the deleted song, which the play-sound tile is given more than once.
  */
-const EXPECTED_ARCADE_ASSET_LINES = ["WENDOO_ASSET_UNRESOLVED image image9", "WENDOO_ASSET_UNRESOLVED image image404"];
+const EXPECTED_ARCADE_ASSET_LINES = [
+  "WENDOO_ASSET_UNRESOLVED image image9",
+  "WENDOO_ASSET_UNRESOLVED image image404",
+  "WENDOO_ASSET_UNRESOLVED song song404",
+];
 
 /** The prefix of the line the VM extension logs for an asset id no factory holds. */
 const ASSET_LINE_PREFIX = "wendoo WENDOO_ASSET_UNRESOLVED ";
@@ -892,7 +902,17 @@ const ARCADE_ICONED_CORE_TILES = [
 const ARCADE_ICONED_CORE_TYPES = ["number", "string", "boolean"];
 
 /** The types whose catalog entries in the arcade base pack must carry a 16 by 16 icon. */
-const ARCADE_ICONED_TYPES = ["Vector2", "Sprite", "Image", "Brain", "Player", "Effect", "Sound", "ParticleEffect"];
+const ARCADE_ICONED_TYPES = [
+  "Vector2",
+  "Sprite",
+  "Image",
+  "Brain",
+  "Player",
+  "Effect",
+  "Sound",
+  "ParticleEffect",
+  "Song",
+];
 
 /** The fields whose accessor tiles the arcade base pack's catalog must give a 16 by 16 icon, each as `Type.field`. */
 const ARCADE_ICONED_ACCESSORS = [

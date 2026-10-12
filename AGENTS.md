@@ -464,10 +464,17 @@ the current slice alone.
       never baked into a program; an id no factory holds resolves to
       nothing, logged once per id, and the game runs on; a value read from
       a sprite's image instead wraps that image object itself, its asset id
-      reading empty), the pack's docs pages (one markdown page per
+      reading empty), the `Song` asset type (a plain struct holding the pxt
+      asset id of one of the project's music-editor songs, resolved through
+      pxt's song factory when a tile plays it, each play a fresh Arcade
+      playable of the song, never baked into a program; an id no factory
+      holds resolves to nothing, logged once per id, and the game runs on;
+      no variable factory and no declared literals, the editor minting its
+      literals from the project's songs as it does images), the pack's
+      docs pages (one markdown page per
       documented tile or output under `docs/content/en/tiles/`, per
       documented struct type -- `Vector2`, `Sprite`, `Player`, `Effect`,
-      `Sound` and `ParticleEffect` -- under
+      `Sound`, `ParticleEffect` and `Song` -- under
       `docs/content/en/types/`, and per documented accessor under
       `docs/content/en/accessors/`, each named `<key>.md` by its key -- a
       tile's or type's name, `output.<name>` for an output, and
@@ -530,8 +537,8 @@ the current slice alone.
       carried in the catalog as hex of MakeCode's own image buffer, the
       bytes `image.ofBuffer` reads, at the image's own bits per pixel) with
       the pack's tile and accessor icons, the icons of its `Vector2`,
-      `Sprite`, `Image`, `Brain`, `Player`, `Effect`, `Sound` and
-      `ParticleEffect` types, the
+      `Sprite`, `Image`, `Brain`, `Player`, `Effect`, `Sound`,
+      `ParticleEffect` and `Song` types, the
       variable factory flag and editor label (`position`, `sprite`,
       `player`) of its `Vector2`, `Sprite` and `Player` types (a
       `Vector2` variable starts at `origin` and holds the point written to
@@ -631,9 +638,10 @@ the current slice alone.
       once the button that answered is let go, before its rule resumes, so
       the rules below it read it once they run -- an ask opening nothing
       writes nil to it; play sound and play tone are asynchronous too:
-      play sound plays its optional anonymous `Sound`, else ba ding, each
-      play a copy of the melody of its own, a value naming no melody playing
-      nothing; play tone plays its optional anonymous number of hertz, else
+      play sound plays its optional anonymous `Sound` or `Song`, one of the
+      two, else ba ding, each play a copy of the melody, or a fresh playable
+      of the song, of its own, a value naming no melody, or no song the
+      project holds, playing nothing; play tone plays its optional anonymous number of hertz, else
       440, for the shared `duration` parameter in seconds, else 0.5, at its
       shared `volume` parameter from 0 to 1, else 1 -- Arcade's own plain
       tone, `music.tonePlayable`, given no shared `to` parameter, no wave and

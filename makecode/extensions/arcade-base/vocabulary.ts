@@ -195,9 +195,10 @@ namespace wendoo {
   /** Argument-buffer position of the ask actuator's question. */
   const ASK_SLOT_QUESTION = 0;
 
-  /** Argument-buffer positions of the play-sound actuator's sound and its `in background` modifier; `looping` follows `in background`. */
+  /** Argument-buffer positions of the play-sound actuator's sound, its song and its `in background` modifier; `looping` follows `in background`. */
   const PLAY_SOUND_SLOT_SOUND = 0;
-  const PLAY_SOUND_SLOT_BACKGROUND = 1;
+  const PLAY_SOUND_SLOT_SONG = 1;
+  const PLAY_SOUND_SLOT_BACKGROUND = 2;
 
   /** Argument-buffer positions of the play-tone actuator's pitch, its `to`, its duration and its volume. */
   const PLAY_TONE_SLOT_FREQUENCY = 0;
@@ -878,11 +879,13 @@ namespace wendoo {
   }
 
   /**
-   * `actuator.arcade.play-sound`: plays the Arcade melody its sound slot
-   * names, as {@link SoundBinding.melodyOf} reads it, else `ba ding`, through
-   * {@link playThrough}. Each play plays a copy of the melody of its own, so
-   * plays of one melody from different places overlap. A sound naming no
-   * melody plays nothing and resolves the handle at once.
+   * `actuator.arcade.play-sound`: plays, through {@link playThrough}, the
+   * project song its song slot names, as {@link songOf} makes it, else the
+   * Arcade melody its sound slot names, as {@link SoundBinding.melodyOf}
+   * reads it, else `ba ding`. Each play plays a copy of the melody, or a
+   * playable of the song, of its own, so plays of one sound from different
+   * places overlap. A sound naming no melody, or a song naming no song the
+   * project holds, plays nothing and resolves the handle at once.
    */
   class PlaySoundActuator extends HostActionBinding {
     constructor() {
@@ -890,16 +893,23 @@ namespace wendoo {
     }
 
     execAsync(ctx: ExecutionContext, args: Value[], handle: AsyncHandle): void {
-      let melody = music.baDing;
-      if (isFilled(args, PLAY_SOUND_SLOT_SOUND)) {
-        melody = soundBinding.melodyOf(args[PLAY_SOUND_SLOT_SOUND]);
-        if (!melody) {
-          handle.resolve(VOID_VALUE);
-          return;
+      let playable: music.Playable;
+      if (isFilled(args, PLAY_SOUND_SLOT_SONG)) {
+        playable = songOf(args[PLAY_SOUND_SLOT_SONG]);
+      } else {
+        let melody = music.baDing;
+        if (isFilled(args, PLAY_SOUND_SLOT_SOUND)) {
+          melody = soundBinding.melodyOf(args[PLAY_SOUND_SLOT_SOUND]);
+        }
+        if (melody) {
+          playable = music.melodyPlayable(new music.Melody(melody.text));
         }
       }
-      const copy = new music.Melody(melody.text);
-      playThrough(ctx, args, PLAY_SOUND_SLOT_BACKGROUND, music.melodyPlayable(copy), handle);
+      if (!playable) {
+        handle.resolve(VOID_VALUE);
+        return;
+      }
+      playThrough(ctx, args, PLAY_SOUND_SLOT_BACKGROUND, playable, handle);
     }
   }
 
@@ -1387,10 +1397,13 @@ namespace wendoo {
 
   /**
    * The argument grammar the play-sound actuator declares: an optional
-   * sound and the shared {@link playbackSlot}, in either order.
+   * choice of an anonymous sound or song, and the shared
+   * {@link playbackSlot}, in either order.
    */
   function playSoundArgs(): TileArgSpec[] {
-    return [optional(choice([bag([optional(anonymousArg(TYPE_SOUND)), playbackSlot()])]))];
+    return [
+      optional(choice([bag([optional(choice([anonymousArg(TYPE_SOUND), anonymousArg(TYPE_SONG)])), playbackSlot()])])),
+    ];
   }
 
   /** A pitch slot of the play-tone actuator, measured in hertz and held at 0 or above. */
@@ -1514,6 +1527,9 @@ namespace wendoo {
   arcadePack.defineStruct(TYPE_SOUND, namedChoiceFields(), soundBinding, soundMeta);
   const particleEffectMeta = literalTypeMeta("particle effect", particleEffectLiterals());
   arcadePack.defineStruct(TYPE_PARTICLE_EFFECT, namedChoiceFields(), particleEffectBinding, particleEffectMeta);
+  const songMeta = new TypeMeta();
+  songMeta.label = "song";
+  arcadePack.defineAssetType(TYPE_SONG, songBinding, songMeta);
 
   const dpadSpec = new TileSpec(
     TILE_KIND_SENSOR,
@@ -1703,8 +1719,8 @@ namespace wendoo {
   /**
    * Give each of the pack's tiles, the modifier and parameter tiles filling
    * their slots, their outputs, its `Vector2`, `Sprite`, `Image`, `Brain`, `Player`,
-   * `Effect`, `Sound` and `ParticleEffect` types and their accessor tiles
-   * their icons, and give
+   * `Effect`, `Sound`, `ParticleEffect` and `Song` types and their accessor
+   * tiles their icons, and give
    * the core tiles and the core number, text and switch types the pack's icons
    * for them. Call it once, after the pack's registrations and before the
    * catalog is first published. Does nothing on hardware.
@@ -1726,6 +1742,7 @@ namespace wendoo {
     effectMeta.icon = effectTypeIcon();
     soundMeta.icon = soundTypeIcon();
     particleEffectMeta.icon = particleEffectTypeIcon();
+    songMeta.icon = songTypeIcon();
     dpadSpec.icon = dpadIcon();
     buttonASpec.icon = buttonAIcon();
     buttonBSpec.icon = buttonBIcon();
@@ -1854,8 +1871,8 @@ namespace wendoo {
 
   /**
    * Give each of the pack's tiles, their outputs, its `Vector2`,
-   * `Sprite`, `Player`, `Effect`, `Sound` and `ParticleEffect` types and their
-   * accessor tiles the docs page {@link arcadeBaseDocs}
+   * `Sprite`, `Player`, `Effect`, `Sound`, `ParticleEffect` and `Song` types
+   * and their accessor tiles the docs page {@link arcadeBaseDocs}
    * holds under the key it is wired to: a tile's or type's name, and
    * `output.<name>` or `accessor.<field>` for an output or an accessor, one
    * accessor page serving every field wired to it. Call it once, after the
@@ -1877,6 +1894,7 @@ namespace wendoo {
     effectMeta.docs = arcadeBaseDocs(TYPE_EFFECT);
     soundMeta.docs = arcadeBaseDocs(TYPE_SOUND);
     particleEffectMeta.docs = arcadeBaseDocs(TYPE_PARTICLE_EFFECT);
+    songMeta.docs = arcadeBaseDocs(TYPE_SONG);
     dpadSpec.docs = arcadeBaseDocs(DPAD_TILE);
     buttonASpec.docs = arcadeBaseDocs(BUTTON_A_TILE);
     buttonBSpec.docs = arcadeBaseDocs(BUTTON_B_TILE);

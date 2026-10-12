@@ -129,6 +129,8 @@ pack arcade
       value name {"t":4,"v":"clouds"}
     literal none
       value name {"t":4,"v":"none"}
+  type Song asset=song icon
+    field asset string readOnly
   tile sensor sensor.arcade.dpad returns=Vector2 icon
     args
       arg modifier.direction.up optional modifier icon
@@ -310,7 +312,9 @@ pack arcade
         choice
           bag
             optional
-              arg anon.Sound type=Sound anonymous
+              choice
+                arg anon.Sound type=Sound anonymous
+                arg anon.Song type=Song anonymous
             optional
               choice
                 arg modifier.playback.background modifier icon

@@ -78,9 +78,11 @@ and end the game.
   player answers, and the rules tucked under it read the answer with
   **answer**: **WHEN answer DO destroy bumped sprite**.
 - **play sound** -- a DO tile that plays one of Arcade's sounds: **WHEN bump
-  DO play sound ba ding**. On its own it plays ba ding. The rule waits for
-  the sound to end; add **in background** to let it go on at once, or
-  **looping** to play the sound over and over until **stop sounds**.
+  DO play sound ba ding**. On its own it plays ba ding. Give it one of your
+  project's songs, made in the music editor, to play that song instead. The
+  rule waits for the sound to end; add **in background** to let it go on at
+  once, or **looping** to play the sound over and over until **stop
+  sounds**.
 - **play tone** -- a DO tile that plays a tone at a pitch in hertz, 440 on
   its own, for half a second or the **duration** you give it: **DO play tone
   440 to 880 for 1** slides up for a second. Give it a **volume** from 0 to

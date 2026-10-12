@@ -4,13 +4,14 @@
 
 # Play Sound
 
-Plays one of Arcade's sounds.
+Plays one of Arcade's sounds, or one of your songs.
 
 ---
 
 Place **play sound** on the **DO** side of a rule and give it a sound: **WHEN bump DO play sound ba
-ding**. On its own it plays ba ding. The rule waits for the sound to end, so a rule that stays on plays
-its sound again each time it finishes.
+ding**. On its own it plays ba ding. Give it one of your project's songs instead to play that song:
+**WHEN A button DO play sound** followed by your song. The rule waits for the sound to end, so a rule
+that stays on plays its sound again each time it finishes.
 
 Add **in background** to let the rule go on while the sound plays, or **looping** to play the sound over
 and over until a rule says **stop sounds**. Sounds from different rules and sprites play at the same
@@ -35,15 +36,19 @@ time.
 
 ```assistant
 Grammar of play sound, as the editor offers it:
-- In either order, each at most once: an optional Sound value, and one of the modifiers [in background]
-  or [looping]. Nothing else: no duration, no volume, no Number, no output tile. To play a pitch, use
-  [play tone].
+- In either order, each at most once: an optional Sound value or Song value -- one of the two, never
+  both -- and one of the modifiers [in background] or [looping]. Nothing else: no duration, no volume,
+  no Number, no output tile. To play a pitch, use [play tone].
+- A Song value is one of the project's own songs, made in the music editor; the editor offers each as a
+  literal tile by the song's name. There are no Song variables.
 - A Sound placed as anything but a literal tile that reads as nothing -- a Sound variable never set --
-  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing.
+  leaves the action undone for that frame. A Sound naming nothing Arcade holds plays nothing, and so
+  does a Song whose song the project no longer holds.
 
 What it does:
-- Bare, it plays ba ding. Sounds mix: plays from other rules, other sprites and other brains sound at
-  the same time, up to the five melodies Arcade plays at once.
+- Bare, it plays ba ding; given a Song, that song, under the same modifiers as a Sound. Sounds mix:
+  plays from other rules, other sprites and other brains sound at the same time, up to the five melodies
+  Arcade plays at once.
 - With no modifier, the rule holds until the sound ends: a rule under it does not get its turn, and the
   rule cannot fire again until then, so a rule that stays on plays its sound once per completion, never
   once per frame. Other rules and brains keep running meanwhile.
@@ -60,5 +65,6 @@ What it does:
 ## See Also
 
 `tile:tile.var.factory->struct:<Sound>`
+`tile:tile.var.factory->struct:<Song>`
 `tile:tile.actuator->actuator.arcade.play-tone`
 `tile:tile.actuator->actuator.arcade.stop-sounds`

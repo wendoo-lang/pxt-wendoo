@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "id": "soundSongHeld001",
+  "name": "Song",
+  "catalog": [
+    {
+      "version": 2,
+      "kind": "page",
+      "pageId": "fPg0soundSong000",
+      "label": "Unnamed Page"
+    },
+    {
+      "version": 1,
+      "kind": "variable",
+      "varName": "songs",
+      "varType": "number:<number>",
+      "uniqueId": "fVr0soundSongs00"
+    },
+    {
+      "version": 2,
+      "kind": "literal",
+      "valueType": "number:<number>",
+      "value": 1,
+      "valueLabel": "1",
+      "displayFormat": "default"
+    }
+  ],
+  "pages": [
+    {
+      "version": 2,
+      "pageId": "fPg0soundSong000",
+      "name": "Unnamed Page",
+      "rules": [
+        {
+          "version": 1,
+          "when": [
+            "tile.sensor->sensor.arcade.button-a"
+          ],
+          "do": [
+            "tile.actuator->actuator.arcade.play-sound",
+            "tile.literal->struct:<Song>->song1"
+          ],
+          "children": [
+            {
+              "version": 1,
+              "when": [],
+              "do": [
+                "tile.var->fVr0soundSongs00",
+                "tile.op->assign",
+                "tile.var->fVr0soundSongs00",
+                "tile.op->add",
+                "tile.literal->number:<number>->1"
+              ],
+              "children": [],
+              "ruleId": "fRu0soundSong001"
+            }
+          ],
+          "ruleId": "fRu0soundSong000"
+        }
+      ]
+    }
+  ]
+}

@@ -1621,6 +1621,29 @@ namespace wendoo {
     `;
   }
 
+  /** Icon of the `Song` type: a dark purple staff of five lines, two purple notes on it joined by a beam. */
+  //% hidden
+  export function songTypeIcon(): Image {
+    return img`
+      . . . . . . . . . . . . . . . .
+      . . . . . . a a a a a a a a . .
+      c c c c c c a a a a a a a a c c
+      . . . . . . a . . . . . . a . .
+      . . . . . . a . . . . . . a . .
+      c c c c c c a c c c c c c a c c
+      . . . . . . a . . . . . . a . .
+      . . . . . . a . . . a a a a . .
+      c c c c c c a c c a a a a a c c
+      . . . . . . a . . a a a a . . .
+      . . . a a a a . . . . . . . . .
+      c c a a a a a c c c c c c c c c
+      . . a a a a . . . . . . . . . .
+      . . . . . . . . . . . . . . . .
+      c c c c c c c c c c c c c c c c
+      . . . . . . . . . . . . . . . .
+    `;
+  }
+
   /** Icon of the game-over actuator: a checkered flag on its pole. */
   //% hidden
   export function gameOverIcon(): Image {

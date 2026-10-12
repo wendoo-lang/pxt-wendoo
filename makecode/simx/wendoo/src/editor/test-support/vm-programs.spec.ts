@@ -54,6 +54,8 @@ import {
   type RenderedFile,
   renderVmPrograms,
   SENSOR_ENTRY_PREFIX,
+  SONG_LITERAL_ASSET_ID,
+  SONG_LITERAL_NAME,
   SWITCH_OUTPUT_ENTRY_PREFIX,
   TEXT_LITERAL,
   VARIABLE_ENTRY_PREFIX,
@@ -317,6 +319,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       "Image",
       "ParticleEffect",
       "Player",
+      "Song",
       "Sound",
       "Sprite",
       "Vector2",
@@ -641,6 +644,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
       { name: "Effect", produces: undefined },
       { name: "Sound", produces: undefined },
       { name: "ParticleEffect", produces: undefined },
+      { name: "Song", produces: undefined },
     ]);
   });
 
@@ -679,6 +683,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
         ["Effect", false],
         ["Sound", false],
         ["ParticleEffect", false],
+        ["Song", false],
       ]
     );
     for (const entry of names) {
@@ -1111,6 +1116,7 @@ describe("the MakeCode VM extension's compiled programs", () => {
   const buttonB = "sensor.arcade.button-b";
   const baDing = `${LITERAL_ENTRY_PREFIX}Sound.baDing`;
   const siren = `${LITERAL_ENTRY_PREFIX}Sound.siren`;
+  const song = `${LITERAL_ENTRY_PREFIX}Song.${SONG_LITERAL_ASSET_ID}`;
   const inBackground = `${MODIFIER_ENTRY_PREFIX}playback.background`;
   const looping = `${MODIFIER_ENTRY_PREFIX}playback.looping`;
   const toPitch = `${PARAMETER_ENTRY_PREFIX}to`;
@@ -1132,6 +1138,16 @@ describe("the MakeCode VM extension's compiled programs", () => {
       assert.ok(arcadeOffersLiteral(playback, [], [playSound, siren]), playback);
       assert.equal(arcadeOffersLiteral(playback, [], [stopSounds]), false, playback);
     }
+  });
+
+  it("offers a song literal at play sound beside the sounds until either is placed, and none at play tone", () => {
+    assert.ok(arcadeOffersLiteral(song, [], [playSound]));
+    assert.ok(arcadeOffersLiteral(baDing, [], [playSound]));
+    assert.ok(arcadeOffersLiteral(song, [], [playSound, inBackground]));
+    assert.equal(arcadeOffersLiteral(song, [], [playSound, siren]), false);
+    assert.equal(arcadeOffersLiteral(siren, [], [playSound, song]), false);
+    assert.equal(arcadeOffersLiteral(song, [], [playSound, song]), false);
+    assert.equal(arcadeOffersLiteral(song, [], [playTone]), false);
   });
 
   it("offers each wave and effect modifier at play tone until one of its kind is placed, and none at play sound", () => {
@@ -1158,6 +1174,9 @@ describe("the MakeCode VM extension's compiled programs", () => {
     ["play sound given a sound under bump", [bump], [playSound, baDing]],
     ["play sound given a sound, then in background", [buttonA], [playSound, siren, inBackground]],
     ["play sound looping, then a sound", [buttonA], [playSound, looping, siren]],
+    ["play sound given a song under the A button", [buttonA], [playSound, song]],
+    ["play sound given a song, looping", [buttonA], [playSound, song, looping]],
+    ["play sound in background, then a song", [buttonA], [playSound, inBackground, song]],
     ["a bare play tone", [buttonA], [playTone]],
     ["play tone given a pitch", [buttonA], [playTone, NUMBER_LITERAL]],
     [
@@ -1177,14 +1196,18 @@ describe("the MakeCode VM extension's compiled programs", () => {
     });
   }
 
-  it("refuses play sound given two sounds, a number or both playback modifiers, play tone given a sound, two waves or two effects, and stop sounds given anything", (t) => {
+  it("refuses play sound given two sounds, a sound and a song, two songs, a number or both playback modifiers, play tone given a sound or a song, two waves or two effects, and stop sounds given anything", (t) => {
     t.mock.method(console, "warn", () => {});
     for (const act of [
       [playSound, baDing, siren],
+      [playSound, song, baDing],
+      [playSound, siren, song],
+      [playSound, song, song],
       [playSound, NUMBER_LITERAL],
       [playSound, inBackground, looping],
       [playSound, toneDuration, NUMBER_LITERAL],
       [playTone, baDing],
+      [playTone, song],
       [playTone, NUMBER_LITERAL, NUMBER_LITERAL],
       [playTone, sine, square],
       [playTone, vibrato, tremolo],
@@ -1232,5 +1255,19 @@ describe("the MakeCode VM extension's compiled programs", () => {
       slotWord(playTone, "modifier.playback.looping"),
     ]);
     assert.deepEqual(textOf([stopSounds]), [wordOf(stopSounds)]);
+  });
+
+  it("projects play sound given a song with the song's name as its word", () => {
+    const wordOf = (tileName: string) => arcadeCarriedTileLanguage(tileName)?.form ?? arcadeCarriedTileLabel(tileName);
+    const slotWord = (tileName: string, slot: string) =>
+      arcadeCarriedSlotLanguage(tileName, slot)?.form ?? arcadeCarriedSlotLabel(tileName, slot);
+    const textOf = (act: string[]) => arcadeRuleSentence([], act).words.map((word) => word.text);
+
+    assert.deepEqual(textOf([playSound, song]), [wordOf(playSound), SONG_LITERAL_NAME]);
+    assert.deepEqual(textOf([playSound, song, looping]), [
+      wordOf(playSound),
+      SONG_LITERAL_NAME,
+      slotWord(playSound, "modifier.playback.looping"),
+    ]);
   });
 });
