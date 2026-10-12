@@ -1,8 +1,10 @@
 import type {
+  ProjassetsAssetOfKind,
   ProjassetsErrorCode,
   ProjassetsImage,
   ProjassetsKind,
   ProjassetsListing,
+  ProjassetsSong,
 } from "../../vendor/projassets.js";
 import { ProjassetsError } from "../../vendor/projassets.js";
 import type { ProjectAssetsProvider } from "../project-assets.js";
@@ -21,6 +23,11 @@ export function listedImage(id: string, rows: number[][], displayName?: string):
   return image;
 }
 
+/** A song as the provider lists it: `id` and `displayName` as given. */
+export function listedSong(id: string, displayName?: string): ProjassetsSong {
+  return { kind: "song", id, ...(displayName === undefined ? {} : { displayName }) };
+}
+
 /**
  * The editor's asset provider as a simulator extension's projassets client
  * reaches it, driven by a spec in place of MakeCode. Until {@link answer} is
@@ -30,6 +37,8 @@ export function listedImage(id: string, rows: number[][], displayName?: string):
 export class FakeAssetProvider implements ProjectAssetsProvider {
   /** The images the project holds, as the provider lists them. */
   images: ProjassetsImage[] = [];
+  /** The songs the project holds, as the provider lists them. */
+  songs: ProjassetsSong[] = [];
   /** The project's name, as the provider lists it. */
   name = "My Platformer";
   /** The project's palette, as the provider lists it. */
@@ -39,7 +48,7 @@ export class FakeAssetProvider implements ProjectAssetsProvider {
   /** How many subscribe requests were received. */
   subscribes = 0;
   private _answering = false;
-  private readonly _listFailures: ProjassetsErrorCode[] = [];
+  private readonly _listFailures = new Map<ProjassetsKind, ProjassetsErrorCode[]>();
   private readonly _subscribeFailures: ProjassetsErrorCode[] = [];
   private readonly _changeListeners: (() => void)[] = [];
   private readonly _requestWatchers = new Set<() => void>();
@@ -50,9 +59,11 @@ export class FakeAssetProvider implements ProjectAssetsProvider {
     for (const watcher of [...this._requestWatchers]) watcher();
   }
 
-  /** Refuses the next list requests, one per code, in order, before answering again. */
-  failLists(...codes: ProjassetsErrorCode[]): void {
-    this._listFailures.push(...codes);
+  /** Refuses the next list requests for `kind`, one per code, in order, before answering them again. */
+  failLists(kind: ProjassetsKind, ...codes: ProjassetsErrorCode[]): void {
+    const failures = this._listFailures.get(kind) ?? [];
+    failures.push(...codes);
+    this._listFailures.set(kind, failures);
   }
 
   /** Refuses the next subscribe requests, one per code, in order, before answering again. */
@@ -70,15 +81,18 @@ export class FakeAssetProvider implements ProjectAssetsProvider {
     return this._changeListeners.length;
   }
 
-  list(kind: ProjassetsKind): Promise<ProjassetsListing> {
+  list<K extends ProjassetsKind>(kind: K): Promise<ProjassetsListing<K>> {
     this.listed.push(kind);
-    const failure = this._listFailures.shift();
+    const failure = this._listFailures.get(kind)?.shift();
     if (failure !== undefined) return Promise.reject(new ProjassetsError(failure, `list refused with ${failure}`));
-    return this.whenAnswering().then(() => ({
-      assets: this.images.map((image) => ({ ...image })),
-      name: this.name,
-      palette: [...this.palette],
-    }));
+    return this.whenAnswering().then(() => {
+      const held: readonly (ProjassetsImage | ProjassetsSong)[] = kind === "image" ? this.images : this.songs;
+      return {
+        assets: held.map((asset) => ({ ...asset })) as ProjassetsAssetOfKind[K][],
+        name: this.name,
+        palette: [...this.palette],
+      };
+    });
   }
 
   subscribe(onChange: () => void): Promise<void> {

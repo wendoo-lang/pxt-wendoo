@@ -19,7 +19,7 @@ import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode } from "./sim-ch
 import { type SimxPortBridge, startSimxPortBridge } from "./simx-bridge.js";
 import { imageSvg } from "./svg-image.js";
 import { targetIconPalette } from "./target-icon-palettes.js";
-import { FakeAssetProvider, listedImage } from "./test-support/asset-provider.js";
+import { FakeAssetProvider, listedImage, listedSong } from "./test-support/asset-provider.js";
 import { pixelImage } from "./test-support/image-buffer-encoder.js";
 import { FakePortFrame, PARENT_ORIGIN } from "./test-support/port-frame.js";
 import { postedProgramUpdates } from "./test-support/program-update-frame.js";
@@ -401,6 +401,11 @@ describe("simx port bridge", () => {
       return { type: "makecode:projectInfo", payload: { name } };
     }
 
+    /** The snapshot entry of a song `id`, named `name` when given. */
+    function songEntry(id: string, name?: string): MakeCodeAsset {
+      return { kind: "song", id, ...(name === undefined ? {} : { name }) };
+    }
+
     /** The snapshot entry of a 4-bit image `id` of pixels `rows`, named `name` when given, under `palette`. */
     function snapshotEntry(id: string, rows: number[][], palette: readonly string[], name?: string): MakeCodeAsset {
       const entry: MakeCodeAsset = { kind: "image", id, width: rows[0].length, height: rows.length, previewUrl: "" };
@@ -409,12 +414,13 @@ describe("simx port bridge", () => {
       return entry;
     }
 
-    it("publishes the project's asset snapshot into the session once established, after the catalog, each image with its size", async () => {
+    it("publishes the project's asset snapshot into the session once established, after the catalog, each image with its size and then each song", async () => {
       assets.images = [
         listedImage("image2", [[1, 2]], "hero"),
         listedImage("transparency16", [[0]]),
         listedImage("image1", [[3]]),
       ];
+      assets.songs = [listedSong("song2"), listedSong("song1", "theme")];
       assets.answer();
       const frame = start();
       frame.programPosts("{}");
@@ -425,6 +431,8 @@ describe("simx port bridge", () => {
         assetsMessage([
           snapshotEntry("image1", [[3]], assets.palette),
           snapshotEntry("image2", [[1, 2]], assets.palette, "hero"),
+          songEntry("song1", "theme"),
+          songEntry("song2"),
         ])
       );
       assert.deepEqual(errors, []);
@@ -551,7 +559,8 @@ describe("simx port bridge", () => {
     });
 
     it("keeps publishing the catalog and serving brains requests when MakeCode refuses it the project's assets, logging the code", async () => {
-      assets.failLists("PERMISSION_DENIED");
+      assets.failLists("image", "PERMISSION_DENIED");
+      assets.failLists("song", "PERMISSION_DENIED");
       assets.failSubscribes("PERMISSION_DENIED");
       assets.answer();
       const frame = start();
@@ -566,7 +575,7 @@ describe("simx port bridge", () => {
         payload: { brains: [] },
       });
       await nothingMore(editor);
-      assert.equal(errors.length, 2);
+      assert.equal(errors.length, 3);
       assert.equal(
         errors.every((line) => line.startsWith("PERMISSION_DENIED: ")),
         true

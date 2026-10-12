@@ -34,7 +34,7 @@ import {
 import { BRAINS_MODULE_FILE, readBrainsModule } from "../../simx/brains-module.js";
 import { IDS_MODULE_FILE, readIdsModule } from "../../simx/ids-module.js";
 import { type SimxLog, type SimxPortBridge, startSimxPortBridge } from "../../simx/simx-bridge.js";
-import { FakeAssetProvider, listedImage } from "../../simx/test-support/asset-provider.js";
+import { FakeAssetProvider, listedImage, listedSong } from "../../simx/test-support/asset-provider.js";
 import { FakePortFrame } from "../../simx/test-support/port-frame.js";
 import { postedProgramUpdates } from "../../simx/test-support/program-update-frame.js";
 import {
@@ -430,9 +430,10 @@ describe("brains sync between the editor tab and the column frame over a brokere
     const frame = new FakePortFrame();
     const files = host.client();
     clients.push(files);
-    // the project holds one image, so every session also receives an asset snapshot
+    // the project holds one image and one song, so every session also receives an asset snapshot
     const assets = new FakeAssetProvider();
     assets.images = [listedImage("image1", [[1, 2]], "hero")];
+    assets.songs = [listedSong("song1", "theme")];
     assets.answer();
     const bridge = startSimxPortBridge({
       frame,
@@ -557,7 +558,10 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assert.equal(state.catalogText, CATALOG);
     assert.deepEqual(
       state.assets?.map((asset) => [asset.kind, asset.id]),
-      [["image", "image1"]]
+      [
+        ["image", "image1"],
+        ["song", "song1"],
+      ]
     );
     assert.equal(connectionStatus(state), "connected");
     await brainsUntil(tab, (reading) => reading.reconciled, "the editor to reconcile");

@@ -6,7 +6,7 @@ import { ImageBufferErrorCode } from "./image-buffer.js";
 import { ProjectAssets } from "./project-assets.js";
 import type { SimxLog } from "./simx-bridge.js";
 import { imageSvg, SvgImageProblemCode } from "./svg-image.js";
-import { FakeAssetProvider, listedImage } from "./test-support/asset-provider.js";
+import { FakeAssetProvider, listedImage, listedSong } from "./test-support/asset-provider.js";
 import { hexToBase64, pixelImage } from "./test-support/image-buffer-encoder.js";
 
 /** Retry and debounce timings short enough for specs, in milliseconds. */
@@ -117,11 +117,46 @@ describe("project assets", () => {
       },
     ]);
     assert.deepEqual(subject.snapshot, snapshot);
-    assert.equal(
-      provider.listed.every((kind) => kind === "image"),
-      true
-    );
     assert.deepEqual(log.errors, []);
+  });
+
+  it("lists the project's songs beside its images, holding the images and then the songs, each kind ordered by id", async () => {
+    provider.images = [listedImage("image1", [[3]])];
+    provider.songs = [listedSong("song2", "theme"), listedSong("song1", "jingle")];
+    provider.answer();
+    const snapshot = await nextSnapshot(start());
+    assert.deepEqual(snapshot, [
+      { kind: "image", id: "image1", width: 1, height: 1, previewUrl: previewOf([[3]], provider.palette) },
+      { kind: "song", id: "song1", name: "jingle" },
+      { kind: "song", id: "song2", name: "theme" },
+    ]);
+    assert.deepEqual([...new Set(provider.listed)], ["image", "song"]);
+    assert.deepEqual(log.errors, []);
+  });
+
+  it("holds a song with no name as its kind and id alone", async () => {
+    provider.songs = [listedSong("song1")];
+    provider.answer();
+    const snapshot = await nextSnapshot(start());
+    assert.deepEqual(snapshot, [{ kind: "song", id: "song1" }]);
+  });
+
+  it("announces a new snapshot when a song is renamed", async () => {
+    provider.songs = [listedSong("song1", "theme")];
+    provider.answer();
+    const subject = start();
+    await nextSnapshot(subject);
+    await within(
+      (async () => {
+        while (provider.subscriptions === 0) await delay(1);
+      })(),
+      "the subscription"
+    );
+    await delay(20);
+    const changed = nextSnapshot(subject);
+    provider.songs = [listedSong("song1", "boss fight")];
+    provider.change();
+    assert.deepEqual(await changed, [{ kind: "song", id: "song1", name: "boss fight" }]);
   });
 
   it("holds no snapshot until the provider first answers", async () => {
@@ -208,7 +243,7 @@ describe("project assets", () => {
     const listedBefore = provider.listed.length;
     for (let i = 0; i < 10; i++) provider.change();
     await delay(40);
-    assert.equal(provider.listed.length, listedBefore + 1);
+    assert.deepEqual(provider.listed.slice(listedBefore), ["image", "song"]);
   });
 
   it("announces the project's name on the first listing and again only when it changes", async () => {
@@ -240,7 +275,7 @@ describe("project assets", () => {
       "FAILED",
       "FAILED",
     ];
-    provider.failLists(...refusals);
+    provider.failLists("image", ...refusals);
     provider.images = [listedImage("image1", [[1]])];
     provider.answer();
     const snapshot = await nextSnapshot(start());
@@ -271,17 +306,71 @@ describe("project assets", () => {
     assert.equal((await changed)[0].previewUrl, previewOf([[3]], provider.palette));
   });
 
+  it("keeps retrying a refused or failed song listing at a bounded rate, logging each by code and kind, and holds no snapshot until it succeeds", async () => {
+    const refusals: ProjassetsErrorCode[] = ["FAILED", "PROJECT_CLOSED", "FAILED", "FAILED", "FAILED"];
+    provider.failLists("song", ...refusals);
+    provider.images = [listedImage("image1", [[1]])];
+    provider.songs = [listedSong("song1", "theme")];
+    provider.answer();
+    const snapshot = await nextSnapshot(start());
+    assert.deepEqual(
+      snapshot.map((asset) => [asset.kind, asset.id]),
+      [
+        ["image", "image1"],
+        ["song", "song1"],
+      ]
+    );
+    const songErrors = log.errors.filter((line) => line.includes("listing the project's songs"));
+    assert.deepEqual(
+      songErrors.map((line) => line.slice(0, line.indexOf(":"))),
+      refusals
+    );
+    assert.equal(log.errors.length, refusals.length);
+  });
+
+  it("leaves songs out for good once their listing is refused for good, logging the code once, and holds the images", async () => {
+    provider.failLists("song", "UNSUPPORTED_KIND");
+    provider.images = [listedImage("image1", [[1]])];
+    provider.songs = [listedSong("song1", "theme")];
+    provider.answer();
+    const subject = start();
+    const snapshot = await nextSnapshot(subject);
+    assert.deepEqual(
+      snapshot.map((asset) => [asset.kind, asset.id]),
+      [["image", "image1"]]
+    );
+    await within(
+      (async () => {
+        while (provider.subscriptions === 0) await delay(1);
+      })(),
+      "the subscription"
+    );
+    await delay(20);
+    provider.images = [listedImage("image1", [[2]])];
+    const changed = nextSnapshot(subject);
+    provider.change();
+    assert.deepEqual(
+      (await changed).map((asset) => [asset.kind, asset.id]),
+      [["image", "image1"]]
+    );
+    assert.equal(provider.listed.filter((kind) => kind === "song").length, 1);
+    assert.equal(log.errors.length, 1);
+    assert.ok(log.errors[0].startsWith("UNSUPPORTED_KIND: "));
+    assert.ok(log.errors[0].includes("listing the project's songs"));
+  });
+
   for (const code of ["PERMISSION_DENIED", "UNREGISTERED"] as const) {
     it(`surfaces ${code} by code once per request and stops asking, holding no snapshot`, async () => {
-      provider.failLists(code);
+      provider.failLists("image", code);
+      provider.failLists("song", code);
       provider.failSubscribes(code);
       provider.answer();
       const subject = start();
       await delay(60);
-      assert.deepEqual(provider.listed, ["image"]);
+      assert.deepEqual(provider.listed, ["image", "song"]);
       assert.equal(provider.subscribes, 1);
       assert.equal(subject.snapshot, undefined);
-      assert.equal(log.errors.length, 2);
+      assert.equal(log.errors.length, 3);
       assert.equal(
         log.errors.every((line) => line.startsWith(`${code}: `)),
         true
@@ -290,7 +379,7 @@ describe("project assets", () => {
   }
 
   it("stops asking and announcing once disposed", async () => {
-    provider.failLists("FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED");
+    provider.failLists("image", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED", "FAILED");
     provider.answer();
     const subject = start();
     let announced = 0;

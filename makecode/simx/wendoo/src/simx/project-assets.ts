@@ -4,7 +4,9 @@ import {
   ProjassetsError,
   type ProjassetsErrorCode,
   type ProjassetsImage,
+  type ProjassetsKind,
   type ProjassetsListing,
+  type ProjassetsSong,
 } from "../vendor/projassets.js";
 import { decodeImageBase64 } from "./image-buffer.js";
 import type { SimxLog } from "./simx-bridge.js";
@@ -45,9 +47,9 @@ function byId(a: MakeCodeAsset, b: MakeCodeAsset): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** A snapshot, with the coded log line of each problem met rendering it. */
-interface RenderedSnapshot {
-  readonly snapshot: MakeCodeAsset[];
+/** The snapshot entries of the project's images, with the coded log line of each problem met rendering them. */
+interface RenderedImages {
+  readonly entries: MakeCodeAsset[];
   readonly problems: string[];
 }
 
@@ -58,8 +60,8 @@ interface RenderedSnapshot {
  * cannot be read is left out, and pixels the palette cannot paint are left
  * unpainted; each is reported in `problems` by code naming the image.
  */
-function snapshotOf(images: readonly ProjassetsImage[], palette: readonly string[]): RenderedSnapshot {
-  const snapshot: MakeCodeAsset[] = [];
+function imageEntriesOf(images: readonly ProjassetsImage[], palette: readonly string[]): RenderedImages {
+  const entries: MakeCodeAsset[] = [];
   const problems: string[] = [];
   for (const image of images) {
     if (TRANSPARENCY_ID.test(image.id)) continue;
@@ -76,7 +78,7 @@ function snapshotOf(images: readonly ProjassetsImage[], palette: readonly string
         `${SvgImageProblemCode.COLOR_OUTSIDE_PALETTE}: the project's image ${image.id} indexes colors the project's palette lacks; ${rendered.unpainted} pixels are left unpainted.`
       );
     }
-    snapshot.push({
+    entries.push({
       kind: "image",
       id: image.id,
       ...(image.displayName === undefined ? {} : { name: image.displayName }),
@@ -85,33 +87,55 @@ function snapshotOf(images: readonly ProjassetsImage[], palette: readonly string
       previewUrl: rendered.url,
     });
   }
-  return { snapshot: snapshot.sort(byId), problems };
+  return { entries: entries.sort(byId), problems };
+}
+
+/** The snapshot entries of the project's `songs`, ordered by id: each song's kind, id, and name when it has one. */
+function songEntriesOf(songs: readonly ProjassetsSong[]): MakeCodeAsset[] {
+  return songs
+    .map(
+      (song): MakeCodeAsset => ({
+        kind: "song",
+        id: song.id,
+        ...(song.displayName === undefined ? {} : { name: song.displayName }),
+      })
+    )
+    .sort(byId);
+}
+
+/** The provider's listings making up one listing of the project, by kind; a kind the provider refused for good has none. */
+interface Listings {
+  readonly images: ProjassetsListing<"image"> | undefined;
+  readonly songs: ProjassetsListing<"song"> | undefined;
 }
 
 /**
- * The MakeCode project's images and name, as the editor's asset provider
- * lists them, held for publication: the asset snapshot -- every image of
- * the project with its preview rendered under the project's palette -- and
+ * The MakeCode project's images, songs and name, as the editor's asset
+ * provider lists them, held for publication: the asset snapshot -- every
+ * image of the project with its preview rendered under the project's
+ * palette, then every song of the project, each kind ordered by id -- and
  * the project's name.
  *
  * On construction it subscribes to the provider's change reports and lists
- * the project's images, and it lists them again once the subscription is
- * acknowledged and after each change report, the reports of one
- * {@link ProjectAssetsTimings.debounceMs} window gathered into one listing
- * and a listing asked for while one is in flight made once it settles. A
- * listing that yields a snapshot unlike the last is announced to
- * {@link onSnapshot}, and a name unlike the last to {@link onName}.
- * Each image that cannot be rendered in full is logged by code when a
- * listing first meets it, and again only after a listing without it.
+ * the project's images and songs, and it lists them again once the
+ * subscription is acknowledged and after each change report, the reports of
+ * one {@link ProjectAssetsTimings.debounceMs} window gathered into one
+ * listing and a listing asked for while one is in flight made once it
+ * settles. A listing settles once every kind it asks for is answered; one
+ * that yields a snapshot unlike the last is announced to {@link onSnapshot},
+ * and a name unlike the last to {@link onName}. Each image that cannot be
+ * rendered in full is logged by code when a listing first meets it, and
+ * again only after a listing without it.
  *
  * A request the provider fails is logged by its code and what it was doing,
- * and retried after a wait that doubles from
- * {@link ProjectAssetsTimings.retryDelayMs} up to
+ * naming the kind a listing asked for, and retried after a wait that doubles
+ * from {@link ProjectAssetsTimings.retryDelayMs} up to
  * {@link ProjectAssetsTimings.maxRetryDelayMs}, for as long as it takes. A
  * refusal no retry can overcome while the frame lives -- `PERMISSION_DENIED`,
  * `UNREGISTERED`, `UNSUPPORTED_KIND`, `INVALID_REQUEST` -- is logged by its
- * code once and not asked again. Nothing is asked or announced once
- * disposed.
+ * code once and not asked again: a kind refused so is left out of every
+ * later snapshot, and while every kind is refused no snapshot is held.
+ * Nothing is asked or announced once disposed.
  */
 export class ProjectAssets {
   private readonly _provider: ProjectAssetsProvider;
@@ -130,8 +154,8 @@ export class ProjectAssets {
   private _listing = false;
   // true when a listing is asked for while one is in flight
   private _listAgain = false;
-  // true once the provider refused listing for good
-  private _listRefused = false;
+  // the kinds the provider refused to list for good
+  private readonly _refusedKinds = new Set<ProjassetsKind>();
   // true while change reports are being gathered for a listing
   private _gathering = false;
   private _disposed = false;
@@ -215,44 +239,65 @@ export class ProjectAssets {
     });
   }
 
-  /** Lists the project's images, or once more after the listing in flight settles. */
+  /** Lists the project's images and songs, or once more after the listing in flight settles. */
   private requestListing(): void {
-    if (this._disposed || this._listRefused) return;
+    if (this._disposed || (this._refusedKinds.has("image") && this._refusedKinds.has("song"))) return;
     if (this._listing) {
       this._listAgain = true;
       return;
     }
-    this.list(this._retryDelayMs);
+    this.list();
   }
 
-  /** Makes one listing request, retrying after `retryDelay` when the provider fails it. */
-  private list(retryDelay: number): void {
+  /** Makes one listing: lists every kind not refused for good, and adopts the listings once each kind is answered. */
+  private list(): void {
     this._listing = true;
     this._listAgain = false;
-    this._provider.list("image").then(
-      (listing) => {
+    Promise.all([this.listKind("image", this._retryDelayMs), this.listKind("song", this._retryDelayMs)]).then(
+      ([images, songs]) => {
         if (this._disposed) return;
         this._listing = false;
-        this.adopt(listing);
+        this.adopt({ images, songs });
         if (this._listAgain) this.requestListing();
-      },
+      }
+    );
+  }
+
+  /**
+   * Lists the project's assets of `kind`, retrying after `retryDelay` when
+   * the provider fails it. Resolves with the listing, or with `undefined`
+   * once the provider refuses the kind for good or fails it after disposal;
+   * a retry pending at disposal never settles.
+   */
+  private listKind<K extends ProjassetsKind>(kind: K, retryDelay: number): Promise<ProjassetsListing<K> | undefined> {
+    if (this._refusedKinds.has(kind)) return Promise.resolve(undefined);
+    return this._provider.list(kind).then(
+      (listing) => listing,
       (error: unknown) => {
-        if (this._disposed) return;
-        if (this.refused(error, "listing the project's images")) {
-          this._listing = false;
-          this._listRefused = true;
-          return;
+        if (this._disposed) return undefined;
+        if (this.refused(error, `listing the project's ${kind}s`)) {
+          this._refusedKinds.add(kind);
+          return undefined;
         }
-        this.after(retryDelay, () => {
-          this.list(this.nextDelay(retryDelay));
+        return new Promise<ProjassetsListing<K> | undefined>((resolve) => {
+          this.after(retryDelay, () => {
+            resolve(this.listKind(kind, this.nextDelay(retryDelay)));
+          });
         });
       }
     );
   }
 
-  /** Takes `listing` as the latest, announcing its snapshot and name where they changed. */
-  private adopt(listing: ProjassetsListing): void {
-    const { snapshot, problems } = snapshotOf(listing.assets, listing.palette);
+  /**
+   * Takes `listings` as the latest, announcing their snapshot and name where
+   * they changed; takes nothing while every kind is refused for good.
+   */
+  private adopt({ images, songs }: Listings): void {
+    const listing = images ?? songs;
+    if (listing === undefined) return;
+    const rendered = images === undefined ? undefined : imageEntriesOf(images.assets, images.palette);
+    const problems = rendered?.problems ?? [];
+    const snapshot = [...(rendered?.entries ?? []), ...songEntriesOf(songs?.assets ?? [])];
     for (const problem of problems) if (!this._problems.has(problem)) this._log.error(problem);
     this._problems = new Set(problems);
     const snapshotText = JSON.stringify(snapshot);

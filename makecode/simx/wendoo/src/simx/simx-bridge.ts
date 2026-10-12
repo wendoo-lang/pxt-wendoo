@@ -35,8 +35,8 @@ export interface SimxServingOptions {
   files: ProjectFiles;
   /**
    * The editor's asset provider, which the MakeCode project's images,
-   * palette and name are listed from for the asset snapshot and the project
-   * info.
+   * songs, palette and name are listed from for the asset snapshot and the
+   * project info.
    */
   assets: ProjectAssetsProvider;
   /**

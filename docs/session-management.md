@@ -310,7 +310,8 @@ one, and nothing is requested or answered.
 - `makecode:assets` (project -> editor) carries `{ assets: [{ kind, id,
   name?, width?, height?, previewUrl? }] }`: every asset the snapshot holds,
   in no particular order. An empty list is a snapshot holding none.
-- `kind` is the asset's kind as MakeCode names it, for example `image`.
+- `kind` is the asset's kind as MakeCode names it, for example `image` or
+  `song`.
   The set is open: a party skips an entry whose kind it does not handle,
   so kinds join additively.
 - `id` is the asset's short id as MakeCode stamps it in the project's
@@ -326,6 +327,19 @@ one, and nothing is requested or answered.
   debouncing, skipping an unchanged snapshot -- is the publisher's policy.
   A handshake receives only the snapshots published into it, so the
   publisher sends its current snapshot into each new handshake.
+- THE SIMX'S SNAPSHOT (`ProjectAssets`,
+  `makecode/simx/wendoo/src/simx/project-assets.ts`): the project's images
+  and then its songs, as MakeCode's projassets API lists them, each kind
+  ordered by id. An image carries its name, its size and a preview drawn
+  under the project's palette, the images MakeCode mints for itself
+  (`transparency16` and the like) left out; a song carries its name alone,
+  with no size and no preview. Every kind is listed again on each change
+  MakeCode reports, and a snapshot is published once every kind has
+  answered. A listing MakeCode fails is logged by its code and kind and
+  retried at a bounded rate for as long as it takes; a kind MakeCode
+  refuses for good (`UNSUPPORTED_KIND` from a MakeCode that does not list
+  it, among others) is logged once and left out of every later snapshot,
+  and while every kind is refused no snapshot is published.
 - The kind's session publishes with `publishAssets` and delivers with
   `onAssets`, replaying snapshots received before the first listener
   attaches to it; the editor session object delivers the snapshots of the
@@ -727,8 +741,9 @@ it always shows the session view.
 - The TILE VISUAL PROVIDER is the editor's one function resolving any
   tile to how it shows, wired into the brain editor's `resolveTileVisual`:
   a resolved asset literal shows its asset's name and its `previewUrl`
-  as its face, one whose asset has no preview and an unresolved one their
-  label alone; every other tile shows
+  as its face; one whose asset has no preview, and an unresolved one, show
+  their label with their type's icon as their face, and no face while the
+  type carries no icon; every other tile shows
   the display metadata pack binding gave it, the catalog's `iconUrl`
   included -- a core tile the icon a pack gives it, the first one given
   standing, and a brain literal its brain type's icon beside its name. A
