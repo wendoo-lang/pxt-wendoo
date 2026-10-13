@@ -130,8 +130,9 @@ manifest request-reply families. The editor-tab messages themselves
   and `icon` (an artifact-relative SVG MakeCode shows beside the
   label). Beside it the entry grants `allowFileWrite` (projfs) and
   `allowAssetRead` (projassets) for the simx write path and the assets
-  publication, `allowPopups` for the brand strip's logotype link, and
-  `hideInFullscreen`, and sets `aspectRatio` 6.6, which sizes the
+  publication, `allowPopups` for the brand strip's logotype link,
+  `allowDownloads` for the brain editor's save of a brain to a file,
+  and `hideInFullscreen`, and sets `aspectRatio` 6.6, which sizes the
   strip's frame to about 49 px tall at the 326 px simulator column.
 - BOOT: the simx starts its port bridge and renders the brand strip at
   once. The editor entry boots the tab alone: it reads `parentOrigin`
