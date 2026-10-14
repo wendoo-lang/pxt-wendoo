@@ -54,7 +54,7 @@ export interface SimxEditorClient {
   onPort(listener: (port: MakeCodeMessagePort) => void): () => void;
   /**
    * Subscribe to the lifecycle and simulator events MakeCode posts to the
-   * tab: `shown`, `hidden`, `closing`, `simulator` and `simulatorstate`.
+   * tab: `shown`, `hidden`, `simulator`, `simulatorstate` and `fullscreen`.
    * Returns an unsubscribe function.
    */
   onEvent(listener: (event: SimxEditorEvent) => void): () => void;

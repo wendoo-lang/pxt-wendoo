@@ -25,9 +25,8 @@ window.addEventListener("unhandledrejection", (event) => {
  * port-backed session, the brains store over it, the target theme and the
  * document title bound to it. Once listening, tells MakeCode the tab is
  * ready; every port MakeCode brokers from `parentOrigin` replaces the
- * session's port. MakeCode closing the tab,
- * and the page being hidden for good, flush every open brain editor's
- * unflushed edit; the page being hidden for good also stops the session.
+ * session's port. The page being hidden for good flushes every open brain
+ * editor's unflushed edit and stops the session.
  * With no valid `parentOrigin`, logs {@link TAB_PARENT_ORIGIN_INVALID} and
  * hears nothing from MakeCode.
  */
@@ -46,9 +45,6 @@ function mountEditorTab(mount: HTMLElement, parentOrigin: string | undefined): v
     const client = connectSimxEditorClient(window, parentOrigin);
     client.onPort((port) => {
       session.attachPort(messagePortSessionPort(port));
-    });
-    client.onEvent((event) => {
-      if (event.event === "closing") editings.flushAll();
     });
     client.ready();
   }

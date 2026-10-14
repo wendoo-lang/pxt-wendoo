@@ -100,7 +100,7 @@ describe("simx editor client", () => {
       { type: "simxeditor", event: "hidden" },
       { type: "simxeditor", event: "simulator", command: "restart" },
       { type: "simxeditor", event: "simulatorstate", state: "Running" },
-      { type: "simxeditor", event: "closing" },
+      { type: "simxeditor", event: "fullscreen", enabled: true },
     ];
 
     for (const event of posted) frame.receive(event);
@@ -118,7 +118,7 @@ describe("simx editor client", () => {
     client.onEvent((event) => events.push(event));
 
     frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" }, [fakePort()], "https://elsewhere.example");
-    frame.receive({ type: "simxeditor", event: "closing" }, [], "https://elsewhere.example");
+    frame.receive({ type: "simxeditor", event: "fullscreen", enabled: true }, [], "https://elsewhere.example");
     frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" });
     frame.receive({ type: "simxeditor", subtype: "ack", id: "1" });
     frame.receive({ type: "messagepacket", channel: "wendoo-lang/pxt-wendoo" });
@@ -136,7 +136,7 @@ describe("simx editor client", () => {
     client.onEvent((event) => events.push(event));
 
     client.dispose();
-    frame.receive({ type: "simxeditor", event: "closing" });
+    frame.receive({ type: "simxeditor", event: "fullscreen", enabled: true });
 
     assert.deepEqual(events, []);
   });

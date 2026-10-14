@@ -156,9 +156,10 @@ manifest request-reply families. The editor-tab messages themselves
   through their own simx. Nothing arbitrates between them: the last
   write wins, the same advisory parity pxt's header lock gives two
   Blocks tabs on one project.
-- CLOSE PATH: on MakeCode's `closing` event, and when the page is hidden
-  for good, the editor flushes every open brain editor's unflushed edit
-  at once, so the push leaves before the frame goes.
+- CLOSE PATH: when the page is hidden for good (`pagehide`), which is
+  how a tab frame learns its project is closing, the editor flushes every
+  open brain editor's unflushed edit at once, so the push leaves before
+  the frame goes. MakeCode posts no message before removing the frame.
 
 ## The target declaration
 
