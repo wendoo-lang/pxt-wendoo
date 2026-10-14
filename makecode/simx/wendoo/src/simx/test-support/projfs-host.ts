@@ -161,7 +161,12 @@ export class FakeProjfsHost {
    * @param options - How the client reports replies slower than its threshold.
    */
   client(options: Pick<ProjfsClientOptions, "slowReplyMs" | "onSlowReply"> = {}): ProjfsClient {
-    return new ProjfsClient({ ...options, target: this.parent, listener: this as unknown as ProjfsListenerWindow });
+    return new ProjfsClient({
+      ...options,
+      target: this.parent,
+      listener: this as unknown as ProjfsListenerWindow,
+      search: "",
+    });
   }
 
   /** The content of the scope file `name`, or `undefined` when none is stored. */

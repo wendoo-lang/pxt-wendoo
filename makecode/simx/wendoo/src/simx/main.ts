@@ -1,6 +1,6 @@
 import "./status-panel.css";
 import { ProjassetsClient } from "../vendor/projassets.js";
-import { getSimxChannel, getTargetId, ProjfsClient } from "../vendor/projfs.js";
+import { getParentOrigin, getSimxChannel, getTargetId, ProjfsClient } from "../vendor/projfs.js";
 import { connectEditorTabOpener } from "./editor-tab.js";
 import { startSimxPortBridge } from "./simx-bridge.js";
 import { mountBrandStrip } from "./status-panel.js";
@@ -26,7 +26,7 @@ const assets = new ProjassetsClient({
 const channel = getSimxChannel();
 const target = getTargetId();
 // MakeCode names its own origin in the frame URL's `parentOrigin` parameter.
-const parentOrigin = new URLSearchParams(window.location.search).get("parentOrigin") ?? "";
+const parentOrigin = getParentOrigin() ?? "";
 const root = document.body.appendChild(document.createElement("main"));
 
 const bridge = startSimxPortBridge({ frame: window, parentOrigin, files, assets, log: console, channel, target });
