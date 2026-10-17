@@ -1,3 +1,3 @@
 projfs.ts: byte-for-byte copy of pxt pxtservices/projfs.ts at commit c885bcacd (branch humanapp/feat/simx-editor). Re-vendor with `npm run vendor:pxtservices` (PXT_DIR selects the pxt checkout), or by plain copy plus updating this line.
-projassets.ts: byte-for-byte copy of pxt pxtservices/projassets.ts at commit c885bcacd (branch humanapp/feat/simx-editor). Re-vendor with `npm run vendor:pxtservices` (PXT_DIR selects the pxt checkout), or by plain copy plus updating this line.
+projassets.ts: byte-for-byte copy of pxt pxtservices/projassets.ts at commit c0ecd00af (branch humanapp/feat/simx-editor). Re-vendor with `npm run vendor:pxtservices` (PXT_DIR selects the pxt checkout), or by plain copy plus updating this line.
 simxeditor.ts: byte-for-byte copy of pxt pxtservices/simxeditor.ts at commit aebb25efc (branch humanapp/feat/simx-editor). Re-vendor with `npm run vendor:pxtservices` (PXT_DIR selects the pxt checkout), or by plain copy plus updating this line.

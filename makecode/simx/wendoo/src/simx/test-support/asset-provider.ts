@@ -23,10 +23,13 @@ export function listedImage(id: string, rows: number[][], displayName?: string):
   return image;
 }
 
-/** A song as the provider lists it: `id` and `displayName` as given. */
+/** A song as the provider lists it: `id` and `displayName` as given, its data a fixed stand-in for pxt's song encoding. */
 export function listedSong(id: string, displayName?: string): ProjassetsSong {
-  return { kind: "song", id, ...(displayName === undefined ? {} : { displayName }) };
+  return { kind: "song", id, data: SONG_DATA, ...(displayName === undefined ? {} : { displayName }) };
 }
+
+/** The data every listed song carries: tests read nothing from it. */
+const SONG_DATA = "00";
 
 /**
  * The editor's asset provider as a simulator extension's projassets client
@@ -37,7 +40,7 @@ export function listedSong(id: string, displayName?: string): ProjassetsSong {
 export class FakeAssetProvider implements ProjectAssetsProvider {
   /** The images the project holds, as the provider lists them. */
   images: ProjassetsImage[] = [];
-  /** The songs the project holds, as the provider lists them. */
+  /** The songs the project holds, as the provider lists them. Every other kind lists nothing. */
   songs: ProjassetsSong[] = [];
   /** The project's name, as the provider lists it. */
   name = "My Platformer";
@@ -86,7 +89,8 @@ export class FakeAssetProvider implements ProjectAssetsProvider {
     const failure = this._listFailures.get(kind)?.shift();
     if (failure !== undefined) return Promise.reject(new ProjassetsError(failure, `list refused with ${failure}`));
     return this.whenAnswering().then(() => {
-      const held: readonly (ProjassetsImage | ProjassetsSong)[] = kind === "image" ? this.images : this.songs;
+      const held: readonly (ProjassetsImage | ProjassetsSong)[] =
+        kind === "image" ? this.images : kind === "song" ? this.songs : [];
       return {
         assets: held.map((asset) => ({ ...asset })) as ProjassetsAssetOfKind[K][],
         name: this.name,
