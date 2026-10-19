@@ -16,6 +16,7 @@ enum BrainPlayer {
  * The Wendoo blocks for MakeCode Arcade.
  */
 //% color="#6a4bc4" weight=60 icon="" block="Wendoo"
+//% groups='["Run", "Variables"]'
 namespace wendoo {
   /**
    * Run a brain on a sprite. From the next frame the sprite runs `brain`, in
@@ -29,7 +30,7 @@ namespace wendoo {
   //% block="run brain $brain on $sprite"
   //% sprite.shadow=variables_get sprite.defl=mySprite
   //% brain.defl=wendooBrains.none
-  //% weight=100
+  //% group="Run" weight=100
   export function runBrain(sprite: Sprite, brain: CompiledBrainRegistration): void {
     if (!sprite || !brain) {
       return;
@@ -49,7 +50,7 @@ namespace wendoo {
   //% blockId=wendoo_set_brain_number
   //% block="set brain number $name of $sprite to $value"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=90 blockGap=8
+  //% group="Variables" weight=90 blockGap=8
   export function setBrainNumber(sprite: Sprite, name: string, value: number): void {
     writeBrainVariable(sprite, name, mkNumber(value));
   }
@@ -64,7 +65,7 @@ namespace wendoo {
   //% blockId=wendoo_brain_number
   //% block="brain number $name of $sprite"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=89
+  //% group="Variables" weight=89
   export function readBrainNumber(sprite: Sprite, name: string): number {
     const value = readBrainVariable(sprite, name, ValueTag.Number);
     return value ? value.num : 0;
@@ -82,7 +83,7 @@ namespace wendoo {
   //% blockId=wendoo_set_brain_text
   //% block="set brain text $name of $sprite to $value"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=88 blockGap=8
+  //% group="Variables" weight=88 blockGap=8
   export function setBrainString(sprite: Sprite, name: string, value: string): void {
     writeBrainVariable(sprite, name, mkString(value));
   }
@@ -97,7 +98,7 @@ namespace wendoo {
   //% blockId=wendoo_brain_text
   //% block="brain text $name of $sprite"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=87
+  //% group="Variables" weight=87
   export function readBrainString(sprite: Sprite, name: string): string {
     const value = readBrainVariable(sprite, name, ValueTag.String);
     return value ? value.str : "";
@@ -115,7 +116,7 @@ namespace wendoo {
   //% blockId=wendoo_set_brain_boolean
   //% block="set brain boolean $name of $sprite to $value"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=86 blockGap=8
+  //% group="Variables" weight=86 blockGap=8
   export function setBrainBoolean(sprite: Sprite, name: string, value: boolean): void {
     writeBrainVariable(sprite, name, mkBoolean(value));
   }
@@ -130,7 +131,7 @@ namespace wendoo {
   //% blockId=wendoo_brain_boolean
   //% block="brain boolean $name of $sprite"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=85
+  //% group="Variables" weight=85
   export function readBrainBoolean(sprite: Sprite, name: string): boolean {
     const value = readBrainVariable(sprite, name, ValueTag.Boolean);
     return value ? value.b : false;
@@ -148,7 +149,7 @@ namespace wendoo {
   //% blockId=wendoo_set_brain_player
   //% block="set brain player $name of $sprite to $player"
   //% sprite.shadow=variables_get sprite.defl=mySprite
-  //% weight=84
+  //% group="Variables" weight=84
   export function setBrainPlayer(sprite: Sprite, name: string, player: BrainPlayer): void {
     writeBrainVariable(sprite, name, playerValue(player));
   }
