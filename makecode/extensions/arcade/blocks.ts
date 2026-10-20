@@ -1,14 +1,15 @@
 /**
- * One of Arcade's four players, as a block's player dropdown offers it.
+ * The number of one of Arcade's four players, as the player block's dropdown
+ * offers it.
  */
-enum BrainPlayer {
-  //% block="player one"
+enum BrainPlayerNumber {
+  //% block="1"
   One = 1,
-  //% block="player two"
+  //% block="2"
   Two = 2,
-  //% block="player three"
+  //% block="3"
   Three = 3,
-  //% block="player four"
+  //% block="4"
   Four = 4,
 }
 
@@ -138,20 +139,37 @@ namespace wendoo {
   }
 
   /**
-   * Put a player into a player variable of the brain a sprite runs. The
-   * brain reads the player from its next think. Set right after **run
-   * brain**, the player is in place from the brain's first think.
+   * Put a player into a player variable of the brain a sprite runs, by the
+   * player's number, 1 to 4. The brain reads the player from its next think.
+   * Set right after **run brain**, the player is in place from the brain's
+   * first think. A number that is not one of the four names no player: the
+   * brain's player tiles then read it as none.
    *
    * @param sprite - The sprite whose brain to change.
    * @param name - The variable's name, exactly as the brain shows it.
-   * @param player - The player to put in the variable.
+   * @param player - The player's number, 1 to 4.
    */
   //% blockId=wendoo_set_brain_player
   //% block="set brain player $name of $sprite to $player"
   //% sprite.shadow=variables_get sprite.defl=mySprite
+  //% player.shadow=wendoo_player
   //% group="Variables" weight=84
-  export function setBrainPlayer(sprite: Sprite, name: string, player: BrainPlayer): void {
+  export function setBrainPlayer(sprite: Sprite, name: string, player: number): void {
     writeBrainVariable(sprite, name, playerValue(player));
+  }
+
+  /**
+   * The number of one of Arcade's four players, picked from a dropdown. It
+   * fills the player slot of **set brain player**, where any block giving a
+   * number fits in its place.
+   *
+   * @param number - The player, 1 to 4.
+   */
+  //% blockId=wendoo_player
+  //% block="player $number"
+  //% blockHidden=true
+  export function playerNumber(number: BrainPlayerNumber): number {
+    return number;
   }
 
   /** Write `value` into the variable `name` of the brain `sprite` runs, through the current scene's program host. */

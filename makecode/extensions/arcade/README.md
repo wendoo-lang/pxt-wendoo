@@ -30,16 +30,19 @@ it. The brain sees the new value the next time it thinks, and a value set
 right after **run brain** is there from the brain's start. Edit a brain
 while your game is running and its variables keep their values.
 
-**set brain player** puts one of the four players into a brain's **player**
-variable, so one brain can drive a sprite for each player. A Paddle brain
-with the rule **WHEN dpad player DO move** moves each paddle with its own
-player's controller:
+**set brain player** puts one of the four players, by number, into a
+brain's **player** variable, so one brain can drive a sprite for each
+player. Pick the player from the dropdown, or drop in any block that gives
+a number from 1 to 4; with the Multiplayer extension, the **player 2
+number** block from its Info group gives one of its players as a number. A
+Paddle brain with the rule **WHEN dpad player DO move** moves each paddle
+with its own player's controller:
 
 ```
 run brain Paddle on leftPaddle
-set brain player "player" of leftPaddle to player one
+set brain player "player" of leftPaddle to player 1
 run brain Paddle on rightPaddle
-set brain player "player" of rightPaddle to player two
+set brain player "player" of rightPaddle to player 2
 ```
 
 ---
