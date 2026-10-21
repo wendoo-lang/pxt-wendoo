@@ -5,11 +5,13 @@ import { DocsSidebarProvider } from "@wendoo/docs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
+import { EditorRequestsProvider } from "../contexts/editor-requests.js";
 import { EditorSessionProvider } from "../contexts/editor-session.js";
 import { CATALOG_PACK_UNBOUND } from "../services/authoring-environment.js";
 import type { BrainsViewState } from "../services/brains-store.js";
 import { BrainsStore, CATALOG_PENDING } from "../services/brains-store.js";
 import { CATALOG_UNREADABLE } from "../services/catalog.js";
+import { EditorRequests } from "../services/editor-requests.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
 import { SessionView } from "./SessionView.js";
 
@@ -39,8 +41,8 @@ function rootTag(markup: string): string {
 /**
  * Renders the session view under providers whose session store reports
  * `state`, whose brains store follows it and holds a brain named each of
- * `brainNames`, its view reporting `brainsFields` over its own, and whose
- * docs sidebar is closed.
+ * `brainNames`, its view reporting `brainsFields` over its own, whose
+ * editor requests hold none, and whose docs sidebar is closed.
  */
 function render(
   state: EditorSessionViewState,
@@ -62,7 +64,11 @@ function render(
       createElement(
         BrainsProvider,
         { value: brains },
-        createElement(DocsSidebarProvider, null, createElement(SessionView))
+        createElement(
+          EditorRequestsProvider,
+          { value: new EditorRequests() },
+          createElement(DocsSidebarProvider, null, createElement(SessionView))
+        )
       )
     )
   );

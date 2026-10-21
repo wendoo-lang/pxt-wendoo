@@ -412,8 +412,10 @@ the current slice alone.
       empty program `wendooBrains.none` (`empty.g.ts`, generated from
       `empty.src.json` by `npm run gen:vm-programs` in `makecode/simx/wendoo`).
       NO block definitions -- the compiled-brain type's
-      `//% fixedInstances` attribute is toolbox metadata on a type, which
-      a target extension's block parameter turns into its dropdown --
+      `//% fixedInstances` and `//% block` attributes are toolbox metadata
+      on a type, which a target extension's block parameter turns into its
+      dropdown and the wording of the dropdown's entry asking for a new
+      brain --
       ZERO target-specific pxt dependencies (`core: "*"` only):
       MakeCode-target-agnostic by construction, portable to other targets
       and extractable later as a file move -- proven by compiling against a

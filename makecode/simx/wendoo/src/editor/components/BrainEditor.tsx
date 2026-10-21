@@ -1,7 +1,7 @@
 import { useDocsSidebar } from "@wendoo/docs";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorDialog, BrainEditorProvider } from "@wendoo/ui";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BrainEditing } from "@/brain/editing";
 import { openBrainEditing } from "@/brain/editing";
 import { buildBrainEditorConfig } from "@/brain/editor-config";
@@ -63,7 +63,8 @@ interface BrainEditorProps {
  * type's page while the docs hold one, any other tile's its own -- and
  * toggles the docs sidebar, through the docs sidebar context; mount it under
  * a `DocsSidebarProvider`. Its editing is tracked in the open editings
- * provided above it, if any, while it is mounted.
+ * provided above it, if any, while it is mounted. Unmounting it flushes its
+ * editing's latest edit at once, as closing the dialog does.
  */
 export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) {
   const store = useBrains();
@@ -117,6 +118,7 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
   );
   const [editing] = useState(() => openBrainEditing(store, brainId));
   useTrackedEditing(editing);
+  useEffect(() => () => editing.close(), [editing]);
   const [isOpen, setIsOpen] = useState(true);
 
   return (

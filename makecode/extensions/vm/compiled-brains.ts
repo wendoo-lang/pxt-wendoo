@@ -7,9 +7,11 @@ namespace wendoo {
   /**
    * One compiled brain: its identity, its display name, and its program. A
    * block parameter of this type offers the type's fixed instances in its
-   * dropdown, each labelled by name.
+   * dropdown, each labelled by name; where the editor offers an entry asking
+   * for a new instance, the type's block name, `brain`, words it.
    */
   //% fixedInstances
+  //% block="brain"
   //% hidden
   export class CompiledBrainRegistration {
     /** The brain's document id. */

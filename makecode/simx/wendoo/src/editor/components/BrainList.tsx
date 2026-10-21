@@ -7,8 +7,9 @@ import {
   DropdownMenuTrigger,
 } from "@wendoo/ui";
 import { CircleAlert, MoreHorizontal, Plus } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useBrains, useBrainsState } from "@/contexts/brains";
+import { useEditorRequests } from "@/contexts/editor-requests";
 import type { AssetLiteral } from "@/services/asset-literals";
 import { BRAIN_ASSET_UNRESOLVED } from "@/services/asset-literals";
 import type { BrainDamageCode, BrainsStore } from "@/services/brains-store";
@@ -100,11 +101,30 @@ export function BrainAssetNotice({ literals }: { literals: readonly AssetLiteral
   );
 }
 
-type BrainDialog =
+/** The dialog open over the brain list: naming a new brain, renaming or removing brain `id`, or none. */
+export type BrainDialog =
   | { kind: "add" }
   | { kind: "rename"; id: string; name: string }
   | { kind: "remove"; id: string; name: string }
   | null;
+
+/** The brain list's state a create request changes. */
+export interface CreateRequestView {
+  /** Opens the brain editor on the brain with this document id; `null` closes it. */
+  setEditingBrainId(id: string | null): void;
+  /** Opens this dialog over the list, in place of any open one; `null` closes it. */
+  setDialog(dialog: BrainDialog): void;
+}
+
+/**
+ * Answers a create request on the brain list whose state `view` sets: closes
+ * the brain editor, if open, which flushes its latest edit, then opens the add
+ * dialog, the one the add action opens.
+ */
+export function answerCreateRequest(view: CreateRequestView): void {
+  view.setEditingBrainId(null);
+  view.setDialog({ kind: "add" });
+}
 
 /**
  * The brains of the brains store: a row per brain, keyed and addressed by its
@@ -124,6 +144,10 @@ type BrainDialog =
  * store's catalog is pending, a brain placing unresolved tiles shows no
  * diagnostics badge. The brain editor it opens fills tiles in `tileColors`
  * where they are given.
+ *
+ * It takes the create requests of the editor's requests, the one held before
+ * it mounted included, answering each with {@link answerCreateRequest}; mount
+ * it under an `EditorRequestsProvider`.
  */
 export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   const store = useBrains();
@@ -138,6 +162,9 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   // The brain the add dialog just created, read once the dialog has closed.
   const brainToOpenAfterNaming = useRef<string | null>(null);
   const headingId = useId();
+  const requests = useEditorRequests();
+
+  useEffect(() => requests.take(() => answerCreateRequest({ setEditingBrainId, setDialog })), [requests]);
 
   /**
    * Opens the editor on the brain the add dialog just named, having first put the

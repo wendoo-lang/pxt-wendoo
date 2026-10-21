@@ -6,16 +6,18 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrainsProvider } from "../contexts/brains.js";
+import { EditorRequestsProvider } from "../contexts/editor-requests.js";
 import { BRAIN_ASSET_UNRESOLVED } from "../services/asset-literals.js";
 import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
 import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../services/brain-source.js";
 import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
 import { BRAIN_TILE_UNRESOLVED, BrainsStore } from "../services/brains-store.js";
 import { parseCatalog } from "../services/catalog.js";
+import { EditorRequests } from "../services/editor-requests.js";
 import { allocateIds, emptyIdManifest } from "../services/id-allocation.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
-import { BrainDamageNotice, BrainList } from "./BrainList.js";
+import { answerCreateRequest, BrainDamageNotice, type BrainDialog, BrainList } from "./BrainList.js";
 
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
@@ -82,9 +84,15 @@ function applyRingingBrain(store: BrainsStore, name: string): string {
   return definition.id();
 }
 
-/** Renders the brain list over `store`. */
+/** Renders the brain list over `store`, under editor requests holding none. */
 function render(store: BrainsStore): string {
-  return renderToStaticMarkup(createElement(BrainsProvider, { value: store }, createElement(BrainList)));
+  return renderToStaticMarkup(
+    createElement(
+      BrainsProvider,
+      { value: store },
+      createElement(EditorRequestsProvider, { value: new EditorRequests() }, createElement(BrainList))
+    )
+  );
 }
 
 /** The listed rows, in order, as [document id, name] pairs. */
@@ -356,6 +364,43 @@ describe("BrainList", () => {
     const markup = rowMarkup(render(store), definition.id());
 
     assert.match(markup, /data-testid="brain-error-badge"[^>]*data-compile="none"/);
+  });
+});
+
+describe("answerCreateRequest", () => {
+  /** A brain list's state, recording each change a create request makes, standing on brain `editingBrainId`. */
+  function view(editingBrainId: string | null) {
+    const changes: string[] = [];
+    const state: { editingBrainId: string | null; dialog: BrainDialog } = { editingBrainId, dialog: null };
+    return {
+      changes,
+      state,
+      setEditingBrainId: (id: string | null) => {
+        changes.push(`editor:${id}`);
+        state.editingBrainId = id;
+      },
+      setDialog: (dialog: BrainDialog) => {
+        changes.push(`dialog:${dialog?.kind ?? null}`);
+        state.dialog = dialog;
+      },
+    };
+  }
+
+  it("opens the add dialog on the list", () => {
+    const list = view(null);
+
+    answerCreateRequest(list);
+
+    assert.deepEqual(list.state, { editingBrainId: null, dialog: { kind: "add" } });
+  });
+
+  it("closes the open brain editor before opening the add dialog", () => {
+    const list = view("abcdabcdabcdabcd");
+
+    answerCreateRequest(list);
+
+    assert.deepEqual(list.changes, ["editor:null", "dialog:add"]);
+    assert.deepEqual(list.state, { editingBrainId: null, dialog: { kind: "add" } });
   });
 });
 

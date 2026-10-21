@@ -5,6 +5,7 @@ import {
   type SimxEditorEvent,
   type SimxEditorReadyEvent,
 } from "../../vendor/simxeditor.js";
+import type { EditorRequests } from "./editor-requests";
 
 /** Stable code logged when the frame URL names no valid `parentOrigin`, so the editor tab hears nothing from MakeCode. */
 export const TAB_PARENT_ORIGIN_INVALID = "TAB_PARENT_ORIGIN_INVALID";
@@ -53,8 +54,9 @@ export interface SimxEditorClient {
    */
   onPort(listener: (port: MakeCodeMessagePort) => void): () => void;
   /**
-   * Subscribe to the lifecycle and simulator events MakeCode posts to the
-   * tab: `shown`, `hidden`, `simulator`, `simulatorstate` and `fullscreen`.
+   * Subscribe to the lifecycle, simulator and action events MakeCode posts to
+   * the tab: `shown`, `hidden`, `simulator`, `simulatorstate`, `fullscreen`
+   * and `action`.
    * Returns an unsubscribe function.
    */
   onEvent(listener: (event: SimxEditorEvent) => void): () => void;
@@ -111,4 +113,20 @@ export function connectSimxEditorClient(frame: SimxEditorClientFrame, parentOrig
       eventListeners.clear();
     },
   };
+}
+
+/**
+ * Makes each `create` action MakeCode posts to the tab through `client` a
+ * create request of `requests`, for the type the action names. Returns an
+ * unsubscribe function.
+ */
+export function forwardTabActions(
+  client: Pick<SimxEditorClient, "onEvent">,
+  requests: Pick<EditorRequests, "request">
+): () => void {
+  return client.onEvent((event) => {
+    if (event.event === "action" && event.action === "create") {
+      requests.request({ qName: event.qName });
+    }
+  });
 }
