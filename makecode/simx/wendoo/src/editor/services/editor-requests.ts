@@ -3,30 +3,44 @@ import { logger } from "@wendoo/core/app";
 /** Stable code logged at debug level for each create request, with the fully qualified name of the type it names. */
 export const EDITOR_CREATE_REQUESTED = "EDITOR_CREATE_REQUESTED";
 
-/** A request, made from outside the editor, to create an instance of a type. */
-export interface CreateRequest {
-  /** The fully qualified name of the type to create an instance of, such as `wendoo.CompiledBrainRegistration`. */
-  readonly qName: string;
-}
+/** Stable code logged at debug level for each open request, with the fully qualified name of the instance it names. */
+export const EDITOR_OPEN_REQUESTED = "EDITOR_OPEN_REQUESTED";
+
+/**
+ * A request, made from outside the editor: to create an instance of a type,
+ * or to open an instance.
+ */
+export type EditorRequest =
+  | {
+      readonly kind: "create";
+      /** The fully qualified name of the type to create an instance of, such as `wendoo.CompiledBrainRegistration`. */
+      readonly qName: string;
+    }
+  | {
+      readonly kind: "open";
+      /** The fully qualified name of the instance to open, such as `wendooBrains.p_abcdabcdabcdabcd`. */
+      readonly qName: string;
+    };
 
 /**
  * The requests made of the editor from outside it, held in one slot: the
- * latest create request until a subscriber takes it. Each request's `qName`
- * is logged under {@link EDITOR_CREATE_REQUESTED} and read by nothing else;
- * a second kind of instance the editor creates would make `qName` a mapping
- * onto the catalog's types.
+ * latest request of either kind until a subscriber takes it. Each request is
+ * logged under its kind's code, {@link EDITOR_CREATE_REQUESTED} or
+ * {@link EDITOR_OPEN_REQUESTED}, with its `qName`.
  */
 export class EditorRequests {
-  private _held: CreateRequest | undefined;
-  private readonly _listeners = new Set<(request: CreateRequest) => void>();
+  private _held: EditorRequest | undefined;
+  private readonly _listeners = new Set<(request: EditorRequest) => void>();
 
   /**
    * Makes `request`: hands it to every current subscriber, or, while there
    * is none, holds it for the next one to subscribe, in place of any request
    * held before.
    */
-  request(request: CreateRequest): void {
-    logger.debug(EDITOR_CREATE_REQUESTED, { qName: request.qName });
+  request(request: EditorRequest): void {
+    logger.debug(request.kind === "create" ? EDITOR_CREATE_REQUESTED : EDITOR_OPEN_REQUESTED, {
+      qName: request.qName,
+    });
     if (this._listeners.size === 0) {
       this._held = request;
       return;
@@ -39,7 +53,7 @@ export class EditorRequests {
    * any, at once, which no later subscriber then receives, and each request
    * made after. Returns an unsubscribe function.
    */
-  take(listener: (request: CreateRequest) => void): () => void {
+  take(listener: (request: EditorRequest) => void): () => void {
     this._listeners.add(listener);
     const held = this._held;
     this._held = undefined;

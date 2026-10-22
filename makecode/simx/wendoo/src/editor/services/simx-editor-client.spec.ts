@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { MakeCodeMessagePort } from "@wendoo/makecode-session";
 import type { SimxEditorEvent } from "../../vendor/simxeditor.js";
-import type { CreateRequest } from "./editor-requests.js";
+import type { EditorRequest } from "./editor-requests.js";
 import {
   connectSimxEditorClient,
   forwardTabActions,
@@ -149,20 +149,39 @@ describe("forwardTabActions", () => {
   it("makes each create action MakeCode posts a create request for the type it names, in order", () => {
     const frame = new FakeTabFrame();
     const client = connectSimxEditorClient(frame, PARENT_ORIGIN);
-    const requested: CreateRequest[] = [];
+    const requested: EditorRequest[] = [];
     forwardTabActions(client, { request: (request) => requested.push(request) });
 
     frame.receive({ type: "simxeditor", event: "action", action: "create", qName: "wendoo.CompiledBrainRegistration" });
     frame.receive({ type: "simxeditor", event: "action", action: "create", qName: "other.Type" });
 
-    assert.deepEqual(requested, [{ qName: "wendoo.CompiledBrainRegistration" }, { qName: "other.Type" }]);
+    assert.deepEqual(requested, [
+      { kind: "create", qName: "wendoo.CompiledBrainRegistration" },
+      { kind: "create", qName: "other.Type" },
+    ]);
+    client.dispose();
+  });
+
+  it("makes each open action MakeCode posts an open request for the instance it names, in order with creates", () => {
+    const frame = new FakeTabFrame();
+    const client = connectSimxEditorClient(frame, PARENT_ORIGIN);
+    const requested: EditorRequest[] = [];
+    forwardTabActions(client, { request: (request) => requested.push(request) });
+
+    frame.receive({ type: "simxeditor", event: "action", action: "open", qName: "wendooBrains.p_abcdabcdabcdabcd" });
+    frame.receive({ type: "simxeditor", event: "action", action: "create", qName: "wendoo.CompiledBrainRegistration" });
+
+    assert.deepEqual(requested, [
+      { kind: "open", qName: "wendooBrains.p_abcdabcdabcdabcd" },
+      { kind: "create", qName: "wendoo.CompiledBrainRegistration" },
+    ]);
     client.dispose();
   });
 
   it("requests nothing for the lifecycle and simulator events, or for another action", () => {
     const frame = new FakeTabFrame();
     const client = connectSimxEditorClient(frame, PARENT_ORIGIN);
-    const requested: CreateRequest[] = [];
+    const requested: EditorRequest[] = [];
     forwardTabActions(client, { request: (request) => requested.push(request) });
 
     frame.receive({ type: "simxeditor", event: "shown" });
@@ -170,7 +189,7 @@ describe("forwardTabActions", () => {
     frame.receive({ type: "simxeditor", event: "simulator", command: "start" });
     frame.receive({ type: "simxeditor", event: "simulatorstate", state: "Running" });
     frame.receive({ type: "simxeditor", event: "fullscreen", enabled: false });
-    frame.receive({ type: "simxeditor", event: "action", action: "open", qName: "wendoo.CompiledBrainRegistration" });
+    frame.receive({ type: "simxeditor", event: "action", action: "rename", qName: "wendoo.CompiledBrainRegistration" });
 
     assert.deepEqual(requested, []);
     client.dispose();
@@ -179,7 +198,7 @@ describe("forwardTabActions", () => {
   it("requests nothing once unsubscribed", () => {
     const frame = new FakeTabFrame();
     const client = connectSimxEditorClient(frame, PARENT_ORIGIN);
-    const requested: CreateRequest[] = [];
+    const requested: EditorRequest[] = [];
     const stop = forwardTabActions(client, { request: (request) => requested.push(request) });
 
     stop();

@@ -99,8 +99,11 @@ const FORMAT_LINE = /^\/\/ wendoo-brains-format (\d+)$/;
 /** The line carrying an entry's source hash, with its indent removed. */
 const HASH_LINE = /^\/\/ source-hash ([0-9a-f]{8})$/;
 
+/** The namespace the entries are declared in. */
+const NAMESPACE = "wendooBrains";
+
 /** The line opening the namespace the entries are declared in. */
-const NAMESPACE_OPEN = "namespace wendooBrains {";
+const NAMESPACE_OPEN = `namespace ${NAMESPACE} {`;
 
 /** The line closing the namespace the entries are declared in. */
 const NAMESPACE_CLOSE = "}";
@@ -111,8 +114,14 @@ const ENTRY_INDENT = "    ";
 /** Indent of an entry's hex lines inside the namespace. */
 const HEX_INDENT = "        ";
 
+/** The start of every entry's declaration name, before its identifier part. */
+const NAME_PREFIX = "p_";
+
 /** The start of every line, its indent removed, opening an entry's declaration. */
-const DECLARATION_START = "export const p_";
+const DECLARATION_START = `export const ${NAME_PREFIX}`;
+
+/** The start of every entry's fully qualified name, before its identifier part. */
+const QUALIFIED_NAME_PREFIX = `${NAMESPACE}.${NAME_PREFIX}`;
 
 /**
  * A line, its indent removed, opening an entry's declaration: its name's id
@@ -230,6 +239,24 @@ function blockLine(id: string, name: string): string {
  */
 function identifierPart(id: string): string {
   return id.replace(/[^A-Za-z0-9]/g, (character) => `_${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/**
+ * The document id of the brain whose entry the fully qualified name `qName`
+ * names, such as `wendooBrains.p_abcdabcdabcdabcd`: the module's namespace,
+ * a dot, `p_` and the identifier part written for the id, each `_` and four
+ * hex digits read back as the code unit they spell. Returns `undefined` when
+ * `qName` is in another namespace, or its identifier part is not one written
+ * for any id, such as one holding `_` with fewer than four hex digits after it.
+ *
+ * @param qName - The fully qualified name of a fixed instance, as MakeCode gives it.
+ */
+export function brainIdOfQualifiedName(qName: string): string | undefined {
+  if (!qName.startsWith(QUALIFIED_NAME_PREFIX)) return undefined;
+  const part = qName.slice(QUALIFIED_NAME_PREFIX.length);
+  if (part === "") return undefined;
+  const id = part.replace(/_([0-9a-f]{4})/g, (_escape, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  return identifierPart(id) === part ? id : undefined;
 }
 
 /** `text` as a JSON string literal whose every character outside printable ASCII is escaped. */

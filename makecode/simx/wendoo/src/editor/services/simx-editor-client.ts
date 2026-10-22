@@ -116,17 +116,19 @@ export function connectSimxEditorClient(frame: SimxEditorClientFrame, parentOrig
 }
 
 /**
- * Makes each `create` action MakeCode posts to the tab through `client` a
- * create request of `requests`, for the type the action names. Returns an
- * unsubscribe function.
+ * Makes each action MakeCode posts to the tab through `client` a request of
+ * `requests` of the action's kind: a `create` action a create request for the
+ * type it names, an `open` action an open request for the instance it names.
+ * Any other action requests nothing. Returns an unsubscribe function.
  */
 export function forwardTabActions(
   client: Pick<SimxEditorClient, "onEvent">,
   requests: Pick<EditorRequests, "request">
 ): () => void {
   return client.onEvent((event) => {
-    if (event.event === "action" && event.action === "create") {
-      requests.request({ qName: event.qName });
+    if (event.event !== "action") return;
+    if (event.action === "create" || event.action === "open") {
+      requests.request({ kind: event.action, qName: event.qName });
     }
   });
 }

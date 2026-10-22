@@ -5,6 +5,7 @@ import { brainSourceHash } from "@wendoo/makecode-session";
 import {
   BRAINS_MODULE_FORMAT,
   BrainsModuleProblemCode,
+  brainIdOfQualifiedName,
   type CompiledBrainEntry,
   readBrainsModule,
   writeBrainsModule,
@@ -248,5 +249,51 @@ describe("brains module", () => {
 
     assert.deepEqual(reading.problems, []);
     assert.equal(reading.entries.get(chaser.id)?.name, chaser.name);
+  });
+});
+
+describe("brainIdOfQualifiedName", () => {
+  /** The fully qualified name of every entry `text` declares, in text order. */
+  function qualifiedNames(text: string): string[] {
+    return [...text.matchAll(/^ {4}export const (p_[A-Za-z0-9_]+) = /gm)].map((match) => `wendooBrains.${match[1]}`);
+  }
+
+  it("reads back the document id of each entry the module writes, whatever characters the id holds", () => {
+    const ids = ["abcdabcdabcdabcd", "a-b_c", "my hero.v2", "caf\u00e9", "\ud83d\ude00x", "_0041", "__"];
+    const text = writeBrainsModule(ids.map((id) => ({ ...EDGE_ENTRIES[0], id })));
+    const written = [...readBrainsModule(text).entries.keys()];
+
+    assert.deepEqual(
+      qualifiedNames(text).map((qName) => brainIdOfQualifiedName(qName)),
+      written
+    );
+    assert.deepEqual([...written].sort(), [...ids].sort());
+  });
+
+  it("denotes no brain by an identifier part the module writes for no id", () => {
+    const malformed = [
+      "wendooBrains.p_",
+      "wendooBrains.p_a_",
+      "wendooBrains.p_a_02d",
+      "wendooBrains.p_a_02dz",
+      "wendooBrains.p_a_002D",
+      "wendooBrains.p_a_0062",
+      "wendooBrains.p_a$b",
+    ];
+
+    for (const qName of malformed) assert.equal(brainIdOfQualifiedName(qName), undefined, qName);
+  });
+
+  it("denotes no brain by a name outside the module's namespace or without the entry prefix", () => {
+    const foreign = [
+      "wendooPrograms.p_abcdabcdabcdabcd",
+      "otherwendooBrains.p_abcdabcdabcdabcd",
+      "wendooBrains.abcdabcdabcdabcd",
+      "wendooBrains.none",
+      "wendoo.CompiledBrainRegistration",
+      "p_abcdabcdabcdabcd",
+    ];
+
+    for (const qName of foreign) assert.equal(brainIdOfQualifiedName(qName), undefined, qName);
   });
 });

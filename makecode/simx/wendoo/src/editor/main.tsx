@@ -32,8 +32,8 @@ window.addEventListener("unhandledrejection", (event) => {
  * port-backed session, the brains store over it, the target theme and the
  * document title bound to it. Once listening, tells MakeCode the tab is
  * ready; every port MakeCode brokers from `parentOrigin` replaces the
- * session's port, and every `create` action it posts becomes a create
- * request of the editor's requests, provided to the views. The page being
+ * session's port, and every `create` or `open` action it posts becomes a
+ * request of that kind of the editor's requests, provided to the views. The page being
  * hidden for good flushes every open brain editor's unflushed edit and stops
  * the session.
  * With no valid `parentOrigin`, logs {@link TAB_PARENT_ORIGIN_INVALID} and

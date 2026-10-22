@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import type { IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
@@ -17,7 +17,16 @@ import { EditorRequests } from "../services/editor-requests.js";
 import { allocateIds, emptyIdManifest } from "../services/id-allocation.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
-import { answerCreateRequest, BrainDamageNotice, type BrainDialog, BrainList } from "./BrainList.js";
+import {
+  answerCreateRequest,
+  answerEditorRequest,
+  answerOpenRequest,
+  BrainDamageNotice,
+  type BrainDialog,
+  BrainList,
+  EDITOR_OPEN_UNKNOWN_BRAIN,
+  type OpenRequestView,
+} from "./BrainList.js";
 
 /** A connected session with no catalog, as a brains store follows it. */
 const SESSION = {
@@ -401,6 +410,166 @@ describe("answerCreateRequest", () => {
 
     assert.deepEqual(list.changes, ["editor:null", "dialog:add"]);
     assert.deepEqual(list.state, { editingBrainId: null, dialog: { kind: "add" } });
+  });
+});
+
+describe("open requests", () => {
+  /** A brain list's state over `store`'s brains, recording each change a request makes, standing on brain `editingBrainId` and `dialog`. */
+  function view(
+    store: BrainsStore,
+    editingBrainId: string | null,
+    dialog: BrainDialog = null,
+    reconciled = true
+  ): OpenRequestView & {
+    changes: string[];
+    state: { editingBrainId: string | null; dialog: BrainDialog; held: string | null };
+  } {
+    const changes: string[] = [];
+    const state: { editingBrainId: string | null; dialog: BrainDialog; held: string | null } = {
+      editingBrainId,
+      dialog,
+      held: null,
+    };
+    return {
+      changes,
+      state,
+      brains: store.getSnapshot().brains,
+      reconciled,
+      setEditingBrainId: (id) => {
+        changes.push(`editor:${id}`);
+        state.editingBrainId = id;
+      },
+      setDialog: (next) => {
+        changes.push(`dialog:${next?.kind ?? null}`);
+        state.dialog = next;
+      },
+      holdOpen: (brainId) => {
+        changes.push(`hold:${brainId}`);
+        state.held = brainId;
+      },
+      focusEditButton: (brainId) => {
+        changes.push(`focus:${brainId}`);
+      },
+    };
+  }
+
+  /** Warn-level log codes logged since the spec began. */
+  function warnedCodes(warnings: ReturnType<typeof mock.method>): unknown[] {
+    return warnings.mock.calls.map((call) => call.arguments[0]);
+  }
+
+  let store: BrainsStore;
+  let warnings: ReturnType<typeof mock.method>;
+
+  beforeEach(() => {
+    store = new BrainsStore(SESSION);
+    warnings = mock.method(logger, "warn", () => {});
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+  });
+
+  describe("answerOpenRequest", () => {
+    it("opens the editor on the named brain the store holds, the keyboard put on its Edit button first", () => {
+      store.addBrain("Chaser");
+      const hero = store.addBrain("Hero");
+      const list = view(store, null);
+
+      answerOpenRequest(list, hero);
+
+      assert.deepEqual(list.state, { editingBrainId: hero, dialog: null, held: null });
+      assert.deepEqual(list.changes, ["dialog:null", `focus:${hero}`, `editor:${hero}`]);
+      assert.deepEqual(warnedCodes(warnings), []);
+    });
+
+    it("switches an editor open on another brain to the named brain", () => {
+      const chaser = store.addBrain("Chaser");
+      const hero = store.addBrain("Hero");
+      const list = view(store, chaser);
+
+      answerOpenRequest(list, hero);
+
+      assert.equal(list.state.editingBrainId, hero);
+    });
+
+    it("leaves an editor open on the named brain open on it", () => {
+      const hero = store.addBrain("Hero");
+      const list = view(store, hero);
+
+      answerOpenRequest(list, hero);
+
+      assert.equal(list.state.editingBrainId, hero);
+      assert.ok(!list.changes.includes("editor:null"));
+    });
+
+    it("closes an open add dialog before opening the editor", () => {
+      const hero = store.addBrain("Hero");
+      const list = view(store, null, { kind: "add" });
+
+      answerOpenRequest(list, hero);
+
+      assert.deepEqual(list.state, { editingBrainId: hero, dialog: null, held: null });
+      assert.ok(list.changes.indexOf("dialog:null") < list.changes.indexOf(`editor:${hero}`));
+    });
+
+    it("leaves the list as it is for a brain the store does not hold, logging its stable code", () => {
+      const chaser = store.addBrain("Chaser");
+      const list = view(store, chaser, { kind: "rename", id: chaser, name: "Chaser" });
+
+      answerOpenRequest(list, "abcdabcdabcdabcd");
+
+      assert.deepEqual(list.changes, []);
+      assert.deepEqual(warnedCodes(warnings), [EDITOR_OPEN_UNKNOWN_BRAIN]);
+    });
+
+    it("holds the brain, changing nothing else, while the store is not reconciled", () => {
+      const list = view(store, null, null, false);
+
+      answerOpenRequest(list, "abcdabcdabcdabcd");
+
+      assert.deepEqual(list.changes, ["hold:abcdabcdabcdabcd"]);
+      assert.deepEqual(warnedCodes(warnings), []);
+    });
+  });
+
+  describe("answerEditorRequest", () => {
+    it("opens the editor on the brain an open request's instance name denotes", () => {
+      const hero = store.addBrain("Hero");
+      const list = view(store, null);
+
+      answerEditorRequest(list, { kind: "open", qName: `wendooBrains.p_${hero}` });
+
+      assert.equal(list.state.editingBrainId, hero);
+    });
+
+    it("answers a create request by opening the add dialog, dropping a held open request", () => {
+      const list = view(store, null, null, false);
+      list.state.held = "abcdabcdabcdabcd";
+
+      answerEditorRequest(list, { kind: "create", qName: "wendoo.CompiledBrainRegistration" });
+
+      assert.deepEqual(list.state, { editingBrainId: null, dialog: { kind: "add" }, held: null });
+    });
+
+    it("holds only the latest open request made before the store reconciled", () => {
+      const list = view(store, null, null, false);
+
+      answerEditorRequest(list, { kind: "open", qName: "wendooBrains.p_abcdabcdabcdabcd" });
+      answerEditorRequest(list, { kind: "open", qName: "wendooBrains.p_0000111122223333" });
+
+      assert.equal(list.state.held, "0000111122223333");
+    });
+
+    it("leaves the list as it is for an instance name denoting no brain, logging the stable code", () => {
+      store.addBrain("Hero");
+      const list = view(store, null);
+
+      answerEditorRequest(list, { kind: "open", qName: "wendooPrograms.p_abcdabcdabcdabcd" });
+
+      assert.deepEqual(list.changes, ["hold:null"]);
+      assert.deepEqual(warnedCodes(warnings), [EDITOR_OPEN_UNKNOWN_BRAIN]);
+    });
   });
 });
 

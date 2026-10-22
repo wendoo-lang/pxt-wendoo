@@ -1,3 +1,4 @@
+import { logger } from "@wendoo/core/app";
 import {
   Button,
   DropdownMenu,
@@ -7,13 +8,19 @@ import {
   DropdownMenuTrigger,
 } from "@wendoo/ui";
 import { CircleAlert, MoreHorizontal, Plus } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useBrains, useBrainsState } from "@/contexts/brains";
 import { useEditorRequests } from "@/contexts/editor-requests";
 import type { AssetLiteral } from "@/services/asset-literals";
 import { BRAIN_ASSET_UNRESOLVED } from "@/services/asset-literals";
-import type { BrainDamageCode, BrainsStore } from "@/services/brains-store";
+import type { BrainDamageCode, BrainsStore, BrainsViewState } from "@/services/brains-store";
+import type { EditorRequest } from "@/services/editor-requests";
 import type { TileKindColors } from "@/services/target-theme";
+// Exception: the editor entry does not import the simx entry's production
+// code. This one import is ruled in, so the decoder stays beside the encoder
+// it reverses; any further src/editor -> src/simx import needs its own
+// explicit ruling.
+import { brainIdOfQualifiedName } from "../../simx/brains-module";
 import {
   BrainDiagnosticsList,
   BrainErrorBadge,
@@ -108,12 +115,27 @@ export type BrainDialog =
   | { kind: "remove"; id: string; name: string }
   | null;
 
+/** Stable code logged at warn level for an open request naming no brain the store holds, with the `qName` it named or the `brainId` that denotes. */
+export const EDITOR_OPEN_UNKNOWN_BRAIN = "EDITOR_OPEN_UNKNOWN_BRAIN";
+
 /** The brain list's state a create request changes. */
 export interface CreateRequestView {
   /** Opens the brain editor on the brain with this document id; `null` closes it. */
   setEditingBrainId(id: string | null): void;
   /** Opens this dialog over the list, in place of any open one; `null` closes it. */
   setDialog(dialog: BrainDialog): void;
+}
+
+/** The brain list's state an open request reads and changes. */
+export interface OpenRequestView extends CreateRequestView {
+  /** The brains the store holds, keyed by document id. */
+  readonly brains: BrainsViewState["brains"];
+  /** Whether the store is reconciled with the project; until it is, `brains` may lack the project's brains. */
+  readonly reconciled: boolean;
+  /** Holds the brain with this document id to open once the store is reconciled, in place of any held; `null` holds none. */
+  holdOpen(brainId: string | null): void;
+  /** Puts the keyboard on the Edit button of the listed brain with this document id, if it is listed. */
+  focusEditButton(brainId: string): void;
 }
 
 /**
@@ -124,6 +146,50 @@ export interface CreateRequestView {
 export function answerCreateRequest(view: CreateRequestView): void {
   view.setEditingBrainId(null);
   view.setDialog({ kind: "add" });
+}
+
+/**
+ * Answers an open request for the brain `brainId` on the brain list whose
+ * state `view` reads and sets. While the store is not reconciled, holds the
+ * brain to answer for once it is. When the store holds the brain, closes any
+ * open dialog, puts the keyboard on the brain's Edit button, then opens the
+ * brain editor on it: an editor open on another brain is replaced, flushing
+ * that brain's latest edit, and one open on this brain stays open. Otherwise
+ * logs {@link EDITOR_OPEN_UNKNOWN_BRAIN} and leaves the list as it is.
+ */
+export function answerOpenRequest(view: OpenRequestView, brainId: string): void {
+  if (!view.reconciled) {
+    view.holdOpen(brainId);
+    return;
+  }
+  if (!view.brains.has(brainId)) {
+    logger.warn(EDITOR_OPEN_UNKNOWN_BRAIN, { brainId });
+    return;
+  }
+  view.setDialog(null);
+  view.focusEditButton(brainId);
+  view.setEditingBrainId(brainId);
+}
+
+/**
+ * Answers `request` on the brain list whose state `view` reads and sets, by
+ * its kind, first dropping any open request held: a create request with
+ * {@link answerCreateRequest}; an open request with {@link answerOpenRequest}
+ * for the brain its instance name denotes, or, when it denotes none, by
+ * logging {@link EDITOR_OPEN_UNKNOWN_BRAIN}.
+ */
+export function answerEditorRequest(view: OpenRequestView, request: EditorRequest): void {
+  view.holdOpen(null);
+  if (request.kind === "create") {
+    answerCreateRequest(view);
+    return;
+  }
+  const brainId = brainIdOfQualifiedName(request.qName);
+  if (brainId === undefined) {
+    logger.warn(EDITOR_OPEN_UNKNOWN_BRAIN, { qName: request.qName });
+    return;
+  }
+  answerOpenRequest(view, brainId);
 }
 
 /**
@@ -145,8 +211,9 @@ export function answerCreateRequest(view: CreateRequestView): void {
  * diagnostics badge. The brain editor it opens fills tiles in `tileColors`
  * where they are given.
  *
- * It takes the create requests of the editor's requests, the one held before
- * it mounted included, answering each with {@link answerCreateRequest}; mount
+ * It takes the requests of the editor's requests, the one held before it
+ * mounted included, answering each with {@link answerEditorRequest}, and an
+ * open request it held for the store to reconcile once the store has; mount
  * it under an `EditorRequestsProvider`.
  */
 export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
@@ -161,10 +228,38 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
   // The brain the add dialog just created, read once the dialog has closed.
   const brainToOpenAfterNaming = useRef<string | null>(null);
+  // The brain an open request named before the store reconciled, opened once it has.
+  const heldOpenBrainId = useRef<string | null>(null);
   const headingId = useId();
   const requests = useEditorRequests();
 
-  useEffect(() => requests.take(() => answerCreateRequest({ setEditingBrainId, setDialog })), [requests]);
+  /** The list's state as a request reads and sets it now. */
+  const requestView = useCallback((): OpenRequestView => {
+    const snapshot = store.getSnapshot();
+    return {
+      setEditingBrainId,
+      setDialog,
+      brains: snapshot.brains,
+      reconciled: snapshot.reconciled,
+      holdOpen: (brainId) => {
+        heldOpenBrainId.current = brainId;
+      },
+      focusEditButton: (brainId) => {
+        editButtons.current.get(brainId)?.focus();
+      },
+    };
+  }, [store]);
+
+  useEffect(() => requests.take((request) => answerEditorRequest(requestView(), request)), [requests, requestView]);
+
+  useEffect(() => {
+    const brainId = heldOpenBrainId.current;
+    if (!reconciled || brainId === null) {
+      return;
+    }
+    heldOpenBrainId.current = null;
+    answerOpenRequest(requestView(), brainId);
+  }, [reconciled, requestView]);
 
   /**
    * Opens the editor on the brain the add dialog just named, having first put the
