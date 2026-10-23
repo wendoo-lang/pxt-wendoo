@@ -414,6 +414,9 @@ export class FakeProjfsHost {
         this.mutations.push(`delete ${request.name}`);
         return { subtype: "ack", name: request.name };
       }
+      case "subscribe":
+        // acknowledged as MakeCode does; this host sends no change notifications
+        return { subtype: "ack" };
     }
   }
 }
