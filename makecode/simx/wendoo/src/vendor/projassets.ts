@@ -40,9 +40,10 @@ export function getParentOrigin(search?: string): string | undefined {
 /**
  * Returns the level of the simulator-extension APIs the editor hosting this
  * frame serves, which the editor passes in the frame URL's `apiLevel`
- * parameter. Level 1 is the `projfs`, `projassets` and `simxeditor` messages
- * and the registration fields; each later level adds to or alters them. Read
- * it at startup to learn whether the editor answers a request before sending it.
+ * parameter. Level 1 is the `projfs`, `projassets`, `projprogram` and
+ * `simxeditor` messages and the registration fields; each later level adds to
+ * or alters them. Read it at startup to learn whether the editor answers a
+ * request before sending it.
  * @param search the frame URL's query string; defaults to `window.location.search`
  * @returns the level; 0, the level of an editor older than level 1, if the URL
  * provides none or one that is not a non-negative integer
@@ -394,6 +395,7 @@ export interface ProjassetsClientOptions {
     /**
      * The origin requests may be delivered to; defaults to the frame URL's
      * `parentOrigin` parameter, else `"*"`.
+     * Unless it is `"*"`, replies and notifications are accepted only from this origin.
      */
     targetOrigin?: string;
     /** The frame URL's query string the default {@link targetOrigin} is read from; defaults to `window.location.search`. */
@@ -435,6 +437,7 @@ const DEFAULT_SLOW_REPLY_MS = 10000;
 export class ProjassetsClient {
     protected readonly target: ProjassetsTargetWindow;
     protected readonly listener: ProjassetsListenerWindow;
+    /** The origin requests are posted to; unless it is `"*"`, replies and notifications are accepted only from this origin. */
     protected readonly targetOrigin: string;
     protected readonly slowReplyMs: number;
     protected readonly onSlowReply: ((request: ProjassetsRequest) => void) | undefined;
@@ -535,6 +538,7 @@ export class ProjassetsClient {
 
     protected onMessage = (ev: MessageEvent) => {
         if (ev.source !== this.target) return;
+        if (this.targetOrigin !== "*" && ev.origin !== this.targetOrigin) return;
         const message = ev.data as ProjassetsReply | ProjassetsNotification;
         if (message?.type !== PROJASSETS_MESSAGE_TYPE) return;
         if (message.subtype === "changed") {
