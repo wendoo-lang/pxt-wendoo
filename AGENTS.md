@@ -746,7 +746,7 @@ the current slice alone.
       front-door extension -- the one coordinate a user adds, which
       pulls the rest in; the base pack is `<target>-base`, and genre
       extensions are `<target>-<genre>` siblings of the front door
-      atop the base. Block text and every API identifier a kid meets
+      atop the base. Block text and every API identifier a user meets
       in the JavaScript view say "brain"; block IDs are never shown
       and are permanent, because saved blocks match on them (the
       spawn block's is `wendoo_run_program`; the brain variable blocks'

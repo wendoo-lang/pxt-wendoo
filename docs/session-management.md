@@ -690,7 +690,7 @@ it always shows the session view.
 
 - The SESSION VIEW shows with NO HEADER: no logotype, project name,
   target name, connection status, or save status, since none of their
-  states is something a kid can act on, and MakeCode's own chrome names
+  states is something a user can act on, and MakeCode's own chrome names
   the project and labels the tab. The one control above the content is
   the DOCS BUTTON in the page's upper right corner (`corner-controls`),
   opening and closing the docs sidebar. The connection status is
@@ -795,11 +795,11 @@ it always shows the session view.
   root element carries the state as `data-save-state`, the pend count
   as `data-pending`, the pushes in flight as `data-in-flight`, and
   `reconciled` as `data-reconciled`. A damaged brain, the one state
-  behind `unsaved` a kid can act on, shows its own notice (below).
+  behind `unsaved` a user can act on, shows its own notice (below).
 - DAMAGED BRAINS (see "Brain sync", below) surface in the brain list
   at the default diagnostics tier, since restoring is a
   blocks-only action. A damaged brain's row carries a notice worded
-  for the kid -- its file in the MakeCode project is broken -- with
+  for the user -- its file in the MakeCode project is broken -- with
   the damage's stable code as `data-code`, never as text. When the
   store holds a copy of the brain, the notice offers Restore
   (`repushBrain`), disabled (the button's `disabled` attribute) unless
@@ -811,7 +811,7 @@ it always shows the session view.
   or a later reconciliation, and the notice goes with it.
 - A brain using UNRESOLVED ASSET LITERALS -- assets the held snapshot
   no longer lists -- carries a notice below its row at the default
-  tier, worded for the kid and naming each asset by its label (add it
+  tier, worded in plain words for the user and naming each asset by its label (add it
   back in MakeCode, or pick something else), with
   `BRAIN_ASSET_UNRESOLVED` as `data-code`. It informs and never blocks:
   the brain still compiles and runs as before. No notice shows before
@@ -834,7 +834,7 @@ it always shows the session view.
   tiles shows no badge on its row, its compile's diagnostics and its
   `BRAIN_TILE_UNRESOLVED` tiles still recorded in the store, and the
   slot below the brain list shows one notice at the default tier,
-  worded for the kid -- run the game once to load its tiles -- with
+  worded in plain words for the user -- run the game once to load its tiles -- with
   `CATALOG_PENDING` as `data-code`. No catalog was read, so the
   catalog's diagnostics then hold at most the line of a manifest of a
   newer format. Once a catalog is held the notice is gone and every

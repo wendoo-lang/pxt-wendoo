@@ -32,7 +32,7 @@ it.
   injectable-input mechanism, with per-target extensions; claims scoped to
   the fidelity of the run that backs them.
 - The jacdac spec (wendoo-mcu, `docs/specs/jacdac.md`): roles as the
-  stable, kid-visible names of module instances; modules as UI-free
+  stable, user-visible names of module instances; modules as UI-free
   functional cores.
 - pxt's headless test harness (pxt, `pxtsimcore/headless-harness.md`):
   contributors, composition, scenarios, the trace, worlds
@@ -133,7 +133,7 @@ default world. When a world has more than
 one board, a board's id is the outer name of everything on it:
 `board 2.display`, `board 3.slider 1.position`; with one board the outer
 name is omitted. Two instances of one component collide by construction,
-and the role is how the kid already names the instance, so the compound
+and the role is how the user already names the instance, so the compound
 is read, not decoded. A composed name is matched whole against the
 declared surface and never split on its separator, so a role or a board
 id may contain any character the editor lets the user type. The
@@ -437,7 +437,7 @@ grain.
   scenario's values through `apply`.
 
 A target's live simulator takes a seeded random source with the seed
-chosen at run start and logged, and logs its step deltas, so a run a kid
+chosen at run start and logged, and logs its step deltas, so a run a user
 saw replays exactly. The live run is explained from its trace, and a
 human's inputs replay as a scenario.
 
