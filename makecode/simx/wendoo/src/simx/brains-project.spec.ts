@@ -232,7 +232,8 @@ describe("brains project", () => {
       await write(brain(CHASER, "Chaser"));
       host.hold();
       const first = push({ op: "write", brain: brain(RUNNER, "Runner") });
-      await delay(20);
+      // the drain opens with one list request, held by the host
+      await until(() => host.pending === 1);
       const later = [
         push({ op: "write", brain: brain("aaaaaaaaaaaaaaaa", "A") }),
         push({ op: "remove", brainId: CHASER }),
@@ -280,7 +281,7 @@ describe("brains project", () => {
         );
       };
       pushTo({ op: "write", brain: brain(RUNNER, "Runner") });
-      await delay(20);
+      await until(() => !gated);
       pushTo({ op: "write", brain: brain("aaaaaaaaaaaaaaaa", "A") });
       pushTo({ op: "remove", brainId: CHASER });
       open();
@@ -351,9 +352,8 @@ describe("brains project", () => {
           return answer;
         })
       );
-      await delay(20);
-      assert.equal(host.mutations.length, PROJFS_RATE_LIMIT);
-      assert.equal(answered, PROJFS_RATE_LIMIT - 1);
+      await until(() => host.mutations.length === PROJFS_RATE_LIMIT && answered === PROJFS_RATE_LIMIT - 1);
+      assert.equal(host.heldOnWindow, 1);
 
       host.now += PROJFS_RATE_WINDOW_MS;
 
@@ -380,15 +380,13 @@ describe("brains project", () => {
 
       const chaser = push({ op: "write", brain: brain(CHASER, "Chaser") });
       const runner = push({ op: "write", brain: brain(RUNNER, "Runner") });
-      assert.deepEqual(await chaser, { ok: true, value: undefined });
-      await delay(20);
-      assert.equal(host.file(`brains/${RUNNER}.src.json`), undefined);
-
       let runnerAnswered = false;
       void runner.then(() => {
         runnerAnswered = true;
       });
-      await delay(20);
+      assert.deepEqual(await chaser, { ok: true, value: undefined });
+      await until(() => host.heldOnWindow === 1);
+      assert.equal(host.file(`brains/${RUNNER}.src.json`), undefined);
       assert.equal(runnerAnswered, false);
       host.now += PROJFS_RATE_WINDOW_MS;
 
@@ -404,7 +402,7 @@ describe("brains project", () => {
         push({ op: "write", brain: brain(CHASER, "Chaser") }),
         push({ op: "write", brain: brain(RUNNER, "Runner") }),
       ]);
-      await delay(20);
+      await until(() => host.heldOnWindow === 1);
 
       host.switchProject();
       host.now += PROJFS_RATE_WINDOW_MS;
@@ -421,7 +419,7 @@ describe("brains project", () => {
       host.bindsRequestsToProject = false;
       host.spendMutations(PROJFS_RATE_LIMIT);
       const answer = push({ op: "write", brain: brain(CHASER, "Chaser") });
-      await delay(20);
+      await until(() => host.heldOnWindow === 1);
 
       host.switchProject();
       host.now += PROJFS_RATE_WINDOW_MS;
@@ -755,9 +753,11 @@ describe("brains project", () => {
       host.hold();
 
       const before = pull([CHASER]);
-      await delay(20);
+      // a pull of one brain reads the module and that brain's source
+      await until(() => host.pending === 2);
       const removed = push({ op: "remove", brainId: CHASER });
-      await delay(20);
+      // the drain opens with one list request
+      await until(() => host.pending === 3);
       host.release();
 
       assert.deepEqual(await before, { ok: true, value: [chaser] });
@@ -788,4 +788,15 @@ describe("brains project", () => {
 /** Resolves after `ms` milliseconds. */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Resolves once `condition` holds, checking it after every turn of the event loop until it does. */
+function until(condition: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    const check = (): void => {
+      if (condition()) resolve();
+      else setTimeout(check, 0);
+    };
+    check();
+  });
 }

@@ -131,6 +131,7 @@ export class FakeProjfsHost {
   private readonly _listeners = new Set<(event: { data: unknown; source: unknown }) => void>();
   private _recentMutations: number[] = [];
   private _windowWaiters: { at: number; resolve: () => void }[] = [];
+  private _pending = 0;
   private _queue: Promise<void> = Promise.resolve();
   private _held: (() => void) | undefined;
   private _heldGate: Promise<void> = Promise.resolve();
@@ -145,6 +146,16 @@ export class FakeProjfsHost {
     const due = this._windowWaiters.filter((waiter) => waiter.at <= time);
     this._windowWaiters = this._windowWaiters.filter((waiter) => waiter.at > time);
     for (const waiter of due) waiter.resolve();
+  }
+
+  /** How many requests this host has taken in and not yet answered. */
+  get pending(): number {
+    return this._pending;
+  }
+
+  /** How many writes and deletes are waiting for the rate window to allow them. */
+  get heldOnWindow(): number {
+    return this._windowWaiters.length;
   }
 
   addEventListener(_type: "message", listener: (event: { data: unknown; source: unknown }) => void): void {
@@ -275,6 +286,7 @@ export class FakeProjfsHost {
     }
     const project = this.open ? this._project : undefined;
     const gate = this._heldGate;
+    this._pending += 1;
     this._queue = this._queue
       .then(() => gate)
       .then(async () => {
@@ -283,9 +295,11 @@ export class FakeProjfsHost {
       })
       .then(
         (reply) => {
+          this._pending -= 1;
           this.reply({ ...reply, type: PROJFS_MESSAGE_TYPE, id } as ProjfsReply);
         },
         (error: unknown) => {
+          this._pending -= 1;
           const refused = error instanceof RefusedRequest ? error : new RefusedRequest("FAILED", String(error));
           refuse(refused.code, refused.message);
         }
