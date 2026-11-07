@@ -25,7 +25,7 @@ export const PROJFS_RATE_WINDOW_MS = 10000;
 /** A reply without the `type` and `id` fields every reply carries. */
 type ProjfsReplyBody<R = ProjfsReply> = R extends ProjfsReply ? Omit<R, "type" | "id"> : never;
 
-/** The key MakeCode creates the Wendoo simulator extension's frame for, which names its folder. */
+/** The Wendoo simulator extension's folder in the project: its GitHub repository, whatever subfolder its registration key names. */
 const SCOPE = "wendoo-lang/pxt-wendoo";
 
 /** A refused request, carrying the code of its error reply. */

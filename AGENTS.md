@@ -775,7 +775,8 @@ the current slice alone.
     button; no session status, no authoring, no catalog display. One
     shared artifact serves every target, bound by an
     `approvedRepoLib` entry in each target's own `targetconfig.json`
-    (`owner/repo` key, hosting URL); it knows its hosting target from the
+    (keyed by the front-door extension's full GitHub coordinate, with
+    the hosting URL); it knows its hosting target from the
     `target` frame URL param and may carry target-keyed behavior (asset
     previews, target-specific state). Catalog icons are rendered under the
     hosting target's own palette, keyed by target inside the simx, while

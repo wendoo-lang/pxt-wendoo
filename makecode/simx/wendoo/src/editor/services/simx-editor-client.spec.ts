@@ -83,8 +83,8 @@ describe("simx editor client", () => {
     const first = fakePort();
     const second = fakePort();
 
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" }, [first]);
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" }, [second]);
+    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" }, [first]);
+    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" }, [second]);
 
     assert.equal(ports.length, 2);
     assert.equal(ports[0], first);
@@ -120,11 +120,15 @@ describe("simx editor client", () => {
     client.onPort((port) => ports.push(port));
     client.onEvent((event) => events.push(event));
 
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" }, [fakePort()], "https://elsewhere.example");
+    frame.receive(
+      { type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" },
+      [fakePort()],
+      "https://elsewhere.example"
+    );
     frame.receive({ type: "simxeditor", event: "fullscreen", enabled: true }, [], "https://elsewhere.example");
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo" });
+    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" });
     frame.receive({ type: "simxeditor", subtype: "ack", id: "1" });
-    frame.receive({ type: "messagepacket", channel: "wendoo-lang/pxt-wendoo" });
+    frame.receive({ type: "messagepacket", channel: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" });
     frame.receive(null);
 
     assert.deepEqual(ports, []);

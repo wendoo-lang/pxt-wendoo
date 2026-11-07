@@ -1007,7 +1007,7 @@ The extension-to-simx wire is pxt's sim-message channel, distinct
 from and beneath the session:
 
 - The channel name equals the simx's `approvedRepoLib` key
-  (`wendoo-lang/pxt-wendoo`). The extension holds it as one
+  (`wendoo-lang/pxt-wendoo/makecode/extensions/arcade`). The extension holds it as one
   internal constant (`makecode/extensions/vm/sim-channel.ts`), and
   no public API of the extension takes or exposes it: a caller
   publishes with `wendoo.publishCatalog(encoder)`, whose first call in a

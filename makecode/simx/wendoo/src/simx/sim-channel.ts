@@ -5,7 +5,7 @@
  * names the channel in the frame URL's `channel` parameter; this is the
  * channel of a frame whose URL names none.
  */
-export const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo";
+export const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
 
 /**
  * Newest version of the channel framing this simulator extension reads. The
