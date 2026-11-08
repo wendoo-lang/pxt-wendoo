@@ -3,11 +3,11 @@ import { mkVariableFactoryTileId } from "@wendoo/core/app";
 import type { Localizer } from "@wendoo/core/localization";
 import type { TypeId } from "@wendoo/core/runtime";
 import type { BrainEditorConfig } from "@wendoo/ui";
-import type { AssetLiteral } from "@/services/asset-literals";
-import type { PackLiteral } from "@/services/authoring-environment";
-import type { BrainLiteral } from "@/services/brain-literals";
-import { BRAIN_SOURCE_NAMESPACE } from "@/services/brain-source";
 import type { TileKindColors } from "@/services/target-theme";
+import type { AssetLiteral } from "../../authoring/asset-literals";
+import type { PackLiteral } from "../../authoring/authoring-environment";
+import type { BrainLiteral } from "../../authoring/brain-literals";
+import { BRAIN_SOURCE_NAMESPACE } from "../../authoring/brain-source";
 import {
   createAssetLiteralTypes,
   createBrainLiteralTypes,

@@ -9,8 +9,8 @@ import { BrainEditorProvider, BrainTile } from "@wendoo/ui";
 import { kTileCornerIconAttribute } from "@wendoo/ui/brain-editor/BrainTile";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import { readBrainSource } from "../services/brain-source.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { readBrainSource } from "../../authoring/brain-source.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,

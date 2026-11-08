@@ -9,10 +9,10 @@ import type {
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { BRAIN_REFERENCE_UNRESOLVED } from "../../authoring/brain-literals.js";
+import { compileBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
 import { BRAIN_CATALOG, brainCatalogIds, kinBrainSource, kinTileId } from "../test-support/brain-catalog.js";
-import { buildAuthoringEnvironment } from "./authoring-environment.js";
-import { BRAIN_REFERENCE_UNRESOLVED } from "./brain-literals.js";
-import { compileBrainSource, serializeBrainSource } from "./brain-source.js";
 import type { BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 

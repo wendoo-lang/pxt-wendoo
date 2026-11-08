@@ -11,11 +11,11 @@ import { CircleAlert, MoreHorizontal, Plus } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useBrains, useBrainsState } from "@/contexts/brains";
 import { useEditorRequests } from "@/contexts/editor-requests";
-import type { AssetLiteral } from "@/services/asset-literals";
-import { BRAIN_ASSET_UNRESOLVED } from "@/services/asset-literals";
 import type { BrainDamageCode, BrainsStore, BrainsViewState } from "@/services/brains-store";
 import type { EditorRequest } from "@/services/editor-requests";
 import type { TileKindColors } from "@/services/target-theme";
+import type { AssetLiteral } from "../../authoring/asset-literals";
+import { BRAIN_ASSET_UNRESOLVED } from "../../authoring/asset-literals";
 // Exception: the editor entry does not import the simx entry's production
 // code. This one import is ruled in, so the decoder stays beside the encoder
 // it reverses; any further src/editor -> src/simx import needs its own

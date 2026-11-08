@@ -18,16 +18,16 @@ import {
 } from "@wendoo/core/runtime";
 import type { DocTab } from "@wendoo/docs";
 import { listedTileEntries } from "@wendoo/docs/DocsSidebar";
+import { type AuthoringEnvironment, buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { compileBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
+import { PackBindingCode } from "../../authoring/pack-binding.js";
 import { buildBrainEditorConfig } from "../brain/editor-config.js";
 import { createDocsTileCatalog, createEditorDocsRegistry, createTileDocsAction } from "../docs/docs-registry.js";
 import { dataTypesCategory, tileKindCategories } from "../docs/manifest.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
 import { checkedInText, SELFTEST_IDS_FILE } from "../test-support/vm-programs.js";
-import { type AuthoringEnvironment, buildAuthoringEnvironment } from "./authoring-environment.js";
-import { compileBrainSource, serializeBrainSource } from "./brain-source.js";
-import { parseCatalog } from "./catalog.js";
-import { allocateIds, emptyIdManifest } from "./id-allocation.js";
-import { PackBindingCode } from "./pack-binding.js";
 
 /** Name of the sensor whose optional anonymous slot takes a `Buoy`. */
 const SPOT = "sensor.harbor.spot";

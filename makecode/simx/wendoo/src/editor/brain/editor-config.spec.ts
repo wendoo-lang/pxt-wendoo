@@ -7,9 +7,9 @@ import { type BrainTileLiteralDef, BrainTilePageDef } from "@wendoo/core/brain/t
 import type { Localizer } from "@wendoo/core/localization";
 import { createDefaultLocalizer } from "@wendoo/core/localization";
 import type { BrainEditorConfig } from "@wendoo/ui";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import { BRAIN_SOURCE_NAMESPACE, readBrainSource } from "../services/brain-source.js";
-import { emptyIdManifest } from "../services/id-allocation.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { BRAIN_SOURCE_NAMESPACE, readBrainSource } from "../../authoring/brain-source.js";
+import { emptyIdManifest } from "../../authoring/id-allocation.js";
 import { TARGET_THEMES } from "../services/target-theme.js";
 import {
   ASSET_CATALOG,

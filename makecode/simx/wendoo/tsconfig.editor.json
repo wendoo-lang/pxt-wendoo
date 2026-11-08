@@ -31,6 +31,6 @@
       "@wendoo/docs/*": ["../../../external/wendoo-lang/packages/docs/src/*"]
     }
   },
-  "include": ["src/editor"],
+  "include": ["src/editor", "src/authoring"],
   "exclude": ["src/**/*.spec.ts", "src/editor/test-support"]
 }

@@ -31,6 +31,14 @@ import {
   MakeCodeBrainsErrorCode,
   messagePortSessionPort,
 } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
+import {
+  BRAIN_SOURCE_ID_MISMATCH,
+  BRAIN_SOURCE_INVALID,
+  compileBrainSource,
+  readBrainSource,
+  serializeBrainSource,
+} from "../../authoring/brain-source.js";
 import { BRAINS_MODULE_FILE, readBrainsModule } from "../../simx/brains-module.js";
 import { IDS_MODULE_FILE, readIdsModule } from "../../simx/ids-module.js";
 import { type SimxLog, type SimxPortBridge, startSimxPortBridge } from "../../simx/simx-bridge.js";
@@ -45,14 +53,6 @@ import {
 } from "../../simx/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../vendor/projfs.js";
 import { FLUSH_DEBOUNCE_MS, openBrainEditing } from "../brain/editing.js";
-import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
-import {
-  BRAIN_SOURCE_ID_MISMATCH,
-  BRAIN_SOURCE_INVALID,
-  compileBrainSource,
-  readBrainSource,
-  serializeBrainSource,
-} from "./brain-source.js";
 import type { BrainsViewState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 import { connectionStatus } from "./connection-status.js";

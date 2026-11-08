@@ -20,7 +20,7 @@ import {
   pictureBrainSource,
   SHOW,
   SPOT,
-} from "../test-support/asset-catalog.js";
+} from "../editor/test-support/asset-catalog.js";
 import type { AuthoringEnvironment } from "./authoring-environment.js";
 import { buildAuthoringEnvironment } from "./authoring-environment.js";
 import { compileBrainSource } from "./brain-source.js";

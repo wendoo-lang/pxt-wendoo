@@ -13,8 +13,8 @@ import {
 } from "@wendoo/core/app";
 import { type BrainTileFactoryDef, BrainTileLiteralDef, BrainTilePageDef } from "@wendoo/core/brain/tiles";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import { emptyIdManifest } from "../services/id-allocation.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { emptyIdManifest } from "../../authoring/id-allocation.js";
 import type { TileKindColors } from "../services/target-theme.js";
 import {
   ASSET_CATALOG,

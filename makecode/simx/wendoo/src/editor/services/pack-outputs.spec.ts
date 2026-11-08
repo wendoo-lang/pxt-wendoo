@@ -12,12 +12,12 @@ import {
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { BrainTileOutputDef } from "@wendoo/core/brain/tiles";
 import { mkOutputTileId, mkOutputVarKey } from "@wendoo/core/runtime";
+import type { AuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { compileBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
-import type { AuthoringEnvironment } from "./authoring-environment.js";
-import { buildAuthoringEnvironment } from "./authoring-environment.js";
-import { compileBrainSource, serializeBrainSource } from "./brain-source.js";
-import { parseCatalog } from "./catalog.js";
-import { allocateIds, emptyIdManifest } from "./id-allocation.js";
 
 /** The icon {@link OUTPUT_CATALOG} carries on the `seen` output. */
 const SEEN_ICON = "data:image/svg+xml;base64,c2Vlbg==";

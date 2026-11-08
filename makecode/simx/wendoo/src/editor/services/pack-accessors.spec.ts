@@ -20,11 +20,11 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { BrainTileAccessorDef } from "@wendoo/core/brain/tiles";
 import type { StructTypeDef } from "@wendoo/core/runtime";
 import { mkTypeId, NativeType, Op } from "@wendoo/core/runtime";
+import type { AuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
-import type { AuthoringEnvironment } from "./authoring-environment.js";
-import { buildAuthoringEnvironment } from "./authoring-environment.js";
-import { parseCatalog } from "./catalog.js";
-import { allocateIds, emptyIdManifest } from "./id-allocation.js";
 
 /** The icon {@link ACCESSOR_CATALOG} carries on the `place` accessor. */
 const PLACE_ICON = "data:image/svg+xml;base64,cGxhY2U=";

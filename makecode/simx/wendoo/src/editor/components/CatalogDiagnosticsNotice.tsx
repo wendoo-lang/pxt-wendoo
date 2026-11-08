@@ -1,6 +1,6 @@
-import type { CatalogDiagnostic } from "@/services/authoring-environment";
-import { CATALOG_PACK_UNBOUND } from "@/services/authoring-environment";
-import { CATALOG_UNREADABLE } from "@/services/catalog";
+import type { CatalogDiagnostic } from "../../authoring/authoring-environment";
+import { CATALOG_PACK_UNBOUND } from "../../authoring/authoring-environment";
+import { CATALOG_UNREADABLE } from "../../authoring/catalog";
 
 /** What one catalog diagnostic means for authoring, after its stable code. */
 function consequence(diagnostic: CatalogDiagnostic): string {

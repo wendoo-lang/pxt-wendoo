@@ -5,8 +5,8 @@ import { mkActuatorTileId, mkSensorTileId, mkVariableFactoryTileId } from "@wend
 import { coreConceptDocs } from "@wendoo/core/docs";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import { listedTileEntries } from "@wendoo/docs/DocsSidebar";
-import type { AuthoringEnvironment } from "../services/authoring-environment.js";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
+import type { AuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
 import { ASSET_CATALOG, assetCatalogIds, picture, SHOW, SPOT } from "../test-support/asset-catalog.js";
 import { BRAIN_CATALOG, brainCatalogIds } from "../test-support/brain-catalog.js";
 import { arcadeCatalog, arcadeIds } from "../test-support/vm-programs.js";

@@ -783,7 +783,10 @@ the current slice alone.
     brokers to each editor tab, one session per tab, keyed by the tab's
     key MakeCode names on the port, and its root entry (`index.html`,
     sources in `src/editor`) is the editor webapp, booting as the editor
-    tab the front door's registration declares. A
+    tab the front door's registration declares; `src/authoring` holds the
+    modules that build the brain authoring environment from the catalog,
+    the id manifest, and the project's assets and brains, and that compile
+    a brain source, which both entries may import. A
     simx is a channel, not a store: its frame persists across sim restarts
     and runs but is reallocated on a page reload or project teardown, so
     no state may live only there. It is not product UI, but its frame is

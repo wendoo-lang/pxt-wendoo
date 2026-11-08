@@ -5,10 +5,10 @@ import type { StructTypeDef, StructValue, TypeId } from "@wendoo/core/runtime";
 import { getClosedStructFieldByName, NativeType } from "@wendoo/core/runtime";
 import type { CustomLiteralType, TileVisual } from "@wendoo/ui";
 import { createElement } from "react";
-import { ASSET_FIELD, type AssetLiteral } from "@/services/asset-literals";
-import type { PackLiteral } from "@/services/authoring-environment";
-import { BRAIN_FIELD, type BrainLiteral } from "@/services/brain-literals";
 import type { TileKindColors } from "@/services/target-theme";
+import { ASSET_FIELD, type AssetLiteral } from "../../authoring/asset-literals";
+import type { PackLiteral } from "../../authoring/authoring-environment";
+import { BRAIN_FIELD, type BrainLiteral } from "../../authoring/brain-literals";
 
 /** The registered types an asset literal's value is read through. */
 export interface AssetTypeRegistry {

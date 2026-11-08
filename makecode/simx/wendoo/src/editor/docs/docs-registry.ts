@@ -3,7 +3,7 @@ import { mkVariableFactoryTileId } from "@wendoo/core/app";
 import type { IBrainTileDef, ITileCatalog } from "@wendoo/core/brain";
 import type { DocsRegistry, DocsTileEntry, DocTab } from "@wendoo/docs";
 import { buildDocsRegistry } from "@wendoo/docs";
-import type { PackLiteral, TypePage } from "../services/authoring-environment";
+import type { PackLiteral, TypePage } from "../../authoring/authoring-environment";
 import { dataTypesCategory, tileKindCategories, undocumentedTileIds, unlistedTileKinds } from "./manifest";
 
 /**

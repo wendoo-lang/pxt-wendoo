@@ -5,16 +5,16 @@ import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensor
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { BRAIN_ASSET_UNRESOLVED } from "../../authoring/asset-literals.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../../authoring/brain-source.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import { BrainsProvider } from "../contexts/brains.js";
 import { EditorRequestsProvider } from "../contexts/editor-requests.js";
-import { BRAIN_ASSET_UNRESOLVED } from "../services/asset-literals.js";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import { BRAIN_SOURCE_ID_MISMATCH, BRAIN_SOURCE_INVALID } from "../services/brain-source.js";
 import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
 import { BRAIN_TILE_UNRESOLVED, BrainsStore } from "../services/brains-store.js";
-import { parseCatalog } from "../services/catalog.js";
 import { EditorRequests } from "../services/editor-requests.js";
-import { allocateIds, emptyIdManifest } from "../services/id-allocation.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
 import {

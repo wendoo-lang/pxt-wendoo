@@ -14,12 +14,12 @@ import type {
   MakeCodeEditorSessionStatus,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
+import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
+import { serializeBrainSource } from "../../authoring/brain-source.js";
+import { CATALOG_UNREADABLE } from "../../authoring/catalog.js";
 import { ASSET_CATALOG, PICTURE_TYPE, picture } from "../test-support/asset-catalog.js";
-import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "./authoring-environment.js";
-import { serializeBrainSource } from "./brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
-import { CATALOG_UNREADABLE } from "./catalog.js";
 import { EditorSessionStore } from "./editor-session-store.js";
 
 const MOTION_CATALOG = '{"packs":[{"name":"motion","tiles":[{"name":"move","kind":"actuator"}]}]}';

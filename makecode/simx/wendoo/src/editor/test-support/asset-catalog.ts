@@ -7,9 +7,9 @@ import { BrainDef, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type { MakeCodeAsset, MakeCodeIdManifest } from "@wendoo/makecode-session";
-import { serializeBrainSource } from "../services/brain-source.js";
-import { parseCatalog } from "../services/catalog.js";
-import { allocateIds, emptyIdManifest } from "../services/id-allocation.js";
+import { serializeBrainSource } from "../../authoring/brain-source.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 
 /** The asset kind {@link ASSET_CATALOG}'s asset type declares. */
 export const PICTURE_KIND = "image";

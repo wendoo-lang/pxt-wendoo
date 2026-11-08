@@ -14,16 +14,16 @@ import {
   NO_VARIABLE_INIT,
   variableInitAt,
 } from "@wendoo/core/runtime";
-import { buildBrainEditorConfig } from "../brain/editor-config.js";
-import { catalogTile } from "../test-support/asset-catalog.js";
 import {
   type AuthoringEnvironment,
   buildAuthoringEnvironment,
   MAKECODE_VM_PRECISION,
-} from "./authoring-environment.js";
-import { compileBrainSource, serializeBrainSource } from "./brain-source.js";
-import { parseCatalog } from "./catalog.js";
-import { emptyIdManifest } from "./id-allocation.js";
+} from "../../authoring/authoring-environment.js";
+import { compileBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { emptyIdManifest } from "../../authoring/id-allocation.js";
+import { buildBrainEditorConfig } from "../brain/editor-config.js";
+import { catalogTile } from "../test-support/asset-catalog.js";
 
 /** Name of the inline sensor reading a `Spot`. */
 const HERE = "sensor.lookout.here";

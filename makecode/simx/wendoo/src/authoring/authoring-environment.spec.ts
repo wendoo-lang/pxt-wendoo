@@ -28,8 +28,8 @@ import {
   SHOW_ICON,
   SPOT,
   SPOT_ICON,
-} from "../test-support/asset-catalog.js";
-import { projectedSentence } from "../test-support/sentence-projection.js";
+} from "../editor/test-support/asset-catalog.js";
+import { projectedSentence } from "../editor/test-support/sentence-projection.js";
 import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND, PackBindingCode } from "./authoring-environment.js";
 import { CATALOG_UNREADABLE, CatalogProblemCode, parseCatalog } from "./catalog.js";
 import { allocateIds, emptyIdManifest } from "./id-allocation.js";

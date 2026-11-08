@@ -12,21 +12,26 @@ import type {
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
-import type { AssetLiteral } from "./asset-literals";
-import type { AuthoringEnvironment, CatalogDiagnostic, PackLiteral, TypePage } from "./authoring-environment";
-import { buildAuthoringEnvironment } from "./authoring-environment";
-import type { BrainLiteral, UnresolvedBrainReference } from "./brain-literals";
-import type { BrainSourceCompile } from "./brain-source";
+import type { AssetLiteral } from "../../authoring/asset-literals";
+import type {
+  AuthoringEnvironment,
+  CatalogDiagnostic,
+  PackLiteral,
+  TypePage,
+} from "../../authoring/authoring-environment";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment";
+import type { BrainLiteral, UnresolvedBrainReference } from "../../authoring/brain-literals";
+import type { BrainSourceCompile } from "../../authoring/brain-source";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
   BRAIN_SOURCE_INVALID,
   compileBrainSource,
   readBrainSource,
   serializeBrainSource,
-} from "./brain-source";
-import { parseCatalog } from "./catalog";
+} from "../../authoring/brain-source";
+import { parseCatalog } from "../../authoring/catalog";
+import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "../../authoring/id-allocation";
 import type { EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
-import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "./id-allocation";
 
 /**
  * The delays, in milliseconds, before each retry of a failed push of a

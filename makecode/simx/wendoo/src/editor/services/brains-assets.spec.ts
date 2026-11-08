@@ -10,6 +10,8 @@ import type {
   MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import { compileBrainSource } from "../../authoring/brain-source.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,
@@ -17,8 +19,6 @@ import {
   picture,
   pictureBrainSource,
 } from "../test-support/asset-catalog.js";
-import { buildAuthoringEnvironment } from "./authoring-environment.js";
-import { compileBrainSource } from "./brain-source.js";
 import type { BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 

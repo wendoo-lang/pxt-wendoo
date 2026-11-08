@@ -3,9 +3,9 @@ import { describe, it } from "node:test";
 import { MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { CatalogDiagnostic } from "../services/authoring-environment.js";
-import { CATALOG_PACK_UNBOUND, PackBindingCode } from "../services/authoring-environment.js";
-import { CATALOG_UNREADABLE, CatalogProblemCode } from "../services/catalog.js";
+import type { CatalogDiagnostic } from "../../authoring/authoring-environment.js";
+import { CATALOG_PACK_UNBOUND, PackBindingCode } from "../../authoring/authoring-environment.js";
+import { CATALOG_UNREADABLE, CatalogProblemCode } from "../../authoring/catalog.js";
 import { CatalogDiagnosticsNotice } from "./CatalogDiagnosticsNotice.js";
 
 /** Renders the notice for `diagnostics`. */

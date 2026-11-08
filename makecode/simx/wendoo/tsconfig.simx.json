@@ -23,6 +23,6 @@
       "react-dom/*": ["./node_modules/react-dom/*"]
     }
   },
-  "include": ["src/simx", "src/vendor"],
+  "include": ["src/simx", "src/vendor", "src/authoring"],
   "exclude": ["src/**/*.spec.ts", "src/simx/test-support"]
 }

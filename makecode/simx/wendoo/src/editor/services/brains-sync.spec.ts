@@ -19,14 +19,14 @@ import {
   MakeCodeManifestErrorCode,
   MakeCodeManifestProblemCode,
 } from "@wendoo/makecode-session";
-import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND } from "./authoring-environment.js";
+import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND } from "../../authoring/authoring-environment.js";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
   BRAIN_SOURCE_INVALID,
   compileBrainSource,
   readBrainSource,
   serializeBrainSource,
-} from "./brain-source.js";
+} from "../../authoring/brain-source.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BRAIN_TILE_UNRESOLVED, BrainsStore, PUSH_RETRY_DELAYS_MS } from "./brains-store.js";
 

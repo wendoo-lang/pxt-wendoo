@@ -9,7 +9,7 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type { BrainTileLiteralDef } from "@wendoo/core/brain/tiles";
 import type { StructTypeDef, StructValue } from "@wendoo/core/runtime";
 import { getClosedStructFieldByName, mkStringValue } from "@wendoo/core/runtime";
-import { catalogTile } from "../test-support/asset-catalog.js";
+import { catalogTile } from "../editor/test-support/asset-catalog.js";
 import {
   BRAIN_CATALOG,
   brainCatalogIds,
@@ -18,7 +18,7 @@ import {
   kinBrainSource,
   kinTileId,
   SEEK,
-} from "../test-support/brain-catalog.js";
+} from "../editor/test-support/brain-catalog.js";
 import type { AuthoringEnvironment } from "./authoring-environment.js";
 import { buildAuthoringEnvironment } from "./authoring-environment.js";
 import { compileBrainSource } from "./brain-source.js";

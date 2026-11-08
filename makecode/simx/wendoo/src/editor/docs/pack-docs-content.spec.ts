@@ -28,10 +28,10 @@ import {
   resolveBrainFenceTiles,
 } from "@wendoo/docs/brain-fence";
 import { kTileIdPlaceholder } from "@wendoo/docs/DocsRegistry";
-import { buildAuthoringEnvironment } from "../services/authoring-environment.js";
-import type { ParsedCatalog } from "../services/catalog.js";
-import { parseCatalog } from "../services/catalog.js";
-import { CORE_TYPE_IDS } from "../services/pack-binding.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
+import type { ParsedCatalog } from "../../authoring/catalog.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { CORE_TYPE_IDS } from "../../authoring/pack-binding.js";
 import { absolutePath, arcadeCatalog, arcadeIds } from "../test-support/vm-programs.js";
 import { createDocsTileCatalog, createEditorDocsRegistry } from "./docs-registry.js";
 

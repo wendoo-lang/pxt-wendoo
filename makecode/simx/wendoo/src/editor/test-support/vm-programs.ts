@@ -53,18 +53,18 @@ import {
 } from "@wendoo/core/runtime";
 import type { MakeCodeAsset, MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { brainSourceHash, MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
+import { compileBrainSource, readBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
+import type { CatalogArgNode, CatalogArgSlot } from "../../authoring/catalog.js";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds } from "../../authoring/id-allocation.js";
+import { CORE_TYPE_IDS, PAGE_FAMILY_TILE_ID } from "../../authoring/pack-binding.js";
 import { writeBrainsModule } from "../../simx/brains-module.js";
 import { enrichCatalogIcons } from "../../simx/catalog-icons.js";
 import { writeIdsModule } from "../../simx/ids-module.js";
 import { targetIconPalette } from "../../simx/target-icon-palettes.js";
 import { buildBrainEditorConfig } from "../brain/editor-config.js";
 import { createTileVisualProvider } from "../brain/visual-provider.js";
-import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../services/authoring-environment.js";
-import { compileBrainSource, readBrainSource, serializeBrainSource } from "../services/brain-source.js";
-import type { CatalogArgNode, CatalogArgSlot } from "../services/catalog.js";
-import { parseCatalog } from "../services/catalog.js";
-import { allocateIds } from "../services/id-allocation.js";
-import { CORE_TYPE_IDS, PAGE_FAMILY_TILE_ID } from "../services/pack-binding.js";
 import { type ProjectedSentence, projectedSentence } from "./sentence-projection.js";
 
 /** The repository root, as an absolute path ending in a separator. */
