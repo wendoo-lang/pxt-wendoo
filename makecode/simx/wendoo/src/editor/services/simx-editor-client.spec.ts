@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { MakeCodeMessagePort } from "@wendoo/makecode-session";
+import { SIMX_CHANNEL } from "../../simx/sim-channel.js";
 import type { SimxEditorEvent } from "../../vendor/simxeditor.js";
 import type { EditorRequest } from "./editor-requests.js";
 import {
@@ -83,8 +84,8 @@ describe("simx editor client", () => {
     const first = fakePort();
     const second = fakePort();
 
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" }, [first]);
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" }, [second]);
+    frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL }, [first]);
+    frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL }, [second]);
 
     assert.equal(ports.length, 2);
     assert.equal(ports[0], first);
@@ -120,15 +121,11 @@ describe("simx editor client", () => {
     client.onPort((port) => ports.push(port));
     client.onEvent((event) => events.push(event));
 
-    frame.receive(
-      { type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" },
-      [fakePort()],
-      "https://elsewhere.example"
-    );
+    frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL }, [fakePort()], "https://elsewhere.example");
     frame.receive({ type: "simxeditor", event: "fullscreen", enabled: true }, [], "https://elsewhere.example");
-    frame.receive({ type: "simxeditorport", key: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" });
+    frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL });
     frame.receive({ type: "simxeditor", subtype: "ack", id: "1" });
-    frame.receive({ type: "messagepacket", channel: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade" });
+    frame.receive({ type: "messagepacket", channel: SIMX_CHANNEL });
     frame.receive(null);
 
     assert.deepEqual(ports, []);

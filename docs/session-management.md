@@ -125,10 +125,13 @@ manifest request-reply families. The editor-tab messages themselves
 `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
 
 - REGISTRATION: the simx's `approvedRepoLib` entry in a target's
-  `targetconfig.json` registers the tab with `allowEditorTab` and
-  `editor` -- `index` (the editor entry's page, `index.html`), `label`,
-  and `icon` (an artifact-relative SVG MakeCode shows beside the
-  label). Beside it the entry grants `allowFileWrite` (projfs) and
+  `targetconfig.json`, keyed by the VM extension's coordinate
+  (`wendoo-lang/pxt-wendoo/makecode/extensions/vm`), registers the tab
+  with `allowEditorTab` and `editor` -- `index` (the editor entry's
+  page, `index.html`), `label`, and `icon` (an artifact-relative SVG
+  MakeCode shows beside the label); MakeCode offers the tab to every
+  project that includes the VM, directly or through a front door.
+  Beside it the entry grants `allowFileWrite` (projfs) and
   `allowAssetRead` (projassets) for the simx write path and the assets
   publication, `allowPopups` for the brand strip's logotype link,
   `allowDownloads` for the brain editor's save of a brain to a file,
@@ -1007,7 +1010,7 @@ The extension-to-simx wire is pxt's sim-message channel, distinct
 from and beneath the session:
 
 - The channel name equals the simx's `approvedRepoLib` key
-  (`wendoo-lang/pxt-wendoo/makecode/extensions/arcade`). The extension holds it as one
+  (`wendoo-lang/pxt-wendoo/makecode/extensions/vm`). The extension holds it as one
   internal constant (`makecode/extensions/vm/sim-channel.ts`), and
   no public API of the extension takes or exposes it: a caller
   publishes with `wendoo.publishCatalog(encoder)`, whose first call in a

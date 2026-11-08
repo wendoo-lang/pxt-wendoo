@@ -421,7 +421,10 @@ the current slice alone.
       and extractable later as a file move -- proven by compiling against a
       second target, not by convention. Extraction changes the public
       coordinate, so that decision's deadline is before external projects
-      pin it.
+      pin it. The simx registration, keyed by this coordinate in each
+      target's `approvedRepoLib`, binds the Wendoo simulator extension and
+      its editor tab to every project that includes the VM, directly or
+      through a front door.
     - Each target has exactly one BASE PACK, created when the first type
       declaration needs it. It depends on the VM extension and owns the
       target's type declarations: asset types (arcade: image, song,
@@ -756,8 +759,7 @@ the current slice alone.
       and the VM extension; it declares no vocabulary and no blocks of its
       own, and lists no dependency its own files do not use. It
       owns the coordinate a user adds and its README, the page a user
-      reads; the WendooBrain asset blocks and the simx binding (the
-      `approvedRepoLib` registration keyed by this coordinate) join it.
+      reads; the WendooBrain asset blocks join it.
       Naming: the bare target name belongs to this front-door extension
       -- the one coordinate a user adds, which pulls the rest in; the
       base pack is `<target>-base`, the host extension is
@@ -784,7 +786,7 @@ the current slice alone.
     button; no session status, no authoring, no catalog display. One
     shared artifact serves every target, bound by an
     `approvedRepoLib` entry in each target's own `targetconfig.json`
-    (keyed by the front-door extension's full GitHub coordinate, with
+    (keyed by the VM extension's full GitHub coordinate, with
     the hosting URL); it knows its hosting target from the
     `target` frame URL param and may carry target-keyed behavior (asset
     previews, target-specific state). Catalog icons are rendered under the

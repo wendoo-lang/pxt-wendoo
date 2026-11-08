@@ -40,7 +40,7 @@ namespace wendoo {
    * The simulator message channel of the Wendoo simulator extension: the key
    * of its `approvedRepoLib` registration in each MakeCode target.
    */
-  const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+  const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo/makecode/extensions/vm";
 
   /** Byte value of the line feed ending a channel version declaration. */
   const LINE_FEED = 0x0a;

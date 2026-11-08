@@ -1076,7 +1076,7 @@ const EXPECTED_ARCADE_CATALOG_STRUCTURE = fs.readFileSync(
 );
 
 /** The simulator extension's channel, which every message the Wendoo extensions post rides. */
-const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+const SIMX_CHANNEL = "wendoo-lang/pxt-wendoo/makecode/extensions/vm";
 
 /** The registration selftest's catalog fixture: the editor's golden-program tooling reads it as the session catalog its allocation and programs are made from. */
 const CATALOG_FIXTURE = path.join(__dirname, "selftest", "catalog.json");
