@@ -97,9 +97,11 @@ frames -- assigns the session parts as follows.
   and the party serving the project. Its frame renders the brand strip
   (see "The brand strip", below). It is a channel, not a store: it
   carries nothing across its reload. It receives catalogs on the
-  sim-message channel, opens a makecode handshake over each port
-  MakeCode brokers to it, closing the previous one, publishes the
-  current catalog into the session RENDERED -- each icon the extension
+  sim-message channel and holds one makecode session per editor tab
+  that talks to its frame, keyed by the `peer` MakeCode names on the
+  port: it opens a makecode handshake over each port MakeCode brokers
+  to it, closing the previous session of that peer, publishes the
+  current catalog into every session RENDERED -- each icon the extension
   carries as hex of an image buffer replaced by an `iconUrl` data URI
   drawn under the project's palette, so no icon hex reaches the
   editor -- then the project's asset snapshot (see "The assets
@@ -146,10 +148,19 @@ manifest request-reply families. The editor-tab messages themselves
 - THE BROKERED RECONNECTION: MakeCode posts a new port pair whenever the
   tab becomes ready while the simx frame is loaded and whenever a simx
   frame finishes loading while the tab is ready. Each new port replaces
-  the previous one on both sides: the old handshake ends, its requests
-  reject with their family's `CLOSED` code, and the brains store
-  reconciles over the new handshake's brains channel, pushing its pends.
+  the previous one between the same two frames on both sides: the old
+  handshake ends, its requests reject with their family's `CLOSED` code,
+  and the brains store reconciles over the new handshake's brains
+  channel, pushing its pends.
   The simx accepts a port only from `parentOrigin`.
+- ONE SESSION PER TAB: the simx frame holds one session per editor tab
+  that talks to it, keyed by the port message's `peer`, the tab's key; a
+  port message naming no `peer`, from MakeCode below API level 2, keys
+  on the frame's own channel. A tab need not be the frame's own
+  registration's: MakeCode also brokers a pair to the tab of every
+  registration naming the frame in its `simulator` field. A new port
+  replaces only its own peer's session. Every session receives every
+  publication, and all of them are served from the one project.
 - ONE WRITER: the tab gains no write path. It requests brains and the
   manifest over its session, and the simx frame answers through projfs,
   writes the project's files, and posts live program updates on the sim
@@ -991,9 +1002,16 @@ whatever MakeCode offers, and the strip stores nothing.
   holds the logotype, linking to https://wendoo.com and carrying
   `data-link="home"`, and the open-editor button
   (`data-action="open-editor"`).
-- OPEN EDITOR: the button posts MakeCode the open request
-  `{ type: "simxeditor", subtype: "open", id }`; a refusal is logged by
-  its code (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+- OPEN EDITOR: at boot, on MakeCode at API level 2 or above, the simx
+  asks MakeCode once which tabs talk to its frame
+  (`{ type: "simxeditor", subtype: "tabs", id }`); a refusal is logged
+  by its code and lists none. The button waits for that reply before
+  opening, so a click before the reply opens once it arrives. It opens
+  the first tab MakeCode lists, posting
+  `{ type: "simxeditor", subtype: "open", id, key }`, and when none is
+  listed posts the open request naming no `key`, which MakeCode reads as
+  the frame's own tab. A refusal is logged by its code
+  (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
   `INVALID_REQUEST`). On a MakeCode that offers no editor tab, no port
   arrives and the request is refused and logged.
 - THE LOGOTYPE LINK opens through a click probe: the strip opens a blank

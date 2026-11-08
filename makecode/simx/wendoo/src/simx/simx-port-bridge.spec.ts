@@ -40,6 +40,9 @@ const CATALOG_TEXT =
   '{"packs":[{"name":"beacon","tiles":[{"name":"say \\"hi\\"","kind":"actuator","docs":"line\\nnext \\u00e9"}]}]}' +
   "\t\r\n\u0001 café 😀 \\";
 
+/** The key of an editor tab whose registration names this simulator extension's frame as its own. */
+const DESIGNER_TAB = "owner/repo-designer";
+
 /** The hello the editor's side of a makecode session at this build's version sends. */
 const MAKECODE_HELLO: MakeCodeSessionMessage = {
   type: "makecode:hello",
@@ -210,22 +213,30 @@ describe("simx port bridge", () => {
   }
 
   /**
-   * Brokers a fresh port pair to `frame` and runs the editor's side of the
-   * makecode handshake over the other end raw: sends the editor's hello and
-   * reads the simulator extension's. Resolves with the editor's end.
+   * Brokers a fresh port pair to `frame` for the editor tab keyed `peer`, the
+   * frame's own by default, through `broker`, and runs the editor's side of
+   * the makecode handshake over the other end raw: sends the editor's hello
+   * and reads the simulator extension's. Resolves with the editor's end.
    */
-  async function joinRaw(frame: FakePortFrame): Promise<RawEditor> {
+  async function joinRaw(
+    frame: FakePortFrame,
+    peer = SIMX_CHANNEL,
+    broker = (port: MessagePort): void => frame.brokerPort(port, PARENT_ORIGIN, peer)
+  ): Promise<RawEditor> {
     const { port1, port2 } = channel();
     const editor = new RawEditor(port2);
-    frame.brokerPort(port1);
+    broker(port1);
     editor.send(MAKECODE_HELLO);
     assert.equal((await editor.nextMessage()).type, "makecode:hello");
     return editor;
   }
 
-  /** Joins a raw editor to `frame`, as {@link joinRaw}, and reads `catalog` as the first message after the hello. */
-  async function joinEditor(frame: FakePortFrame, catalog: string): Promise<RawEditor> {
-    const editor = await joinRaw(frame);
+  /**
+   * Joins a raw editor to `frame` for the editor tab keyed `peer`, as
+   * {@link joinRaw}, and reads `catalog` as the first message after the hello.
+   */
+  async function joinEditor(frame: FakePortFrame, catalog: string, peer = SIMX_CHANNEL): Promise<RawEditor> {
+    const editor = await joinRaw(frame, peer);
     assert.deepEqual(await editor.nextMessage(), catalogMessage(catalog));
     return editor;
   }
@@ -234,6 +245,15 @@ describe("simx port bridge", () => {
   async function nothingMore(editor: RawEditor): Promise<void> {
     await quiet();
     assert.deepEqual(editor.unread(), []);
+  }
+
+  /** Sends `editor` a brains list request under `id` and resolves with the reply's type and listed ids. */
+  async function listedBrains(editor: RawEditor, id: string): Promise<{ type: string; ids: string[] }> {
+    editor.send({ type: "makecode:brainsList", id });
+    const reply = await editor.nextMessage();
+    assert.equal(reply.id, id);
+    const brains = (reply.payload as { brains: { id: string }[] }).brains;
+    return { type: reply.type, ids: brains.map((brain) => brain.id) };
   }
 
   it("serves a session over a port MakeCode brokers: the target declared, the catalog, assets and project info published, brains listed from the project", async () => {
@@ -282,25 +302,85 @@ describe("simx port bridge", () => {
     assert.deepEqual(arrived, []);
   });
 
-  it("ends the previous port's session when MakeCode brokers a new port, serving the new one alone", async () => {
-    const frame = start();
-    const first = rawPort(frame);
-    await eventually(
-      () => first.arrived.length,
-      (count) => count === 1,
-      "the first port's hello"
-    );
-    first.port.postMessage({ type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } });
+  describe("editor tabs", () => {
+    it("serves a session per tab MakeCode names on its port, publishing the catalog, the asset snapshot and the name into each, now and as they change", async () => {
+      assets.images = [listedImage("image1", [[1, 2]])];
+      assets.answer();
+      const frame = start();
+      frame.programPosts("{}");
 
-    const { session } = await editorOver(frame);
-    first.port.postMessage({ type: "makecode:brainsList", id: "late" });
-    await quiet();
+      const own = await joinEditor(frame, "{}");
+      const designer = await joinEditor(frame, "{}", DESIGNER_TAB);
 
-    assert.deepEqual(
-      first.arrived.map((message) => (message as { type: string }).type),
-      ["makecode:hello"]
-    );
-    assert.deepEqual(await session.listBrains(), []);
+      for (const editor of [own, designer]) {
+        const snapshot = await editor.nextMessage();
+        assert.equal(snapshot.type, "makecode:assets");
+        assert.deepEqual(
+          (snapshot.payload as { assets: MakeCodeAsset[] }).assets.map((asset) => asset.id),
+          ["image1"]
+        );
+        assert.deepEqual(await editor.nextMessage(), {
+          type: "makecode:projectInfo",
+          payload: { name: assets.name },
+        });
+      }
+      frame.programPosts(CATALOG_TEXT);
+      assets.name = "Space Chase";
+      assets.change();
+      for (const editor of [own, designer]) {
+        assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+        assert.deepEqual(await editor.nextMessage(), {
+          type: "makecode:projectInfo",
+          payload: { name: "Space Chase" },
+        });
+      }
+    });
+
+    it("ends the session of the tab a new port names, serving that tab over the new port and keeping every other tab's", async () => {
+      const frame = start();
+      frame.programPosts("{}");
+      const own = await joinEditor(frame, "{}");
+      const designer = await joinEditor(frame, "{}", DESIGNER_TAB);
+
+      const returned = await joinEditor(frame, "{}", DESIGNER_TAB);
+      designer.send({ type: "makecode:brainsList", id: "late" });
+      frame.programPosts(CATALOG_TEXT);
+
+      assert.deepEqual(await own.nextMessage(), catalogMessage(CATALOG_TEXT));
+      assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+      await nothingMore(designer);
+      assert.deepEqual(await listedBrains(own, "list-own"), { type: "makecode:brainsListReply", ids: [] });
+      assert.deepEqual(await listedBrains(returned, "list-returned"), { type: "makecode:brainsListReply", ids: [] });
+    });
+
+    it("keys a port whose message names no peer on the frame's own channel", async () => {
+      const ownChannel = "fork-owner/fork-repo";
+      const frame = start(ownChannel);
+      frame.programPosts("{}", ownChannel);
+      const own = await joinEditor(frame, "{}", ownChannel);
+      const designer = await joinEditor(frame, "{}", DESIGNER_TAB);
+
+      const returned = await joinRaw(frame, ownChannel, (port) => frame.brokerPortNamingNoPeer(port));
+      assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
+      own.send({ type: "makecode:brainsList", id: "late" });
+
+      await nothingMore(own);
+      assert.deepEqual(await listedBrains(designer, "list-designer"), { type: "makecode:brainsListReply", ids: [] });
+      assert.deepEqual(await listedBrains(returned, "list-returned"), { type: "makecode:brainsListReply", ids: [] });
+    });
+
+    it("ends every tab's session once disposed", async () => {
+      const frame = start();
+      frame.programPosts("{}");
+      const own = await joinEditor(frame, "{}");
+      const designer = await joinEditor(frame, "{}", DESIGNER_TAB);
+
+      bridges.splice(0)[0].dispose();
+      for (const editor of [own, designer]) editor.send({ type: "makecode:brainsList", id: "late" });
+
+      await nothingMore(own);
+      await nothingMore(designer);
+    });
   });
 
   it("logs an editor hello declaring a newer protocol by its code, serving nothing over that port", async () => {
@@ -657,6 +737,19 @@ describe("simx port bridge", () => {
         host.file("brains.g.ts") ?? "",
         /^ {4}export const p_abcdabcdabcdabcd = wendoo\.registerCompiledBrain\("abcdabcdabcdabcd", "Chaser", hex`$/m
       );
+    });
+
+    it("answers every tab's brains requests from the one project: a push over one tab's session lists over another's", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const own = await joinEditor(frame, CATALOG_TEXT);
+      const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
+
+      designer.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
+      assert.deepEqual(await designer.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+
+      assert.deepEqual(await listedBrains(own, "list-1"), { type: "makecode:brainsListReply", ids: [chaser.id] });
     });
 
     it("serves the project's brains after its frame reloads, holding none of its own", async () => {

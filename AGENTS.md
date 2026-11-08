@@ -776,9 +776,11 @@ the current slice alone.
   - `makecode/simx/*` own the MakeCode simx components, each a webapp in
     its own subfolder. `makecode/simx/wendoo` is one webapp with two
     entries: its simx entry (`simx/index.html`, sources in `src/simx`)
-    joins the editor webapp to the MakeCode project over the port MakeCode
-    brokers to the editor tab, and its root entry (`index.html`, sources
-    in `src/editor`) is the editor webapp, booting as that editor tab. A
+    joins the editor webapp to the MakeCode project over the ports MakeCode
+    brokers to each editor tab, one session per tab, keyed by the tab's
+    key MakeCode names on the port, and its root entry (`index.html`,
+    sources in `src/editor`) is the editor webapp, booting as its own
+    registration's editor tab. A
     simx is a channel, not a store: its frame persists across sim restarts
     and runs but is reallocated on a page reload or project teardown, so
     no state may live only there. It is not product UI, but its frame is

@@ -14,7 +14,13 @@ import { enrichCatalogIcons } from "./catalog-icons.js";
 import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
 import { ProjectAssets, type ProjectAssetsProvider } from "./project-assets.js";
-import { connectSimChannel, SIM_CHANNEL_VERSION, SimChannelErrorCode, type SimxFrame } from "./sim-channel.js";
+import {
+  connectSimChannel,
+  SIM_CHANNEL_VERSION,
+  SIMX_CHANNEL,
+  SimChannelErrorCode,
+  type SimxFrame,
+} from "./sim-channel.js";
 import { targetIconPalette } from "./target-icon-palettes.js";
 
 /** Where the simulator extension writes its log lines for developers. */
@@ -91,7 +97,7 @@ export interface SimxPortBridgeOptions extends SimxServingOptions {
 
 /** A running simulator extension port bridge. */
 export interface SimxPortBridge {
-  /** Stop listening for ports and to the program, ending the current port's session. */
+  /** Stop listening for ports and to the program, ending every tab's session. */
   dispose(): void;
 }
 
@@ -108,16 +114,17 @@ function logRejection(log: SimxLog, rejection: PeerSessionErrorCode): void {
 }
 
 /**
- * The makecode session with the counterpart over one port. It sends this
- * side's hello at once and publishes the latest catalog, then the latest
- * asset snapshot, then the project's latest name as its project info, once
- * the counterpart's hello establishes it.
+ * The makecode session with one editor tab, the counterpart, over one port.
+ * It sends this side's hello at once and publishes the latest catalog, then
+ * the latest asset snapshot, then the project's latest name as its project
+ * info, once the counterpart's hello establishes it.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
   private _session: MakeCodeSession | undefined;
 
   /**
+   * @param peer - The key of the counterpart's tab, as MakeCode names it on the port.
    * @param port - The transport to the counterpart.
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, as published, if any.
@@ -131,6 +138,7 @@ class CounterpartSession {
    *   newer version and no session was established.
    */
   constructor(
+    readonly peer: string,
     port: MakeCodeSessionPort,
     target: string | undefined,
     latestCatalog: () => string | undefined,
@@ -204,36 +212,37 @@ class CounterpartSession {
   }
 }
 
-/** The MakeCode project as the simulator extension serves it to one counterpart session at a time. */
+/** The MakeCode project as the simulator extension serves it to one counterpart session per editor tab. */
 interface ProjectServer {
   /**
-   * Open a makecode session with the counterpart over `port`, closing the
-   * current one, and report its handshake's outcome to `settled`.
+   * Open a makecode session with the tab keyed `peer` over `port`, closing
+   * that tab's current one, and report its handshake's outcome to `settled`.
    */
-  attach(port: MakeCodeSessionPort, settled: (rejection: PeerSessionErrorCode | undefined) => void): void;
-  /** Close the current counterpart session and stop listening to the program and the asset provider. */
+  attach(peer: string, port: MakeCodeSessionPort, settled: (rejection: PeerSessionErrorCode | undefined) => void): void;
+  /** Close every counterpart session and stop listening to the program and the asset provider. */
   dispose(): void;
 }
 
 /**
  * Serve the MakeCode project running beside this simulator extension to
- * the counterpart session attached at the time. Each session's brains and
- * manifest requests are answered from the project's `files`, and its pushes
- * and manifest writes are written to them. Each push that changes what a
- * program runs is also posted to the running program as a program update the
- * moment it arrives, without waiting on the project write, and the last
- * update of every program is posted again each time the program starts. The
- * program's messages are read on `channel`, and the program is asked for its
- * catalog at once. The latest catalog the program posted is published into
- * each session once it is established, and every later catalog into the
- * current one, each rendered once as it arrives, its icons as `iconUrl` data
- * URIs under the hosting `target`'s icon palette. A rejected message from
- * the program is logged by its code and discards the latest catalog, so no
- * session receives a catalog older than the program's newest. The
- * project's asset snapshot, listed from `assets`, is published into each
- * session once it is established, after the catalog, and into the current
- * one whenever it changes; so is the project's name, listed beside it, as
- * the session's project info, after the snapshot.
+ * every counterpart session attached, one per editor tab, keyed by the tab's
+ * key. Each session's brains and manifest requests are answered from the
+ * one project's `files`, and its pushes and manifest writes are written to
+ * them. Each push that changes what a program runs is also posted to the
+ * running program as a program update the moment it arrives, without
+ * waiting on the project write, and the last update of every program is
+ * posted again each time the program starts. The program's messages are
+ * read on `channel`, and the program is asked for its catalog at once. The
+ * latest catalog the program posted is published into each session once it
+ * is established, and every later catalog into every session, each rendered
+ * once as it arrives, its icons as `iconUrl` data URIs under the hosting
+ * `target`'s icon palette. A rejected message from the program is logged by
+ * its code and discards the latest catalog, so no session receives a
+ * catalog older than the program's newest. The project's asset snapshot,
+ * listed from `assets`, is published into each session once it is
+ * established, after the catalog, and into every session whenever it
+ * changes; so is the project's name, listed beside it, as the session's
+ * project info, after the snapshot.
  */
 function startProjectServer(options: SimxServingOptions): ProjectServer {
   const { log } = options;
@@ -254,13 +263,14 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   const iconPalette = targetIconPalette(options.target);
   // the latest catalog with its icons rendered under the target's icon palette, as sessions receive it
   let publishedCatalog: string | undefined;
-  let counterpart: CounterpartSession | undefined;
+  // the session of each editor tab, by the tab's key
+  const counterparts = new Map<string, CounterpartSession>();
 
   const channelUnsubscribes = [
     channel.onCatalog((posted) => {
       const rendered = enrichCatalogIcons(posted, options.target, iconPalette, log);
       publishedCatalog = rendered;
-      counterpart?.publish(rendered);
+      for (const counterpart of counterparts.values()) counterpart.publish(rendered);
     }),
     channel.onProgramStart(() => {
       live.repost();
@@ -270,19 +280,20 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
       log.error(`${code}: ${REJECTION_EXPLANATIONS[code]}`);
     }),
     projectAssets.onSnapshot((snapshot) => {
-      counterpart?.publishAssets(snapshot);
+      for (const counterpart of counterparts.values()) counterpart.publishAssets(snapshot);
     }),
     projectAssets.onName((name) => {
-      counterpart?.publishName(name);
+      for (const counterpart of counterparts.values()) counterpart.publishName(name);
     }),
   ];
 
   channel.requestCatalog();
 
   return {
-    attach(port, settled) {
-      counterpart?.close();
-      counterpart = new CounterpartSession(
+    attach(peer, port, settled) {
+      counterparts.get(peer)?.close();
+      const counterpart = new CounterpartSession(
+        peer,
         port,
         options.target,
         () => publishedCatalog,
@@ -292,10 +303,11 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
         serveManifest,
         settled
       );
+      counterparts.set(peer, counterpart);
     },
     dispose() {
-      counterpart?.close();
-      counterpart = undefined;
+      for (const counterpart of counterparts.values()) counterpart.close();
+      counterparts.clear();
       for (const unsubscribe of channelUnsubscribes) {
         unsubscribe();
       }
@@ -307,36 +319,40 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
 
 /**
  * Join the MakeCode program running beside this simulator extension to the
- * Wendoo editor in its MakeCode editor tab, over the ports MakeCode brokers
- * between the two frames. Each `simxeditorport` message from `parentOrigin`
- * carrying a port opens a new makecode session with the editor over that
- * port, declaring `target` when one is given, and closes the previous one;
- * every other message is ignored. The program is asked for its catalog at
- * once. The current session's brains and manifest requests are answered
+ * editor in each MakeCode editor tab that talks to this frame, over
+ * the ports MakeCode brokers between the frames. Each `simxeditorport`
+ * message from `parentOrigin` carrying a port opens a new makecode session
+ * with the editor over that port, declaring `target` when one is given, and
+ * closes the previous session of the tab the message's `peer` names; a
+ * message naming no `peer` names the tab keyed by this frame's own
+ * `channel`. Every other message is ignored. The program is asked for its
+ * catalog at once. Every session's brains and manifest requests are answered
  * from `files`, and its pushes and manifest writes are written to them; each
  * push that changes what a program runs is posted to the running program at
  * once, and the last update of every program is posted again each time the
  * program starts. The program's latest catalog, its icons rendered under
  * the `target`'s icon palette, then the latest asset snapshot, then the
  * project's name are published into each session once it is established,
- * and each later one into the current session; a message from the program
+ * and each later one into every session; a message from the program
  * rejected by its code is logged and discards the latest catalog. An editor
  * hello declaring a newer makecode protocol is logged by its code, and no
  * session is served over that port.
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
   const { frame, parentOrigin, log } = options;
+  const ownChannel = options.channel ?? SIMX_CHANNEL;
   const server = startProjectServer(options);
   const settled = (rejection: PeerSessionErrorCode | undefined): void => {
     if (rejection !== undefined) logRejection(log, rejection);
   };
   const receive = (event: SimxPortFrameEvent): void => {
     if (event.origin !== parentOrigin) return;
-    const message = event.data as { type?: unknown } | null;
+    const message = event.data as { type?: unknown; peer?: unknown } | null;
     if (message?.type !== SIMXEDITOR_PORT_MESSAGE_TYPE) return;
     const port = event.ports[0];
     if (port === undefined) return;
-    server.attach(messagePortSessionPort(port), settled);
+    const peer = typeof message.peer === "string" ? message.peer : ownChannel;
+    server.attach(peer, messagePortSessionPort(port), settled);
   };
   frame.addEventListener("message", receive);
 

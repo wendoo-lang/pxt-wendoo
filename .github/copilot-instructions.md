@@ -80,8 +80,9 @@ is legal on the other side.
 
 - One simx component per subfolder, each a webapp. `makecode/simx/wendoo`
   holds two entries: its simx entry (`src/simx`) joins the editor webapp to
-  the MakeCode project over the port MakeCode brokers to the editor tab, and
-  its root entry (`src/editor`) is the editor webapp, running as that tab.
+  the MakeCode project over the ports MakeCode brokers to each editor tab,
+  one session per tab, and its root entry (`src/editor`) is the editor
+  webapp, running as its own registration's tab.
 - A simx component is a messaging endpoint, not a place for product logic.
   Brain authoring belongs in the editor (`makecode/simx/wendoo/src/editor`);
   execution belongs in the extension.

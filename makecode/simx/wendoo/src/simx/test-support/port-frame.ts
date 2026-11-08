@@ -1,5 +1,5 @@
 import type { MakeCodeMessagePort } from "@wendoo/makecode-session";
-import { SIMXEDITOR_PORT_MESSAGE_TYPE } from "../../vendor/simxeditor.js";
+import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorPortMessage } from "../../vendor/simxeditor.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL } from "../sim-channel.js";
 import type { SimxPortFrame, SimxPortFrameEvent } from "../simx-bridge.js";
 
@@ -56,9 +56,22 @@ export class FakePortFrame implements SimxPortFrame {
     this.programPosts("");
   }
 
-  /** MakeCode brokering `port` to this frame, posting it from `origin`. */
-  brokerPort(port: MakeCodeMessagePort, origin = PARENT_ORIGIN): void {
-    this.deliver({ data: { type: SIMXEDITOR_PORT_MESSAGE_TYPE, key: SIMX_CHANNEL }, origin, ports: [port] });
+  /**
+   * MakeCode brokering `port` to this frame, posting it from `origin`, for
+   * the editor tab keyed `peer`: the frame's own tab by default.
+   */
+  brokerPort(port: MakeCodeMessagePort, origin = PARENT_ORIGIN, peer = SIMX_CHANNEL): void {
+    const message: SimxEditorPortMessage = { type: SIMXEDITOR_PORT_MESSAGE_TYPE, key: SIMX_CHANNEL, peer };
+    this.deliver({ data: message, origin, ports: [port] });
+  }
+
+  /** MakeCode below API level 2 brokering `port` to this frame: its port message names no `peer`. */
+  brokerPortNamingNoPeer(port: MakeCodeMessagePort): void {
+    this.deliver({
+      data: { type: SIMXEDITOR_PORT_MESSAGE_TYPE, key: SIMX_CHANNEL },
+      origin: PARENT_ORIGIN,
+      ports: [port],
+    });
   }
 
   /** Delivers `event` to every message listener. */

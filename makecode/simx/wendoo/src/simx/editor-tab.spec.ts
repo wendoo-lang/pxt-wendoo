@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SIMXEDITOR_MESSAGE_TYPE } from "../vendor/simxeditor.js";
 import { connectEditorTabOpener, type EditorTabFrame } from "./editor-tab.js";
+import { SIMX_CHANNEL } from "./sim-channel.js";
 
 /** The origin MakeCode names in the frame URL in these specs. */
 const PARENT_ORIGIN = "https://arcade.makecode.com";
+
+/** The key of an editor tab whose registration names this simulator extension's frame as its own. */
+const DESIGNER_TAB = "owner/repo-designer";
+
+/** Every refusal code MakeCode answers a simxeditor request with. */
+const REFUSAL_CODES = ["UNREGISTERED", "PERMISSION_DENIED", "UNAVAILABLE", "INVALID_REQUEST"];
 
 /** A simulator extension frame driven by the spec in place of MakeCode. */
 class FakeFrame implements EditorTabFrame {
@@ -66,6 +73,27 @@ describe("editor tab opener", () => {
     opener.dispose();
   });
 
+  it("posts an open request naming the tab's key when given one, and naming none when not", () => {
+    const frame = new FakeFrame();
+    const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, recordingLog());
+
+    void opener.open(DESIGNER_TAB);
+    void opener.open();
+
+    assert.deepEqual(frame.posted[0].message, {
+      type: SIMXEDITOR_MESSAGE_TYPE,
+      subtype: "open",
+      id: frame.requestId(0),
+      key: DESIGNER_TAB,
+    });
+    assert.deepEqual(frame.posted[1].message, {
+      type: SIMXEDITOR_MESSAGE_TYPE,
+      subtype: "open",
+      id: frame.requestId(1),
+    });
+    opener.dispose();
+  });
+
   it("resolves on MakeCode's acknowledgment, logging nothing", async () => {
     const frame = new FakeFrame();
     const log = recordingLog();
@@ -80,7 +108,7 @@ describe("editor tab opener", () => {
   });
 
   it("resolves on a refusal, logging its code", async () => {
-    for (const code of ["UNREGISTERED", "PERMISSION_DENIED", "UNAVAILABLE", "INVALID_REQUEST"]) {
+    for (const code of REFUSAL_CODES) {
       const frame = new FakeFrame();
       const log = recordingLog();
       const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, log);
@@ -116,6 +144,59 @@ describe("editor tab opener", () => {
     assert.equal(settled, true);
     assert.deepEqual(log.errors, []);
     opener.dispose();
+  });
+
+  it("posts a tabs request carrying a fresh id to MakeCode's origin", () => {
+    const frame = new FakeFrame();
+    const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, recordingLog());
+
+    void opener.tabs();
+    void opener.open();
+
+    assert.deepEqual(frame.posted[0], {
+      message: { type: SIMXEDITOR_MESSAGE_TYPE, subtype: "tabs", id: frame.requestId(0) },
+      targetOrigin: PARENT_ORIGIN,
+    });
+    assert.notEqual(frame.requestId(0), frame.requestId(1));
+    opener.dispose();
+  });
+
+  it("resolves a tabs request with the keys MakeCode lists, in order, on the reply carrying its id", async () => {
+    const frame = new FakeFrame();
+    const log = recordingLog();
+    const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, log);
+    let keys: string[] | undefined;
+    const listed = opener.tabs().then((reply) => {
+      keys = reply;
+    });
+    const id = frame.requestId(0);
+
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: `${id}-other`, subtype: "tabs", keys: ["elsewhere"] });
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", keys: ["elsewhere"] }, {});
+    await Promise.resolve();
+    assert.equal(keys, undefined);
+
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", keys: [SIMX_CHANNEL, DESIGNER_TAB] });
+    await listed;
+    assert.deepEqual(keys, [SIMX_CHANNEL, DESIGNER_TAB]);
+    assert.deepEqual(log.errors, []);
+    opener.dispose();
+  });
+
+  it("resolves a refused tabs request with no keys, logging its code", async () => {
+    for (const code of REFUSAL_CODES) {
+      const frame = new FakeFrame();
+      const log = recordingLog();
+      const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, log);
+      const listed = opener.tabs();
+
+      frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: frame.requestId(0), subtype: "error", code, message: "" });
+
+      assert.deepEqual(await listed, []);
+      assert.equal(log.errors.length, 1);
+      assert.ok(log.errors[0].startsWith(`${code}:`));
+      opener.dispose();
+    }
   });
 
   it("hears no reply once disposed", async () => {
