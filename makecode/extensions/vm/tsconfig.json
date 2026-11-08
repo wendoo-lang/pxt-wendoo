@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
     "target": "ES5",
-    "ignoreDeprecations": "6.0",
     "noLib": true,
     "noImplicitAny": true,
     "outDir": "built",

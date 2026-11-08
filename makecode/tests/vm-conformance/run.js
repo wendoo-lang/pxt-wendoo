@@ -29,6 +29,13 @@
  *
  * Usage: node run.js <target-dir>... [--runs 3] [--precision f64]
  *                    [--case <id>]... [--copy-extension] [--skip-build]
+ *
+ * The npm package beside this file carries two developer scripts.
+ * `npm run typecheck:arcade` typechecks the arcade selftest sources against
+ * the Wendoo extensions and Arcade's libraries, with the TypeScript version
+ * pxt-core declares (4.8.3). `npm run install:extension-modules` fills each
+ * Wendoo extension's `pxt_modules/` from its `mkc.json` links by running
+ * `mkc install` in it.
  */
 const crypto = require("crypto");
 const fs = require("fs");
