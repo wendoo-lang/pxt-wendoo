@@ -1012,9 +1012,10 @@ from and beneath the session:
   no public API of the extension takes or exposes it: a caller
   publishes with `wendoo.publishCatalog(encoder)`, whose first call in a
   program run publishes and whose later calls do nothing. The arcade
-  extension calls it from each game frame, before draining the
-  scene's programs, so a project holding the arcade extension
-  publishes its catalog on its first frame with no code of its own. The simx reads
+  host extension calls it from each game frame, before draining the
+  scene's programs, so a project holding the arcade extension (which
+  pulls the host in) publishes its catalog on its first frame with no
+  code of its own. The simx reads
   the channel MakeCode names in its frame URL's `channel` parameter,
   falling back to its own `SIMX_CHANNEL` constant for a frame URL
   that names none; it reads the program's messages on that channel

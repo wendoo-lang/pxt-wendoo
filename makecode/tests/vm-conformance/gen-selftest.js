@@ -19,9 +19,10 @@
  * selftest gives the running game's sprites programs. Beside it go the arcade
  * ending projects, one per ending in `ARCADE_ENDINGS`, each carrying the same
  * ids and brains modules and the ending selftest, which ends the game that
- * one way. The arcade extension and the arcade base pack are copied beside
- * the projects, their dependencies pointed at the target checkout's own
- * libraries, the VM extension here, and each other's copies.
+ * one way. The arcade extension, the arcade host extension and the arcade
+ * base pack are copied beside the projects, their dependencies pointed at the
+ * target checkout's own libraries, the VM extension here, and each other's
+ * copies.
  *
  * Usage: node gen-selftest.js <target-dir>
  */
@@ -57,9 +58,13 @@ const SELFTEST_CASE_ID = "registration-selftest";
 const ARCADE_EXTENSION_DIR = path.resolve(__dirname, "..", "..", "extensions", "arcade");
 const ARCADE_EXTENSION_NAME = "wendoo-arcade";
 
-/** The Wendoo arcade base pack, which the arcade extension depends on. */
+/** The Wendoo arcade base pack, which the arcade host extension and the arcade extension depend on. */
 const ARCADE_BASE_EXTENSION_DIR = path.resolve(__dirname, "..", "..", "extensions", "arcade-base");
 const ARCADE_BASE_EXTENSION_NAME = "wendoo-arcade-base";
+
+/** The Wendoo arcade host extension, which the arcade extension depends on. */
+const ARCADE_HOST_EXTENSION_DIR = path.resolve(__dirname, "..", "..", "extensions", "arcade-host");
+const ARCADE_HOST_EXTENSION_NAME = "wendoo-arcade-host";
 
 /**
  * Directory of the ids module and brains module the arcade selftest project
@@ -250,8 +255,9 @@ function writeArcadeProject(projectDir, project, setting) {
 
 /**
  * Writes the arcade selftest project, the arcade ending projects, and the
- * copies of the arcade extension and the arcade base pack they depend on,
- * into `targetDir` when it is an Arcade target checkout.
+ * copies of the arcade extension, the arcade host extension and the arcade
+ * base pack they depend on, into `targetDir` when it is an Arcade target
+ * checkout.
  *
  * @param targetDir Absolute path of a pxt target checkout.
  * @returns `{ id, dir, endings }` of the generated arcade selftest project,
@@ -268,11 +274,13 @@ function generateArcade(targetDir) {
   const outRoot = path.join(targetDir, ARCADE_PROJECTS_SUBDIR);
   const projectDir = path.join(outRoot, "project");
   const base = { name: ARCADE_BASE_EXTENSION_NAME, dir: path.join(outRoot, ARCADE_BASE_EXTENSION_NAME) };
+  const host = { name: ARCADE_HOST_EXTENSION_NAME, dir: path.join(outRoot, ARCADE_HOST_EXTENSION_NAME) };
   const arcade = { name: ARCADE_EXTENSION_NAME, dir: path.join(outRoot, ARCADE_EXTENSION_NAME) };
   copyExtension(ARCADE_BASE_EXTENSION_DIR, base.dir, arcadeDependencies(base.dir, corepkg, corepkgDir, []));
-  copyExtension(ARCADE_EXTENSION_DIR, arcade.dir, arcadeDependencies(arcade.dir, corepkg, corepkgDir, [base]));
+  copyExtension(ARCADE_HOST_EXTENSION_DIR, host.dir, arcadeDependencies(host.dir, corepkg, corepkgDir, [base]));
+  copyExtension(ARCADE_EXTENSION_DIR, arcade.dir, arcadeDependencies(arcade.dir, corepkg, corepkgDir, [host]));
 
-  const setting = { target, version, corepkg, corepkgDir, extensions: [base, arcade] };
+  const setting = { target, version, corepkg, corepkgDir, extensions: [base, host, arcade] };
   writeArcadeProject(
     projectDir,
     {

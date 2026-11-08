@@ -5,13 +5,10 @@
     "license": "MIT",
     "dependencies": {
         "device": "*",
-        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm",
-        "wendoo-arcade-base": "github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-base"
+        "wendoo-arcade-host": "github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-host"
     },
     "files": [
-        "README.md",
-        "sprite-host.ts",
-        "blocks.ts"
+        "README.md"
     ],
     "supportedTargets": [
         "arcade"

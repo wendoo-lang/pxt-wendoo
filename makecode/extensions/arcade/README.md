@@ -49,9 +49,9 @@ set brain player "player" of rightPaddle to player 2
 
 Developers: the source lives in the
 [pxt-wendoo](https://github.com/wendoo-lang/pxt-wendoo) repository. This
-extension builds on the Wendoo VM extension and the Wendoo Arcade base
-vocabulary, which it pulls in; see the repository README for how the
-project fits together.
+extension builds on the Wendoo VM extension, the Wendoo Arcade base
+vocabulary and the Wendoo Arcade host, which it pulls in; see the
+repository README for how the project fits together.
 
 #### Metadata (used for search, rendering)
 

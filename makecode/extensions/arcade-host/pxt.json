@@ -1,0 +1,20 @@
+{
+    "name": "wendoo-arcade-host",
+    "version": "0.0.0",
+    "description": "Hosts Wendoo programs on MakeCode Arcade sprites and carries the brain blocks",
+    "license": "MIT",
+    "dependencies": {
+        "device": "*",
+        "wendoo-vm": "github:wendoo-lang/pxt-wendoo/makecode/extensions/vm",
+        "wendoo-arcade-base": "github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-base"
+    },
+    "files": [
+        "README.md",
+        "sprite-host.ts",
+        "blocks.ts"
+    ],
+    "supportedTargets": [
+        "arcade"
+    ],
+    "preferredEditor": "tsprj"
+}

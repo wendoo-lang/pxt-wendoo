@@ -314,7 +314,7 @@ the current slice alone.
     `github:wendoo-lang/pxt-wendoo/makecode/extensions/vm`), pxt's monorepo
     support requires a top-level `pxt.json` at the repo root, and a shipped
     extension's coordinate is public identity, so its directory is not free
-    to rename. Four unit kinds:
+    to rename. Five unit kinds:
     - `makecode/extensions/vm` is the STS VM and nothing else: the bytecode
       VM in MakeCode static TypeScript (a conforming Wendoo VM per
       `.github/instructions/vm.instructions.md`), the trace emitter, debug
@@ -724,12 +724,13 @@ the current slice alone.
       motion feel -- smoothing is the direct applicator's kinematic
       concern, and a sprite a physics model controls never also takes
       the global or per-sprite smoothing).
-    - The game-facing arcade extension, `makecode/extensions/arcade`
-      (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`),
-      depends on the VM extension, Arcade's `device` library, and the
-      arcade base pack, and declares no vocabulary of its own. It owns the
-      arcade-bound pieces: the spawn block (`wendoo.runBrain`, its
-      program picked by name from the project's compiled brains), the
+    - The HOST EXTENSION, `makecode/extensions/arcade-host`
+      (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade-host`),
+      hosts programs on Arcade sprites for every Arcade front door, each
+      of which depends on it. It depends on the VM extension, Arcade's
+      `device` library, and the arcade base pack, and declares no
+      vocabulary of its own. It owns the spawn block (`wendoo.runBrain`,
+      its program picked by name from the project's compiled brains), the
       brain variable blocks (`wendoo.setBrainNumber`,
       `wendoo.readBrainNumber`, and the same pairs for text and booleans,
       reading and writing a variable of the brain a sprite runs by its
@@ -737,23 +738,31 @@ the current slice alone.
       reporter reading its type's empty value -- 0, empty text, false --
       wherever the host reads nothing; and `wendoo.setBrainPlayer`,
       writing the `Player` value one of four dropdown players names, with
-      no reporter), sprite
-      pairing and hosting (one program host per game scene, drained from
-      the scene's own update loop), and the catalog publication on the
-      game's first frame, icons rendered by the base pack's arcade icon
-      encoder; the WendooBrain asset blocks and the simx
-      binding join it. Naming: the bare target name belongs to this
-      front-door extension -- the one coordinate a user adds, which
-      pulls the rest in; the base pack is `<target>-base`, and genre
-      extensions are `<target>-<genre>` siblings of the front door
-      atop the base. Block text and every API identifier a user meets
-      in the JavaScript view say "brain"; block IDs are never shown
-      and are permanent, because saved blocks match on them (the
-      spawn block's is `wendoo_run_program`; the brain variable blocks'
-      are `wendoo_set_brain_number`, `wendoo_brain_number`,
+      no reporter), sprite pairing and hosting (one program host per game
+      scene, drained from the scene's own update loop), and the catalog
+      publication on the game's first frame, icons rendered by the base
+      pack's arcade icon encoder. Block text and every API identifier a
+      user meets in the JavaScript view say "brain"; block IDs are never shown
+      and are permanent, because saved blocks match on them (the spawn
+      block's is `wendoo_run_program`; the brain variable blocks' are
+      `wendoo_set_brain_number`, `wendoo_brain_number`,
       `wendoo_set_brain_text`, `wendoo_brain_text`,
       `wendoo_set_brain_boolean`, `wendoo_brain_boolean` and
       `wendoo_set_brain_player`).
+    - The game-facing arcade extension, `makecode/extensions/arcade`
+      (`github:wendoo-lang/pxt-wendoo/makecode/extensions/arcade`), is
+      Arcade's front door. It depends on Arcade's `device` library and on
+      the arcade host extension, and through the host on the base pack
+      and the VM extension; it declares no vocabulary and no blocks of its
+      own, and lists no dependency its own files do not use. It
+      owns the coordinate a user adds and its README, the page a user
+      reads; the WendooBrain asset blocks and the simx binding (the
+      `approvedRepoLib` registration keyed by this coordinate) join it.
+      Naming: the bare target name belongs to this front-door extension
+      -- the one coordinate a user adds, which pulls the rest in; the
+      base pack is `<target>-base`, the host extension is
+      `<target>-host`, and genre extensions are `<target>-<genre>`
+      siblings of the front door atop the base.
     - FEATURE PACKS supply host-bound tiles for one genre of game. A
       feature pack depends on its target's base pack (and through it the
       VM extension), never on another feature pack; packs compose by
@@ -850,9 +859,10 @@ the current slice alone.
     flow in this editor would reintroduce target-specific ambient typings
     and must be raised as a boundary change, not slipped in.
   - The complete per-target surface of this repo is: the target base pack,
-    the game-facing extension, feature packs, the `approvedRepoLib`
-    registration, the upstream `trg-*` platform-stack layer, a theme record
-    in the editor, and target-keyed code paths inside the shared simx.
+    the host extension, the game-facing extension, feature packs, the
+    `approvedRepoLib` registration, the upstream `trg-*` platform-stack
+    layer, a theme record in the editor, and target-keyed code paths
+    inside the shared simx.
     Everything else is shared.
 - The editor webapp, the simx component, and the MakeCode project form one
   path, MakeCode brokering the port between the editor tab and the simx

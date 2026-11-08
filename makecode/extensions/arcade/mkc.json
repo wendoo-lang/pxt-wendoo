@@ -1,6 +1,7 @@
 {
   "links": {
     "wendoo-vm": "../vm",
-    "wendoo-arcade-base": "../arcade-base"
+    "wendoo-arcade-base": "../arcade-base",
+    "wendoo-arcade-host": "../arcade-host"
   }
 }

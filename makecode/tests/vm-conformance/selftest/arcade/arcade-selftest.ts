@@ -27,7 +27,7 @@
  * them, and the move
  * tile's body with sprite and point targets and with wander destinations
  * picked from random sources it scripts. It reads and writes the variables
- * of the brains sprites run through the arcade extension's brain variable
+ * of the brains sprites run through the arcade host extension's brain variable
  * block functions.
  *
  * Output grammar, one line each:
@@ -4539,7 +4539,7 @@ namespace arcadeSelftest {
 
   /**
    * In a scene of its own, check game code reading and writing the variables
-   * of the brains sprites run, through the arcade extension's block
+   * of the brains sprites run, through the arcade host extension's block
    * functions, around the keeper program:
    *
    * - a number written right after the sprite is given its brain is held,
@@ -4643,11 +4643,11 @@ namespace arcadeSelftest {
     const second = solidSprite(8, 100, 50);
     const unset = solidSprite(8, 100, 80);
     wendoo.runBrain(first, wendooBrains.p_brainVarPaddle01);
-    wendoo.setBrainPlayer(first, "player", BrainPlayer.One);
+    wendoo.setBrainPlayer(first, "player", BrainPlayerNumber.One);
     wendoo.runBrain(second, wendooBrains.p_brainVarPaddle01);
     wendoo.runBrain(unset, wendooBrains.p_brainVarPaddle01);
     pause(FRAMES_MS);
-    wendoo.setBrainPlayer(second, "player", BrainPlayer.Two);
+    wendoo.setBrainPlayer(second, "player", BrainPlayerNumber.Two);
     pause(FRAMES_MS);
     const untouched = movesAt(first, 0, 0) && movesAt(second, 0, 0) && movesAt(unset, 0, 0);
     controller.player2.right.setPressed(true);
@@ -4705,9 +4705,9 @@ namespace arcadeSelftest {
     const pickTwo = solidSprite(8, 60, 80);
     wendoo.runBrain(pickNone, wendooBrains.p_playerEqualPick1);
     wendoo.runBrain(pickOne, wendooBrains.p_playerEqualPick1);
-    wendoo.setBrainPlayer(pickOne, "player", BrainPlayer.One);
+    wendoo.setBrainPlayer(pickOne, "player", BrainPlayerNumber.One);
     wendoo.runBrain(pickTwo, wendooBrains.p_playerEqualPick1);
-    wendoo.setBrainPlayer(pickTwo, "player", BrainPlayer.Two);
+    wendoo.setBrainPlayer(pickTwo, "player", BrainPlayerNumber.Two);
     pause(FRAMES_MS);
     check(
       "a-rule-comparing-a-player-variable-with-player-one-is-equal-only-while-it-holds-player-one",
@@ -4749,9 +4749,9 @@ namespace arcadeSelftest {
     const one = solidSprite(8, 40, 30);
     const two = solidSprite(8, 40, 70);
     wendoo.runBrain(one, paddle);
-    wendoo.setBrainPlayer(one, "player", BrainPlayer.One);
+    wendoo.setBrainPlayer(one, "player", BrainPlayerNumber.One);
     wendoo.runBrain(two, paddle);
-    wendoo.setBrainPlayer(two, "player", BrainPlayer.Two);
+    wendoo.setBrainPlayer(two, "player", BrainPlayerNumber.Two);
     pause(FRAMES_MS);
     const original = hostedOf(two).runtime;
 
