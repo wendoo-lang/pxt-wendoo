@@ -421,10 +421,10 @@ the current slice alone.
       and extractable later as a file move -- proven by compiling against a
       second target, not by convention. Extraction changes the public
       coordinate, so that decision's deadline is before external projects
-      pin it. The simx registration, keyed by this coordinate in each
-      target's `approvedRepoLib`, binds the Wendoo simulator extension and
-      its editor tab to every project that includes the VM, directly or
-      through a front door.
+      pin it. The simx registration keyed by this coordinate in each
+      target's `approvedRepoLib` binds the Wendoo simulator frame to every
+      project that includes the VM, directly or through a front door; it
+      declares no editor tab.
     - Each target has exactly one BASE PACK, created when the first type
       declaration needs it. It depends on the VM extension and owns the
       target's type declarations: asset types (arcade: image, song,
@@ -759,7 +759,10 @@ the current slice alone.
       and the VM extension; it declares no vocabulary and no blocks of its
       own, and lists no dependency its own files do not use. It
       owns the coordinate a user adds and its README, the page a user
-      reads; the WendooBrain asset blocks join it.
+      reads; the WendooBrain asset blocks join it. Its own registration,
+      keyed by this coordinate and naming the VM's simulator frame as its
+      own, carries the Wendoo editor tab, so a project offers that tab
+      exactly when it includes this front door.
       Naming: the bare target name belongs to this front-door extension
       -- the one coordinate a user adds, which pulls the rest in; the
       base pack is `<target>-base`, the host extension is
@@ -779,18 +782,20 @@ the current slice alone.
     joins the editor webapp to the MakeCode project over the ports MakeCode
     brokers to each editor tab, one session per tab, keyed by the tab's
     key MakeCode names on the port, and its root entry (`index.html`,
-    sources in `src/editor`) is the editor webapp, booting as its own
-    registration's editor tab. A
+    sources in `src/editor`) is the editor webapp, booting as the editor
+    tab the front door's registration declares. A
     simx is a channel, not a store: its frame persists across sim restarts
     and runs but is reallocated on a page reload or project teardown, so
     no state may live only there. It is not product UI, but its frame is
     visible and renders a brand strip: the logotype and an open-editor
     button; no session status, no authoring, no catalog display. One
-    shared artifact serves every target, bound by an
-    `approvedRepoLib` entry in each target's own `targetconfig.json`
-    (keyed by the VM extension's full GitHub coordinate, with
-    the hosting URL); it knows its hosting target from the
-    `target` frame URL param and may carry target-keyed behavior (asset
+    shared artifact serves every target, bound by two
+    `approvedRepoLib` entries in each target's own `targetconfig.json`,
+    each with the hosting URL: the VM's, keyed by the VM extension's full
+    GitHub coordinate, for the frame, and the target front door's, keyed
+    by the front door's coordinate, for the editor tab; it knows its
+    hosting target from the `target` frame URL param and may carry
+    target-keyed behavior (asset
     previews, target-specific state). Catalog icons are rendered under the
     hosting target's own palette, keyed by target inside the simx, while
     image assets render under the project's palette. Per-target simx builds
@@ -864,7 +869,7 @@ the current slice alone.
     and must be raised as a boundary change, not slipped in.
   - The complete per-target surface of this repo is: the target base pack,
     the host extension, the game-facing extension, feature packs, the
-    `approvedRepoLib` registration, the upstream `trg-*` platform-stack
+    `approvedRepoLib` registrations, the upstream `trg-*` platform-stack
     layer, a theme record in the editor, and target-keyed code paths
     inside the shared simx.
     Everything else is shared.

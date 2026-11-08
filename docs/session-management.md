@@ -126,19 +126,29 @@ manifest request-reply families. The editor-tab messages themselves
 (`simxeditor`, `simxeditorport`) are MakeCode's, vendored from pxt's
 `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
 
-- REGISTRATION: the simx's `approvedRepoLib` entry in a target's
-  `targetconfig.json`, keyed by the VM extension's coordinate
-  (`wendoo-lang/pxt-wendoo/makecode/extensions/vm`), registers the tab
-  with `allowEditorTab` and `editor` -- `index` (the editor entry's
-  page, `index.html`), `label`, and `icon` (an artifact-relative SVG
-  MakeCode shows beside the label); MakeCode offers the tab to every
-  project that includes the VM, directly or through a front door.
-  Beside it the entry grants `allowFileWrite` (projfs) and
-  `allowAssetRead` (projassets) for the simx write path and the assets
-  publication, `allowPopups` for the brand strip's logotype link,
-  `allowDownloads` for the brain editor's save of a brain to a file,
-  and `hideInFullscreen`, and sets `aspectRatio` 6.6, which sizes the
-  strip's frame to about 49 px tall at the 326 px simulator column.
+- REGISTRATION: two `approvedRepoLib` entries in a target's
+  `targetconfig.json` register the simx, both carrying the same `sha`,
+  `repo` and `devUrl`. The VM's, keyed by the VM extension's coordinate
+  (`wendoo-lang/pxt-wendoo/makecode/extensions/vm`), registers the
+  simulator frame (`index`, `simx/index.html`) and declares no editor
+  tab; MakeCode binds the frame to every project that includes the VM,
+  directly or through a front door. It grants `allowFileWrite` (projfs)
+  and `allowAssetRead` (projassets) for the simx write path and the
+  assets publication and `allowPopups` for the brand strip's logotype
+  link, and sets `hideInFullscreen` and `aspectRatio` 6.6, which sizes
+  the strip's frame to about 49 px tall at the 326 px simulator column.
+  The arcade front door's, keyed by its coordinate
+  (`wendoo-lang/pxt-wendoo/makecode/extensions/arcade`), names the VM's
+  simulator frame as its own with `simulator` and registers the tab with
+  `allowEditorTab` and `editor` -- `index` (the editor entry's page,
+  `index.html`), `label`, and `icon` (an artifact-relative SVG MakeCode
+  shows beside the label); it grants `allowDownloads` for the brain
+  editor's save of a brain to a file and `allowPopups` for the links
+  the tab's docs pages open in a new tab. MakeCode serves the tab frame
+  under the front door's key and grants, and offers the tab exactly to
+  the projects that include the front door: a project that includes
+  the VM without it -- the VM alone, or through Daydream only -- is
+  offered no Wendoo tab.
 - BOOT: the simx starts its port bridge and renders the brand strip at
   once. The editor entry boots the tab alone: it reads `parentOrigin`
   from its frame URL, posts `{ type: "simxeditor", event: "ready" }` to
@@ -1018,7 +1028,7 @@ whatever MakeCode offers, and the strip stores nothing.
   tab, cuts its `opener`, and navigates it to the link's URL. A frame
   sandboxed without `allow-popups` makes the browser refuse the tab; the
   strip then replaces the link in place with its URL as selectable text
-  and selects it, for the person to copy. The registration grants
+  and selects it, for the person to copy. The VM's registration grants
   `allowPopups` for this link (see "The editor tab's in-page session",
   above).
 
@@ -1108,11 +1118,11 @@ The full stack runs locally:
 
 - The editor and the simx: `npm run dev` in `makecode/simx/wendoo`
   (port 5175, pinned with `strictPort` by its dev config, matching the
-  `devUrl` its `approvedRepoLib` entry registers; `npm run dev -- --port
-  <port>` serves it elsewhere, and the registration must then name that
-  port). The editor is served at the root, the page the registration's
-  `editor` names, and the simx at `simx/index.html`, the `index` the
-  registration names.
+  `devUrl` its two `approvedRepoLib` entries register; `npm run dev --
+  --port <port>` serves it elsewhere, and both registrations must then
+  name that port). The editor is served at the root, the page the front
+  door's registration's `editor` names, and the simx at
+  `simx/index.html`, the `index` the VM's registration names.
 - MakeCode: `pxt serve` from a dev target checkout whose pxt offers the
   editor tab, with the simx registered by localdev URL (an
   `approvedRepoLib` entry carrying `devUrl`) and loaded via the
