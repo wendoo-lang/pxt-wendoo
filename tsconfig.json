@@ -27,9 +27,8 @@
   //
   // makecode/extensions/** and makecode/tests/** are excluded by decision
   // and must never be indexed here. Their tsconfigs follow the pxt
-  // editor-typing discipline (target ES5, noLib, ignoreDeprecations "6.0"),
-  // are checkable only under typescript@6, and are served by tsserver's
-  // nearest-config walk from their own directories.
+  // editor-typing discipline (target ES5, noLib) and are served by
+  // tsserver's nearest-config walk from their own directories.
   //
   // ORDERING CONSTRAINT: the editor assigns a file to the FIRST listed
   // project that contains it, so a project whose sources another project's
@@ -37,8 +36,5 @@
   // project. The editor-projects gate asserts ownership and fails if this
   // order regresses.
   "files": [],
-  "references": [
-    { "path": "./packages/protocol/tsconfig.json" },
-    { "path": "./packages/protocol/tsconfig.spec.json" }
-  ]
+  "references": [{ "path": "./packages/protocol/tsconfig.json" }, { "path": "./packages/protocol/tsconfig.spec.json" }]
 }

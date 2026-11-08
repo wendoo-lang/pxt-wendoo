@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "typecheck": "npm run typecheck:arcade && npm run typecheck:selftest && npm run typecheck:driver && npm run typecheck:extensions",
     "typecheck:arcade": "tsc -p selftest/arcade/tsconfig.json --noEmit",
+    "typecheck:selftest": "tsc -p selftest/tsconfig.json --noEmit",
+    "typecheck:driver": "tsc -p driver/tsconfig.json --noEmit",
+    "typecheck:extensions": "tsc -p ../../extensions/vm/tsconfig.json --noEmit && tsc -p ../../extensions/arcade-base/tsconfig.json --noEmit && tsc -p ../../extensions/arcade-host/tsconfig.json --noEmit",
     "install:extension-modules": "node install-extension-modules.js"
   },
   "devDependencies": {

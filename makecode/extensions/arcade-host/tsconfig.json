@@ -8,6 +8,7 @@
     "strictPropertyInitialization": false,
     "strictNullChecks": false
   },
+  "files": ["pxt_modules/screen/image.d.ts"],
   "include": ["**/*.ts"],
   "exclude": ["built/**", "pxt_modules/**/*test.ts"]
 }
