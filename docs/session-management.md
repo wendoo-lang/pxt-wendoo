@@ -141,8 +141,9 @@ manifest request-reply families. The editor-tab messages themselves
   (`wendoo-lang/pxt-wendoo/makecode/extensions/arcade`), names the VM's
   simulator frame as its own with `simulator` and registers the tab with
   `allowEditorTab` and `editor` -- `index` (the editor entry's page,
-  `index.html`), `label`, and `icon` (an artifact-relative SVG MakeCode
-  shows beside the label); it grants `allowDownloads` for the brain
+  `index.html`), `label`, `icon` (an artifact-relative SVG MakeCode
+  shows beside the label), and `creates` (the type the tab's New and Edit
+  dropdown entries claim); it grants `allowDownloads` for the brain
   editor's save of a brain to a file and `allowPopups` for the links
   the tab's docs pages open in a new tab. MakeCode serves the tab frame
   under the front door's key and grants, and offers the tab exactly to
@@ -1004,26 +1005,35 @@ channel, then pushes each edit as it is made:
 ## The brand strip
 
 The simx frame is a visible strip in the simulator column: the Wendoo
-logotype and one button, and nothing else -- no status, no code, no
-authoring, no catalog, no product behavior. The simx renders it at boot,
-whatever MakeCode offers, and the strip stores nothing.
+logotype and an open-editor control, and nothing else -- no status, no
+code, no authoring, no catalog, no product behavior. The simx renders the
+logotype alone at boot, whatever MakeCode offers, the strip gains its
+control when MakeCode lists the tabs that talk to its frame, and the
+strip stores nothing.
 
 - MARKUP: a section carrying `data-testid="simx-strip"` whose one row
   holds the logotype, linking to https://wendoo.com and carrying
-  `data-link="home"`, and the open-editor button
-  (`data-action="open-editor"`).
+  `data-link="home"`, then the open-editor control
+  (`data-action="open-editor"`), which takes one of three states by the
+  tabs MakeCode lists. No tab: no control, the row holding the logotype
+  alone. One tab: a button captioned "Open" and the tab's label, carrying
+  the tab's key as `data-key`, which opens that tab. Several tabs: a
+  select whose first option, valued `""`, is selected and disabled and
+  reads "Open editor...", followed by one option per tab in the order
+  MakeCode lists them, each valued by the tab's key and captioned by its
+  label; choosing one opens that tab, and the select returns to its first
+  option. A tab's icon URL, when MakeCode gives one, is carried with the
+  tab and shown nowhere.
 - OPEN EDITOR: at boot, on MakeCode at API level 2 or above, the simx
   asks MakeCode once which tabs talk to its frame
-  (`{ type: "simxeditor", subtype: "tabs", id }`); a refusal is logged
-  by its code and lists none. The button waits for that reply before
-  opening, so a click before the reply opens once it arrives. It opens
-  the first tab MakeCode lists, posting
-  `{ type: "simxeditor", subtype: "open", id, key }`, and when none is
-  listed posts the open request naming no `key`, which MakeCode reads as
-  the frame's own tab. A refusal is logged by its code
-  (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
-  `INVALID_REQUEST`). On a MakeCode that offers no editor tab, no port
-  arrives and the request is refused and logged.
+  (`{ type: "simxeditor", subtype: "tabs", id }`), each listed by its
+  key, its label and, when it has an SVG icon, its icon URL; the reply
+  gives the strip its control. A refusal is logged by its code and lists
+  none, and on a MakeCode below API level 2 the simx asks nothing, so the
+  strip keeps the logotype alone. The control opens the tab it names,
+  posting `{ type: "simxeditor", subtype: "open", id, key }` with that
+  tab's key. A refusal is logged by its code (`UNREGISTERED`,
+  `PERMISSION_DENIED`, `UNAVAILABLE`, `INVALID_REQUEST`).
 - THE LOGOTYPE LINK opens through a click probe: the strip opens a blank
   tab, cuts its `opener`, and navigates it to the link's URL. A frame
   sandboxed without `allow-popups` makes the browser refuse the tab; the

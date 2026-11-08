@@ -1,3 +1,5 @@
+import type { SimxEditorTab } from "../vendor/simxeditor.js";
+
 /** The tile-native "wendoo" logotype as inline SVG, 78 x 19 units, drawn in `currentColor`. */
 const LOGOTYPE =
   '<svg class="logotype" viewBox="0 0 78 19" fill="none" aria-hidden="true">' +
@@ -71,28 +73,65 @@ function followInStrip(root: HTMLElement, link: HTMLAnchorElement): void {
 }
 
 /**
- * The markup of the brand strip a simulator extension frame shows: a
- * section carrying `data-testid="simx-strip"` whose one row holds the
- * logotype, linking to the Wendoo homepage and carrying `data-link="home"`,
- * and the button carrying `data-action="open-editor"`.
+ * The markup of the open-editor control for `tabs`, the tabs MakeCode lists
+ * for this frame: nothing for no tab; for one tab, a button carrying
+ * `data-action="open-editor"` and the tab's key as `data-key`, captioned by
+ * the tab's label; for several, a select carrying
+ * `data-action="open-editor"` whose first option, valued `""`, is selected
+ * and disabled, followed by one option per tab, in the order given, valued
+ * by the tab's key and captioned by its label.
  */
-export function renderBrandStrip(): string {
+function renderOpenEditor(tabs: readonly SimxEditorTab[]): string {
+  if (tabs.length === 0) return "";
+  if (tabs.length === 1) {
+    const label = escapeHtml(tabs[0].label);
+    return (
+      `<button type="button" class="open-editor" aria-label="Open the ${label} editor" data-action="open-editor"` +
+      ` data-key="${escapeHtml(tabs[0].key)}">Open ${label}</button>`
+    );
+  }
+  const options = tabs.map((tab) => `<option value="${escapeHtml(tab.key)}">${escapeHtml(tab.label)}</option>`);
   return (
-    '<section class="panel" data-testid="simx-strip">' +
-    `<header class="head"><a class="mark" href="${HOMEPAGE_URL}" target="_blank" rel="noopener noreferrer"` +
-    ` aria-label="Wendoo homepage" data-link="home">${LOGOTYPE}</a>` +
-    '<button type="button" class="open-editor" aria-label="Open the Wendoo editor" data-action="open-editor">' +
-    "Open editor</button></header></section>"
+    '<select class="open-editor" aria-label="Open an editor" data-action="open-editor">' +
+    `<option value="" selected disabled>Open editor...</option>${options.join("")}</select>`
   );
 }
 
 /**
- * Render the brand strip into `root` and route its controls: the button
- * calls `openEditor`, and the logotype link follows through
- * {@link followLink}, replaced by its URL, then selected, when the frame may
- * not open it. Returns a function that stops routing.
+ * The markup of the brand strip a simulator extension frame shows: a
+ * section carrying `data-testid="simx-strip"` whose one row holds the
+ * logotype, linking to the Wendoo homepage and carrying `data-link="home"`,
+ * then the open-editor control for `tabs`, the tabs MakeCode lists for this
+ * frame: none for no tab, a button opening the one tab, or a select
+ * offering each of several.
  */
-export function mountBrandStrip(root: HTMLElement, openEditor: () => void): () => void {
+export function renderBrandStrip(tabs: readonly SimxEditorTab[]): string {
+  return (
+    '<section class="panel" data-testid="simx-strip">' +
+    `<header class="head"><a class="mark" href="${HOMEPAGE_URL}" target="_blank" rel="noopener noreferrer"` +
+    ` aria-label="Wendoo homepage" data-link="home">${LOGOTYPE}</a>` +
+    `${renderOpenEditor(tabs)}</header></section>`
+  );
+}
+
+/** A brand strip {@link mountBrandStrip} rendered into its root. */
+export interface MountedBrandStrip {
+  /** Replace the strip's open-editor control with the one for `tabs`, keeping the logotype as it is. */
+  setTabs(tabs: readonly SimxEditorTab[]): void;
+  /** Stop routing the strip's controls. */
+  unmount(): void;
+}
+
+/**
+ * Render the brand strip into `root`, with no open-editor control until
+ * {@link MountedBrandStrip.setTabs} gives it tabs, and route its controls: a
+ * click on the button calls `open` with the key it carries, a choice of a tab
+ * in the select calls `open` with that tab's key and returns the select to
+ * its first option, and the logotype link follows through
+ * {@link followLink}, replaced by its URL, then selected, when the frame may
+ * not open it. Returns the mounted strip.
+ */
+export function mountBrandStrip(root: HTMLElement, open: (key: string) => void): MountedBrandStrip {
   const click = (event: MouseEvent): void => {
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>("a[data-link]");
     if (link) {
@@ -101,11 +140,27 @@ export function mountBrandStrip(root: HTMLElement, openEditor: () => void): () =
       return;
     }
     const control = (event.target as Element | null)?.closest<HTMLElement>("[data-action]");
-    if (control?.dataset.action === "open-editor") openEditor();
+    const key = control?.dataset.key;
+    if (control?.dataset.action === "open-editor" && key !== undefined) open(key);
+  };
+  const change = (event: Event): void => {
+    const select = event.target as HTMLSelectElement | null;
+    if (select?.dataset.action !== "open-editor" || select.value === "") return;
+    const key = select.value;
+    select.value = "";
+    open(key);
   };
   root.addEventListener("click", click);
-  root.innerHTML = renderBrandStrip();
-  return () => {
-    root.removeEventListener("click", click);
+  root.addEventListener("change", change);
+  root.innerHTML = renderBrandStrip([]);
+  return {
+    setTabs(tabs) {
+      root.querySelector('[data-action="open-editor"]')?.remove();
+      root.querySelector(".head")?.insertAdjacentHTML("beforeend", renderOpenEditor(tabs));
+    },
+    unmount() {
+      root.removeEventListener("click", click);
+      root.removeEventListener("change", change);
+    },
   };
 }

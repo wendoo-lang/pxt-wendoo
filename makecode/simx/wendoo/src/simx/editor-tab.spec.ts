@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SIMXEDITOR_MESSAGE_TYPE } from "../vendor/simxeditor.js";
+import { SIMXEDITOR_MESSAGE_TYPE, type SimxEditorTab } from "../vendor/simxeditor.js";
 import { connectEditorTabOpener, type EditorTabFrame } from "./editor-tab.js";
 import { SIMX_CHANNEL } from "./sim-channel.js";
 
@@ -161,29 +161,36 @@ describe("editor tab opener", () => {
     opener.dispose();
   });
 
-  it("resolves a tabs request with the keys MakeCode lists, in order, on the reply carrying its id", async () => {
+  it("resolves a tabs request with the tabs MakeCode lists, in order, on the reply carrying its id", async () => {
     const frame = new FakeFrame();
     const log = recordingLog();
     const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, log);
-    let keys: string[] | undefined;
-    const listed = opener.tabs().then((reply) => {
-      keys = reply;
+    let settled = false;
+    const listed = opener.tabs().finally(() => {
+      settled = true;
     });
     const id = frame.requestId(0);
+    const elsewhere: SimxEditorTab[] = [{ key: "elsewhere", label: "Elsewhere" }];
+    const listedTabs: SimxEditorTab[] = [
+      { key: SIMX_CHANNEL, label: "Wendoo", iconUrl: "https://example.com/wendoo-mark-small.svg" },
+      { key: DESIGNER_TAB, label: "Designer" },
+    ];
 
-    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: `${id}-other`, subtype: "tabs", keys: ["elsewhere"] });
-    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", keys: ["elsewhere"] }, {});
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: `${id}-other`, subtype: "tabs", tabs: elsewhere });
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", tabs: elsewhere }, {});
     await Promise.resolve();
-    assert.equal(keys, undefined);
+    assert.equal(settled, false);
 
-    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", keys: [SIMX_CHANNEL, DESIGNER_TAB] });
-    await listed;
-    assert.deepEqual(keys, [SIMX_CHANNEL, DESIGNER_TAB]);
+    frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id, subtype: "tabs", tabs: listedTabs });
+    const tabs = await listed;
+    assert.deepEqual(tabs, listedTabs);
+    assert.equal(tabs[0].iconUrl, "https://example.com/wendoo-mark-small.svg");
+    assert.equal("iconUrl" in tabs[1], false);
     assert.deepEqual(log.errors, []);
     opener.dispose();
   });
 
-  it("resolves a refused tabs request with no keys, logging its code", async () => {
+  it("resolves a refused tabs request with no tabs, logging its code", async () => {
     for (const code of REFUSAL_CODES) {
       const frame = new FakeFrame();
       const log = recordingLog();

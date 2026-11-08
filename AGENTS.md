@@ -788,15 +788,19 @@ the current slice alone.
     and runs but is reallocated on a page reload or project teardown, so
     no state may live only there. It is not product UI, but its frame is
     visible and renders a brand strip: the logotype and an open-editor
-    button; no session status, no authoring, no catalog display. One
+    control taking one of three states by the tabs MakeCode lists -- none
+    for no tab, a button for one, a select for several; no session
+    status, no authoring, no catalog display. One
     shared artifact serves every target, bound by two
     `approvedRepoLib` entries in each target's own `targetconfig.json`,
     each with the hosting URL: the VM's, keyed by the VM extension's full
     GitHub coordinate, for the frame, and the target front door's, keyed
-    by the front door's coordinate, for the editor tab; it knows its
-    hosting target from the `target` frame URL param and may carry
-    target-keyed behavior (asset
-    previews, target-specific state). Catalog icons are rendered under the
+    by the front door's coordinate, for the editor tab. The tab's
+    registration key names the front door whose product surface the tab
+    is, and its `simulator` names the shared engine on the VM coordinate.
+    The artifact knows its hosting target from the `target` frame URL
+    param and may carry target-keyed behavior (asset previews,
+    target-specific state). Catalog icons are rendered under the
     hosting target's own palette, keyed by target inside the simx, while
     image assets render under the project's palette. Per-target simx builds
     are not taken; raise a need as a decision.

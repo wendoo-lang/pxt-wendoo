@@ -32,16 +32,19 @@ const root = document.body.appendChild(document.createElement("main"));
 
 const bridge = startSimxPortBridge({ frame: window, parentOrigin, files, assets, log: console, channel, target });
 const opener = connectEditorTabOpener(window, parentOrigin, console);
-// The keys of the editor tabs MakeCode lists for this frame, asked for once at startup: an empty list on a refusal and
-// on an editor below API level 2. The button opens the first key, or the frame's own tab when there is none.
-const tabKeys: Promise<readonly string[]> = getSimxApiLevel() >= 2 ? opener.tabs() : Promise.resolve([]);
-const unmount = mountBrandStrip(root, () => {
-  void tabKeys.then((keys) => opener.open(keys[0]));
+const strip = mountBrandStrip(root, (key) => {
+  void opener.open(key);
 });
+// Below API level 2 the strip keeps the logotype alone.
+if (getSimxApiLevel() >= 2) {
+  void opener.tabs().then((tabs) => {
+    strip.setTabs(tabs);
+  });
+}
 window.addEventListener(
   "pagehide",
   () => {
-    unmount();
+    strip.unmount();
     opener.dispose();
     bridge.dispose();
     files.dispose();

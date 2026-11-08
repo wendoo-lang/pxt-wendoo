@@ -47,12 +47,14 @@ body {
   -webkit-user-select: all;
 }
 
-button {
+button,
+select {
   font: inherit;
   cursor: pointer;
 }
 
 .open-editor {
+  appearance: none;
   padding: 4px 10px;
   font-size: 11px;
   background: #ffffff;

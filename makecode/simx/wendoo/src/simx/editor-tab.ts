@@ -2,6 +2,7 @@ import {
   SIMXEDITOR_MESSAGE_TYPE,
   type SimxEditorOpenRequest,
   type SimxEditorReply,
+  type SimxEditorTab,
   type SimxEditorTabsRequest,
 } from "../vendor/simxeditor.js";
 import type { SimxLog } from "./simx-bridge.js";
@@ -16,17 +17,18 @@ export interface EditorTabFrame {
 /** Asks MakeCode which editor tabs talk to this simulator extension frame, and to show one of them. */
 export interface EditorTabOpener {
   /**
-   * Post a tabs request to MakeCode. Resolves with the keys MakeCode lists:
-   * the frame's own tab first, when it has one, then the tabs of the
+   * Post a tabs request to MakeCode. Resolves with the tabs MakeCode lists,
+   * each naming its key, its label and, when MakeCode gives one, its icon's
+   * URL: the frame's own tab first, when it has one, then the tabs of the
    * registrations naming the frame. Resolves with an empty list on a
    * refusal, whose code is logged.
    */
-  tabs(): Promise<string[]>;
+  tabs(): Promise<SimxEditorTab[]>;
   /**
-   * Post an open request to MakeCode for the tab keyed `key`, one of those
-   * {@link tabs} lists, or for the frame's own tab when `key` is omitted.
-   * Resolves once MakeCode replies: on an acknowledgment, and on a refusal,
-   * whose code is logged.
+   * Post an open request to MakeCode for the tab keyed `key`, the key of one
+   * of the tabs {@link tabs} lists, or for the frame's own tab when `key` is
+   * omitted. Resolves once MakeCode replies: on an acknowledgment, and on a
+   * refusal, whose code is logged.
    */
   open(key?: string): Promise<void>;
   /** Stop hearing replies; a request still unanswered stays unresolved. */
@@ -67,12 +69,12 @@ export function connectEditorTabOpener(frame: EditorTabFrame, parentOrigin: stri
   return {
     tabs() {
       const request: SimxEditorTabsRequest = { type: SIMXEDITOR_MESSAGE_TYPE, subtype: "tabs", id: nextId() };
-      return new Promise<string[]>((resolve) => {
+      return new Promise<SimxEditorTab[]>((resolve) => {
         post(request, (reply) => {
           if (reply.subtype === "error") {
             log.error(`${reply.code}: MakeCode did not list the Wendoo editor tabs.`);
           }
-          resolve(reply.subtype === "tabs" ? (reply.keys ?? []) : []);
+          resolve(reply.subtype === "tabs" ? (reply.tabs ?? []) : []);
         });
       });
     },
