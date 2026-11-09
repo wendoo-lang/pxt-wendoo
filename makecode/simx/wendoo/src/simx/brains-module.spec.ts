@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { brainSourceHash } from "@wendoo/makecode-session";
+import { SELFTEST_BRAIN_ORIGIN } from "../editor/test-support/vm-programs.js";
 import {
   BRAINS_MODULE_FORMAT,
   BrainsModuleProblemCode,
@@ -52,12 +53,17 @@ const SELFTEST_ENTRIES: CompiledBrainEntry[] = (
   name: program.name,
   sourceHash: program.sourceHash,
   bytecode: bytesOfHex(program.bytecode),
+  origin: SELFTEST_BRAIN_ORIGIN,
 }));
+
+/** The registration key of a front door whose tab creates brains. */
+const ORIGIN = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
 
 /**
  * Entries exercising the format's edges: a name exercising quotes, a
- * backslash, non-ASCII code units and a surrogate pair, an empty name, and a
- * program covering every byte value across several hex lines.
+ * backslash, non-ASCII code units and a surrogate pair, created by the
+ * {@link ORIGIN} tab; an empty name and no origin; and a program covering
+ * every byte value across several hex lines.
  */
 const EDGE_ENTRIES: CompiledBrainEntry[] = [
   {
@@ -65,14 +71,38 @@ const EDGE_ENTRIES: CompiledBrainEntry[] = [
     name: 'Chaser "one" \\ caf\u00e9 \ud83d\ude00',
     sourceHash: brainSourceHash("chaser source"),
     bytecode: Uint8Array.from([0x57, 0x44, 0x4f]),
+    origin: ORIGIN,
   },
   {
     id: "0000111122223333",
     name: "",
     sourceHash: brainSourceHash("runner source"),
     bytecode: Uint8Array.from({ length: 256 }, (_, index) => index),
+    origin: null,
   },
 ];
+
+/**
+ * The attributes of the annotation line `line` as pxt's comment attribute
+ * grammar reads them (`parseCommentString` in pxtlib/service.ts), by name.
+ */
+function pxtAttributes(line: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const attribute = /\/\/%[ \t]*([\w.-]+)(=(("[^"\n]*")|'([^'\n]*)'|([^\s]*)))?/;
+  let rest = line;
+  for (let match = attribute.exec(rest); match !== null; match = attribute.exec(rest)) {
+    const [, name, assigned, , quoted, single, bare] = match;
+    attributes[name] = quoted ? (JSON.parse(quoted) as string) : assigned ? (single ?? bare) : "true";
+    rest = rest.replace(attribute, "//% ");
+  }
+  return attributes;
+}
+
+/** The annotation line of the entry declaring the brain `id` in `text`, its indent kept. */
+function annotationLine(text: string, id: string): string {
+  const lines = text.split("\n");
+  return lines[lines.findIndex((line) => line.includes(`registerCompiledBrain(${JSON.stringify(id)}`)) - 1];
+}
 
 /** Every problem code `reading` reports, in order. */
 function codes(reading: ReturnType<typeof readBrainsModule>): string[] {
@@ -97,6 +127,7 @@ describe("brains module", () => {
       name: "one\ntwo\r\u2028\u2029\u0000\t`$\u007bx}`*/",
       sourceHash: "00000000",
       bytecode: new Uint8Array([1]),
+      origin: null,
     };
 
     assert.deepEqual(readBrainsModule(writeBrainsModule([entry])).entries.get(entry.id), entry);
@@ -136,7 +167,8 @@ describe("brains module", () => {
     );
     assert.equal(
       text.split("\n")[declaration - 1],
-      '    //% fixedInstance block="Chaser \\u0022one\\u0022 \\\\ caf\\u00e9 \\ud83d\\ude00"'
+      '    //% fixedInstance block="Chaser \\u0022one\\u0022 \\\\ caf\\u00e9 \\ud83d\\ude00"' +
+        ` editor="simx:${ORIGIN}"`
     );
   });
 
@@ -160,14 +192,73 @@ describe("brains module", () => {
   });
 
   it("writes block labels that read back through pxt's attribute grammar as the name", () => {
-    const names = ['say "hi"', "back\\slash", "tab\there", "caf\u00e9 \ud83d\ude00", "50% off $x"];
-    for (const name of names) {
-      const text = writeBrainsModule([{ ...EDGE_ENTRIES[0], name }]);
-      const label = /\/\/% fixedInstance block=("[^"\n]*")$/m.exec(text);
+    const names = ['say "hi"', "back\\slash", "tab\there", "caf\u00e9 \ud83d\ude00", "50% off $x", 'x" editor="simx:y'];
+    for (const origin of [ORIGIN, null]) {
+      for (const name of names) {
+        const text = writeBrainsModule([{ ...EDGE_ENTRIES[0], name, origin }]);
+        const attributes = pxtAttributes(annotationLine(text, EDGE_ENTRIES[0].id));
 
-      assert.ok(label, name);
-      assert.equal(JSON.parse(label[1]), name);
+        assert.equal(attributes.block, name);
+        assert.equal(attributes.fixedInstance, "true");
+        assert.equal(attributes.editor, origin === null ? undefined : `simx:${origin}`);
+        assert.deepEqual(readBrainsModule(text).entries.get(EDGE_ENTRIES[0].id), { ...EDGE_ENTRIES[0], name, origin });
+      }
     }
+  });
+
+  it("names a brain's origin in an editor attribute, simx: and its key, and a brain with none in no attribute", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES);
+
+    assert.equal(pxtAttributes(annotationLine(text, "abcdabcdabcdabcd")).editor, `simx:${ORIGIN}`);
+    assert.ok(annotationLine(text, "abcdabcdabcdabcd").endsWith(` editor="simx:${ORIGIN}"`));
+    assert.deepEqual(Object.keys(pxtAttributes(annotationLine(text, "0000111122223333"))), ["fixedInstance", "block"]);
+    assert.deepEqual(
+      [...readBrainsModule(text).entries.values()].map((entry) => [entry.id, entry.origin]),
+      [
+        ["0000111122223333", null],
+        ["abcdabcdabcdabcd", ORIGIN],
+      ]
+    );
+  });
+
+  it("reads a format 1 module, its entries carrying no editor attribute, with every origin null", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES.map((entry) => ({ ...entry, origin: null }))).replace(
+      `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+      "wendoo-brains-format 1"
+    );
+
+    const reading = readBrainsModule(text);
+
+    assert.equal(reading.format, 1);
+    assert.deepEqual(reading.problems, []);
+    assert.deepEqual(
+      [...reading.entries.values()].map((entry) => [entry.id, entry.origin]),
+      [
+        ["0000111122223333", null],
+        ["abcdabcdabcdabcd", null],
+      ]
+    );
+  });
+
+  it("reads an editor attribute in a format 1 module as ENTRY_MALFORMED", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES).replace(
+      `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+      "wendoo-brains-format 1"
+    );
+
+    const reading = readBrainsModule(text);
+
+    assert.deepEqual([...reading.entries.keys()], ["0000111122223333"]);
+    assert.deepEqual(codes(reading), [BrainsModuleProblemCode.ENTRY_MALFORMED]);
+  });
+
+  it("reads nothing from text declaring a format older than 1, reporting it UNREADABLE", () => {
+    const text = writeBrainsModule(EDGE_ENTRIES).replace(
+      `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+      "wendoo-brains-format 0"
+    );
+
+    assert.deepEqual(codes(readBrainsModule(text)), [BrainsModuleProblemCode.UNREADABLE]);
   });
 
   it("reads a module whose line ends became CRLF", () => {
@@ -221,6 +312,12 @@ describe("brains module", () => {
       ["a block label other than the name", (text) => text.replace('block="Chaser', 'block="Chased')],
       ["a declaration named for another id", (text) => text.replace("p_abcdabcdabcdabcd", "p_abcdabcdabcdabce")],
       ["a name literal broken", (text) => text.replace('"Chaser \\"one', '"Chaser "one')],
+      [
+        "an editor attribute of another kind",
+        (text) => text.replace(`editor="simx:${ORIGIN}"`, `editor="tab:${ORIGIN}"`),
+      ],
+      ["an editor attribute naming no key", (text) => text.replace(`editor="simx:${ORIGIN}"`, 'editor="simx:"')],
+      ["an editor attribute without its kind", (text) => text.replace(`editor="simx:${ORIGIN}"`, `editor="${ORIGIN}"`)],
       ["a stray character among the hex", (text) => text.replace(/(\n {8})57/, "$1g7")],
       ["an odd number of hex digits", (text) => text.replace(/(\n {8})57/, "$15")],
       ["the closing line gone", (text) => text.replace(/ {4}`\);\n\}\n$/, "}\n")],

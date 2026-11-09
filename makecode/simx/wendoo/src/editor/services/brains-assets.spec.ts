@@ -85,6 +85,8 @@ class ProjectChannel implements MakeCodeBrainsChannel {
       name: brain.name,
       sourceHash: brainSourceHash(brain.source),
       compiledSourceHash: brain.compiledSourceHash,
+      origin: brain.origin,
+      originLabel: brain.originLabel,
     }));
   }
 }
@@ -106,7 +108,14 @@ function projectBrain(): MakeCodeWireBrain {
     /"id": "[^"]+"/,
     `"id": "${BRAIN_ID}"`
   );
-  return { id: BRAIN_ID, name: "Gallery", source, compiledSourceHash: brainSourceHash(source) };
+  return {
+    id: BRAIN_ID,
+    name: "Gallery",
+    source,
+    compiledSourceHash: brainSourceHash(source),
+    origin: null,
+    originLabel: null,
+  };
 }
 
 /**

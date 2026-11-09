@@ -1,4 +1,4 @@
-import type { CompiledBrainEntry } from "./brains-module.js";
+import type { CompiledBrain } from "./brains-module.js";
 import type { ProgramUpdate } from "./sim-channel.js";
 
 /**
@@ -32,7 +32,7 @@ export class LivePrograms {
    *
    * @param registration - A brain's registration, as a compile made it.
    */
-  post(registration: CompiledBrainEntry): void {
+  post(registration: CompiledBrain): void {
     const { id, name, sourceHash, bytecode } = registration;
     this.send({ documentId: id, name, sourceHash, bytecode });
   }

@@ -56,6 +56,9 @@ const CATALOG_TEXT =
 /** The key of an editor tab whose registration names this simulator extension's frame as its own. */
 const DESIGNER_TAB = "owner/repo-designer";
 
+/** The key of the arcade front door, whose registration carries the Wendoo editor tab. */
+const ARCADE_TAB = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+
 /** The hello the editor's side of a makecode session at this build's version sends. */
 const MAKECODE_HELLO: MakeCodeSessionMessage = {
   type: "makecode:hello",
@@ -867,6 +870,8 @@ describe("simx port bridge", () => {
               name: "Chaser",
               sourceHash: brainSourceHash(chaser.source),
               compiledSourceHash: brainSourceHash(chaser.source),
+              origin: SIMX_CHANNEL,
+              originLabel: null,
             },
           ],
         },
@@ -875,7 +880,11 @@ describe("simx port bridge", () => {
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsPullReply",
         id: "pull-1",
-        payload: { brains: [{ ...chaser, compiledSourceHash: brainSourceHash(chaser.source) }] },
+        payload: {
+          brains: [
+            { ...chaser, compiledSourceHash: brainSourceHash(chaser.source), origin: SIMX_CHANNEL, originLabel: null },
+          ],
+        },
       });
 
       assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
@@ -898,7 +907,92 @@ describe("simx port bridge", () => {
       const { brain } = reply.payload as { brain: MakeCodeBrainSummary };
       assert.equal(brain.name, "Chaser");
       assert.equal(brain.compiledSourceHash, brain.sourceHash);
+      assert.equal(brain.origin, SIMX_CHANNEL);
       assert.equal(brainSourceHash(host.file(`brains/${brain.id}.src.json`) ?? ""), brain.sourceHash);
+    });
+
+    it("stamps a brain with the key of the tab that created it, refusing another tab's push of it with NOT_ORIGIN", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+      const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      own.send({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "Chaser" } });
+      const { brain } = (await own.nextMessage()).payload as { brain: MakeCodeBrainSummary };
+      const edited = wireBrain(brain.id, "Renamed");
+
+      designer.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: edited } });
+      const refused = await designer.nextMessage();
+      designer.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "remove", brainId: brain.id } });
+      const removal = await designer.nextMessage();
+      own.send({ type: "makecode:brainsPush", id: "push-3", payload: { op: "write", brain: edited } });
+      const applied = await own.nextMessage();
+
+      for (const [reply, id] of [
+        [refused, "push-1"],
+        [removal, "push-2"],
+      ] as const) {
+        assert.equal(reply.type, "makecode:brainsError");
+        assert.equal(reply.id, id);
+        assert.equal((reply.payload as { code: string }).code, MakeCodeBrainsErrorCode.NOT_ORIGIN);
+      }
+      assert.equal(applied.type, "makecode:brainsPushReply");
+      assert.equal(applied.id, "push-3");
+      assert.equal(host.file(`brains/${brain.id}.src.json`), edited.source);
+      assert.equal(errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.NOT_ORIGIN)).length, 1);
+    });
+
+    it("labels each brain's origin by the tab MakeCode lists for its key, republishing the brains when the tabs arrive", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+      const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      own.send({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "Chaser" } });
+      const { brain } = (await own.nextMessage()).payload as { brain: MakeCodeBrainSummary };
+      designer.send({ type: "makecode:brainsCreate", id: "create-2", payload: { name: "Runner" } });
+      const designed = ((await designer.nextMessage()).payload as { brain: MakeCodeBrainSummary }).brain;
+      await eventually(
+        () => own.brains.at(-1)?.length ?? 0,
+        (count) => count === 2,
+        "both brains published"
+      );
+      const seen = own.brains.length;
+
+      bridges[0].setTabs([
+        { key: ARCADE_TAB, label: "Wendoo" },
+        { key: DESIGNER_TAB, label: "Designer" },
+      ]);
+      const republished = await own.nextBrains(seen);
+
+      const labels = Object.fromEntries(
+        republished.map((summary) => [summary.id, [summary.origin, summary.originLabel]])
+      );
+      assert.deepEqual(labels, {
+        [brain.id]: [ARCADE_TAB, "Wendoo"],
+        [designed.id]: [DESIGNER_TAB, "Designer"],
+      });
+      assert.equal(brain.originLabel, null);
+    });
+
+    it("stamps no origin for a port naming no peer, and refuses its session nothing", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      const unnamed = await joinRaw(frame, SIMX_CHANNEL, (port) => frame.brokerPortNamingNoPeer(port));
+      await nextCatalog(unnamed, CATALOG_TEXT);
+      designer.send({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "Chaser" } });
+      const owned = ((await designer.nextMessage()).payload as { brain: MakeCodeBrainSummary }).brain;
+
+      unnamed.send({ type: "makecode:brainsCreate", id: "create-2", payload: { name: "Runner" } });
+      const created = await unnamed.nextMessage();
+      const edited = wireBrain(owned.id, "Renamed");
+      unnamed.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: edited } });
+      const pushed = await unnamed.nextMessage();
+
+      assert.equal(created.type, "makecode:brainsCreateReply");
+      assert.equal((created.payload as { brain: MakeCodeBrainSummary }).brain.origin, null);
+      assert.equal(pushed.type, "makecode:brainsPushReply");
+      assert.equal(host.file(`brains/${owned.id}.src.json`), edited.source);
+      assert.equal(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(owned.id)?.origin, DESIGNER_TAB);
     });
 
     it("publishes the brains into every tab's session after a push over one tab's lands", async () => {
@@ -918,6 +1012,8 @@ describe("simx port bridge", () => {
           name: "Chaser",
           sourceHash: brainSourceHash(chaser.source),
           compiledSourceHash: brainSourceHash(chaser.source),
+          origin: SIMX_CHANNEL,
+          originLabel: null,
         },
       ]);
       assert.equal((await own.nextMessage()).type, "makecode:brainsPushReply");
@@ -942,7 +1038,11 @@ describe("simx port bridge", () => {
       assert.deepEqual(await returned.nextMessage(), {
         type: "makecode:brainsPullReply",
         id: "pull-1",
-        payload: { brains: [{ ...chaser, compiledSourceHash: brainSourceHash(chaser.source) }] },
+        payload: {
+          brains: [
+            { ...chaser, compiledSourceHash: brainSourceHash(chaser.source), origin: SIMX_CHANNEL, originLabel: null },
+          ],
+        },
       });
     });
 

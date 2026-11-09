@@ -318,6 +318,8 @@ describe("editor session store", () => {
       name: "Chaser",
       sourceHash: "1a2b3c4d",
       compiledSourceHash: null,
+      origin: null,
+      originLabel: null,
     };
 
     session.deliverBrains([]);

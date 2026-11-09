@@ -174,6 +174,17 @@ brains request-reply family. The editor-tab messages themselves
   registration naming the frame in its `simulator` field. A new port
   replaces only its own peer's session. Every session receives every
   publication, and all of them are served from the one project.
+- ORIGIN: every brain carries the registration key of the tab that
+  created it, the peer key of the session its create arrived on, never
+  taken from a brains request's payload: recorded at creation, with `brains.g.ts` its
+  record (see COMPILED FORM, below). A source hand edit leaves it; a
+  module hand edit sets it. A push -- a write, a rename or a removal --
+  from a session whose key is not the brain's origin is refused with
+  `MAKECODE_BRAINS_NOT_ORIGIN` and logged once per brain and key, until
+  the brain's removal has landed. A brain with no origin recorded takes
+  the key of the first session to push it. A session whose port named
+  no `peer` (MakeCode below API level 2) records no origin, neither at a
+  create nor by a first push, and is refused nothing.
 - ONE WRITER: the tab gains no write path. It pushes source and asks for
   brains over its session, and the simx frame answers through projfs,
   compiles, writes the project's files, the id manifest and the brains
@@ -236,20 +247,26 @@ editor sends source, and the serving party compiles.
   pending until the handshake ends -- which, in the editor, the
   heartbeat brings about once the peer leaves two pings in a row
   unanswered (see "Liveness in this lane", below).
-- A BRAIN SUMMARY is `{ id, name, sourceHash, compiledSourceHash }`:
+- A BRAIN SUMMARY is `{ id, name, sourceHash, compiledSourceHash,
+  origin, originLabel }`:
   `sourceHash` is `brainSourceHash` of the source text as the project
   holds it now, and `compiledSourceHash` the source hash the brain's
   current registration of its compiled form was compiled from -- equal to
   `sourceHash` exactly when that compiled form was compiled from the
   current source -- or `null` when the project holds no registration of
-  the brain the serving party can read.
+  the brain the serving party can read. `origin` is the registration
+  key of the tab that created the brain, `null` when none is recorded,
+  and `originLabel` that tab's label as MakeCode's tabs reply lists it,
+  `null` while the serving party knows no list or the list holds no tab
+  of that key.
 - `makecode:brainsList` (editor -> project): answered by
   `makecode:brainsListReply` carrying `{ brains: [summary] }`, every
   brain the project holds.
 - `makecode:brainsPull` (editor -> project) with `{ ids }`: answered by
   `makecode:brainsPullReply` carrying `{ brains: [{ id, name, source,
-  compiledSourceHash }] }` in request order; an id the project does not
-  hold has no entry.
+  compiledSourceHash, origin, originLabel }] }` in request order, the
+  last three as a summary carries them; an id the project does not hold
+  has no entry.
 - `makecode:brainsPush` (editor -> project) with `{ op: "write", brain:
   { id, name, source } }` or `{ op: "remove", brainId }`: answered by
   `makecode:brainsPushReply` once applied, carrying a write's COMPILE
@@ -272,7 +289,9 @@ editor sends source, and the serving party compiles.
 - `makecode:brainsCreate` (editor -> project) with `{ name }`: asks the
   serving party to create an empty brain under a document id it mints,
   answered by `makecode:brainsCreateReply` carrying `{ brain: summary }`
-  once the brain's source is in the project.
+  once the brain's source is in the project. The brain's origin is the
+  requesting tab's key, none for a session whose port named no `peer`;
+  the payload carries none.
 - `makecode:brains` (project -> editor) carries `{ brains: [summary] }`,
   every brain the project holds: a publication on the catalog's
   discipline, whole, a later one replacing an earlier one. The kind's
@@ -282,7 +301,9 @@ editor sends source, and the serving party compiles.
   handshake only (`onBrains`).
 - `makecode:brainsError` answers any request that failed, carrying `{
   code, message }`: `MAKECODE_BRAINS_READ_FAILED` for a list or pull,
-  `MAKECODE_BRAINS_WRITE_FAILED` for a push or a create.
+  `MAKECODE_BRAINS_WRITE_FAILED` for a push or a create, and
+  `MAKECODE_BRAINS_NOT_ORIGIN` for a push from a tab that is not the
+  brain's origin.
 - An entry's `id` is the brain's ADDRESS -- the document id its source
   file is keyed by -- which the serving party takes from the file name,
   never from the source; `source` is carried verbatim whether or not it
@@ -422,22 +443,22 @@ serves exactly what the last one wrote.
   the document's `name`, the `brainSourceHash` of the file's text, and as
   `compiledSourceHash` the source hash `brains.g.ts` registers the brain
   under -- `null` when the module holds no readable entry for the brain,
-  and for every brain while the module is of a newer format (see below);
-  a pull returns the text verbatim. A text that is not a readable brain
-  document is still listed and pulled -- the editor's corruption
-  handling takes it from there -- and is named from its registration,
-  else empty.
+  and for every brain while the module is of a newer format (see below)
+  -- and the brain's origin with its tab's label; a pull returns the text
+  verbatim. A text that is not a readable brain document is still listed
+  and pulled -- the editor's corruption handling takes it from there --
+  and is named from its registration, else empty.
 - COMPILED FORM: `brains.g.ts`, at the folder root, is ONE generated
   module declaring every brain's compiled form, which the project
   compiles with the rest of its code. After two comment lines it
-  declares `// wendoo-brains-format 1`, then a blank line, then the
+  declares `// wendoo-brains-format 2`, then a blank line, then the
   namespace `wendooBrains` carrying one entry per brain, ordered by
   id and separated by blank lines:
 
   ```ts
   namespace wendooBrains {
       // source-hash 1a2b3c4d
-      //% fixedInstance block="Chaser"
+      //% fixedInstance block="Chaser" editor="simx:wendoo-lang/pxt-wendoo/makecode/extensions/arcade"
       export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
           000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
       `);
@@ -455,7 +476,12 @@ serves exactly what the last one wrote.
   unit. The id and name are JSON string literals with every character
   outside printable ASCII escaped; the label is the same literal with
   each `"` escaped as `\u0022`, the only form pxt's attribute grammar
-  reads. The program follows as lowercase hex, 32 bytes a line (pxt's
+  reads. A brain with an origin ends the annotation line with the
+  attribute `editor="simx:<key>"`, its origin's registration key
+  verbatim, which MakeCode reads to route the instance's "Edit" entry
+  to that key's tab; a brain with no origin has no `editor` attribute,
+  and the brain's origin lives nowhere else in the project. The program
+  follows as lowercase hex, 32 bytes a line (pxt's
   `hex` literal skips whitespace). The `source-hash` line binds the
   program to the source it was compiled from. `writeBrainsModule` and
   `readBrainsModule` (`makecode/simx/wendoo/src/simx/brains-module.ts`) are
@@ -466,15 +492,23 @@ serves exactly what the last one wrote.
   module's generated form in real Arcade and micro:bit projects, from
   the folder path a project holds it at, with programs compiled from the
   brain sources through the authoring compile path checked in beside it.
+- FORMAT 1 has the same shape with no `editor` attribute; it reads
+  with every origin `null` and is rewritten at format 2 on its next
+  write, which healing makes when the simx first reads it.
 - READING A DAMAGED MODULE: the reader never throws. A module
-  declaring no format, or declaring format 1 without opening the
+  declaring no format, or declaring format 1 or 2 without opening the
   `wendooBrains` namespace (one declaring its entries in a superseded
   namespace among them), reads as registering nothing
   (`BRAINS_MODULE_UNREADABLE`); one entry that does not follow the
-  format is skipped (`BRAINS_MODULE_ENTRY_MALFORMED`) and the rest are
-  read; a module declaring a newer format (`BRAINS_MODULE_FORMAT_NEWER`)
-  reads as registering nothing and is never rewritten -- pushes and
-  creates fail by its code while it stands, and nothing is recompiled.
+  format -- an `editor` attribute of another kind than `simx:` or
+  naming no key, or any `editor` attribute in format 1, among them -- is
+  skipped (`BRAINS_MODULE_ENTRY_MALFORMED`) and the rest are read; a
+  skipped entry's brain heals with the origin the simx holds for it on a
+  re-read, and with none when the simx starts; a module's readable entry
+  read on a re-read sets its brain's origin; a module declaring a newer
+  format (`BRAINS_MODULE_FORMAT_NEWER`) reads as registering nothing
+  and is never rewritten -- pushes and creates fail by its code while it
+  stands, and nothing is recompiled.
   Each problem is written to the console by its code when the simx
   reads the module, at start or on a reported change.
 - THE ENGINE'S ENVIRONMENT: brains compile in an environment built with
@@ -508,9 +542,9 @@ serves exactly what the last one wrote.
   once the editor shows it, so no later save of the editor's older
   text can land over an answered push.
 - CREATE: a create mints an empty one-page brain through the engine's
-  brain services (`BrainDef.emptyBrainDef`), compiles it, queues its
-  write, and is answered with the brain's summary once its source has
-  landed.
+  brain services (`BrainDef.emptyBrainDef`), its origin the requesting
+  session's peer key, compiles it, queues its write, and is answered
+  with the brain's summary once its source has landed.
 - COALESCING: changes queue and apply in drains. A drain takes every
   change queued by then -- the latest of each brain, when a brain was
   pushed more than once, all of its requests answered together --
@@ -845,8 +879,9 @@ it always shows the session view.
   and it syncs its brains with the MakeCode project from each
   handshake's brains publications over its brains channel (see "Brain
   sync", below). The local compile is advisory: the engine's outcome for
-  a source, once a push reply carries it, is what the store shows. The
-  brains are kept through every status.
+  a source, once a push reply carries it, is what the store shows. Each
+  entry carries the brain's `origin` and `originLabel` as the latest pull
+  or publication reports them. The brains are kept through every status.
 - ASSET LITERALS: for each catalog type declaring an asset kind (the
   catalog's `asset` key, for example `image`), the store's environment
   holds one literal tile per snapshot asset of that kind, minted through
@@ -1076,7 +1111,11 @@ and refreshes from every later publication:
   `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then every 8 s
   for as long as the push keeps failing, while the handshake stays
   reconciled and connected and the brain is not damaged; a newer edit's
-  push takes over from the retries. Pends flush on the next reconciled
+  push takes over from the retries. A push refused with
+  `MAKECODE_BRAINS_NOT_ORIGIN` is logged by its code and never retried:
+  the pend of the brain's latest edit is dropped and the store
+  reconciles with the latest publication, taking the project's copy
+  back. Pends flush on the next reconciled
   handshake; until answered they survive every status.
 - LOCAL COMPILE AND OUTCOMES: every source the store holds is compiled
   in its local environment as it is written, for live diagnostics while
@@ -1144,7 +1183,9 @@ strip stores nothing.
   asks MakeCode once which tabs talk to its frame
   (`{ type: "simxeditor", subtype: "tabs", id }`), each listed by its
   key, its label and, when it has an SVG icon, its icon URL; the reply
-  gives the strip its control. A refusal is logged by its code and lists
+  gives the strip its control, and gives the brains project the label of
+  each origin key, the brains republished into every session when the
+  reply arrives. A refusal is logged by its code and lists
   none, and on a MakeCode below API level 2 the simx asks nothing, so the
   strip keeps the logotype alone. The control opens the tab it names,
   posting `{ type: "simxeditor", subtype: "open", id, key }` with that

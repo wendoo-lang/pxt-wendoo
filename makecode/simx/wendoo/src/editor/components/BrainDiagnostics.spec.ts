@@ -27,6 +27,8 @@ function entryWith(fields: Partial<BrainEntry>): BrainEntry {
     diagnostics: [],
     unresolvedTiles: [],
     compiledSourceHash: null,
+    origin: null,
+    originLabel: null,
     ...fields,
   };
 }

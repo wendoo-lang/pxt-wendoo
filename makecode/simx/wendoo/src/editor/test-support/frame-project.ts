@@ -5,7 +5,7 @@
 import type { MakeCodeBrainSummary, MakeCodeWireBrain, MakeCodeWireCompileOutcome } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
 import { BrainEngine } from "../../simx/brain-engine.js";
-import type { CompiledBrainEntry } from "../../simx/brains-module.js";
+import type { CompiledBrain } from "../../simx/brains-module.js";
 
 /**
  * A project's brains keyed by id, as a pull returns them, each with the
@@ -16,7 +16,7 @@ export class FrameProject extends Map<string, MakeCodeWireBrain> {
   /** The frame's compile environment. */
   readonly engine = new BrainEngine();
   /** The registration of each brain's compiled form, by id. */
-  readonly registrations = new Map<string, CompiledBrainEntry>();
+  readonly registrations = new Map<string, CompiledBrain>();
 
   /**
    * Stores `source`, the brain `id` named `name`, and compiles it as the
@@ -24,10 +24,12 @@ export class FrameProject extends Map<string, MakeCodeWireBrain> {
    * producing no program. Returns the compile's outcome.
    */
   write(id: string, name: string, source: string): MakeCodeWireCompileOutcome {
+    const origin = this.get(id)?.origin ?? null;
     const compiled = this.engine.compile(id, name, source, this.registrations.get(id), this);
     if (compiled.registration === undefined) this.registrations.delete(id);
     else this.registrations.set(id, compiled.registration);
-    this.set(id, { id, name, source, compiledSourceHash: compiled.registration?.sourceHash ?? null });
+    const compiledSourceHash = compiled.registration?.sourceHash ?? null;
+    this.set(id, { id, name, source, compiledSourceHash, origin, originLabel: null });
     return compiled.outcome;
   }
 
@@ -56,6 +58,8 @@ export class FrameProject extends Map<string, MakeCodeWireBrain> {
       name: brain.name,
       sourceHash: brainSourceHash(brain.source),
       compiledSourceHash: brain.compiledSourceHash,
+      origin: brain.origin,
+      originLabel: brain.originLabel,
     }));
   }
 }

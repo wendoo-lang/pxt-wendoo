@@ -39,6 +39,7 @@ const strip = mountBrandStrip(root, (key) => {
 if (getSimxApiLevel() >= 2) {
   void opener.tabs().then((tabs) => {
     strip.setTabs(tabs);
+    bridge.setTabs(tabs);
   });
 }
 window.addEventListener(

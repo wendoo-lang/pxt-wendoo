@@ -861,7 +861,14 @@ describe("brains sync between the editor tab and the column frame over a brokere
         "the applied brain to reach the project"
       );
 
-      assert.deepEqual(stored, { id, name: "Chaser", source: entry.source, compiledSourceHash: entry.sourceHash });
+      assert.deepEqual(stored, {
+        id,
+        name: "Chaser",
+        source: entry.source,
+        compiledSourceHash: entry.sourceHash,
+        origin: null,
+        originLabel: null,
+      });
       assert.ok(
         simx
           .requestsOf("makecode:brainsPush")
@@ -945,7 +952,13 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const { brains } = tab;
       const held = brains.getSnapshot().brains.get(remote.id);
       const far = await dropSimx(simx, tab);
-      simx.project.set(remote.id, { ...remote, source: "not json {", compiledSourceHash: null });
+      simx.project.set(remote.id, {
+        ...remote,
+        source: "not json {",
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      });
 
       const returned = scriptOn(far, simx.project);
       const state = await brainsUntil(tab, (s) => s.damaged.size === 1, "the damage to be listed");
@@ -1001,7 +1014,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const { tab, simx } = await pair(projectOf(remote));
       let far = await dropSimx(simx, tab);
       simx.project.registrations.delete(remote.id);
-      simx.project.set(remote.id, { ...remote, compiledSourceHash: null });
+      simx.project.set(remote.id, { ...remote, compiledSourceHash: null, origin: null, originLabel: null });
 
       for (let round = 0; round < 3; round++) {
         const returned = scriptOn(far, simx.project);
@@ -1414,7 +1427,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
     });
 
-    it("has a restarted column frame heal a brains.g.ts declaring its brains in a superseded namespace, sources intact", async () => {
+    it("has a restarted column frame heal a brains.g.ts declaring its brains in a superseded namespace, sources intact and origins unknown", async () => {
       const { tab, column } = await pairReal();
       const ids = [authorBrain(tab.brains, "Chaser"), authorBrain(tab.brains, "Runner")];
       await saved(host, tab, "both brains to be saved");
@@ -1424,9 +1437,11 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
       const fresh = reopenReal(tab, column);
 
+      const healed = healthy.replace(/ editor="[^"]*"/g, "");
+      assert.notEqual(healed, healthy);
       await eventually(
         () => host.file(BRAINS_MODULE_FILE),
-        (text) => text === healthy,
+        (text) => text === healed,
         "the brains module to be rewritten whole in the current namespace"
       );
       assert.deepEqual(

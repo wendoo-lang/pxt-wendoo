@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CompiledBrainEntry } from "./brains-module.js";
+import type { CompiledBrain } from "./brains-module.js";
 import { LivePrograms } from "./live-programs.js";
 import type { ProgramUpdate } from "./sim-channel.js";
 
 /** The registration of the brain `id` named `name`, its program `bytes` compiled from source hashed `sourceHash`. */
-function registration(id: string, name: string, sourceHash: string, bytes: number[] = [1, 2, 3]): CompiledBrainEntry {
+function registration(id: string, name: string, sourceHash: string, bytes: number[] = [1, 2, 3]): CompiledBrain {
   return { id, name, sourceHash, bytecode: Uint8Array.from(bytes) };
 }
 

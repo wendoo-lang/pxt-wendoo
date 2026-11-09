@@ -9,7 +9,7 @@ import type {
   MakeCodeSessionPort,
 } from "@wendoo/makecode-session";
 import { connectMakeCodeSession, messagePortSessionPort } from "@wendoo/makecode-session";
-import { SIMXEDITOR_PORT_MESSAGE_TYPE } from "../vendor/simxeditor.js";
+import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorTab } from "../vendor/simxeditor.js";
 import { BrainsProject } from "./brains-project.js";
 import { enrichCatalogIcons } from "./catalog-icons.js";
 import { IDS_MODULE_FILE } from "./ids-module.js";
@@ -104,6 +104,14 @@ export interface SimxPortBridgeOptions extends SimxServingOptions {
 
 /** A running simulator extension port bridge. */
 export interface SimxPortBridge {
+  /**
+   * Take `tabs`, the editor tabs MakeCode lists as talking to this frame, as
+   * the source of each brain's origin label, republishing the brains to
+   * every session when a label changes.
+   *
+   * @param tabs - The tabs MakeCode lists, each with its key and label.
+   */
+  setTabs(tabs: readonly SimxEditorTab[]): void;
   /** Stop listening for ports and to the program, ending every tab's session. */
   dispose(): void;
 }
@@ -137,7 +145,7 @@ class CounterpartSession {
   private _closed = false;
 
   /**
-   * @param peer - The key of the counterpart's tab, as MakeCode names it on the port.
+   * @param peer - The key the counterpart's session is held under: its tab's, or the frame's own channel when the port names none.
    * @param port - The transport to the counterpart.
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, as published, if any.
@@ -252,8 +260,17 @@ interface ProjectServer {
   /**
    * Open a makecode session with the tab keyed `peer` over `port`, closing
    * that tab's current one, and report its handshake's outcome to `settled`.
+   * Its brains requests are served as from `origin`: the tab's key, or `null`
+   * when the port named none.
    */
-  attach(peer: string, port: MakeCodeSessionPort, settled: (rejection: PeerSessionErrorCode | undefined) => void): void;
+  attach(
+    peer: string,
+    origin: string | null,
+    port: MakeCodeSessionPort,
+    settled: (rejection: PeerSessionErrorCode | undefined) => void
+  ): void;
+  /** Take `tabs`, the editor tabs MakeCode lists, as the source of each brain's origin label. */
+  setTabs(tabs: readonly SimxEditorTab[]): void;
   /** Close every counterpart session and stop listening to the program and the asset provider. */
   dispose(): void;
 }
@@ -289,8 +306,8 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
     channel.postProgramUpdate(update);
   });
   const brains = new BrainsProject(options.files, log, live);
-  const serveBrains = (request: MakeCodeBrainsRequest): void => {
-    brains.serve(request);
+  const serveBrains = (peer: string | null, request: MakeCodeBrainsRequest): void => {
+    brains.serve(peer, request);
   };
   const manifest = new ManifestProject(options.files, log);
   void manifest.current().then((reading) => {
@@ -343,7 +360,7 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   channel.requestCatalog();
 
   return {
-    attach(peer, port, settled) {
+    attach(peer, origin, port, settled) {
       counterparts.get(peer)?.close();
       const counterpart = new CounterpartSession(
         peer,
@@ -355,10 +372,15 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
         () => projectAssets.name,
         () => brains.current(),
         () => brains.summaries(),
-        serveBrains,
+        (request) => {
+          serveBrains(origin, request);
+        },
         settled
       );
       counterparts.set(peer, counterpart);
+    },
+    setTabs(tabs) {
+      brains.adoptTabs(tabs);
     },
     dispose() {
       for (const counterpart of counterparts.values()) counterpart.close();
@@ -377,14 +399,14 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
 
 /**
  * Join the MakeCode program beside this simulator extension to the editor in
- * each MakeCode editor tab that talks to this frame, over the ports MakeCode
- * brokers between the frames: each `simxeditorport` message from
- * `parentOrigin` opens a makecode session for the tab its `peer` names (the
- * frame's own `channel` when it names none), replacing that tab's previous
- * session, and declares `target` in the hello when one is given. The
- * project is served to every session as {@link startProjectServer}
- * describes; the program's messages are read on `channel`. An editor hello
- * declaring a newer makecode protocol is logged by its code and not served.
+ * each MakeCode editor tab that talks to this frame: each `simxeditorport`
+ * message from `parentOrigin` opens a makecode session for the tab its `peer`
+ * names (the frame's own `channel` when it names none), replacing that tab's
+ * previous session, and declares `target` in the hello when one is given.
+ * The project is served to every session as {@link startProjectServer}
+ * describes, a session whose port names no tab stamping no brain origin; the
+ * program's messages are read on `channel`. An editor hello declaring a newer
+ * makecode protocol is logged by its code and not served.
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
   const { frame, parentOrigin, log } = options;
@@ -399,12 +421,15 @@ export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBri
     if (message?.type !== SIMXEDITOR_PORT_MESSAGE_TYPE) return;
     const port = event.ports[0];
     if (port === undefined) return;
-    const peer = typeof message.peer === "string" ? message.peer : ownChannel;
-    server.attach(peer, messagePortSessionPort(port), settled);
+    const named = typeof message.peer === "string" ? message.peer : null;
+    server.attach(named ?? ownChannel, named, messagePortSessionPort(port), settled);
   };
   frame.addEventListener("message", receive);
 
   return {
+    setTabs(tabs) {
+      server.setTabs(tabs);
+    },
     dispose() {
       frame.removeEventListener("message", receive);
       server.dispose();

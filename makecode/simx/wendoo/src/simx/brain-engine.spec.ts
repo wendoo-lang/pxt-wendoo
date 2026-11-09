@@ -13,7 +13,7 @@ import {
 } from "../editor/test-support/asset-catalog.js";
 import { BRAIN_CATALOG, brainCatalogIds, kinBrainSource, kinTileId } from "../editor/test-support/brain-catalog.js";
 import { BrainEngine } from "./brain-engine.js";
-import type { CompiledBrainEntry } from "./brains-module.js";
+import type { CompiledBrain } from "./brains-module.js";
 
 /** Document id of the brain compiled. */
 const BRAIN_ID = "enginebrain00001";
@@ -30,7 +30,7 @@ function readingOf(manifest: MakeCodeManifestReading["manifest"]): MakeCodeManif
 }
 
 /** The program bytes of `registration`, failing the spec when there is none. */
-function bytesOf(registration: CompiledBrainEntry | undefined): Uint8Array {
+function bytesOf(registration: CompiledBrain | undefined): Uint8Array {
   assert.ok(registration, "expected a registration");
   return registration.bytecode;
 }
@@ -102,7 +102,7 @@ describe("brain engine", () => {
 
   it("keeps the held registration under the brain's name for a compile producing no program", () => {
     const engine = new BrainEngine();
-    const held: CompiledBrainEntry = {
+    const held: CompiledBrain = {
       id: BRAIN_ID,
       name: "Gallery",
       sourceHash: "00000000",
@@ -117,7 +117,7 @@ describe("brain engine", () => {
 
   it("compiles a text that is not a brain document to nothing, keeping the held registration", () => {
     const engine = new BrainEngine();
-    const held: CompiledBrainEntry = {
+    const held: CompiledBrain = {
       id: BRAIN_ID,
       name: "Gallery",
       sourceHash: "00000000",

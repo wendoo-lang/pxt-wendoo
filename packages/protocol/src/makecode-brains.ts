@@ -49,6 +49,12 @@ export const MakeCodeBrainsErrorCode = {
    */
   WRITE_FAILED: "MAKECODE_BRAINS_WRITE_FAILED",
   /**
+   * The requesting tab is not the brain's origin, so the party serving the
+   * project refused its push: a write, a rename or a removal of a brain
+   * another tab created. Carried by a {@link MakeCodeBrainsErrorMessage}.
+   */
+  NOT_ORIGIN: "MAKECODE_BRAINS_NOT_ORIGIN",
+  /**
    * The makecode handshake carrying the request ended -- the transport
    * closed, or a new port replaced the handshake -- before the reply
    * arrived. Raised by the requesting side; never on the
@@ -91,6 +97,16 @@ export interface MakeCodeBrainSummary {
    * registration of the brain the serving party can read.
    */
   compiledSourceHash: string | null;
+  /**
+   * The brain's origin: the registration key of the front door whose tab
+   * created it, or `null` when none is recorded.
+   */
+  origin: string | null;
+  /**
+   * The name of the {@link origin} tab as MakeCode lists it, or `null` when
+   * no such tab talks to the serving party.
+   */
+  originLabel: string | null;
 }
 
 /** A brain's source as the editor pushes it: its id, its name and its source text. */
@@ -111,10 +127,14 @@ export interface MakeCodeWireBrainSource {
   source: string;
 }
 
-/** One brain as a pull returns it: its source and what the project registers of its compiled form. */
+/** One brain as a pull returns it: its source, what the project registers of its compiled form, and its origin. */
 export interface MakeCodeWireBrain extends MakeCodeWireBrainSource {
   /** As {@link MakeCodeBrainSummary.compiledSourceHash}: the source hash of the brain's registration, or `null` for none. */
   compiledSourceHash: string | null;
+  /** As {@link MakeCodeBrainSummary.origin}: the registration key of the tab that created the brain, or `null` for none recorded. */
+  origin: string | null;
+  /** As {@link MakeCodeBrainSummary.originLabel}: the origin tab's name, or `null` when no such tab talks to the serving party. */
+  originLabel: string | null;
 }
 
 /**
@@ -234,7 +254,8 @@ export interface MakeCodeBrainsPullReplyMessage {
  * brains. The reply, carrying the same `id`, is a
  * {@link MakeCodeBrainsPushReplyMessage} once the change is applied, or a
  * {@link MakeCodeBrainsErrorMessage} carrying
- * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
+ * `MakeCodeBrainsErrorCode.WRITE_FAILED`, or `NOT_ORIGIN` when the
+ * requesting tab is not the brain's origin.
  */
 export interface MakeCodeBrainsPushMessage {
   type: "makecode:brainsPush";
@@ -265,7 +286,8 @@ export interface MakeCodeBrainsCreatePayload {
  * `name` under a document id it mints. The reply, carrying the same `id`, is
  * a {@link MakeCodeBrainsCreateReplyMessage} once the brain's source is in
  * the project, or a {@link MakeCodeBrainsErrorMessage} carrying
- * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
+ * `MakeCodeBrainsErrorCode.WRITE_FAILED`. The created brain's origin is the
+ * requesting tab's key, or none when the serving party knows no key for it.
  */
 export interface MakeCodeBrainsCreateMessage {
   type: "makecode:brainsCreate";
@@ -289,8 +311,15 @@ export interface MakeCodeBrainsCreateReplyMessage {
 
 /** Payload of a {@link MakeCodeBrainsErrorMessage}. */
 export interface MakeCodeBrainsErrorPayload {
-  /** Stable code of the failure: `READ_FAILED` for a list or a pull, `WRITE_FAILED` for a push or a create. */
-  code: typeof MakeCodeBrainsErrorCode.READ_FAILED | typeof MakeCodeBrainsErrorCode.WRITE_FAILED;
+  /**
+   * Stable code of the failure: `READ_FAILED` for a list or a pull,
+   * `WRITE_FAILED` for a push or a create, `NOT_ORIGIN` for a push from a
+   * tab that is not the brain's origin.
+   */
+  code:
+    | typeof MakeCodeBrainsErrorCode.READ_FAILED
+    | typeof MakeCodeBrainsErrorCode.WRITE_FAILED
+    | typeof MakeCodeBrainsErrorCode.NOT_ORIGIN;
   /** Human-readable description of the failure. */
   message: string;
 }
@@ -381,8 +410,8 @@ export interface MakeCodeBrainsPullRequest {
 
 /**
  * A push request from the peer, delivered to the party serving the project.
- * Answer it once, with {@link reply} or {@link fail}; later answers are not
- * sent.
+ * Answer it once, with {@link reply}, {@link fail} or {@link refuse}; later
+ * answers are not sent.
  */
 export interface MakeCodeBrainsPushRequest {
   readonly kind: "push";
@@ -401,6 +430,13 @@ export interface MakeCodeBrainsPushRequest {
    * @param message - Human-readable description of the failure.
    */
   fail(message: string): void;
+  /**
+   * Answer that the requesting tab is not the brain's origin, with
+   * `MakeCodeBrainsErrorCode.NOT_ORIGIN`.
+   *
+   * @param message - Human-readable description of the refusal.
+   */
+  refuse(message: string): void;
 }
 
 /**

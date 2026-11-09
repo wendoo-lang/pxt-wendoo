@@ -8,14 +8,15 @@ import type {
   MakeCodeManifestReading,
   MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
-import { brainSourceHash } from "@wendoo/makecode-session";
+import { brainSourceHash, MakeCodeBrainsErrorCode } from "@wendoo/makecode-session";
 import { ProjfsError } from "../vendor/projfs.js";
+import type { SimxEditorTab } from "../vendor/simxeditor.js";
 import { BrainEngine, type EngineCompile } from "./brain-engine.js";
 import {
   BRAINS_MODULE_FILE,
   type BrainsModuleProblemCode,
   type BrainsModuleReading,
-  type CompiledBrainEntry,
+  type CompiledBrain,
   BrainsModuleProblemCode as ProblemCode,
   readBrainsModule,
   writeBrainsModule,
@@ -82,6 +83,8 @@ interface HeldSource {
   readonly source: string;
   /** `brainSourceHash` of {@link source}. */
   readonly sourceHash: string;
+  /** The brain's origin: the registration key of the tab that created it, or `null` for none recorded. */
+  readonly origin: string | null;
 }
 
 /**
@@ -90,9 +93,15 @@ interface HeldSource {
  * project already holds, from a recompile.
  */
 type Change =
-  | { readonly op: "write"; readonly name: string; readonly source: string; compiled: EngineCompile }
+  | {
+      readonly op: "write";
+      readonly name: string;
+      readonly source: string;
+      readonly origin: string | null;
+      compiled: EngineCompile;
+    }
   | { readonly op: "remove" }
-  | { readonly op: "register"; readonly registration: CompiledBrainEntry };
+  | { readonly op: "register"; readonly registration: CompiledBrain };
 
 /** An answer owed to a request once the change carrying it lands or fails. */
 interface Answer {
@@ -115,8 +124,8 @@ interface Queued {
  *
  * On construction it reads every brain source file and the brains module
  * once, holding what it read as a cache derived from the files: each brain's
- * name, source and source hash, and the registrations of brains whose source
- * the project holds. A read the project fails is logged by its projfs code
+ * name, source, source hash and origin, and the registrations of brains
+ * whose source the project holds. A read the project fails is logged by its projfs code
  * and retried after a wait that doubles from
  * {@link BrainsProjectTimings.retryDelayMs} up to
  * {@link BrainsProjectTimings.maxRetryDelayMs}; a refusal no retry can
@@ -146,14 +155,15 @@ interface Queued {
  * last good one. Each compile that changes a registration posts its program
  * to `live` at once.
  *
- * - A list names every held brain with its name, its source hash and the
- *   source hash its served registration carries, `null` for none.
+ * - A list returns every held brain's summary, as {@link summaries} gives it.
  * - A pull returns each requested brain held, its source verbatim.
  * - A push write is compiled as it arrives and answered with its compile's
  *   outcome; a removal posts the brain's removal to `live` and is answered
- *   with `null`.
+ *   with `null`; either is refused with `NOT_ORIGIN` from a tab other than
+ *   the brain's origin.
  * - A create mints an empty brain document through the engine's brain
- *   services, compiles it, and is answered with its summary.
+ *   services, its origin the requesting tab's key, compiles it, and is
+ *   answered with its summary.
  *
  * Writes queue and are applied in drains. A drain takes every change queued
  * by then (the latest of each brain), writes the brains module once when its
@@ -185,14 +195,18 @@ export class BrainsProject {
   private readonly _timers = new Set<ReturnType<typeof setTimeout>>();
   /** The brain id and source hash of each compile throw logged, as `<id> <sourceHash>`. */
   private readonly _thrown = new Set<string>();
+  /** The brain id and requesting tab's key of each refusal logged, as `<id> <peer>`. */
+  private readonly _refused = new Set<string>();
+  /** The label of each tab MakeCode lists, by key, or `undefined` while the list is unknown. */
+  private _labels: ReadonlyMap<string, string> | undefined;
   /** Settles once the project's brains are read. */
   private readonly _ready: Promise<void>;
   /** The brain source files the project holds, by document id, in the order first held. */
   private readonly _sources = new Map<string, HeldSource>();
   /** The registrations the brains module holds, by document id. */
-  private readonly _moduleEntries = new Map<string, CompiledBrainEntry>();
+  private readonly _moduleEntries = new Map<string, CompiledBrain>();
   /** The registration served for each held brain, by document id: the module's once the source it was compiled from has landed. */
-  private readonly _registrations = new Map<string, CompiledBrainEntry>();
+  private readonly _registrations = new Map<string, CompiledBrain>();
   /** The brains module's text as last read or written, or `undefined` while the project holds none. */
   private _moduleText: string | undefined;
   /** The names of the brain files to re-read: those MakeCode reported changed, and those whose write or delete the project refused. */
@@ -244,8 +258,9 @@ export class BrainsProject {
 
   /**
    * Every brain the project holds, in the order first held: its id, name,
-   * source hash, and the source hash of its registration, `null` for none.
-   * Empty until the project's brains are read.
+   * source hash, the source hash of its registration, `null` for none, its
+   * origin and the origin tab's label. Empty until the project's brains are
+   * read.
    */
   summaries(): MakeCodeBrainSummary[] {
     return [...this._sources.keys()].map((id) => this.summaryOf(id)).filter((summary) => summary !== undefined);
@@ -295,13 +310,36 @@ export class BrainsProject {
   }
 
   /**
-   * Answer `request` once the project's brains are read: a list or a pull at
-   * once from what the project holds, a push or a create once its drain has
-   * written it.
+   * Take `tabs`, the editor tabs MakeCode lists, as the source of each origin
+   * tab's label, and announce the brains to {@link onChange} when a label
+   * changes once the project's brains are read.
    *
+   * @param tabs - The tabs MakeCode lists, each with its key and label.
+   */
+  adoptTabs(tabs: readonly SimxEditorTab[]): void {
+    const labels = new Map(tabs.map((tab) => [tab.key, tab.label]));
+    const before = this._labels;
+    this._labels = labels;
+    const same =
+      before !== undefined &&
+      before.size === labels.size &&
+      [...labels].every(([key, label]) => before.get(key) === label);
+    if (!same && this._loaded && !this._disposed) this.announce();
+  }
+
+  /**
+   * Answer `request` from the tab keyed `peer` once the project's brains are
+   * read: a list or a pull at once from what the project holds, a push or a
+   * create once its drain has written it. A create stamps `peer` as the
+   * brain's origin; a push of a brain whose origin is another tab is refused
+   * with `NOT_ORIGIN`, and one of a brain with no origin stamps `peer`. A
+   * `null` peer stamps nothing and is refused nothing. The rules are in
+   * docs/session-management.md.
+   *
+   * @param peer - The key of the requesting tab, as MakeCode names it on the port, or `null` when the port names none.
    * @param request - A brains request from the editor.
    */
-  serve(request: MakeCodeBrainsRequest): void {
+  serve(peer: string | null, request: MakeCodeBrainsRequest): void {
     void this._ready.then(() => {
       if (this._disposed) return;
       switch (request.kind) {
@@ -312,10 +350,10 @@ export class BrainsProject {
           request.reply(this.pulled(request));
           return;
         case "push":
-          this.push(request);
+          this.push(peer, request);
           return;
         case "create":
-          this.create(request);
+          this.create(peer, request);
           return;
       }
     });
@@ -361,29 +399,35 @@ export class BrainsProject {
       const held = this._sources.get(id);
       if (held === undefined) return [];
       const compiledSourceHash = this._registrations.get(id)?.sourceHash ?? null;
-      return [{ id, name: held.name, source: held.source, compiledSourceHash }];
+      return [{ id, name: held.name, source: held.source, compiledSourceHash, ...this.originFields(held.origin) }];
     });
   }
 
-  /** Compiles a pushed write and queues it, or queues a removal and posts it live. */
-  private push(request: MakeCodeBrainsPushRequest): void {
+  /**
+   * Compiles a pushed write from the tab `peer` and queues it, or queues a
+   * removal and posts it live; refuses either when the brain's origin is
+   * another tab.
+   */
+  private push(peer: string | null, request: MakeCodeBrainsPushRequest): void {
     if (this.refusedNewer(request)) return;
     const { push } = request;
+    const id = push.op === "remove" ? push.brainId : push.brain.id;
+    if (this.refusedNotOrigin(peer, id, request)) return;
     if (push.op === "remove") {
-      this.enqueue(push.brainId, { op: "remove" }, { landed: () => request.reply(null), failed: request.fail });
-      this._live.remove(push.brainId);
+      this.enqueue(id, { op: "remove" }, { landed: () => request.reply(null), failed: request.fail });
+      this._live.remove(id);
       return;
     }
-    const { id, source } = push.brain;
-    const change = this.writeOf(id, brainName(source, push.brain.name), source);
+    const { source } = push.brain;
+    const change = this.writeOf(id, brainName(source, push.brain.name), source, peer ?? this.originOf(id));
     this.enqueue(id, change, { landed: () => request.reply(change.compiled.outcome), failed: request.fail });
   }
 
-  /** Mints an empty brain named as `request` asks, compiles it and queues its write. */
-  private create(request: MakeCodeBrainsCreateRequest): void {
+  /** Mints an empty brain named as `request` asks, its origin `peer`, compiles it and queues its write. */
+  private create(peer: string | null, request: MakeCodeBrainsCreateRequest): void {
     if (this.refusedNewer(request)) return;
     const minted = this._engine.mint(request.name);
-    const change = this.writeOf(minted.id, brainName(minted.source, request.name), minted.source);
+    const change = this.writeOf(minted.id, brainName(minted.source, request.name), minted.source, peer);
     this.enqueue(minted.id, change, {
       landed: () => {
         const summary = this.summaryOf(minted.id);
@@ -401,12 +445,51 @@ export class BrainsProject {
     return true;
   }
 
-  /** The write of `source`, the brain `id` named `name`, compiled over its registration now, its program posted live when it changes. */
-  private writeOf(id: string, name: string, source: string): Change & { op: "write" } {
+  /**
+   * Refuses `request` with `NOT_ORIGIN` when `peer` is a tab and the brain
+   * `id`'s origin is another, logging the refusal once per brain and peer;
+   * returns whether it did.
+   */
+  private refusedNotOrigin(peer: string | null, id: string, request: MakeCodeBrainsPushRequest): boolean {
+    const origin = this.originOf(id);
+    if (peer === null || origin === null || origin === peer) return false;
+    const message = `${MakeCodeBrainsErrorCode.NOT_ORIGIN}: ${brainSourceFile(id)} belongs to the tab ${origin}; the tab ${peer} may not change it.`;
+    const key = `${id} ${peer}`;
+    if (!this._refused.has(key)) {
+      this._refused.add(key);
+      this._log.error(message);
+    }
+    request.refuse(message);
+    return true;
+  }
+
+  /**
+   * The write of `source`, the brain `id` named `name`, its origin `origin`
+   * once it lands, compiled over its registration now, its program posted
+   * live when it changes.
+   */
+  private writeOf(id: string, name: string, source: string, origin: string | null): Change & { op: "write" } {
     const before = this.registrationOf(id);
     const compiled = this.compiled(id, name, source, before);
     this.registered(before, compiled.registration);
-    return { op: "write", name, source, compiled };
+    return { op: "write", name, source, origin, compiled };
+  }
+
+  /**
+   * The brain `id`'s origin: a queued write's, else the write of the drain
+   * writing now, else the held source's, a removal that has not landed
+   * leaving it; `null` for a brain the project does not hold.
+   */
+  private originOf(id: string): string | null {
+    for (const change of [this._queue.get(id)?.change, this._landing.get(id)]) {
+      if (change?.op === "write") return change.origin;
+    }
+    return this._sources.get(id)?.origin ?? null;
+  }
+
+  /** The origin fields of a summary or a wire brain of origin `origin`: the key and the tab's label, `null` when unknown. */
+  private originFields(origin: string | null): { origin: string | null; originLabel: string | null } {
+    return { origin, originLabel: origin === null ? null : (this._labels?.get(origin) ?? null) };
   }
 
   /** Queues `change` of the brain `id`, replacing any change queued for it, with `answer` owed once it lands. */
@@ -524,10 +607,11 @@ export class BrainsProject {
   /**
    * Takes `text`, the source file of the brain `id` as re-read, `undefined`
    * when the project holds none: a text other than the one held is held
-   * and compiled, its changed registration queued and posted live; a source
-   * gone removes the brain, its registration with it. Under a newer-format
-   * module the text is held and nothing compiled or written. Returns whether
-   * anything changed.
+   * and compiled, its changed registration queued and posted live, the
+   * brain keeping its origin, or taking the module's for a brain not held; a
+   * source gone removes the brain, its registration with it. Under a
+   * newer-format module the text is held and nothing compiled or written.
+   * Returns whether anything changed.
    */
   private adoptSource(id: string, text: string | undefined): boolean {
     const held = this._sources.get(id);
@@ -544,7 +628,8 @@ export class BrainsProject {
     }
     if (held?.source === text) return false;
     const name = brainName(text, held?.name ?? this.registrationOf(id)?.name ?? "");
-    this._sources.set(id, { name, source: text, sourceHash: brainSourceHash(text) });
+    const origin = held === undefined ? this.moduleOrigin(id) : held.origin;
+    this._sources.set(id, { name, source: text, sourceHash: brainSourceHash(text), origin });
     if (this._formatNewer) return true;
     const before = this.registrationOf(id);
     const { registration } = this.compiled(id, name, text, before);
@@ -595,7 +680,7 @@ export class BrainsProject {
    * diagnostic and no unresolved tile, and is logged under
    * `BrainsProjectProblemCode.COMPILE_THREW` once per brain per source hash.
    */
-  private compiled(id: string, name: string, source: string, before: CompiledBrainEntry | undefined): EngineCompile {
+  private compiled(id: string, name: string, source: string, before: CompiledBrain | undefined): EngineCompile {
     try {
       return this._engine.compile(id, name, source, before, this.names());
     } catch (error) {
@@ -620,7 +705,7 @@ export class BrainsProject {
   }
 
   /** Posts `after` live when it registers another program than `before`. */
-  private registered(before: CompiledBrainEntry | undefined, after: CompiledBrainEntry | undefined): void {
+  private registered(before: CompiledBrain | undefined, after: CompiledBrain | undefined): void {
     if (after !== undefined && !sameRegistration(before, after)) this._live.post(after);
   }
 
@@ -628,7 +713,7 @@ export class BrainsProject {
    * The brain `id`'s registration as the latest change leaves it: a queued
    * change's, else the change of the drain writing now, else the module's.
    */
-  private registrationOf(id: string): CompiledBrainEntry | undefined {
+  private registrationOf(id: string): CompiledBrain | undefined {
     const change = this._queue.get(id)?.change ?? this._landing.get(id);
     return change === undefined ? this._moduleEntries.get(id) : registrationIn(change);
   }
@@ -673,7 +758,7 @@ export class BrainsProject {
       for (const [, queued] of batch) for (const answer of queued.answers) answer.failed(FORMAT_NEWER_REFUSAL);
       return;
     }
-    const registrations = new Map<string, CompiledBrainEntry>();
+    const registrations = new Map<string, CompiledBrain>();
     for (const [id, registration] of this._moduleEntries) {
       if (this._sources.has(id)) registrations.set(id, registration);
     }
@@ -682,7 +767,10 @@ export class BrainsProject {
       if (registration === undefined) registrations.delete(id);
       else registrations.set(id, registration);
     }
-    const text = writeBrainsModule(registrations.values());
+    const written = new Map(batch.flatMap(([id, { change }]) => (change.op === "write" ? [[id, change.origin]] : [])));
+    const text = this.moduleText(registrations, (id) =>
+      written.has(id) ? (written.get(id) ?? null) : this.heldOrigin(id)
+    );
     const writesModule = text !== this._moduleText;
     if (writesModule) {
       try {
@@ -699,6 +787,30 @@ export class BrainsProject {
     const landed = await Promise.all(batch.map(([id, queued]) => this.applySource(id, queued)));
     if (!writesModule && !landed.includes(true)) return;
     this.announce();
+  }
+
+  /**
+   * The text of the brains module registering `registrations`, each entry's
+   * origin the one `originOf` gives its id.
+   */
+  private moduleText(
+    registrations: ReadonlyMap<string, CompiledBrain>,
+    originOf: (id: string) => string | null
+  ): string {
+    return writeBrainsModule(
+      [...registrations].map(([id, registration]) => ({ ...registration, origin: originOf(id) }))
+    );
+  }
+
+  /** The origin the brains module as last read or written records for the brain `id`, `null` for none. */
+  private moduleOrigin(id: string): string | null {
+    if (this._moduleText === undefined) return null;
+    return readBrainsModule(this._moduleText).entries.get(id)?.origin ?? null;
+  }
+
+  /** The origin of the held brain `id`, `null` when it has none or the project does not hold it. */
+  private heldOrigin(id: string): string | null {
+    return this._sources.get(id)?.origin ?? null;
   }
 
   /** Announces the brains to every {@link onChange} listener. */
@@ -778,7 +890,12 @@ export class BrainsProject {
       return false;
     }
     if (change.op === "write") {
-      this._sources.set(id, { name: change.name, source: change.source, sourceHash: brainSourceHash(change.source) });
+      this._sources.set(id, {
+        name: change.name,
+        source: change.source,
+        sourceHash: brainSourceHash(change.source),
+        origin: change.origin,
+      });
     } else {
       this._sources.delete(id);
     }
@@ -799,7 +916,7 @@ export class BrainsProject {
     const held = this._sources.get(id);
     if (held === undefined) return undefined;
     const compiledSourceHash = this._registrations.get(id)?.sourceHash ?? null;
-    return { id, name: held.name, sourceHash: held.sourceHash, compiledSourceHash };
+    return { id, name: held.name, sourceHash: held.sourceHash, compiledSourceHash, ...this.originFields(held.origin) };
   }
 
   /**
@@ -828,10 +945,12 @@ export class BrainsProject {
     ids.forEach((id, index) => {
       const source = sources[index];
       if (source === undefined) return;
+      const entry = reading?.entries.get(id);
       this._sources.set(id, {
-        name: brainName(source, reading?.entries.get(id)?.name ?? ""),
+        name: brainName(source, entry?.name ?? ""),
         source,
         sourceHash: brainSourceHash(source),
+        origin: entry?.origin ?? null,
       });
     });
     this.registerFrom(reading);
@@ -855,15 +974,21 @@ export class BrainsProject {
     return reading;
   }
 
-  /** Takes the registrations `reading` holds for the held brains as the module's and the served ones. */
+  /**
+   * Takes the registrations `reading` holds for the held brains as the
+   * module's and the served ones, and each registration's origin as its
+   * brain's.
+   */
   private registerFrom(reading: BrainsModuleReading | undefined): void {
     this._moduleEntries.clear();
     this._registrations.clear();
-    for (const id of this._sources.keys()) {
+    for (const [id, held] of this._sources) {
       const entry = reading?.entries.get(id);
       if (entry === undefined) continue;
-      this._moduleEntries.set(id, entry);
-      this._registrations.set(id, entry);
+      const { origin, ...registration } = entry;
+      this._moduleEntries.set(id, registration);
+      this._registrations.set(id, registration);
+      if (origin !== held.origin) this._sources.set(id, { ...held, origin });
     }
   }
 
@@ -876,7 +1001,8 @@ export class BrainsProject {
   private heal(): void {
     if (this._formatNewer) return;
     this._moduleStale =
-      this._moduleText !== undefined && this._moduleText !== writeBrainsModule(this._moduleEntries.values());
+      this._moduleText !== undefined &&
+      this._moduleText !== this.moduleText(this._moduleEntries, (id) => this.heldOrigin(id));
     this.recompile((id, source) => this._moduleEntries.get(id)?.sourceHash !== brainSourceHash(source));
   }
 
@@ -916,13 +1042,13 @@ export class BrainsProject {
 }
 
 /** The registration `change` leaves its brain with: a write's compile's, a recompile's, and none for a removal. */
-function registrationIn(change: Change): CompiledBrainEntry | undefined {
+function registrationIn(change: Change): CompiledBrain | undefined {
   if (change.op === "write") return change.compiled.registration;
   return change.op === "register" ? change.registration : undefined;
 }
 
 /** Whether `a` and `b` are the same registration: the same name, source hash and bytes. */
-function sameRegistration(a: CompiledBrainEntry | undefined, b: CompiledBrainEntry): boolean {
+function sameRegistration(a: CompiledBrain | undefined, b: CompiledBrain): boolean {
   if (a === undefined || a.name !== b.name || a.sourceHash !== b.sourceHash) return false;
   return a.bytecode.length === b.bytecode.length && a.bytecode.every((byte, index) => byte === b.bytecode[index]);
 }

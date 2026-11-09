@@ -9,6 +9,7 @@ import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import {
   brainSourceHash,
   type MakeCodeBrainSummary,
+  MakeCodeBrainsErrorCode,
   type MakeCodeIdManifest,
   type MakeCodeManifestReading,
   type MakeCodeWireBrain,
@@ -19,8 +20,14 @@ import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../authoring/a
 import { serializeBrainSource } from "../authoring/brain-source.js";
 import { type ProjfsClient, ProjfsError } from "../vendor/projfs.js";
 import { BrainEngine } from "./brain-engine.js";
-import { BRAINS_MODULE_FILE, type CompiledBrainEntry, readBrainsModule, writeBrainsModule } from "./brains-module.js";
-import { BrainsProject, BrainsProjectProblemCode } from "./brains-project.js";
+import {
+  BRAINS_MODULE_FILE,
+  BRAINS_MODULE_FORMAT,
+  type CompiledBrainEntry,
+  readBrainsModule,
+  writeBrainsModule,
+} from "./brains-module.js";
+import { BrainsProject, BrainsProjectProblemCode, brainSourceFile } from "./brains-project.js";
 import { LivePrograms } from "./live-programs.js";
 import type { ProjectFiles } from "./project-files.js";
 import type { ProgramUpdate } from "./sim-channel.js";
@@ -32,8 +39,8 @@ import {
   PROJFS_SCOPE_QUOTA_BYTES,
 } from "./test-support/projfs-host.js";
 
-/** How one request was answered. */
-type Answer<T> = { ok: true; value: T } | { ok: false; message: string };
+/** How one request was answered: replied, failed, or refused because the requesting tab is not the brain's origin. */
+type Answer<T> = { ok: true; value: T } | { ok: false; message: string; refused?: true };
 
 /** A log recording every line written to it, by level. */
 class RecordingLog implements SimxLog {
@@ -161,6 +168,15 @@ function readingOf(ids: MakeCodeIdManifest): MakeCodeManifestReading {
 const CHASER = "chaserchaserchas";
 const RUNNER = "runnerrunnerrunn";
 
+/** The key of the tab the spec's requests come from unless one names another. */
+const TAB = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+
+/** The key of a second tab talking to the frame. */
+const OTHER_TAB = "wendoo-lang/pxt-daydream";
+
+/** The origin fields of a brain {@link TAB} created, while the frame knows no tab's label. */
+const ORIGIN_OF_TAB = { origin: TAB, originLabel: null };
+
 describe("brains project", () => {
   let host: FakeProjfsHost;
   let client: ProjfsClient;
@@ -200,7 +216,7 @@ describe("brains project", () => {
   /** Asks `on` for its list and resolves with the answer. */
   function list(on: BrainsProject = project): Promise<Answer<MakeCodeBrainSummary[]>> {
     return new Promise((resolve) => {
-      on.serve({
+      on.serve(TAB, {
         kind: "list",
         reply: (brains) => resolve({ ok: true, value: [...brains] }),
         fail: (message) => resolve({ ok: false, message }),
@@ -211,7 +227,7 @@ describe("brains project", () => {
   /** Asks `on` for the brains `ids` and resolves with the answer. */
   function pull(ids: string[], on: BrainsProject = project): Promise<Answer<MakeCodeWireBrain[]>> {
     return new Promise((resolve) => {
-      on.serve({
+      on.serve(TAB, {
         kind: "pull",
         ids,
         reply: (brains) => resolve({ ok: true, value: [...brains] }),
@@ -220,25 +236,31 @@ describe("brains project", () => {
     });
   }
 
-  /** Asks `on` to apply `change` and resolves with the answer. */
+  /** Asks `on` to apply `change` from the tab `peer`, `null` for a port naming none, and resolves with the answer. */
   function push(
     change: MakeCodeWireBrainPush,
-    on: BrainsProject = project
+    on: BrainsProject = project,
+    peer: string | null = TAB
   ): Promise<Answer<MakeCodeWireCompileOutcome | null>> {
     return new Promise((resolve) => {
-      on.serve({
+      on.serve(peer, {
         kind: "push",
         push: change,
         reply: (outcome) => resolve({ ok: true, value: outcome }),
         fail: (message) => resolve({ ok: false, message }),
+        refuse: (message) => resolve({ ok: false, message, refused: true }),
       });
     });
   }
 
-  /** Asks `on` to create a brain named `name` and resolves with the answer. */
-  function create(name: string, on: BrainsProject = project): Promise<Answer<MakeCodeBrainSummary>> {
+  /** Asks `on` to create a brain named `name` from the tab `peer`, `null` for a port naming none, and resolves with the answer. */
+  function create(
+    name: string,
+    on: BrainsProject = project,
+    peer: string | null = TAB
+  ): Promise<Answer<MakeCodeBrainSummary>> {
     return new Promise((resolve) => {
-      on.serve({
+      on.serve(peer, {
         kind: "create",
         name,
         reply: (brain) => resolve({ ok: true, value: brain }),
@@ -323,7 +345,15 @@ describe("brains project", () => {
       assert.equal(registered().has(CHASER), false);
       assert.deepEqual(await list(), {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", sourceHash: brainSourceHash(broken), compiledSourceHash: null }],
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash(broken),
+            compiledSourceHash: null,
+            ...ORIGIN_OF_TAB,
+          },
+        ],
       });
     });
 
@@ -542,7 +572,7 @@ describe("brains project", () => {
       const scratchClient = scratch.client();
       const scratchProject = new BrainsProject(scratchClient, new RecordingLog(), new LivePrograms(() => {}));
       return new Promise((resolve, reject) => {
-        scratchProject.serve({
+        scratchProject.serve(TAB, {
           kind: "push",
           push: writeOf(id, name, source),
           reply: () => {
@@ -553,6 +583,7 @@ describe("brains project", () => {
             else resolve(entry);
           },
           fail: (message) => reject(new Error(message)),
+          refuse: (message) => reject(new Error(message)),
         });
       });
     }
@@ -608,7 +639,7 @@ describe("brains project", () => {
         text.replace(`"${RUNNER}", "Runner", hex\``, `"${RUNNER}", Runner, hex\``)
       );
 
-      assert.deepEqual(registered().get(RUNNER), runner);
+      assert.deepEqual(registered().get(RUNNER), { ...runner, origin: null });
       assert.deepEqual(registered().get(CHASER), chaser);
       assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_ENTRY_MALFORMED")));
       assert.ok(!host.mutations.includes(`write brains/${CHASER}.src.json`));
@@ -664,7 +695,10 @@ describe("brains project", () => {
 
   describe("a brains module of a newer format", () => {
     it("is left as it is: sources served with no registration, pushes and creates failing by its code", async () => {
-      const newer = writeBrainsModule([]).replace("wendoo-brains-format 1", "wendoo-brains-format 2");
+      const newer = writeBrainsModule([]).replace(
+        `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+        `wendoo-brains-format ${BRAINS_MODULE_FORMAT + 1}`
+      );
       host.edit(BRAINS_MODULE_FILE, newer);
       host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
       const fresh = open();
@@ -982,6 +1016,365 @@ describe("brains project", () => {
     });
   });
 
+  describe("origin", () => {
+    /** The text of the brains module's annotation line for the brain `id`, its indent removed. */
+    function annotation(id: string): string | undefined {
+      const lines = (host.file(BRAINS_MODULE_FILE) ?? "").split("\n");
+      const declaration = lines.findIndex((line) => line.includes(`registerCompiledBrain("${id}"`));
+      return declaration > 0 ? lines[declaration - 1].trim() : undefined;
+    }
+
+    /** The NOT_ORIGIN lines the log holds. */
+    function refusals(): string[] {
+      return log.errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.NOT_ORIGIN));
+    }
+
+    it("stamps a created brain with the requesting tab's key, in its summary and its registration", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      await drained();
+
+      assert.equal(created.value.origin, OTHER_TAB);
+      assert.equal(registered().get(created.value.id)?.origin, OTHER_TAB);
+      assert.ok(annotation(created.value.id)?.endsWith(` editor="simx:${OTHER_TAB}"`));
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [OTHER_TAB]);
+    });
+
+    it("applies a write, a rename and a removal from the brain's origin tab", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      const { id } = created.value;
+
+      const written = await push(writeOf(id, "Runner", restartingSource(id, "Runner")), project, OTHER_TAB);
+      const renamed = await push(writeOf(id, "Sprinter"), project, OTHER_TAB);
+      await drained();
+      const origin = registered().get(id)?.origin;
+      const removed = await push({ op: "remove", brainId: id }, project, OTHER_TAB);
+
+      assert.deepEqual([written.ok, renamed.ok, removed.ok], [true, true, true]);
+      assert.equal(origin, OTHER_TAB);
+      assert.deepEqual(refusals(), []);
+    });
+
+    it("refuses a write, a rename and a removal from another tab with NOT_ORIGIN, logged once per brain and tab", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      const { id } = created.value;
+      await drained();
+      const mutations = host.mutations.length;
+      const module = host.file(BRAINS_MODULE_FILE);
+
+      const answers = [
+        await push(writeOf(id, "Runner", restartingSource(id, "Runner"))),
+        await push(writeOf(id, "Renamed")),
+        await push({ op: "remove", brainId: id }),
+      ];
+      const created2 = await create("Chaser", project, OTHER_TAB);
+      assert.ok(created2.ok);
+      const other = await push({ op: "remove", brainId: created2.value.id });
+      await drained();
+
+      assert.deepEqual(
+        [...answers, other].map((answer) => !answer.ok && answer.refused === true),
+        [true, true, true, true]
+      );
+      for (const answer of answers) assert.match(answer.ok ? "" : answer.message, /^MAKECODE_BRAINS_NOT_ORIGIN\b/);
+      assert.equal(refusals().length, 2);
+      assert.ok(refusals()[0].includes(id));
+      assert.ok(refusals()[1].includes(created2.value.id));
+      assert.equal(host.file(`brains/${id}.src.json`) !== undefined, true);
+      assert.ok(!host.mutations.slice(mutations).includes(`write brains/${id}.src.json`));
+      assert.ok(module !== undefined && host.file(BRAINS_MODULE_FILE)?.includes(`registerCompiledBrain("${id}"`));
+      assert.deepEqual(
+        posted.filter((update) => update.documentId === id && update.bytecode.length === 0),
+        []
+      );
+    });
+
+    it("refuses a write of a brain whose create from another tab is queued behind a landing drain", async () => {
+      const release = host.holdReply(`write ${BRAINS_MODULE_FILE}`);
+      const landing = push(writeOf(RUNNER, "Runner"));
+      await until(() => host.mutations.includes(`write ${BRAINS_MODULE_FILE}`));
+      const before = new Set(posted.map((update) => update.documentId));
+      const creating = create("Chaser", project, OTHER_TAB);
+      await until(() => posted.some((update) => !before.has(update.documentId) && update.documentId !== RUNNER));
+      const id = posted.find((update) => !before.has(update.documentId) && update.documentId !== RUNNER)?.documentId;
+      assert.ok(id !== undefined);
+
+      const refused = await push(writeOf(id, "Chaser"));
+      release();
+      assert.ok((await landing).ok);
+      assert.ok((await creating).ok);
+      await drained();
+
+      assert.equal(!refused.ok && refused.refused, true);
+      assert.equal(registered().get(id)?.origin, OTHER_TAB);
+    });
+
+    it("refuses another tab's write while the origin's removal is queued, the removal landing", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      const { id } = created.value;
+      await drained();
+      const release = host.holdReply(`write ${BRAINS_MODULE_FILE}`);
+      const landing = push(writeOf(RUNNER, "Runner"));
+      await until(() => host.mutations.includes(`write ${BRAINS_MODULE_FILE}`));
+
+      const removing = push({ op: "remove", brainId: id }, project, OTHER_TAB);
+      const refused = await push(writeOf(id, "Taken"));
+      release();
+      const removed = await removing;
+      assert.ok((await landing).ok);
+      await drained();
+
+      assert.equal(!refused.ok && refused.refused, true);
+      assert.ok(removed.ok);
+      assert.equal(host.file(brainSourceFile(id)), undefined);
+      assert.equal(registered().has(id), false);
+    });
+
+    it("refuses another tab's write while the origin's removal lands, and lets it make the brain anew once deleted", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      const { id } = created.value;
+      await drained();
+      const release = host.holdReply(`delete ${brainSourceFile(id)}`);
+
+      const removing = push({ op: "remove", brainId: id }, project, OTHER_TAB);
+      await until(() => host.mutations.includes(`delete ${brainSourceFile(id)}`));
+      const refused = await push(writeOf(id, "Taken"));
+      release();
+      assert.ok((await removing).ok);
+      const remade = await push(writeOf(id, "Taken"));
+      await drained();
+
+      assert.equal(!refused.ok && refused.refused, true);
+      assert.ok(remade.ok);
+      assert.equal(registered().get(id)?.origin, TAB);
+    });
+
+    it("claims a brain with no origin for the first of two tabs pushing it in one drain, refusing the second", async () => {
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
+      const fresh = open();
+      await drained(fresh);
+
+      const [first, second] = await Promise.all([
+        push(writeOf(CHASER, "First"), fresh, TAB),
+        push(writeOf(CHASER, "Second"), fresh, OTHER_TAB),
+      ]);
+      await drained(fresh);
+
+      assert.ok(first.ok);
+      assert.equal(!second.ok && second.refused, true);
+      assert.equal(registered().get(CHASER)?.origin, TAB);
+      assert.equal(registered().get(CHASER)?.name, "First");
+    });
+
+    it("adopts the origin a module hand edit names, refusing the old origin's push and taking the new one's", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      const edited = (host.file(BRAINS_MODULE_FILE) ?? "").replace(
+        `editor="simx:${TAB}"`,
+        `editor="simx:${OTHER_TAB}"`
+      );
+      host.edit(BRAINS_MODULE_FILE, edited);
+
+      project.reported([BRAINS_MODULE_FILE]);
+      await drained();
+      const listed = await list();
+      const old = await push(writeOf(CHASER, "Chaser", restartingSource(CHASER, "Chaser")));
+      const taken = await push(writeOf(CHASER, "Chaser", restartingSource(CHASER, "Chaser")), project, OTHER_TAB);
+
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [OTHER_TAB]);
+      assert.equal(!old.ok && old.refused, true);
+      assert.ok(taken.ok);
+    });
+
+    it("keeps the origin a module hand edit names when a source hand edit read with it queues a recompile", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      const recompiled = restartingSource(CHASER, "Chaser");
+      host.edit(`brains/${CHASER}.src.json`, recompiled);
+      host.edit(
+        BRAINS_MODULE_FILE,
+        (host.file(BRAINS_MODULE_FILE) ?? "").replace(`editor="simx:${TAB}"`, `editor="simx:${OTHER_TAB}"`)
+      );
+
+      project.rescan();
+      await until(() => registered().get(CHASER)?.sourceHash === brainSourceHash(recompiled));
+      await drained();
+
+      assert.equal(registered().get(CHASER)?.origin, OTHER_TAB);
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [OTHER_TAB]);
+    });
+
+    it("takes the origin the module records for a source added by hand with it, recompiling it under that origin", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      const { id } = created.value;
+      await drained();
+      const module = host.file(BRAINS_MODULE_FILE) ?? "";
+      const source = host.file(brainSourceFile(id)) ?? "";
+      await push({ op: "remove", brainId: id }, project, OTHER_TAB);
+      await drained();
+      host.edit(brainSourceFile(id), source.replace('"Runner"', '"Renamed"'));
+      host.edit(BRAINS_MODULE_FILE, module);
+
+      project.rescan();
+      await until(() => registered().get(id)?.name === "Renamed");
+      await drained();
+
+      assert.equal(registered().get(id)?.origin, OTHER_TAB);
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [OTHER_TAB]);
+    });
+
+    it("stamps no origin for a session whose port named no key, and refuses it nothing", async () => {
+      const unnamed = await create("Runner", project, null);
+      assert.ok(unnamed.ok);
+      const owned = await create("Chaser", project, OTHER_TAB);
+      assert.ok(owned.ok);
+      await drained();
+
+      const written = await push(
+        writeOf(owned.value.id, "Chaser", restartingSource(owned.value.id, "Chaser")),
+        project,
+        null
+      );
+      const legacy = await push(writeOf(unnamed.value.id, "Runner"), project, null);
+      await drained();
+
+      assert.equal(unnamed.value.origin, null);
+      assert.ok(written.ok);
+      assert.ok(legacy.ok);
+      assert.equal(registered().get(owned.value.id)?.origin, OTHER_TAB);
+      assert.equal(registered().get(unnamed.value.id)?.origin, null);
+      assert.deepEqual(refusals(), []);
+    });
+
+    it("refuses a write of a brain whose create from another tab is still landing", async () => {
+      const release = host.holdReply(`write ${BRAINS_MODULE_FILE}`);
+      const creating = create("Runner", project, OTHER_TAB);
+      await until(() => host.mutations.includes(`write ${BRAINS_MODULE_FILE}`));
+      const id = [...readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.keys()][0];
+
+      const refused = await push(writeOf(id, "Runner"));
+      release();
+      assert.ok((await creating).ok);
+
+      assert.equal(!refused.ok && refused.refused, true);
+    });
+
+    it("stamps a brain made before origins were recorded with its first pusher's key, then refuses another tab", async () => {
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
+      const fresh = open();
+      await drained(fresh);
+      const before = await list(fresh);
+
+      const claimed = await push(writeOf(CHASER, "Chaser"), fresh, OTHER_TAB);
+      await drained(fresh);
+      const refused = await push(writeOf(CHASER, "Chaser", restartingSource(CHASER, "Chaser")), fresh);
+
+      assert.deepEqual(before.ok && before.value.map((brain) => brain.origin), [null]);
+      assert.ok(claimed.ok);
+      assert.equal(registered().get(CHASER)?.origin, OTHER_TAB);
+      assert.equal(!refused.ok && refused.refused, true);
+      const listed = await list(fresh);
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [OTHER_TAB]);
+    });
+
+    it("rewrites a format 1 module at format 2 on its next write, its brains read with no origin", async () => {
+      const chaser = sourceOf(CHASER, "Chaser");
+      await applied(writeOf(CHASER, "Chaser", chaser));
+      await drained();
+      const legacy = writeBrainsModule([...registered().values()].map((entry) => ({ ...entry, origin: null }))).replace(
+        `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+        "wendoo-brains-format 1"
+      );
+      host.edit(BRAINS_MODULE_FILE, legacy);
+      const fresh = open();
+      await drained(fresh);
+      const listed = await list(fresh);
+
+      await push(writeOf(RUNNER, "Runner"), fresh);
+      await drained(fresh);
+
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.origin), [null]);
+      assert.equal(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").format, BRAINS_MODULE_FORMAT);
+      assert.deepEqual(
+        [...registered().values()].map((entry) => [entry.id, entry.origin]),
+        [
+          [CHASER, null],
+          [RUNNER, TAB],
+        ]
+      );
+    });
+
+    it("serves a fresh instance over the same project each brain's origin as the last one wrote it", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+
+      const fresh = open();
+      const listed = await list(fresh);
+      const pulled = await pull([CHASER, created.value.id], fresh);
+
+      assert.deepEqual(listed.ok && Object.fromEntries(listed.value.map((brain) => [brain.id, brain.origin])), {
+        [CHASER]: TAB,
+        [created.value.id]: OTHER_TAB,
+      });
+      assert.deepEqual(pulled.ok && pulled.value.map((brain) => brain.origin), [TAB, OTHER_TAB]);
+    });
+
+    it("labels each origin by the tab MakeCode lists for its key, null until the tabs arrive or for a key not listed", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      await drained();
+      const before = await list();
+      const announced: MakeCodeBrainSummary[][] = [];
+      project.onChange((brains) => {
+        announced.push(brains);
+      });
+
+      project.adoptTabs([{ key: TAB, label: "Wendoo" }]);
+      project.adoptTabs([{ key: TAB, label: "Wendoo" }]);
+      const pulled = await pull([CHASER, created.value.id]);
+      project.adoptTabs([
+        { key: TAB, label: "Wendoo" },
+        { key: OTHER_TAB, label: "Daydream" },
+      ]);
+
+      const labels = (brains: readonly { id: string; originLabel: string | null }[]) =>
+        Object.fromEntries(brains.map((brain) => [brain.id, brain.originLabel]));
+      assert.deepEqual(before.ok && labels(before.value), { [CHASER]: null, [created.value.id]: null });
+      assert.deepEqual(
+        announced.map((brains) => labels(brains)),
+        [
+          { [CHASER]: "Wendoo", [created.value.id]: null },
+          { [CHASER]: "Wendoo", [created.value.id]: "Daydream" },
+        ]
+      );
+      assert.deepEqual(pulled.ok && labels(pulled.value), { [CHASER]: "Wendoo", [created.value.id]: null });
+    });
+
+    it("announces nothing for the tabs before the project's brains are read", async () => {
+      const fresh = open();
+      const announced: MakeCodeBrainSummary[][] = [];
+      fresh.onChange((brains) => {
+        announced.push(brains);
+      });
+
+      fresh.adoptTabs([{ key: TAB, label: "Wendoo" }]);
+      await drained(fresh);
+
+      assert.deepEqual(announced, []);
+    });
+  });
+
   describe("list and pull", () => {
     it("lists each brain source in brains/ read at start by id, with its name, its hash and its registration's", async () => {
       host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
@@ -996,7 +1389,9 @@ describe("brains project", () => {
       const hash = brainSourceHash(sourceOf(CHASER, "Chaser"));
       assert.deepEqual(listed, {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", sourceHash: hash, compiledSourceHash: hash }],
+        value: [
+          { id: CHASER, name: "Chaser", sourceHash: hash, compiledSourceHash: hash, origin: null, originLabel: null },
+        ],
       });
     });
 
@@ -1014,12 +1409,13 @@ describe("brains project", () => {
       assert.deepEqual(pulled, {
         ok: true,
         value: [
-          { id: RUNNER, name: "Runner", source: broken, compiledSourceHash: null },
+          { id: RUNNER, name: "Runner", source: broken, compiledSourceHash: null, ...ORIGIN_OF_TAB },
           {
             id: CHASER,
             name: "Chaser",
             source: sourceOf(CHASER, "Chaser"),
             compiledSourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
+            ...ORIGIN_OF_TAB,
           },
         ],
       });
@@ -1092,9 +1488,18 @@ describe("brains project", () => {
       return announced;
     }
 
-    /** The summary of the brain `id` named `name` holding `source`, registered from the source hashed `compiled`. */
-    function summary(id: string, name: string, source: string, compiled: string | null): MakeCodeBrainSummary {
-      return { id, name, sourceHash: brainSourceHash(source), compiledSourceHash: compiled };
+    /**
+     * The summary of the brain `id` named `name` holding `source`, registered
+     * from the source hashed `compiled`, of origin `origin`.
+     */
+    function summary(
+      id: string,
+      name: string,
+      source: string,
+      compiled: string | null,
+      origin: string | null = TAB
+    ): MakeCodeBrainSummary {
+      return { id, name, sourceHash: brainSourceHash(source), compiledSourceHash: compiled, origin, originLabel: null };
     }
 
     it("adopts a source edited by hand: recompiled, the module rewritten, the program posted live, the brains announced", async () => {
@@ -1119,7 +1524,9 @@ describe("brains project", () => {
       assert.deepEqual(await list(), { ok: true, value: [current] });
       assert.deepEqual(await pull([CHASER]), {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", source: edited, compiledSourceHash: brainSourceHash(edited) }],
+        value: [
+          { id: CHASER, name: "Chaser", source: edited, compiledSourceHash: brainSourceHash(edited), ...ORIGIN_OF_TAB },
+        ],
       });
     });
 
@@ -1202,7 +1609,7 @@ describe("brains project", () => {
         ok: true,
         value: [
           summary(CHASER, "Chaser", sourceOf(CHASER, "Chaser"), brainSourceHash(sourceOf(CHASER, "Chaser"))),
-          summary(RUNNER, "Runner", added, brainSourceHash(added)),
+          summary(RUNNER, "Runner", added, brainSourceHash(added), null),
         ],
       });
     });
@@ -1226,7 +1633,10 @@ describe("brains project", () => {
     it("holds a brains module made newer-format by hand as it is: nothing written, pushes failing by its code", async () => {
       await watch();
       await applied(writeOf(CHASER, "Chaser"));
-      const newer = writeBrainsModule([]).replace("wendoo-brains-format 1", "wendoo-brains-format 2");
+      const newer = writeBrainsModule([]).replace(
+        `wendoo-brains-format ${BRAINS_MODULE_FORMAT}`,
+        `wendoo-brains-format ${BRAINS_MODULE_FORMAT + 1}`
+      );
 
       host.edit(BRAINS_MODULE_FILE, newer, { notify: true });
       await until(() => log.errors.some((line) => line.startsWith("BRAINS_MODULE_FORMAT_NEWER")));
@@ -1314,7 +1724,7 @@ describe("brains project", () => {
       assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(edited));
       assert.ok(!host.mutations.includes(`write brains/${CHASER}.src.json`));
       const listed = await list(fresh);
-      assert.deepEqual(listed.ok && listed.value, [summary(CHASER, "Chaser", edited, brainSourceHash(edited))]);
+      assert.deepEqual(listed.ok && listed.value, [summary(CHASER, "Chaser", edited, brainSourceHash(edited), null)]);
     });
 
     it("holds a source mangled by hand verbatim as it holds one at start, keeping the brain's registration", async () => {
@@ -1337,7 +1747,15 @@ describe("brains project", () => {
       assert.deepEqual(announced, [[held]]);
       assert.deepEqual(await pull([CHASER]), {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", source: "not json {", compiledSourceHash: lastGood?.sourceHash ?? null }],
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            source: "not json {",
+            compiledSourceHash: lastGood?.sourceHash ?? null,
+            ...ORIGIN_OF_TAB,
+          },
+        ],
       });
     });
 
@@ -1434,12 +1852,15 @@ describe("brains project", () => {
             name: "Chaser",
             sourceHash: brainSourceHash(first),
             compiledSourceHash: brainSourceHash(first),
+            ...ORIGIN_OF_TAB,
           },
         ],
       });
       assert.deepEqual(pulledMidDrain, {
         ok: true,
-        value: [{ id: CHASER, name: "Chaser", source: first, compiledSourceHash: brainSourceHash(first) }],
+        value: [
+          { id: CHASER, name: "Chaser", source: first, compiledSourceHash: brainSourceHash(first), ...ORIGIN_OF_TAB },
+        ],
       });
       assert.deepEqual(await list(), {
         ok: true,
@@ -1449,6 +1870,7 @@ describe("brains project", () => {
             name: "Chaser",
             sourceHash: brainSourceHash(second),
             compiledSourceHash: brainSourceHash(second),
+            ...ORIGIN_OF_TAB,
           },
         ],
       });
@@ -1474,6 +1896,7 @@ describe("brains project", () => {
             name: "Chaser",
             sourceHash: brainSourceHash(source),
             compiledSourceHash: brainSourceHash(source),
+            ...ORIGIN_OF_TAB,
           },
         ],
       });

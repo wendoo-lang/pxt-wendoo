@@ -105,6 +105,9 @@ export const SELFTEST_IDS_FILE = "makecode/tests/vm-conformance/selftest/ids.g.j
 /** The ids module the selftest project carries, as the simulator extension writes it. */
 export const SELFTEST_IDS_MODULE = "makecode/tests/vm-conformance/selftest/wendoo-lang/pxt-wendoo/ids.g.ts";
 
+/** The origin every selftest program's registration names: the arcade front door's registration key. */
+export const SELFTEST_BRAIN_ORIGIN = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+
 /** The brains module the selftest project carries, as the simulator extension writes it. */
 export const SELFTEST_BRAINS_MODULE = "makecode/tests/vm-conformance/selftest/wendoo-lang/pxt-wendoo/brains.g.ts";
 
@@ -1727,6 +1730,7 @@ function brainsModuleOf(programs: readonly SelftestProgram[]): string {
       name: program.name,
       sourceHash: program.sourceHash,
       bytecode: bytesOfHex(program.bytecode),
+      origin: SELFTEST_BRAIN_ORIGIN,
     }))
   );
 }

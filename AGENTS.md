@@ -787,10 +787,11 @@ the current slice alone.
     `ids.g.ts`, and publishes it into every session after each catalog --
     and the project's brain engine -- it compiles every brain the project
     holds in an environment built from the catalog, the manifest and the
-    asset snapshot, mints the brains a tab asks it to create, alone writes
-    `brains.g.ts` and the brain sources, feeds the running program from its
-    own compiles, and publishes the project's brain summaries into every
-    session --
+    asset snapshot, mints the brains a tab asks it to create, stamps each
+    with the creating tab's key as its origin and refuses another tab's
+    push of it, alone writes `brains.g.ts` and the brain sources, feeds the
+    running program from its own compiles, and publishes the project's
+    brain summaries into every session --
     and its root entry (`index.html`, sources in `src/editor`) is the
     editor webapp, booting as the editor
     tab the front door's registration declares; `src/authoring` holds the

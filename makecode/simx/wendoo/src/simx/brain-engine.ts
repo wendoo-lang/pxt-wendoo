@@ -16,7 +16,7 @@ import {
   wireDiagnostics,
 } from "../authoring/brain-source.js";
 import { adoptIds } from "../authoring/id-allocation.js";
-import type { CompiledBrainEntry } from "./brains-module.js";
+import type { CompiledBrain } from "./brains-module.js";
 
 /** What compiling one brain source made, with the registration the convergence rule leaves the brain. */
 export interface EngineCompile {
@@ -28,7 +28,7 @@ export interface EngineCompile {
    * registration the brain held before it under the brain's name, or
    * `undefined` when it held none.
    */
-  readonly registration: CompiledBrainEntry | undefined;
+  readonly registration: CompiledBrain | undefined;
 }
 
 /** An empty brain document the engine minted, as its source text. */
@@ -126,7 +126,7 @@ export class BrainEngine {
     id: string,
     name: string,
     source: string,
-    held: CompiledBrainEntry | undefined,
+    held: CompiledBrain | undefined,
     names: ReadonlyMap<string, { readonly name: string }>
   ): EngineCompile {
     this._built.brainLiterals.applyBrains(names);
@@ -143,9 +143,12 @@ export class BrainEngine {
       ? compileBrainSource(this._built.environment, source)
       : { diagnostics: [], bytecode: undefined, unresolvedTiles: [] };
     const good = compile.bytecode !== undefined && compile.unresolvedTiles.length === 0;
-    let registration: CompiledBrainEntry | undefined;
-    if (good && compile.bytecode !== undefined) registration = { id, name, sourceHash, bytecode: compile.bytecode };
-    else if (held !== undefined) registration = { ...held, id, name };
+    let registration: CompiledBrain | undefined;
+    if (good && compile.bytecode !== undefined) {
+      registration = { id, name, sourceHash, bytecode: compile.bytecode };
+    } else if (held !== undefined) {
+      registration = { id, name, sourceHash: held.sourceHash, bytecode: held.bytecode };
+    }
     return {
       outcome: {
         sourceHash,

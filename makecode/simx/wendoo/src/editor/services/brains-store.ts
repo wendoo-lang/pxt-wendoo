@@ -132,7 +132,21 @@ export interface BrainEntry {
    * predicts it for an edit not answered yet.
    */
   readonly compiledSourceHash: string | null;
+  /**
+   * The brain's origin as the simulator extension last reported it: the
+   * registration key of the tab that created it, or `null` for none
+   * recorded or none reported yet.
+   */
+  readonly origin: string | null;
+  /** The {@link origin} tab's name as MakeCode lists it, or `null` when unknown. */
+  readonly originLabel: string | null;
 }
+
+/** A brain's origin and its tab's label, as a {@link BrainEntry} carries them. */
+type BrainOrigin = Pick<BrainEntry, "origin" | "originLabel">;
+
+/** The origin of a brain the simulator extension has reported none for. */
+const NO_ORIGIN: BrainOrigin = { origin: null, originLabel: null };
 
 /**
  * Why the project's source of a brain is damaged: {@link BRAIN_SOURCE_INVALID}
@@ -557,7 +571,12 @@ export class BrainsStore {
     const source = serializeBrainSource(definition);
     const held = this._brains.get(id);
     if (held?.source === source) return;
-    const { entry, local } = this.compiled(definition.name(), source, held?.compiledSourceHash ?? null);
+    const { entry, local } = this.compiled(
+      definition.name(),
+      source,
+      held?.compiledSourceHash ?? null,
+      held ?? NO_ORIGIN
+    );
     this._brains = new Map(this._brains).set(id, entry);
     this._local.set(id, local);
     this.edited(id);
@@ -565,12 +584,12 @@ export class BrainsStore {
   }
 
   /**
-   * The entry holding `source`, a brain named `name`, compiled in the
-   * current environment, with what the compile found: `compiledSourceHash`
-   * is the source's hash for a good compile and `registered` otherwise.
-   * Throws when `source` is not a brain document.
+   * The entry holding `source`, a brain named `name` of origin `origin`,
+   * compiled in the current environment, with what the compile found:
+   * `compiledSourceHash` is the source's hash for a good compile and
+   * `registered` otherwise. Throws when `source` is not a brain document.
    */
-  private compiled(name: string, source: string, registered: string | null): CompiledEntry {
+  private compiled(name: string, source: string, registered: string | null, origin: BrainOrigin): CompiledEntry {
     this._environment.assetLiterals.bindSource(source);
     this._environment.brainLiterals.bindSource(source);
     const sourceHash = brainSourceHash(source);
@@ -585,6 +604,8 @@ export class BrainsStore {
         diagnostics,
         unresolvedTiles: unresolvedTilesOf(compile.unresolvedTiles),
         compiledSourceHash: good ? sourceHash : registered,
+        origin: origin.origin,
+        originLabel: origin.originLabel,
       },
       local: {
         sourceHash,
@@ -655,9 +676,13 @@ export class BrainsStore {
         this._pushesInFlight -= 1;
         this.pushAnswered(id, edit, outcome);
       },
-      () => {
+      (error: unknown) => {
         this._pushesInFlight -= 1;
-        this.pushFailed(channel, id, edit, attempt);
+        if (error instanceof MakeCodeBrainsError && error.code === MakeCodeBrainsErrorCode.NOT_ORIGIN) {
+          this.pushRefused(id, edit);
+        } else {
+          this.pushFailed(channel, id, edit, attempt);
+        }
       }
     );
   }
@@ -726,6 +751,26 @@ export class BrainsStore {
       if (this.pushesOver(channel)) this.push(channel, id, attempt + 1);
     }, retryDelay(attempt));
     this._retries.set(id, retry);
+  }
+
+  /**
+   * Handles the refusal of the push of the brain `id` made at its edit count
+   * `edit` because this tab is not the brain's origin: logs it by its code,
+   * and when `edit` is still the brain's latest edit drops its pend, cancels
+   * any scheduled retry and reconciles with the latest publication, taking
+   * the project's copy back. Publishes.
+   */
+  private pushRefused(id: string, edit: number): void {
+    logger.warn(MakeCodeBrainsErrorCode.NOT_ORIGIN, { brainId: id });
+    if (this._edits.get(id) === edit && this._pending.has(id)) {
+      const pending = new Set(this._pending);
+      pending.delete(id);
+      this._pending = pending;
+      clearTimeout(this._retries.get(id));
+      this._retries.delete(id);
+      this.requestSync();
+    }
+    this.publish();
   }
 
   /**
@@ -918,10 +963,15 @@ export class BrainsStore {
       }
     }
     for (const summary of brains) {
-      const entry = entries.get(summary.id);
-      if (entry?.sourceHash === summary.sourceHash && entry.compiledSourceHash !== summary.compiledSourceHash) {
-        entries.set(summary.id, { ...entry, compiledSourceHash: summary.compiledSourceHash });
+      let entry = entries.get(summary.id);
+      if (entry === undefined) continue;
+      if (entry.sourceHash === summary.sourceHash && entry.compiledSourceHash !== summary.compiledSourceHash) {
+        entry = { ...entry, compiledSourceHash: summary.compiledSourceHash };
       }
+      if (entry.origin !== summary.origin || entry.originLabel !== summary.originLabel) {
+        entry = { ...entry, origin: summary.origin, originLabel: summary.originLabel };
+      }
+      entries.set(summary.id, entry);
     }
     this._brains = entries;
     this._damaged = damaged;
@@ -962,7 +1012,7 @@ export class BrainsStore {
     if (definition.id() !== brain.id) return BRAIN_SOURCE_ID_MISMATCH;
     let compiled: CompiledEntry;
     try {
-      compiled = this.compiled(definition.name(), brain.source, null);
+      compiled = this.compiled(definition.name(), brain.source, null, brain);
     } catch {
       return BRAIN_SOURCE_INVALID;
     }
@@ -1001,7 +1051,7 @@ export class BrainsStore {
     for (const [id, held] of this._brains) {
       let entry: BrainEntry;
       try {
-        const compiled = this.compiled(held.name, held.source, held.compiledSourceHash);
+        const compiled = this.compiled(held.name, held.source, held.compiledSourceHash, held);
         entry = compiled.entry;
         this._local.set(id, compiled.local);
       } catch {

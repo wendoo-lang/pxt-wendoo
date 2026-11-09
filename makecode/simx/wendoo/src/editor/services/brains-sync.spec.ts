@@ -79,6 +79,8 @@ class FakeChannel implements MakeCodeBrainsChannel {
   readonly creates: string[] = [];
   /** When set, pushes naming these ids are answered with `WRITE_FAILED`. */
   readonly failingWrites = new Set<string>();
+  /** When set, pushes naming these ids are answered with `NOT_ORIGIN`. */
+  readonly refusedWrites = new Set<string>();
   /** When set, pushes naming these ids are never answered; closing still rejects them with `CLOSED`. */
   readonly unansweredWrites = new Set<string>();
   /** How many of the next pulls are answered with `READ_FAILED`. */
@@ -118,6 +120,9 @@ class FakeChannel implements MakeCodeBrainsChannel {
     return this.answer(() => {
       if (this.failingWrites.has(id)) {
         throw new MakeCodeBrainsError(MakeCodeBrainsErrorCode.WRITE_FAILED, "unwritable");
+      }
+      if (this.refusedWrites.has(id)) {
+        throw new MakeCodeBrainsError(MakeCodeBrainsErrorCode.NOT_ORIGIN, "not the origin");
       }
       if (push.op === "remove") {
         this.project.remove(push.brainId);
@@ -428,6 +433,105 @@ describe("brains sync", () => {
 
       assert.equal(second.project.get(id)?.name, "Runner");
       assert.equal(store.getSnapshot().pending.size, 0);
+    });
+  });
+
+  describe("origin", () => {
+    /** The key of the tab that created the remote brain. */
+    const OTHER_TAB = "wendoo-lang/pxt-daydream";
+
+    let warnings: ReturnType<typeof mock.method>;
+
+    beforeEach(() => {
+      warnings = mock.method(logger, "warn", () => {});
+    });
+
+    afterEach(() => {
+      warnings.mock.restore();
+    });
+
+    /** A project holding the brain `remote`, created by {@link OTHER_TAB}, its tab labelled `label`. */
+    function projectWithOrigin(remote: ReturnType<typeof projectBrain>, label: string | null): FrameProject {
+      const project = projectOf(remote);
+      const held = project.get(remote.id);
+      assert.ok(held);
+      project.set(remote.id, { ...held, origin: OTHER_TAB, originLabel: label });
+      return project;
+    }
+
+    it("carries each brain's origin and label from the pull, and from every later publication", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const channel = await handshake(projectWithOrigin(remote, null));
+      const pulled = entryOf(store, remote.id);
+
+      const held = channel.project.get(remote.id);
+      assert.ok(held);
+      channel.project.set(remote.id, { ...held, originLabel: "Daydream" });
+      sync.publishBrains(channel.project);
+      await settle();
+
+      assert.deepEqual([pulled.origin, pulled.originLabel], [OTHER_TAB, null]);
+      assert.deepEqual(
+        [entryOf(store, remote.id).origin, entryOf(store, remote.id).originLabel],
+        [OTHER_TAB, "Daydream"]
+      );
+    });
+
+    it("keeps a brain's origin through a local edit", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const channel = await handshake(projectWithOrigin(remote, "Daydream"));
+      channel.held = true;
+
+      store.renameBrain(remote.id, "Renamed");
+
+      assert.deepEqual(
+        [entryOf(store, remote.id).origin, entryOf(store, remote.id).originLabel],
+        [OTHER_TAB, "Daydream"]
+      );
+      channel.release();
+    });
+
+    it("drops a pend refused with NOT_ORIGIN, logging its code, retrying nothing and taking the project's copy back", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const channel = await handshake(projectWithOrigin(remote, null));
+      channel.refusedWrites.add(remote.id);
+
+      store.renameBrain(remote.id, "Renamed");
+      await settle();
+      await settle();
+      const pushes = channel.pushes.length;
+      await waitLong();
+
+      assert.equal(store.getSnapshot().pending.size, 0);
+      assert.equal(store.getSnapshot().pushesInFlight, 0);
+      assert.equal(channel.pushes.length, pushes);
+      assert.deepEqual(writtenIds(channel), [remote.id]);
+      assert.equal(entryOf(store, remote.id).name, "Remote");
+      assert.equal(entryOf(store, remote.id).source, remote.source);
+      assert.deepEqual(warnedCodes(warnings), [MakeCodeBrainsErrorCode.NOT_ORIGIN]);
+      assert.deepEqual(warnings.mock.calls[0]?.arguments[1], { brainId: remote.id });
+    });
+
+    it("drops a removal refused with NOT_ORIGIN and holds the brain again from the project", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const channel = await handshake(projectWithOrigin(remote, null));
+      channel.refusedWrites.add(remote.id);
+
+      store.removeBrain(remote.id);
+      await settle();
+      await settle();
+      await waitLong();
+
+      assert.equal(store.getSnapshot().pending.size, 0);
+      assert.equal(entryOf(store, remote.id).source, remote.source);
+      assert.deepEqual(
+        channel.pushes.map((push) => push.op),
+        ["remove"]
+      );
     });
   });
 
@@ -782,7 +886,7 @@ describe("brains sync", () => {
       const remote = projectBrain("Remote");
       const channel = await handshake(projectOf(remote));
       const pulls = channel.pulls.length;
-      channel.project.set(remote.id, { ...remote, compiledSourceHash: "00000000" });
+      channel.project.set(remote.id, { ...remote, compiledSourceHash: "00000000", origin: null, originLabel: null });
 
       sync.publishBrains(channel.project);
       await settle();
@@ -936,7 +1040,13 @@ describe("brains sync", () => {
       first.close();
       session.setStatus("disconnected");
       beforeReconnect?.();
-      first.project.set(remote.id, { ...remote, source: damaged, compiledSourceHash: null });
+      first.project.set(remote.id, {
+        ...remote,
+        source: damaged,
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      });
       return handshake(first.project);
     }
 
@@ -1086,7 +1196,13 @@ describe("brains sync", () => {
       const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
-      first.project.set(remote.id, { ...remote, source: "not json {", compiledSourceHash: null });
+      first.project.set(remote.id, {
+        ...remote,
+        source: "not json {",
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      });
       const second = await handshake(first.project);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
       second.close();
@@ -1242,7 +1358,13 @@ describe("brains sync", () => {
       const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
-      first.project.set(remote.id, { ...remote, source: "not json {", compiledSourceHash: null });
+      first.project.set(remote.id, {
+        ...remote,
+        source: "not json {",
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      });
       const second = await handshake(first.project);
       assert.equal(store.getSnapshot().damaged.has(remote.id), true);
 
@@ -1470,7 +1592,13 @@ describe("brains sync", () => {
       const first = await handshake(projectOf(remote));
       first.close();
       session.setStatus("disconnected");
-      first.project.set(remote.id, { ...remote, source: "not json {", compiledSourceHash: null });
+      first.project.set(remote.id, {
+        ...remote,
+        source: "not json {",
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      });
       const second = await handshake(first.project);
       second.failingWrites.add(remote.id);
 
@@ -1749,6 +1877,23 @@ describe("brains sync", () => {
       assert.equal(entryOf(store, quiet.id), quietBefore);
       assert.deepEqual(channel.pushes, []);
       assert.equal(store.getSnapshot().pending.size, 0);
+    });
+
+    it("keeps each brain's origin and label through a rebuild", async () => {
+      const store = syncedStore();
+      const ringer = ringingBrain();
+      const project = projectOf(ringer);
+      const held = project.get(ringer.id);
+      assert.ok(held);
+      project.set(ringer.id, { ...held, origin: "wendoo-lang/pxt-daydream", originLabel: "Daydream" });
+      await handshakeWith({ manifest: null }, project);
+      const unbound = entryOf(store, ringer.id);
+
+      await catalogArrives(CHIME_CATALOG, { manifest: CHIME_IDS });
+
+      const rebuilt = entryOf(store, ringer.id);
+      assert.notDeepEqual(rebuilt.diagnostics, unbound.diagnostics);
+      assert.deepEqual([rebuilt.origin, rebuilt.originLabel], ["wendoo-lang/pxt-daydream", "Daydream"]);
     });
 
     describe("unresolved tiles", () => {

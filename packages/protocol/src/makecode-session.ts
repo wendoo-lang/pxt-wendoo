@@ -598,6 +598,7 @@ class EstablishedSession implements MakeCodeSession {
             answer({ type: "makecode:brainsPushReply", id, payload: outcome });
           },
           fail: failWith(MakeCodeBrainsErrorCode.WRITE_FAILED),
+          refuse: failWith(MakeCodeBrainsErrorCode.NOT_ORIGIN),
         };
       case "makecode:brainsCreate":
         return {

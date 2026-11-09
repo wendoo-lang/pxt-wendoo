@@ -2,47 +2,32 @@
  * The brains module: the generated file declaring the project's compiled
  * brains to the Wendoo VM extension, one declaration per brain, which the
  * project compiles with the rest of its code. This module writes it and
- * reads it back.
- *
- * The text is line-structured. After two lines of comment it declares its
- * format as `// wendoo-brains-format <n>`, then a blank line, then the
- * namespace `wendooBrains` carrying one entry per brain, ordered by id and
- * separated by blank lines:
- *
- * ```ts
- * namespace wendooBrains {
- *     // source-hash 1a2b3c4d
- *     //% fixedInstance block="Chaser"
- *     export const p_abcdabcdabcdabcd = wendoo.registerCompiledBrain("abcdabcdabcdabcd", "Chaser", hex`
- *         000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
- *     `);
- * }
- * ```
- *
- * The `source-hash` line carries the `brainSourceHash` of the source the
- * program was compiled from. Each entry is a fixed instance of the VM
- * extension's compiled-brain type, which MakeCode lists in the dropdown of a
- * block taking one, labelled by the `block` attribute: the brain's name, or
- * its id when the name is empty. The declaration is named `p_` followed by
- * the id, each character of it outside `[A-Za-z0-9]` written as `_` and four
- * hex digits of its code unit. The id and the name are JSON string literals
- * with every character outside printable ASCII escaped, so the text is ASCII
- * and each literal stays on its line; the label is the same literal with
- * each `"` escaped as `\u0022`. The program's bytes follow as lowercase
- * hex, {@link HEX_BYTES_PER_LINE} bytes per line.
+ * reads it back. Its line format -- the format line, the namespace, each
+ * entry's source-hash line, its `fixedInstance` annotation with its `block`
+ * and `editor` attributes, the declaration's name, the literal escaping and
+ * the hex lines -- is in docs/session-management.md under COMPILED FORM.
  */
 
 /** Name of the brains module, relative to the simulator extension's folder in the project. */
 export const BRAINS_MODULE_FILE = "brains.g.ts";
 
 /** Format of the brains module this build writes, and the newest it reads. */
-export const BRAINS_MODULE_FORMAT = 1;
+export const BRAINS_MODULE_FORMAT = 2;
+
+/** The oldest format of the brains module this build reads. */
+const OLDEST_FORMAT = 1;
+
+/**
+ * The first format whose annotation lines carry the `editor` attribute; an
+ * entry of an older format carries none and reads with origin `null`.
+ */
+const EDITOR_ATTRIBUTE_FORMAT = 2;
 
 /** How many bytes of a program each hex line of the brains module carries. */
 const HEX_BYTES_PER_LINE = 32;
 
-/** One brain's compiled form, as the brains module registers it. */
-export interface CompiledBrainEntry {
+/** One brain's compiled form: its id, name, source hash and program. */
+export interface CompiledBrain {
   /** The brain's document id. */
   readonly id: string;
   /** The brain's display name; any text, including empty. */
@@ -53,13 +38,23 @@ export interface CompiledBrainEntry {
   readonly bytecode: Uint8Array;
 }
 
+/** One brain's registration as the brains module records it: its compiled form and its origin. */
+export interface CompiledBrainEntry extends CompiledBrain {
+  /**
+   * The brain's origin: the registration key of the front door whose tab
+   * created it, or `null` for none recorded.
+   */
+  readonly origin: string | null;
+}
+
 /** Stable codes of the problems {@link readBrainsModule} finds. */
 export const BrainsModuleProblemCode = {
   /**
-   * The text does not follow a format this build knows: it declares none, or
-   * declares {@link BRAINS_MODULE_FORMAT} without opening the namespace that
-   * format declares its entries in. It is not a brains module at all, or has
-   * been damaged. No entry is read from it.
+   * The text does not follow a format this build knows: it declares none,
+   * declares one older than any this build reads, or declares one it reads
+   * without opening the namespace that format declares its entries in. It
+   * is not a brains module at all, or has been damaged. No entry is read
+   * from it.
    */
   UNREADABLE: "BRAINS_MODULE_UNREADABLE",
   /**
@@ -68,7 +63,10 @@ export const BrainsModuleProblemCode = {
    * must not be rewritten by this build.
    */
   FORMAT_NEWER: "BRAINS_MODULE_FORMAT_NEWER",
-  /** One entry does not follow the format; it is skipped and the rest are read. */
+  /**
+   * One entry does not follow the format, such as one whose `editor`
+   * attribute is not of the `simx:` kind; it is skipped and the rest are read.
+   */
   ENTRY_MALFORMED: "BRAINS_MODULE_ENTRY_MALFORMED",
 } as const;
 
@@ -92,6 +90,12 @@ export interface BrainsModuleReading {
   /** The problems found, in text order. */
   readonly problems: readonly BrainsModuleProblem[];
 }
+
+/** The prefix of an `editor` attribute's value naming a simulator extension's registration key. */
+const SIMX_EDITOR_KIND = "simx:";
+
+/** The `editor` attribute ending an entry's annotation line, its value captured. */
+const EDITOR_ATTRIBUTE = / editor="([^"]*)"$/;
 
 /** The line declaring the format. */
 const FORMAT_LINE = /^\/\/ wendoo-brains-format (\d+)$/;
@@ -153,7 +157,7 @@ export function writeBrainsModule(entries: Iterable<CompiledBrainEntry>): string
     if (index > 0) lines.push("");
     lines.push(
       `${ENTRY_INDENT}// source-hash ${entry.sourceHash}`,
-      `${ENTRY_INDENT}${blockLine(entry.id, entry.name)}`,
+      `${ENTRY_INDENT}${blockLine(entry.id, entry.name, entry.origin)}`,
       `${ENTRY_INDENT}${DECLARATION_START}${identifierPart(entry.id)} = wendoo.registerCompiledBrain(` +
         `${asciiLiteral(entry.id)}, ${asciiLiteral(entry.name)}, hex\``
     );
@@ -177,7 +181,8 @@ export function readBrainsModule(text: string): BrainsModuleReading {
   const lines = text.split(/\r?\n/);
   const declared = lines.map((line) => FORMAT_LINE.exec(line)).find((match) => match !== null);
   const format = declared ? Number(declared[1]) : undefined;
-  if (format !== BRAINS_MODULE_FORMAT || !lines.includes(NAMESPACE_OPEN)) {
+  const known = format !== undefined && format >= OLDEST_FORMAT && format <= BRAINS_MODULE_FORMAT;
+  if (!known || !lines.includes(NAMESPACE_OPEN)) {
     const code =
       format !== undefined && format > BRAINS_MODULE_FORMAT
         ? BrainsModuleProblemCode.FORMAT_NEWER
@@ -188,7 +193,7 @@ export function readBrainsModule(text: string): BrainsModuleReading {
   const problems: BrainsModuleProblem[] = [];
   for (let index = 0; index < lines.length; index++) {
     if (!lines[index].trim().startsWith(DECLARATION_START)) continue;
-    const entry = readEntry(lines, index);
+    const entry = readEntry(lines, index, format);
     if (entry === undefined) {
       problems.push({ code: BrainsModuleProblemCode.ENTRY_MALFORMED, line: index + 1 });
       continue;
@@ -200,17 +205,20 @@ export function readBrainsModule(text: string): BrainsModuleReading {
 
 /**
  * The entry whose declaration opens on `lines[declarationIndex]`, with its
- * block label and source hash from the two lines before, or `undefined` when
- * it does not follow the format.
+ * annotation line and source hash from the two lines before, in a module of
+ * `format`, or `undefined` when it does not follow the format.
  */
-function readEntry(lines: readonly string[], declarationIndex: number): CompiledBrainEntry | undefined {
+function readEntry(lines: readonly string[], declarationIndex: number, format: number): CompiledBrainEntry | undefined {
   const hash = declarationIndex > 1 ? HASH_LINE.exec(lines[declarationIndex - 2].trim()) : null;
   const declaration = DECLARATION_LINE.exec(lines[declarationIndex].trim());
   if (hash === null || declaration === null) return undefined;
   const id = parseLiteral(declaration[2]);
   const name = parseLiteral(declaration[3]);
   if (id === undefined || name === undefined) return undefined;
-  if (declaration[1] !== identifierPart(id) || lines[declarationIndex - 1].trim() !== blockLine(id, name)) {
+  const annotation = lines[declarationIndex - 1].trim();
+  const origin = format < EDITOR_ATTRIBUTE_FORMAT ? null : originOf(annotation);
+  if (origin === undefined) return undefined;
+  if (declaration[1] !== identifierPart(id) || annotation !== blockLine(id, name, origin)) {
     return undefined;
   }
   let hex = "";
@@ -218,18 +226,38 @@ function readEntry(lines: readonly string[], declarationIndex: number): Compiled
     const line = lines[index].trim();
     if (line === DECLARATION_END) {
       const bytecode = bytesOf(hex);
-      return bytecode === undefined ? undefined : { id, name, sourceHash: hash[1], bytecode };
+      return bytecode === undefined ? undefined : { id, name, sourceHash: hash[1], bytecode, origin };
     }
     hex += line;
   }
   return undefined;
 }
 
-/** The `fixedInstance` annotation line labelling the brain `id` named `name`, its indent removed. */
-function blockLine(id: string, name: string): string {
-  return `//% fixedInstance block=${asciiLiteral(name === "" ? id : name).replace(/\\(.)/g, (pair, character) =>
+/**
+ * The `fixedInstance` annotation line labelling the brain `id` named `name`,
+ * its indent removed, ending in the `editor` attribute naming `origin` when
+ * the brain has one.
+ */
+function blockLine(id: string, name: string, origin: string | null): string {
+  const label = asciiLiteral(name === "" ? id : name).replace(/\\(.)/g, (pair, character) =>
     character === '"' ? "\\u0022" : pair
-  )}`;
+  );
+  const editor = origin === null ? "" : ` editor="${SIMX_EDITOR_KIND}${origin}"`;
+  return `//% fixedInstance block=${label}${editor}`;
+}
+
+/**
+ * The origin the annotation line `annotation` names: the registration key
+ * its `editor` attribute carries after `simx:`, `null` when it carries no
+ * `editor` attribute, or `undefined` when the attribute is of another kind
+ * or names no key.
+ */
+function originOf(annotation: string): string | null | undefined {
+  const editor = EDITOR_ATTRIBUTE.exec(annotation);
+  if (editor === null) return null;
+  const value = editor[1];
+  if (!value.startsWith(SIMX_EDITOR_KIND) || value.length === SIMX_EDITOR_KIND.length) return undefined;
+  return value.slice(SIMX_EDITOR_KIND.length);
 }
 
 /**

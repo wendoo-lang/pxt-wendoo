@@ -36,7 +36,14 @@ const ASSETS: MakeCodeAsset[] = [{ kind: "image", id: "image1", previewUrl: "dat
 
 /** A brains publication holding one brain. */
 const BRAINS: MakeCodeBrainSummary[] = [
-  { id: "abcdabcdabcdabcd", name: "Chaser", sourceHash: "1a2b3c4d", compiledSourceHash: "1a2b3c4d" },
+  {
+    id: "abcdabcdabcdabcd",
+    name: "Chaser",
+    sourceHash: "1a2b3c4d",
+    compiledSourceHash: "1a2b3c4d",
+    origin: "wendoo-lang/pxt-wendoo/makecode/extensions/arcade",
+    originLabel: "Wendoo",
+  },
 ];
 
 /** Resolves with `read()` once `predicate` holds for it, polling until {@link WAIT_MS}. */
@@ -138,7 +145,14 @@ describe("port-backed editor session", () => {
     peer.onBrainsRequest((request) => {
       if (request.kind === "list") request.reply([]);
       if (request.kind === "create") {
-        request.reply({ id: "createdcreatedcr", name: request.name, sourceHash: "00000000", compiledSourceHash: null });
+        request.reply({
+          id: "createdcreatedcr",
+          name: request.name,
+          sourceHash: "00000000",
+          compiledSourceHash: null,
+          origin: null,
+          originLabel: null,
+        });
       }
     });
     return peer;

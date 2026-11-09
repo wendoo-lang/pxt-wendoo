@@ -546,6 +546,8 @@ describe("brains store", () => {
           name: brain.name,
           sourceHash: brainSourceHash(brain.source),
           compiledSourceHash: brain.compiledSourceHash,
+          origin: brain.origin,
+          originLabel: brain.originLabel,
         });
         const channel: MakeCodeBrainsChannel = {
           listBrains: () => Promise.resolve([]),
@@ -609,7 +611,14 @@ describe("brains store", () => {
       live.setStatus("connected");
       const store = new BrainsStore(sessionStore, sessionStore);
       const source = JSON.stringify({ version: 1, id: "createdcreatedcr", name: "Chaser", pages: [] }, null, 2);
-      live.handshake({ id: "createdcreatedcr", name: "Chaser", source, compiledSourceHash: brainSourceHash(source) });
+      live.handshake({
+        id: "createdcreatedcr",
+        name: "Chaser",
+        source,
+        compiledSourceHash: brainSourceHash(source),
+        origin: "owner/repo/path",
+        originLabel: "Wendoo",
+      });
       await new Promise((resolve) => setImmediate(resolve));
 
       const id = await store.addBrain("Chaser");

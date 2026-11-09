@@ -20,12 +20,30 @@ import { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./mak
 /** A source text exercising characters a JSON wire must carry intact. */
 const SOURCE = '{"version":1,"id":"abcdabcdabcdabcd","name":"say \\"hi\\" café 😀"}';
 
-/** A summary of the brain holding {@link SOURCE}, its registration compiled from that source. */
+/** The registration key of a front door whose tab creates brains. */
+const ORIGIN = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+
+/** The name MakeCode lists the {@link ORIGIN} tab by. */
+const ORIGIN_LABEL = "Wendoo";
+
+/** A summary of the brain holding {@link SOURCE}, its registration compiled from that source, created by the {@link ORIGIN} tab. */
 const SUMMARY: MakeCodeBrainSummary = {
   id: "abcdabcdabcdabcd",
   name: "Chaser",
   sourceHash: brainSourceHash(SOURCE),
   compiledSourceHash: brainSourceHash(SOURCE),
+  origin: ORIGIN,
+  originLabel: ORIGIN_LABEL,
+};
+
+/** A summary of a brain with no origin whose registration was compiled from its source; specs spread it and override fields. */
+const BARE: MakeCodeBrainSummary = {
+  id: "bare-bare-bare-b",
+  name: "",
+  sourceHash: "1a2b3c4d",
+  compiledSourceHash: "1a2b3c4d",
+  origin: null,
+  originLabel: null,
 };
 
 /** A compile outcome carrying a diagnostic with every kind of param, an unresolved tile and a registration. */
@@ -143,13 +161,23 @@ describe("makecode session brains requests", () => {
     session.dispose();
   });
 
-  it("pulls brains by id, each source intact with its compiled source hash", async () => {
+  it("pulls brains by id, each source intact with its compiled source hash and origin", async () => {
     const { session, port } = await openSession();
     const wire: MakeCodeWireBrain = {
       id: "abcdabcdabcdabcd",
       name: "Chaser",
       source: SOURCE,
       compiledSourceHash: brainSourceHash(SOURCE),
+      origin: ORIGIN,
+      originLabel: ORIGIN_LABEL,
+    };
+    const legacy: MakeCodeWireBrain = {
+      id: "b",
+      name: "",
+      source: "not json {",
+      compiledSourceHash: null,
+      origin: null,
+      originLabel: null,
     };
 
     const pulled = session.pullBrains(["abcdabcdabcdabcd", "missingmissingmi"]);
@@ -162,10 +190,10 @@ describe("makecode session brains requests", () => {
     port.deliver({
       type: "makecode:brainsPullReply",
       id: request.id,
-      payload: { brains: [wire, { id: "b", name: "", source: "not json {", compiledSourceHash: null }] },
+      payload: { brains: [wire, legacy] },
     });
 
-    assert.deepEqual(await pulled, [wire, { id: "b", name: "", source: "not json {", compiledSourceHash: null }]);
+    assert.deepEqual(await pulled, [wire, legacy]);
     session.dispose();
   });
 
@@ -289,7 +317,18 @@ describe("makecode session brains requests", () => {
     port.deliver({
       type: "makecode:brainsListReply",
       id: staleId,
-      payload: { brains: [{ id: "stale-stale-stal", name: "", sourceHash: "00000000", compiledSourceHash: null }] },
+      payload: {
+        brains: [
+          {
+            id: "stale-stale-stal",
+            name: "",
+            sourceHash: "00000000",
+            compiledSourceHash: null,
+            origin: null,
+            originLabel: null,
+          },
+        ],
+      },
     });
     port.deliver({ type: "makecode:brainsListReply", id: laterId, payload: { brains: [] } });
 
@@ -452,8 +491,22 @@ describe("makecode session brains responder", () => {
     const request = onlyRequest(served, "pull");
     assert.deepEqual(request.ids, ["abcdabcdabcdabcd", "missingmissingmi"]);
     const brains: MakeCodeWireBrain[] = [
-      { id: "abcdabcdabcdabcd", name: "Chaser", source: SOURCE, compiledSourceHash: brainSourceHash(SOURCE) },
-      { id: "nocompilednocomp", name: "", source: "not json {", compiledSourceHash: null },
+      {
+        id: "abcdabcdabcdabcd",
+        name: "Chaser",
+        source: SOURCE,
+        compiledSourceHash: brainSourceHash(SOURCE),
+        origin: ORIGIN,
+        originLabel: ORIGIN_LABEL,
+      },
+      {
+        id: "nocompilednocomp",
+        name: "",
+        source: "not json {",
+        compiledSourceHash: null,
+        origin: null,
+        originLabel: null,
+      },
     ];
     request.reply(brains);
 
@@ -535,6 +588,41 @@ describe("makecode session brains responder", () => {
     session.dispose();
   });
 
+  it("refuses a push with NOT_ORIGIN, carrying the request's id", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({
+      type: "makecode:brainsPush",
+      id: "write-1",
+      payload: { op: "remove", brainId: "abcdabcdabcdabcd" },
+    });
+    const request = onlyRequest(served, "push");
+    request.refuse("not the origin");
+    request.reply(null);
+
+    const reply = port.sent.at(-1);
+    assert.equal(reply?.type, "makecode:brainsError");
+    assert.ok(reply?.type === "makecode:brainsError");
+    assert.equal(reply.id, "write-1");
+    assert.equal(reply.payload.code, MakeCodeBrainsErrorCode.NOT_ORIGIN);
+    session.dispose();
+  });
+
+  it("rejects a push answered by a NOT_ORIGIN error reply with NOT_ORIGIN", async () => {
+    const { session, port } = await openSession();
+
+    const pushed = session.pushBrain({ op: "remove", brainId: "abcdabcdabcdabcd" });
+    port.deliver({
+      type: "makecode:brainsError",
+      id: lastRequest(port).id,
+      payload: { code: MakeCodeBrainsErrorCode.NOT_ORIGIN, message: "not the origin" },
+    });
+
+    await rejectsWith(pushed, MakeCodeBrainsErrorCode.NOT_ORIGIN);
+    session.dispose();
+  });
+
   it("answers each request once, sending nothing for a later answer", async () => {
     const { session, port } = await openSession();
     const served = servedRequests(session);
@@ -586,6 +674,8 @@ describe("makecode session brains responder", () => {
         name: brain.name,
         sourceHash: brainSourceHash(brain.source),
         compiledSourceHash: brain.compiledSourceHash,
+        origin: brain.origin,
+        originLabel: brain.originLabel,
       }));
     const published: MakeCodeBrainSummary[][] = [];
     requester.onBrains((brains) => {
@@ -603,7 +693,12 @@ describe("makecode session brains responder", () => {
           if (request.push.op === "write") {
             const { brain } = request.push;
             const sourceHash = brainSourceHash(brain.source);
-            project.set(brain.id, { ...brain, compiledSourceHash: sourceHash });
+            project.set(brain.id, {
+              ...brain,
+              compiledSourceHash: sourceHash,
+              origin: ORIGIN,
+              originLabel: ORIGIN_LABEL,
+            });
             request.reply({ sourceHash, compiled: { sourceHash }, diagnostics: [], unresolvedTiles: [] });
           } else {
             project.delete(request.push.brainId);
@@ -618,12 +713,16 @@ describe("makecode session brains responder", () => {
             name: request.name,
             source,
             compiledSourceHash: null,
+            origin: ORIGIN,
+            originLabel: ORIGIN_LABEL,
           });
           request.reply({
             id: "createdcreatedcr",
             name: request.name,
             sourceHash: brainSourceHash(source),
             compiledSourceHash: null,
+            origin: ORIGIN,
+            originLabel: ORIGIN_LABEL,
           });
           responder.publishBrains(summaries());
           return;
@@ -641,6 +740,7 @@ describe("makecode session brains responder", () => {
     const removed = await requester.pushBrain({ op: "remove", brainId: "abcdabcdabcdabcd" });
 
     assert.equal(created.id, "createdcreatedcr");
+    assert.equal(created.origin, ORIGIN);
     assert.deepEqual(outcome, {
       sourceHash: brainSourceHash(SOURCE),
       compiled: { sourceHash: brainSourceHash(SOURCE) },
@@ -652,7 +752,14 @@ describe("makecode session brains responder", () => {
       ["createdcreatedcr", "abcdabcdabcdabcd"]
     );
     assert.deepEqual(pulled, [
-      { id: "abcdabcdabcdabcd", name: "Chaser", source: SOURCE, compiledSourceHash: brainSourceHash(SOURCE) },
+      {
+        id: "abcdabcdabcdabcd",
+        name: "Chaser",
+        source: SOURCE,
+        compiledSourceHash: brainSourceHash(SOURCE),
+        origin: ORIGIN,
+        originLabel: ORIGIN_LABEL,
+      },
     ]);
     assert.equal(removed, null);
     assert.deepEqual(
@@ -668,9 +775,9 @@ describe("makecode session brains responder", () => {
   it("carries each summary's compiled source hash as sent: a hash, or null", async () => {
     const { requester, responder } = await openPair();
     const summaries: MakeCodeBrainSummary[] = [
-      { id: "current-current-", name: "Current", sourceHash: "1a2b3c4d", compiledSourceHash: "1a2b3c4d" },
-      { id: "stale-stale-stal", name: "Stale", sourceHash: "1a2b3c4d", compiledSourceHash: "00000000" },
-      { id: "missing-missing-", name: "Missing", sourceHash: "1a2b3c4d", compiledSourceHash: null },
+      { ...BARE, id: "current-current-", name: "Current", compiledSourceHash: "1a2b3c4d" },
+      { ...BARE, id: "stale-stale-stal", name: "Stale", compiledSourceHash: "00000000" },
+      { ...BARE, id: "missing-missing-", name: "Missing", compiledSourceHash: null },
     ];
     responder.onBrainsRequest((request) => {
       if (request.kind === "list") request.reply(summaries);
@@ -680,6 +787,31 @@ describe("makecode session brains responder", () => {
 
     assert.deepEqual(listed, summaries);
     assert.equal(listed[2].compiledSourceHash, null);
+    requester.dispose();
+    responder.dispose();
+  });
+
+  it("carries each summary's origin and origin label as sent: both, a key with no label, or neither", async () => {
+    const { requester, responder } = await openPair();
+    const summaries: MakeCodeBrainSummary[] = [
+      { ...BARE, id: "labelled-labelle", origin: ORIGIN, originLabel: ORIGIN_LABEL },
+      { ...BARE, id: "unlisted-unliste", origin: "wendoo-lang/pxt-daydream", originLabel: null },
+      { ...BARE, id: "legacy-legacy-le", origin: null, originLabel: null },
+    ];
+    responder.onBrainsRequest((request) => {
+      if (request.kind === "list") request.reply(summaries);
+    });
+    const published: MakeCodeBrainSummary[][] = [];
+    requester.onBrains((brains) => {
+      published.push(brains);
+    });
+
+    const listed = await requester.listBrains();
+    responder.publishBrains(summaries);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(listed, summaries);
+    assert.deepEqual(published, [summaries]);
     requester.dispose();
     responder.dispose();
   });

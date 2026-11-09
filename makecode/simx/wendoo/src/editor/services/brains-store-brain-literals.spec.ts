@@ -78,6 +78,8 @@ class ProjectChannel implements MakeCodeBrainsChannel {
       name: brain.name,
       sourceHash: brainSourceHash(brain.source),
       compiledSourceHash: brain.compiledSourceHash,
+      origin: brain.origin,
+      originLabel: brain.originLabel,
     }));
   }
 }
@@ -89,7 +91,7 @@ function settle(): Promise<void> {
 
 /** The project brain `id` named `name` holding `source`, its registration compiled from it. */
 function projectBrain(id: string, name: string, source: string): MakeCodeWireBrain {
-  return { id, name, source, compiledSourceHash: brainSourceHash(source) };
+  return { id, name, source, compiledSourceHash: brainSourceHash(source), origin: null, originLabel: null };
 }
 
 /** The project's two brains: the chaser, holding no rule, and the seeker, whose rule seeks the chaser. */
