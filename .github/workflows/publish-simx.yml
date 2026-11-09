@@ -3,13 +3,16 @@ name: Publish simulator extension
 # Builds the merged Wendoo simulator-extension artifact (the editor tab at
 # the artifact root and the simulator frame at simx/index.html) and
 # publishes it to the gh-pages branch. MakeCode serves a simulator
-# extension from this repository at the commit named by the `sha` of its
+# extension from this repository at the commit named by the `sha` of an
 # approvedRepoLib registration, resolving `index`, `editor.index` and
 # `editor.icon` against that commit's root, so the artifact's dist folder
 # is published AS the branch root, and the gh-pages history is never
 # rewritten: a pinned sha must stay reachable for as long as a target
-# registers it. Each run reports the new gh-pages commit sha for the
-# registration in its job summary.
+# registers it. A target registers this one artifact twice, under the VM
+# extension's key for the simulator frame and under its front door's key
+# for the editor tab, and both entries pin the same sha, bumped together
+# as one edit. Each run reports the new gh-pages commit sha for those
+# entries in its job summary.
 
 # Manual only: a publish mints the sha a target's registration pins, so
 # it happens when someone decides it should, never on a push. The branch
@@ -84,7 +87,7 @@ jobs:
           publish_branch: gh-pages
           commit_message: "Publish ${{ inputs.branch }} at ${{ env.SOURCE_SHA }}"
 
-      # The sha a target's approvedRepoLib registration pins is the
+      # The sha a target's two approvedRepoLib entries pin is the
       # gh-pages commit, not the main commit that produced it.
       - name: Report the published commit
         run: |
@@ -97,7 +100,7 @@ jobs:
             echo
             echo "gh-pages commit: \`$SHA\`"
             echo
-            echo "Registration \`sha\` for \`wendoo-lang/pxt-wendoo\` in a target's targetconfig.json:"
+            echo "Registration \`sha\` for both \`wendoo-lang/pxt-wendoo\` entries in a target's targetconfig.json (the VM's, \`.../makecode/extensions/vm\`, and the front door's, \`.../makecode/extensions/arcade\` for Arcade), bumped together:"
             echo
             echo '```json'
             echo "\"sha\": \"$SHA\""
