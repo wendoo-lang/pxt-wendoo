@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import type { BrainDef, IBrainDef, IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
 import { CoreHostActions, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import { brainSourceHash } from "@wendoo/makecode-session";
+import { serializeBrainSource } from "../../authoring/brain-source.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
 import { seedBrain } from "../test-support/seed-brain.js";
@@ -12,6 +14,12 @@ import { BRAIN_FLUSH_FAILED, FLUSH_DEBOUNCE_MS, OpenEditings, openBrainEditing }
 const SESSION = {
   subscribe: () => () => {},
   getSnapshot: (): BrainsSessionState => ({ status: "connected", catalogText: undefined, assets: undefined }),
+};
+
+/** A disconnected session with no catalog: a store following it pends every edit. */
+const DISCONNECTED = {
+  subscribe: () => () => {},
+  getSnapshot: (): BrainsSessionState => ({ status: "disconnected", catalogText: undefined, assets: undefined }),
 };
 
 /** The tile `tileId` from `environment`'s catalogs. Throws when none holds it. */
@@ -65,12 +73,12 @@ describe("openBrainEditing", () => {
 
     const editing = openBrainEditing(store, id);
 
-    assert.equal(editing.srcBrainDef?.id(), id);
-    assert.equal(editing.srcBrainDef?.name(), "Chaser");
+    assert.equal(editing.getDocument()?.id(), id);
+    assert.equal(editing.getDocument()?.name(), "Chaser");
   });
 
   it("opens with no document for an id the store does not hold", () => {
-    assert.equal(openBrainEditing(store, "no-such-brain").srcBrainDef, undefined);
+    assert.equal(openBrainEditing(store, "no-such-brain").getDocument(), undefined);
   });
 
   it("applies an edit to the store once the debounce has passed after it, compiling it, and not before", () => {
@@ -78,7 +86,7 @@ describe("openBrainEditing", () => {
     const other = seedBrain(store, "Runner");
     const before = store.getSnapshot().brains.get(id);
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     authorRule(store.getSnapshot().environment, definition);
 
@@ -98,7 +106,7 @@ describe("openBrainEditing", () => {
   it("flushes a run of edits once, the debounce after the latest, reading only the latest snapshot", () => {
     const id = seedBrain(store, "Chaser");
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     const earlier = snapshotOf(definition);
     const latest = snapshotOf(definition);
@@ -124,7 +132,7 @@ describe("openBrainEditing", () => {
   it("flushes the unflushed edit at once on close, and nothing more when the debounce would have passed", () => {
     const id = seedBrain(store, "Chaser");
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     authorRule(store.getSnapshot().environment, definition);
     const snapshot = snapshotOf(definition);
@@ -142,7 +150,7 @@ describe("openBrainEditing", () => {
   it("changes nothing on close when every edit has been flushed", () => {
     const id = seedBrain(store, "Chaser");
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     authorRule(store.getSnapshot().environment, definition);
     const snapshot = snapshotOf(definition);
@@ -160,7 +168,7 @@ describe("openBrainEditing", () => {
     const errors = mock.method(logger, "error", () => {});
     const id = seedBrain(store, "Chaser");
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     const before = store.getSnapshot();
 
@@ -189,13 +197,15 @@ describe("openBrainEditing", () => {
     let applies = 0;
     const throwing = {
       getBrain: (brainId: string) => store.getBrain(brainId),
+      getSnapshot: () => store.getSnapshot(),
+      subscribe: (listener: () => void) => store.subscribe(listener),
       applyBrain: () => {
         applies += 1;
         throw new Error("uncompilable");
       },
     };
     const editing = openBrainEditing(throwing, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
 
     editing.change(() => definition);
@@ -209,18 +219,103 @@ describe("openBrainEditing", () => {
     );
   });
 
-  it("keeps the document it opened with through every flush", () => {
+  it("keeps the document it opened with through every flush of its own, adopting none of them", () => {
     const id = seedBrain(store, "Chaser");
     const editing = openBrainEditing(store, id);
-    const opened = editing.srcBrainDef;
+    const opened = editing.getDocument();
     assert.ok(opened);
+    let notified = 0;
+    editing.subscribe(() => {
+      notified += 1;
+    });
     authorRule(store.getSnapshot().environment, opened);
 
     editing.change(() => opened);
     mock.timers.tick(FLUSH_DEBOUNCE_MS);
     editing.close();
 
-    assert.equal(editing.srcBrainDef, opened);
+    assert.equal(store.getSnapshot().brains.get(id)?.sourceHash, brainSourceHash(serializeBrainSource(opened)));
+    assert.equal(editing.getDocument(), opened);
+    assert.equal(notified, 0);
+  });
+
+  it("adopts the store's newer version of its brain while it holds no unflushed edit, notifying its listeners", () => {
+    const id = seedBrain(store, "Chaser");
+    const editing = openBrainEditing(store, id);
+    const opened = editing.getDocument();
+    let notified = 0;
+    editing.subscribe(() => {
+      notified += 1;
+    });
+    const newer = store.getBrain(id);
+    assert.ok(newer);
+    authorRule(store.getSnapshot().environment, newer);
+
+    store.applyBrain(newer);
+
+    const adopted = editing.getDocument();
+    assert.ok(adopted);
+    assert.notEqual(adopted, opened);
+    assert.equal(adopted.id(), id);
+    assert.equal(brainSourceHash(serializeBrainSource(adopted)), store.getSnapshot().brains.get(id)?.sourceHash);
+    assert.equal(notified, 1);
+    assert.equal(editing.getDocument(), adopted);
+  });
+
+  it("holds its document while it holds an unflushed edit, and its flush wins over the store's newer version", () => {
+    const id = seedBrain(store, "Chaser");
+    const editing = openBrainEditing(store, id);
+    const opened = editing.getDocument();
+    assert.ok(opened);
+    let notified = 0;
+    editing.subscribe(() => {
+      notified += 1;
+    });
+    authorRule(store.getSnapshot().environment, opened);
+    editing.change(() => opened);
+
+    store.renameBrain(id, "Runner");
+    assert.equal(editing.getDocument(), opened);
+    mock.timers.tick(FLUSH_DEBOUNCE_MS);
+
+    assert.equal(store.getSnapshot().brains.get(id)?.sourceHash, brainSourceHash(serializeBrainSource(opened)));
+    assert.equal(store.getSnapshot().brains.get(id)?.name, "Chaser");
+    assert.equal(editing.getDocument(), opened);
+    assert.equal(notified, 0);
+  });
+
+  it("adopts nothing while the store holds the brain pending", () => {
+    const pendingStore = new BrainsStore(DISCONNECTED);
+    const id = seedBrain(pendingStore, "Chaser");
+    const editing = openBrainEditing(pendingStore, id);
+    const opened = editing.getDocument();
+    editing.subscribe(() => {});
+
+    pendingStore.renameBrain(id, "Runner");
+
+    assert.ok(pendingStore.getSnapshot().pending.has(id));
+    assert.equal(editing.getDocument(), opened);
+  });
+
+  it("adopts on subscribing a newer version stored while nothing was subscribed, and stops following once closed", () => {
+    const id = seedBrain(store, "Chaser");
+    const editing = openBrainEditing(store, id);
+    const opened = editing.getDocument();
+    store.renameBrain(id, "Runner");
+    assert.equal(editing.getDocument(), opened);
+
+    let notified = 0;
+    editing.subscribe(() => {
+      notified += 1;
+    });
+    const adopted = editing.getDocument();
+    editing.close();
+    store.renameBrain(id, "Sleeper");
+
+    assert.notEqual(adopted, opened);
+    assert.equal(adopted?.name(), "Runner");
+    assert.equal(editing.getDocument(), adopted);
+    assert.equal(notified, 1);
   });
 });
 
@@ -242,7 +337,7 @@ describe("OpenEditings", () => {
     snapshot: ReturnType<typeof snapshotOf>;
   } {
     const editing = openBrainEditing(store, id);
-    const definition = editing.srcBrainDef;
+    const definition = editing.getDocument();
     assert.ok(definition);
     authorRule(store.getSnapshot().environment, definition);
     const snapshot = snapshotOf(definition);

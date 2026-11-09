@@ -1,7 +1,8 @@
+import type { BrainDef } from "@wendoo/core/app";
 import { useDocsSidebar } from "@wendoo/docs";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorDialog, BrainEditorProvider } from "@wendoo/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { BrainEditing } from "@/brain/editing";
 import { openBrainEditing } from "@/brain/editing";
 import { buildBrainEditorConfig } from "@/brain/editor-config";
@@ -13,8 +14,10 @@ import type { TileKindColors } from "@/services/target-theme";
 interface BrainEditorSessionProps {
   /** The dialog's config. */
   config: BrainEditorConfig;
-  /** The editing the dialog stands over: its document, and where its edits go. */
+  /** The editing the dialog stands over: where its edits go. */
   editing: BrainEditing;
+  /** The document the dialog stands on: the editing's, as its subscription last delivered it. */
+  srcBrainDef: BrainDef | undefined;
   /** True while the dialog stands open. */
   isOpen: boolean;
   /** Called as the dialog opens or closes itself; on a close, after the editing has flushed. */
@@ -22,11 +25,12 @@ interface BrainEditorSessionProps {
 }
 
 /**
- * The brain editor dialog as a continuous session over `editing`: it opens
- * on `editing.srcBrainDef`, hands every edit to `editing.change` as it is
- * made, and flushes the editing as it closes, before reporting the close.
+ * The brain editor dialog as a continuous session over `editing`: it stands
+ * on `srcBrainDef`, standing afresh on each new document it is given, hands
+ * every edit to `editing.change` as it is made, and closes the editing as it
+ * closes, before reporting the close.
  */
-export function BrainEditorSession({ config, editing, isOpen, onOpenChange }: BrainEditorSessionProps) {
+export function BrainEditorSession({ config, editing, srcBrainDef, isOpen, onOpenChange }: BrainEditorSessionProps) {
   return (
     <BrainEditorProvider config={config}>
       <BrainEditorDialog
@@ -36,7 +40,7 @@ export function BrainEditorSession({ config, editing, isOpen, onOpenChange }: Br
           if (!open) editing.close();
           onOpenChange(open);
         }}
-        srcBrainDef={editing.srcBrainDef}
+        srcBrainDef={srcBrainDef}
         onChange={editing.change}
       />
     </BrainEditorProvider>
@@ -54,8 +58,10 @@ interface BrainEditorProps {
 
 /**
  * Edits one stored brain in the brain editor dialog: opens on the brain's
- * document as the store holds it when the editor mounts, and applies each
- * edit to the store, which compiles it, as a {@link BrainEditorSession}. The
+ * document as the store holds it when the editor mounts, stands afresh on
+ * each newer version of the brain its editing adopts from the store, and
+ * applies each edit to the store, which compiles it, as a
+ * {@link BrainEditorSession}. The
  * dialog's config follows the store's environment, its asset, brain and pack
  * literals, its type icons and its page icon, and `tileColors`, rebuilt each
  * time any of them changes. Mount it keyed by `brainId` to edit another brain.
@@ -119,12 +125,14 @@ export function BrainEditor({ brainId, onClose, tileColors }: BrainEditorProps) 
   const [editing] = useState(() => openBrainEditing(store, brainId));
   useTrackedEditing(editing);
   useEffect(() => () => editing.close(), [editing]);
+  const srcBrainDef = useSyncExternalStore(editing.subscribe, editing.getDocument, editing.getDocument);
   const [isOpen, setIsOpen] = useState(true);
 
   return (
     <BrainEditorSession
       config={config}
       editing={editing}
+      srcBrainDef={srcBrainDef}
       isOpen={isOpen}
       onOpenChange={(open) => {
         setIsOpen(open);

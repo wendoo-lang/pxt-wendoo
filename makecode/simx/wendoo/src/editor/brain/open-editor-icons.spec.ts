@@ -246,11 +246,12 @@ async function openEditor() {
   store.applyBrain(authored);
 
   const editing = openBrainEditing(store, id);
-  assert.ok(editing.srcBrainDef);
+  const opened = editing.getDocument();
+  assert.ok(opened);
   const openConfig = currentConfig(store);
   const tileCatalogs = openConfig.tileCatalogs;
   assert.ok(tileCatalogs);
-  const workingCopy = editing.srcBrainDef.workingCopy(List.from<ITileCatalog>(tileCatalogs));
+  const workingCopy = opened.workingCopy(List.from<ITileCatalog>(tileCatalogs));
   return { store, id, editing, openConfig, workingCopy, deliverCatalog };
 }
 

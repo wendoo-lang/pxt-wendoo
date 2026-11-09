@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { PeerSessionErrorCode } from "@wendoo/bridge-app/peer-session";
+import { BrainDef, CoreHostActions, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
+import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import {
   brainSourceHash,
   connectMakeCodeSession,
@@ -17,7 +19,10 @@ import {
   type MakeCodeWireCompileOutcome,
   messagePortSessionPort,
 } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment } from "../authoring/authoring-environment.js";
+import { serializeBrainSource } from "../authoring/brain-source.js";
 import type { ProjfsClient } from "../vendor/projfs.js";
+import { BRAINS_MODULE_FILE, readBrainsModule } from "./brains-module.js";
 import { IDS_MODULE_FILE, readIdsModule, writeIdsModule } from "./ids-module.js";
 import { decodeImageHex } from "./image-buffer.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode } from "./sim-channel.js";
@@ -35,6 +40,9 @@ const WAIT_MS = 2000;
 
 /** How long a spec watches a port to see that nothing arrives on it, in milliseconds. */
 const QUIET_MS = 50;
+
+/** Project-file watch timings short enough for several subscription retries to fit in {@link QUIET_MS}. */
+const WATCH_TIMINGS = { retryDelayMs: 2, maxRetryDelayMs: 8, debounceMs: 5 };
 
 /**
  * A catalog document exercising characters a message must carry intact:
@@ -213,7 +221,16 @@ describe("simx port bridge", () => {
       },
     };
     bridges.push(
-      startSimxPortBridge({ frame, parentOrigin: PARENT_ORIGIN, files, assets, log, target: "arcade", channel })
+      startSimxPortBridge({
+        frame,
+        parentOrigin: PARENT_ORIGIN,
+        files,
+        assets,
+        log,
+        target: "arcade",
+        channel,
+        fileWatchTimings: WATCH_TIMINGS,
+      })
     );
     return frame;
   }
@@ -1032,6 +1049,163 @@ describe("simx port bridge", () => {
           [chaser.id, runner.id, chaser.id, runner.id]
         );
       });
+    });
+  });
+
+  describe("project-file change notifications", () => {
+    /** The source of an empty brain document `id` named `name`. */
+    function brainSource(id: string, name: string): string {
+      return JSON.stringify({ version: 1, id, name, pages: [] }, null, 2);
+    }
+
+    const CHASER = "abcdabcdabcdabcd";
+
+    /** A catalog of one pack declaring the actuator `tile`. */
+    function tileCatalog(tile: string): string {
+      return JSON.stringify({ packs: [{ name: "beacon", tiles: [{ name: tile, kind: "actuator" }] }] });
+    }
+
+    it("re-reads a brain source MakeCode reports edited by hand, publishing the brains into the session", async () => {
+      host.edit(`brains/${CHASER}.src.json`, brainSource(CHASER, "Chaser"));
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const editor = await joinEditor(frame, CATALOG_TEXT);
+      await editor.nextBrains(0);
+      const edited = brainSource(CHASER, "Chaser by hand");
+
+      host.edit(`brains/${CHASER}.src.json`, edited, { notify: true });
+
+      const published = await eventually(
+        () => editor.brains.at(-1) ?? [],
+        (brains) => brains[0]?.sourceHash === brainSourceHash(edited),
+        "the hand edit to be published"
+      );
+      assert.deepEqual(
+        published.map((brain) => [brain.id, brain.name, brain.sourceHash]),
+        [[CHASER, "Chaser by hand", brainSourceHash(edited)]]
+      );
+    });
+
+    it("publishes the manifest into the session when MakeCode reports ids.g.ts edited by hand", async () => {
+      const frame = start();
+      const editor = await joinBare(frame);
+      const edited: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.beacon.flash", id: 1030 }],
+        operators: [],
+        types: [],
+        next: { action: 1031, operator: 1024, atom: 1024 },
+      };
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule(edited), { notify: true });
+
+      assert.deepEqual(await editor.nextMessage(), manifestMessage({ manifest: edited }));
+    });
+
+    it("keeps an edited ids.g.ts's ids when the program's catalog is allocated over it", async () => {
+      const frame = start();
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
+      const editor = await joinEditor(frame, tileCatalog("actuator.beacon.flash"));
+      const edited: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.beacon.flash", id: 1030 }],
+        operators: [],
+        types: [],
+        next: { action: 1031, operator: 1024, atom: 1024 },
+      };
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule(edited), { notify: true });
+
+      assert.deepEqual(await editor.nextMessage(), manifestMessage({ manifest: edited }));
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(edited));
+    });
+
+    it("rebuilds the brains on a manifest re-read, posting the program recompiled under the edited ids", async () => {
+      const chime = JSON.stringify({
+        packs: [{ name: "chime", tiles: [{ name: "actuator.chime.ring", kind: "actuator" }] }],
+      });
+      const held: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.chime.ring", id: 1024 }],
+        operators: [],
+        types: [],
+        next: { action: 1025, operator: 1024, atom: 1024 },
+      };
+      const { environment } = buildAuthoringEnvironment(chime, held);
+      const definition = BrainDef.emptyBrainDef(environment.brainServices, "Ringer");
+      const rule = (definition.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+      for (const catalog of environment.tileCatalogs()) {
+        const when = catalog.get(mkSensorTileId(CoreHostActions.OnPageEntered.key));
+        const ring = catalog.get(mkActuatorTileId("actuator.chime.ring"));
+        if (when) rule.when().appendTile(when);
+        if (ring) rule.do().appendTile(ring);
+      }
+      const id = definition.id();
+      host.edit(IDS_MODULE_FILE, writeIdsModule(held));
+      host.edit(`brains/${id}.src.json`, serializeBrainSource(definition));
+      const frame = start();
+      frame.programPosts(chime);
+      const registered = (): Uint8Array | undefined =>
+        readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id)?.bytecode;
+      const before = await eventually(registered, (bytecode) => bytecode !== undefined, "the pack brain to register");
+      const updates = postedProgramUpdates(frame.posted).length;
+      const renumbered: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.chime.ring", id: 1030 }],
+        operators: [],
+        types: [],
+        next: { action: 1031, operator: 1024, atom: 1024 },
+      };
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule(renumbered), { notify: true });
+
+      const after = await eventually(
+        registered,
+        (bytecode) => bytecode !== undefined && bytecode.join() !== before?.join(),
+        "the brain to be recompiled under the edited ids"
+      );
+      const posted = postedProgramUpdates(frame.posted).slice(updates);
+      assert.deepEqual(
+        posted.map((update) => [update.documentId, update.bytecode.join()]),
+        [[id, after?.join()]]
+      );
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(renumbered));
+    });
+
+    it("asks again for a subscription MakeCode refuses, logging the code, and re-reads every brain file once acknowledged", async () => {
+      host.failSubscribes("FAILED");
+      const acknowledge = host.holdSubscriptions();
+      host.edit(`brains/${CHASER}.src.json`, brainSource(CHASER, "Chaser"));
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const editor = await joinEditor(frame, CATALOG_TEXT);
+      await editor.nextBrains(0);
+      const edited = brainSource(CHASER, "Chaser by hand");
+
+      host.edit(`brains/${CHASER}.src.json`, edited);
+      acknowledge();
+
+      const published = await eventually(
+        () => editor.brains.at(-1) ?? [],
+        (brains) => brains[0]?.sourceHash === brainSourceHash(edited),
+        "the rescan to publish the hand edit"
+      );
+      assert.deepEqual(
+        published.map((brain) => brain.id),
+        [CHASER]
+      );
+      assert.equal(errors.filter((line) => line.startsWith("FAILED: ")).length, 1);
+    });
+
+    it("logs a subscription MakeCode refuses for good once, asking no more", async () => {
+      host.failSubscribes("PERMISSION_DENIED", "PERMISSION_DENIED");
+      start();
+
+      await eventually(
+        () => errors.length,
+        (count) => count > 0,
+        "the refusal to be logged"
+      );
+      await quiet();
+
+      assert.equal(errors.length, 1);
+      assert.ok(errors[0].startsWith("PERMISSION_DENIED: "));
     });
   });
 

@@ -9,25 +9,20 @@ import type {
   MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
-import { type ProjfsClient, ProjfsError, type ProjfsErrorCode } from "../vendor/projfs.js";
+import { ProjfsError } from "../vendor/projfs.js";
 import { BrainEngine, type EngineCompile } from "./brain-engine.js";
 import {
   BRAINS_MODULE_FILE,
   type BrainsModuleProblemCode,
+  type BrainsModuleReading,
   type CompiledBrainEntry,
   BrainsModuleProblemCode as ProblemCode,
   readBrainsModule,
   writeBrainsModule,
 } from "./brains-module.js";
 import type { LivePrograms } from "./live-programs.js";
+import { describeProjfsError, PROJFS_PERMANENT_REFUSALS, type ProjectFiles } from "./project-files.js";
 import type { SimxLog } from "./simx-bridge.js";
-
-/**
- * The project-file operations a {@link BrainsProject} reads and writes the
- * project through: a projfs client's, naming files relative to the simulator
- * extension's folder.
- */
-export type ProjectFiles = Pick<ProjfsClient, "list" | "read" | "write" | "delete">;
 
 /** The folder, relative to the simulator extension's, holding one source file per brain. */
 const SOURCE_FOLDER = "brains/";
@@ -68,6 +63,9 @@ const PROBLEM_EXPLANATIONS: Record<BrainsModuleProblemCode, string> = {
     "holds a registration that does not follow the format; that brain is recompiled from its source and the module rewritten.",
 };
 
+/** The message a push or create fails with while the brains module is of a newer format. */
+const FORMAT_NEWER_REFUSAL = `${ProblemCode.FORMAT_NEWER}: ${BRAINS_MODULE_FILE} ${PROBLEM_EXPLANATIONS[ProblemCode.FORMAT_NEWER]}`;
+
 /** Timings of a {@link BrainsProject}, in milliseconds. Each defaults when left out. */
 export interface BrainsProjectTimings {
   /** Wait before the first retry of a failed read or write; each later retry waits twice the one before. Default 500. */
@@ -75,14 +73,6 @@ export interface BrainsProjectTimings {
   /** Longest wait between retries, kept for every retry after it is reached. Default 30000. */
   maxRetryDelayMs?: number;
 }
-
-/** The projfs refusal codes no retry can overcome while this frame lives; a read or write refused with one is not asked again. */
-const PERMANENT_REFUSALS: ReadonlySet<ProjfsErrorCode> = new Set<ProjfsErrorCode>([
-  "PERMISSION_DENIED",
-  "UNREGISTERED",
-  "INVALID_NAME",
-  "INVALID_REQUEST",
-]);
 
 /** One brain source file the project holds, as the frame last read or wrote it. */
 interface HeldSource {
@@ -136,6 +126,19 @@ interface Queued {
  * then recompiled from its source, and a module holding anything else than
  * the registrations of the held brains is rewritten.
  *
+ * {@link reported} and {@link rescan} take MakeCode's word that brain files
+ * changed: each is re-read in a step of its own between drains. A source
+ * whose brain has a write or a removal queued is skipped, and the queued
+ * change lands over it. A source read as the text held changes nothing; any
+ * other text is adopted as a push's would be -- held, compiled, its changed
+ * registration queued and posted live -- its source file left unwritten; a
+ * source gone removes its brain, the module rewritten without it; and a
+ * source the project did not hold is added. A brains module read as the
+ * text last read or written changes nothing; any other is taken as read and
+ * healed as at start. A re-read that changed anything announces the brains
+ * to {@link onChange}. A failed re-read is logged and retried at the retry
+ * waits, and one refused for good is logged and dropped.
+ *
  * Brains compile in a {@link BrainEngine} built from the latest catalog, the
  * project's id manifest and the asset snapshot, and every held brain is
  * recompiled whenever one of them changes. A compile producing a program with
@@ -144,7 +147,7 @@ interface Queued {
  * to `live` at once.
  *
  * - A list names every held brain with its name, its source hash and the
- *   source hash its registration carries, `null` for none.
+ *   source hash its served registration carries, `null` for none.
  * - A pull returns each requested brain held, its source verbatim.
  * - A push write is compiled as it arrives and answered with its compile's
  *   outcome; a removal posts the brain's removal to `live` and is answered
@@ -160,7 +163,11 @@ interface Queued {
  * write carrying recompiled registrations is retried at the retry waits. A
  * write waits for MakeCode's answer however long it takes, and every write
  * is an artifact, never flagged as a user edit. Once a drain has landed
- * anything, the brains are announced to {@link onChange}.
+ * anything, the brains are announced to {@link onChange}. Lists, pulls and
+ * announcements serve a consistent view while a drain lands: a brain's
+ * registration in it advances once the source it was compiled from has
+ * landed -- with the module for a recompile, with the source file for a
+ * write -- and a removed brain leaves it once its source file is deleted.
  *
  * A damaged brains module yields every registration that is still readable,
  * and a coded line in the log for each problem; one written by a newer
@@ -183,9 +190,19 @@ export class BrainsProject {
   /** The brain source files the project holds, by document id, in the order first held. */
   private readonly _sources = new Map<string, HeldSource>();
   /** The registrations the brains module holds, by document id. */
+  private readonly _moduleEntries = new Map<string, CompiledBrainEntry>();
+  /** The registration served for each held brain, by document id: the module's once the source it was compiled from has landed. */
   private readonly _registrations = new Map<string, CompiledBrainEntry>();
   /** The brains module's text as last read or written, or `undefined` while the project holds none. */
   private _moduleText: string | undefined;
+  /** The names of the brain files to re-read: those MakeCode reported changed, and those whose write or delete the project refused. */
+  private readonly _reported = new Set<string>();
+  /** Whether every brain file is to be re-read. */
+  private _rescan = false;
+  /** Whether a retry of a failed re-read is waiting. */
+  private _rereadRetrying = false;
+  /** The wait before the next retry of a failed re-read. */
+  private _rereadRetryDelay: number;
   /** Whether the brains module was written by a newer simulator extension. */
   private _formatNewer = false;
   private readonly _queue = new Map<string, Queued>();
@@ -216,6 +233,7 @@ export class BrainsProject {
     this._retryDelayMs = timings.retryDelayMs ?? 500;
     this._maxRetryDelayMs = timings.maxRetryDelayMs ?? 30_000;
     this._writeRetryDelay = this._retryDelayMs;
+    this._rereadRetryDelay = this._retryDelayMs;
     this._ready = this.load(this._retryDelayMs);
   }
 
@@ -233,7 +251,11 @@ export class BrainsProject {
     return [...this._sources.keys()].map((id) => this.summaryOf(id)).filter((summary) => summary !== undefined);
   }
 
-  /** Subscribe to the brains announced after each drain that landed anything. Returns an unsubscribe function. */
+  /**
+   * Subscribe to the brains announced after each drain that landed anything
+   * and each re-read that changed what the project holds. Returns an
+   * unsubscribe function.
+   */
   onChange(listener: (brains: MakeCodeBrainSummary[]) => void): () => void {
     this._listeners.add(listener);
     return () => {
@@ -299,12 +321,38 @@ export class BrainsProject {
     });
   }
 
+  /**
+   * Re-read the brain source files and the brains module among `names`, the
+   * files MakeCode reported changed, once the project's brains are read and
+   * the drain writing now, if any, has landed. Every other name is ignored.
+   *
+   * @param names - The changed files' names, relative to the simulator extension's folder.
+   */
+  reported(names: readonly string[]): void {
+    if (this._disposed) return;
+    for (const name of names) {
+      if (name === BRAINS_MODULE_FILE || brainIdOf(name) !== undefined) this._reported.add(name);
+    }
+    this.pump();
+  }
+
+  /**
+   * Re-read every brain file as {@link reported} does: each source the
+   * project lists or the frame holds, and the brains module.
+   */
+  rescan(): void {
+    if (this._disposed) return;
+    this._rescan = true;
+    this.pump();
+  }
+
   /** Stop retrying failed reads and writes. */
   dispose(): void {
     this._disposed = true;
     for (const timer of this._timers) clearTimeout(timer);
     this._timers.clear();
     this._listeners.clear();
+    this._reported.clear();
   }
 
   /** The requested brains held, in request order, each id held no brain under left out. */
@@ -349,9 +397,7 @@ export class BrainsProject {
   /** Fails `request` by code while the brains module is of a newer format; returns whether it did. */
   private refusedNewer(request: MakeCodeBrainsPushRequest | MakeCodeBrainsCreateRequest): boolean {
     if (!this._formatNewer) return false;
-    request.fail(
-      `${ProblemCode.FORMAT_NEWER}: ${BRAINS_MODULE_FILE} ${PROBLEM_EXPLANATIONS[ProblemCode.FORMAT_NEWER]}`
-    );
+    request.fail(FORMAT_NEWER_REFUSAL);
     return true;
   }
 
@@ -383,25 +429,136 @@ export class BrainsProject {
   }
 
   /**
-   * Runs recompiles and drains, one at a time, until none is due, starting
-   * once the calls running now have queued what they queue.
+   * Runs re-reads, recompiles and drains, one at a time, until none is due,
+   * starting once the calls running now have queued what they queue.
    */
   private pump(): void {
     if (this._pumping || this._disposed) return;
     this._pumping = true;
     void Promise.resolve().then(async () => {
       try {
-        while (!this._disposed && this.due()) {
+        while (!this._disposed && (this.rereadDue() || this._recompile || this.drainDue())) {
+          if (this.rereadDue()) {
+            await this.reread();
+            continue;
+          }
           if (this._recompile) {
             this._recompile = false;
             this.recompile(() => true);
           }
-          if (this.due()) await this.drain();
+          if (this.drainDue()) await this.drain();
         }
       } finally {
         this._pumping = false;
       }
     });
+  }
+
+  /** Whether a re-read is due: the project's brains are read, something is reported, and no retry of a failed re-read is waiting. */
+  private rereadDue(): boolean {
+    return this._loaded && (this._rescan || this._reported.size > 0) && !this._rereadRetrying;
+  }
+
+  /**
+   * Re-reads the brain files reported -- every one for a rescan -- and
+   * adopts what changed, as the class documentation describes for a change
+   * report, announcing the brains when anything did. A failed re-read puts its names back and is
+   * retried after the next retry wait, unless the failure is one no retry
+   * can overcome.
+   */
+  private async reread(): Promise<void> {
+    const rescan = this._rescan;
+    const reported = [...this._reported];
+    this._rescan = false;
+    this._reported.clear();
+    let ids: string[];
+    let sources: (string | undefined)[];
+    let moduleText: string | undefined;
+    let module: boolean;
+    try {
+      const names = rescan ? [...reported, ...(await this.brainFiles())] : reported;
+      module = names.includes(BRAINS_MODULE_FILE);
+      ids = [...new Set(names.flatMap((name) => brainIdOf(name) ?? []))].filter((id) => !this.writesSource(id));
+      [sources, moduleText] = await Promise.all([
+        Promise.all(ids.map((id) => this.readIfPresent(brainSourceFile(id)))),
+        module ? this.readIfPresent(BRAINS_MODULE_FILE) : undefined,
+      ]);
+    } catch (error) {
+      if (!this.logFailure(error, "re-reading the project's brains")) return;
+      this._rescan ||= rescan;
+      for (const name of reported) this._reported.add(name);
+      this._rereadRetrying = true;
+      const delay = this._rereadRetryDelay;
+      this._rereadRetryDelay = this.nextDelay(delay);
+      void this.wait(delay).then(() => {
+        this._rereadRetrying = false;
+        this.pump();
+      });
+      return;
+    }
+    this._rereadRetryDelay = this._retryDelayMs;
+    let changed = false;
+    ids.forEach((id, index) => {
+      if (this.writesSource(id)) return;
+      if (this.adoptSource(id, sources[index])) changed = true;
+    });
+    if (module && moduleText !== this._moduleText) {
+      this.adoptModule(moduleText);
+      changed = true;
+    }
+    if (changed) this.announce();
+  }
+
+  /** The name of every file the project lists, of every brain source the frame holds, and of the brains module. */
+  private async brainFiles(): Promise<string[]> {
+    const listed = (await this._files.list()).map((file) => file.name);
+    return [...listed, ...[...this._sources.keys()].map(brainSourceFile), BRAINS_MODULE_FILE];
+  }
+
+  /** Whether a write or a removal of the brain `id`'s source is queued. */
+  private writesSource(id: string): boolean {
+    const op = this._queue.get(id)?.change.op;
+    return op === "write" || op === "remove";
+  }
+
+  /**
+   * Takes `text`, the source file of the brain `id` as re-read, `undefined`
+   * when the project holds none: a text other than the one held is held
+   * and compiled, its changed registration queued and posted live; a source
+   * gone removes the brain, its registration with it. Under a newer-format
+   * module the text is held and nothing compiled or written. Returns whether
+   * anything changed.
+   */
+  private adoptSource(id: string, text: string | undefined): boolean {
+    const held = this._sources.get(id);
+    if (text === undefined) {
+      if (held === undefined) return false;
+      this._sources.delete(id);
+      this._registrations.delete(id);
+      if (this._queue.get(id)?.change.op === "register") this._queue.delete(id);
+      if (!this._formatNewer) {
+        this._moduleStale = true;
+        this._live.remove(id);
+      }
+      return true;
+    }
+    if (held?.source === text) return false;
+    const name = brainName(text, held?.name ?? this.registrationOf(id)?.name ?? "");
+    this._sources.set(id, { name, source: text, sourceHash: brainSourceHash(text) });
+    if (this._formatNewer) return true;
+    const before = this.registrationOf(id);
+    const { registration } = this.compiled(id, name, text, before);
+    if (registration !== undefined && !sameRegistration(before, registration)) {
+      this.enqueue(id, { op: "register", registration });
+      this.registered(before, registration);
+    }
+    return true;
+  }
+
+  /** Takes `text`, the brains module as re-read, `undefined` when the project holds none, and heals it as at start. */
+  private adoptModule(text: string | undefined): void {
+    this.registerFrom(this.takeModule(text));
+    this.heal();
   }
 
   /**
@@ -473,9 +630,7 @@ export class BrainsProject {
    */
   private registrationOf(id: string): CompiledBrainEntry | undefined {
     const change = this._queue.get(id)?.change ?? this._landing.get(id);
-    if (change === undefined) return this._registrations.get(id);
-    if (change.op === "write") return change.compiled.registration;
-    return change.op === "register" ? change.registration : undefined;
+    return change === undefined ? this._moduleEntries.get(id) : registrationIn(change);
   }
 
   /** The brains as the latest changes leave them, keyed by document id, each with its name. */
@@ -505,21 +660,25 @@ export class BrainsProject {
     }
   }
 
-  /** Writes the brains module and the source files for the changes `batch` carries, as {@link drain} describes. */
+  /**
+   * Writes the brains module and the source files for the changes `batch`
+   * carries, as {@link drain} describes, advancing the served registration
+   * of each brain as its change lands. Under a newer-format module nothing is
+   * written and every request the batch carries fails by its code.
+   */
   private async write(batch: readonly [string, Queued][]): Promise<void> {
     const stale = this._moduleStale;
     this._moduleStale = false;
+    if (this._formatNewer) {
+      for (const [, queued] of batch) for (const answer of queued.answers) answer.failed(FORMAT_NEWER_REFUSAL);
+      return;
+    }
     const registrations = new Map<string, CompiledBrainEntry>();
-    for (const [id, registration] of this._registrations) {
+    for (const [id, registration] of this._moduleEntries) {
       if (this._sources.has(id)) registrations.set(id, registration);
     }
     for (const [id, { change }] of batch) {
-      const registration =
-        change.op === "write"
-          ? change.compiled.registration
-          : change.op === "register"
-            ? change.registration
-            : undefined;
+      const registration = registrationIn(change);
       if (registration === undefined) registrations.delete(id);
       else registrations.set(id, registration);
     }
@@ -535,29 +694,36 @@ export class BrainsProject {
       this._moduleText = text;
     }
     this._writeRetryDelay = this._retryDelayMs;
-    this._registrations.clear();
-    for (const [id, registration] of registrations) this._registrations.set(id, registration);
+    this._moduleEntries.clear();
+    for (const [id, registration] of registrations) this._moduleEntries.set(id, registration);
     const landed = await Promise.all(batch.map(([id, queued]) => this.applySource(id, queued)));
     if (!writesModule && !landed.includes(true)) return;
+    this.announce();
+  }
+
+  /** Announces the brains to every {@link onChange} listener. */
+  private announce(): void {
     const brains = this.summaries();
     for (const listener of this._listeners) listener(brains);
   }
 
   /**
    * Fails every request `batch` carries for the refused module write
-   * `error`. Unless the refusal is one no retry can overcome, puts its
+   * `error`, and has the source file of each write and removal it carries
+   * re-read. Unless the refusal is one no retry can overcome, puts its
    * recompiled registrations back in the queue -- each unless a later change
-   * of its brain is queued -- and writes the module again after the next
-   * retry wait.
+   * of its brain is queued -- and, when it put any back or the module was
+   * stale, writes the module again after the next retry wait.
    *
    * @param stale - Whether the module was to be written though no change was queued.
    */
   private moduleRefused(batch: readonly [string, Queued][], stale: boolean, error: unknown): void {
-    const message = describeError(error);
+    const message = describeProjfsError(error);
     const retryable = this.logFailure(error, `writing ${BRAINS_MODULE_FILE}`);
     let retry = retryable && stale;
     for (const [id, queued] of batch) {
       for (const answer of queued.answers) answer.failed(message);
+      if (queued.change.op !== "register") this._reported.add(brainSourceFile(id));
       if (retryable && queued.change.op === "register" && !this._queue.has(id)) {
         this._queue.set(id, { change: queued.change, answers: [] });
         retry = true;
@@ -575,22 +741,26 @@ export class BrainsProject {
     });
   }
 
-  /** Whether a recompile or a drain is due: a module write waiting to be retried waits, unless a request is queued. */
-  private due(): boolean {
-    if (this._recompile) return true;
+  /** Whether a drain is due: a module write waiting to be retried waits, unless a request is queued. */
+  private drainDue(): boolean {
     if (this._queue.size === 0 && !this._moduleStale) return false;
     return !this._writeRetrying || [...this._queue.values()].some((queued) => queued.answers.length > 0);
   }
 
   /**
    * Writes or deletes the source file of one brain the drain carries, and
-   * answers every request owed for it. Resolves with whether a change
+   * answers every request owed for it, serving the brain as its change
+   * leaves it once the change has landed; a refused write or delete has the
+   * source file re-read. Resolves with whether a change
    * landed: a write or a removal applied, or a registration, which the
    * module write landed.
    */
   private async applySource(id: string, queued: Queued): Promise<boolean> {
     const { change } = queued;
-    if (change.op === "register") return true;
+    if (change.op === "register") {
+      this.serveLanded(id, change);
+      return true;
+    }
     const file = brainSourceFile(id);
     try {
       if (change.op === "write") {
@@ -601,19 +771,27 @@ export class BrainsProject {
         });
       }
     } catch (error) {
-      const message = describeError(error);
+      const message = describeProjfsError(error);
       this._log.error(`${message} (saving ${file})`);
       for (const answer of queued.answers) answer.failed(message);
+      this._reported.add(file);
       return false;
     }
     if (change.op === "write") {
       this._sources.set(id, { name: change.name, source: change.source, sourceHash: brainSourceHash(change.source) });
     } else {
       this._sources.delete(id);
-      this._registrations.delete(id);
     }
+    this.serveLanded(id, change);
     for (const answer of queued.answers) answer.landed();
     return true;
+  }
+
+  /** Serves the brain `id`'s registration as the landed `change` leaves it. */
+  private serveLanded(id: string, change: Change): void {
+    const registration = registrationIn(change);
+    if (registration === undefined) this._registrations.delete(id);
+    else this._registrations.set(id, registration);
   }
 
   /** The summary of the held brain `id`, or `undefined` when the project holds none under it. */
@@ -646,6 +824,27 @@ export class BrainsProject {
       await this.wait(retryDelay);
       return this.load(this.nextDelay(retryDelay));
     }
+    const reading = this.takeModule(text);
+    ids.forEach((id, index) => {
+      const source = sources[index];
+      if (source === undefined) return;
+      this._sources.set(id, {
+        name: brainName(source, reading?.entries.get(id)?.name ?? ""),
+        source,
+        sourceHash: brainSourceHash(source),
+      });
+    });
+    this.registerFrom(reading);
+    this._loaded = true;
+    this.heal();
+    this.pump();
+  }
+
+  /**
+   * Takes `text` as the brains module's, `undefined` for none, logging each
+   * problem reading it meets by its code. Returns the reading.
+   */
+  private takeModule(text: string | undefined): BrainsModuleReading | undefined {
     const reading = text === undefined ? undefined : readBrainsModule(text);
     for (const problem of reading?.problems ?? []) {
       const where = problem.line === undefined ? BRAINS_MODULE_FILE : `${BRAINS_MODULE_FILE} line ${problem.line}`;
@@ -653,22 +852,32 @@ export class BrainsProject {
     }
     this._moduleText = text;
     this._formatNewer = reading?.problems.some((problem) => problem.code === ProblemCode.FORMAT_NEWER) === true;
-    ids.forEach((id, index) => {
-      const source = sources[index];
-      if (source === undefined) return;
+    return reading;
+  }
+
+  /** Takes the registrations `reading` holds for the held brains as the module's and the served ones. */
+  private registerFrom(reading: BrainsModuleReading | undefined): void {
+    this._moduleEntries.clear();
+    this._registrations.clear();
+    for (const id of this._sources.keys()) {
       const entry = reading?.entries.get(id);
-      this._sources.set(id, {
-        name: brainName(source, entry?.name ?? ""),
-        source,
-        sourceHash: brainSourceHash(source),
-      });
-      if (entry !== undefined) this._registrations.set(id, entry);
-    });
-    this._loaded = true;
+      if (entry === undefined) continue;
+      this._moduleEntries.set(id, entry);
+      this._registrations.set(id, entry);
+    }
+  }
+
+  /**
+   * Recompiles each held brain whose registration is missing or compiled
+   * from another source's hash, and has the module rewritten when it holds
+   * anything else than the registrations of the held brains. Does nothing
+   * under a newer-format module.
+   */
+  private heal(): void {
     if (this._formatNewer) return;
-    this._moduleStale = text !== undefined && text !== writeBrainsModule(this._registrations.values());
-    this.recompile((id, source) => this._registrations.get(id)?.sourceHash !== brainSourceHash(source));
-    this.pump();
+    this._moduleStale =
+      this._moduleText !== undefined && this._moduleText !== writeBrainsModule(this._moduleEntries.values());
+    this.recompile((id, source) => this._moduleEntries.get(id)?.sourceHash !== brainSourceHash(source));
   }
 
   /** The content of the file `name`, or `undefined` when the project does not hold it. */
@@ -684,8 +893,8 @@ export class BrainsProject {
   /** Logs `error`, met while `doing`, by its projfs code; returns whether a retry can overcome it. */
   private logFailure(error: unknown, doing: string): boolean {
     const code = error instanceof ProjfsError ? error.code : undefined;
-    this._log.error(`${describeError(error)} (${doing})`);
-    return code === undefined || !PERMANENT_REFUSALS.has(code);
+    this._log.error(`${describeProjfsError(error)} (${doing})`);
+    return code === undefined || !PROJFS_PERMANENT_REFUSALS.has(code);
   }
 
   /** Resolves after `ms` milliseconds; never once disposed. */
@@ -704,6 +913,12 @@ export class BrainsProject {
   private nextDelay(retryDelay: number): number {
     return Math.min(retryDelay * 2, this._maxRetryDelayMs);
   }
+}
+
+/** The registration `change` leaves its brain with: a write's compile's, a recompile's, and none for a removal. */
+function registrationIn(change: Change): CompiledBrainEntry | undefined {
+  if (change.op === "write") return change.compiled.registration;
+  return change.op === "register" ? change.registration : undefined;
 }
 
 /** Whether `a` and `b` are the same registration: the same name, source hash and bytes. */
@@ -731,9 +946,4 @@ function brainName(source: string, fallback: string): string {
     // Not a brain document; the fallback names it.
   }
   return fallback;
-}
-
-/** `error` as the message of a failed request: a projfs refusal's code leading its message. */
-function describeError(error: unknown): string {
-  return error instanceof ProjfsError ? `${error.code}: ${error.message}` : String(error);
 }

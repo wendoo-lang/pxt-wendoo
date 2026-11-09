@@ -5,8 +5,10 @@ import {
   type ProjfsErrorCode,
   type ProjfsFileInfo,
   type ProjfsListenerWindow,
+  type ProjfsNotification,
   type ProjfsReply,
   type ProjfsRequest,
+  type ProjfsSubscribeRequest,
 } from "../../vendor/projfs.js";
 
 /** The most UTF-8 bytes the files under one simulator extension's folder may hold, as MakeCode enforces it. */
@@ -21,6 +23,12 @@ export const PROJFS_RATE_LIMIT = 30;
 
 /** The sliding window, in milliseconds, over which {@link PROJFS_RATE_LIMIT} applies. */
 export const PROJFS_RATE_WINDOW_MS = 10000;
+
+/** How a spec's change to the project reaches a subscribed frame. */
+export interface FakeProjfsChangeOptions {
+  /** Whether a change notification naming the changed file is sent, as MakeCode sends one after the change. */
+  notify?: boolean;
+}
 
 /** A reply without the `type` and `id` fields every reply carries. */
 type ProjfsReplyBody<R = ProjfsReply> = R extends ProjfsReply ? Omit<R, "type" | "id"> : never;
@@ -64,6 +72,13 @@ function utf8Length(content: string): number {
  * after a debounce. A write to the open file is answered once the editor has
  * reloaded it, and saves of typing wait for that reload.
  *
+ * It answers a subscribe request at once, ahead of the requests queued
+ * before it, as MakeCode does, and sends a subscribed frame the change
+ * notifications a spec asks for -- {@link notify}, or {@link edit} and
+ * {@link remove} given `notify` -- through the same reply path, so a
+ * notification arrives in order with the replies posted before it. It sends
+ * none by itself, the frame's own writes included.
+ *
  * Each `false` switch -- {@link defersOverRate}, {@link bindsRequestsToProject},
  * {@link answersUnregistered}, {@link reloadsOpenFile},
  * {@link holdsSavesDuringReload} -- plays a MakeCode lacking that rule, for
@@ -79,6 +94,8 @@ export class FakeProjfsHost {
   readonly listed: string[] = [];
   /** Every write and delete applied, in order, as `write <name>` or `delete <name>` with the scope-relative name. */
   readonly mutations: string[] = [];
+  /** The scope-relative name of every read applied, in order, found or not. */
+  readonly reads: string[] = [];
   /** The window a simulator extension frame posts its requests to. */
   readonly parent = {
     postMessage: (message: unknown): void => {
@@ -135,6 +152,13 @@ export class FakeProjfsHost {
   private _queue: Promise<void> = Promise.resolve();
   private _held: (() => void) | undefined;
   private _heldGate: Promise<void> = Promise.resolve();
+  /** Whether a frame subscribed to change notifications. */
+  private _subscribed = false;
+  private readonly _subscribeFailures: ProjfsErrorCode[] = [];
+  /** Settles once held subscribe acknowledgements may be sent; `undefined` while acknowledgements are not being held. */
+  private _subscriptionGate: Promise<void> | undefined;
+  /** The gate each held reply waits on, by the mutation it answers, as {@link mutations} records it. */
+  private readonly _heldReplies = new Map<string, Promise<void>>();
 
   /** The current time, in milliseconds, the rate window reads; moving it forward lets held writes and deletes apply. */
   get now(): number {
@@ -185,12 +209,68 @@ export class FakeProjfsHost {
     return this.stored.get(`${SCOPE}/${name}`);
   }
 
-  /** Stores and lists the scope file `name`, as a person editing the project would; no mutation is recorded. */
-  edit(name: string, content: string): void {
+  /**
+   * Stores and lists the scope file `name`, as a person editing the project
+   * would; no mutation is recorded. Given `notify`, the change is notified.
+   */
+  edit(name: string, content: string, options: FakeProjfsChangeOptions = {}): void {
     const scoped = `${SCOPE}/${name}`;
     this.stored.set(scoped, content);
     if (!this.listed.includes(scoped)) this.listed.push(scoped);
     if (scoped === this._openFile) this._buffer = content;
+    if (options.notify) this.notify([name]);
+  }
+
+  /**
+   * Sends a subscribed frame a change notification naming the scope files
+   * `names`, through the reply path, after every reply posted before it.
+   * Sends nothing while no frame has subscribed.
+   */
+  notify(names: readonly string[]): void {
+    if (!this._subscribed) return;
+    const notification: ProjfsNotification = { type: PROJFS_MESSAGE_TYPE, subtype: "changed", names: [...names] };
+    this.post(notification);
+  }
+
+  /** Refuses the next subscribe requests, one per code, in order, before acknowledging them again. */
+  failSubscribes(...codes: ProjfsErrorCode[]): void {
+    this._subscribeFailures.push(...codes);
+  }
+
+  /**
+   * Holds the acknowledgement of every subscribe request arriving from now
+   * on, refusals answered as usual, until the returned function is called.
+   */
+  holdSubscriptions(): () => void {
+    let release: () => void = () => {};
+    this._subscriptionGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      this._subscriptionGate = undefined;
+      release();
+    };
+  }
+
+  /**
+   * Holds the reply to the next request applying `mutation` -- as
+   * {@link mutations} records it, `write <name>` or `delete <name>` -- once it
+   * has applied, and the requests behind it, as MakeCode answers in order,
+   * until the returned function is called. A spec delivers a notification
+   * before the reply by sending it while the reply is held, and after it by
+   * sending it once {@link settled} resolves after the release.
+   */
+  holdReply(mutation: string): () => void {
+    let release: () => void = () => {};
+    this._heldReplies.set(
+      mutation,
+      new Promise((resolve) => {
+        release = resolve;
+      })
+    );
+    return () => {
+      release();
+    };
   }
 
   /**
@@ -221,12 +301,13 @@ export class FakeProjfsHost {
     this._typingSave = setTimeout(() => void this.saveTyping(), debounceMs);
   }
 
-  /** Deletes and unlists the scope file `name`, as a person editing the project would. */
-  remove(name: string): void {
+  /** Deletes and unlists the scope file `name`, as a person editing the project would. Given `notify`, the change is notified. */
+  remove(name: string, options: FakeProjfsChangeOptions = {}): void {
     const scoped = `${SCOPE}/${name}`;
     this.stored.delete(scoped);
     const index = this.listed.indexOf(scoped);
     if (index >= 0) this.listed.splice(index, 1);
+    if (options.notify) this.notify([name]);
   }
 
   /**
@@ -270,10 +351,24 @@ export class FakeProjfsHost {
     if (request?.type !== PROJFS_MESSAGE_TYPE) return;
     const id = request.id;
     const refuse = (code: ProjfsErrorCode, text: string): void => {
-      this.reply({ type: PROJFS_MESSAGE_TYPE, id, subtype: "error", code, message: text });
+      this.post({ type: PROJFS_MESSAGE_TYPE, id, subtype: "error", code, message: text });
     };
     if (!this.registered) {
       if (this.answersUnregistered) refuse("UNREGISTERED", "MakeCode does not serve this frame.");
+      return;
+    }
+    if (request.subtype === "subscribe") {
+      const failure = this._subscribeFailures.shift();
+      if (failure !== undefined) {
+        refuse(failure, `subscribe refused with ${failure}`);
+        return;
+      }
+      const acknowledge = (): void => {
+        this._subscribed = true;
+        this.post({ type: PROJFS_MESSAGE_TYPE, id, subtype: "ack" });
+      };
+      if (this._subscriptionGate === undefined) acknowledge();
+      else void this._subscriptionGate.then(acknowledge);
       return;
     }
     const mutates = request.subtype === "write" || request.subtype === "delete";
@@ -291,12 +386,19 @@ export class FakeProjfsHost {
       .then(() => gate)
       .then(async () => {
         if (mutates && this.defersOverRate) await this.admitMutationWhenAllowed(project);
-        return this.apply(request, project);
+        const reply = await this.apply(request, project);
+        const mutation = mutates ? `${request.subtype} ${request.name}` : undefined;
+        const held = mutation === undefined ? undefined : this._heldReplies.get(mutation);
+        if (mutation !== undefined && held !== undefined) {
+          this._heldReplies.delete(mutation);
+          await held;
+        }
+        return reply;
       })
       .then(
         (reply) => {
           this._pending -= 1;
-          this.reply({ ...reply, type: PROJFS_MESSAGE_TYPE, id } as ProjfsReply);
+          this.post({ ...reply, type: PROJFS_MESSAGE_TYPE, id } as ProjfsReply);
         },
         (error: unknown) => {
           this._pending -= 1;
@@ -364,8 +466,9 @@ export class FakeProjfsHost {
     }
   }
 
-  private reply(reply: ProjfsReply): void {
-    const event = { data: reply, source: this.parent };
+  /** Posts `message` to the frame's listeners on a later turn, after every message posted before it. */
+  private post(message: ProjfsReply | ProjfsNotification): void {
+    const event = { data: message, source: this.parent };
     setTimeout(() => {
       for (const listener of this._listeners) listener(event);
     }, 0);
@@ -394,13 +497,17 @@ export class FakeProjfsHost {
     return `${SCOPE}/${name}`;
   }
 
-  private async apply(request: ProjfsRequest, project: number | undefined): Promise<ProjfsReplyBody> {
+  private async apply(
+    request: Exclude<ProjfsRequest, ProjfsSubscribeRequest>,
+    project: number | undefined
+  ): Promise<ProjfsReplyBody> {
     this.checkProject(project);
     switch (request.subtype) {
       case "list":
         return { subtype: "files", files: this.visibleFiles() };
       case "read": {
         const scoped = this.scoped(request.name);
+        this.reads.push(request.name);
         if (!this.visibleFiles().some((file) => file.name === request.name)) {
           throw new RefusedRequest("NOT_FOUND", `${request.name} is not a file in ${SCOPE}/.`);
         }
@@ -428,9 +535,6 @@ export class FakeProjfsHost {
         this.mutations.push(`delete ${request.name}`);
         return { subtype: "ack", name: request.name };
       }
-      case "subscribe":
-        // acknowledged as MakeCode does; this host sends no change notifications
-        return { subtype: "ack" };
     }
   }
 }

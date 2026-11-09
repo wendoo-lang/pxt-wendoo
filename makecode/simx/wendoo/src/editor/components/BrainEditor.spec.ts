@@ -1,15 +1,18 @@
 /**
  * Specs for `BrainEditor`: it mounts over a brains store, with and without a
  * session catalog, and its render completes; and for `BrainEditorSession`,
- * the continuous dialog it stands over one editing of a brain.
+ * the continuous dialog it stands over one editing of a brain, on the
+ * editing's document.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { BrainDef } from "@wendoo/core/app";
 import { DocsSidebarProvider } from "@wendoo/docs";
 import { BrainEditorDialog } from "@wendoo/ui";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrainEditing } from "../brain/editing.js";
+import { openBrainEditing } from "../brain/editing.js";
 import { buildBrainEditorConfig } from "../brain/editor-config.js";
 import { BrainsProvider } from "../contexts/brains.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
@@ -54,20 +57,8 @@ describe("BrainEditor", () => {
 });
 
 describe("BrainEditorSession", () => {
-  /** An editing of a stored brain that records its calls, and the session standing over it. */
-  function standing() {
-    const store = new BrainsStore(session(undefined));
-    const id = seedBrain(store, "Chaser");
-    const calls: string[] = [];
-    const editing: BrainEditing = {
-      srcBrainDef: store.getBrain(id),
-      change: () => {
-        calls.push("change");
-      },
-      close: () => {
-        calls.push("close");
-      },
-    };
+  /** The continuous dialog a session over `editing` stands, on `editing`'s current document. */
+  function dialogOver(store: BrainsStore, editing: BrainEditing, onOpenChange: (open: boolean) => void = () => {}) {
     const tree = BrainEditorSession({
       config: buildBrainEditorConfig(
         store.getSnapshot().environment,
@@ -78,15 +69,34 @@ describe("BrainEditorSession", () => {
         store.getSnapshot().typeLabels
       ),
       editing,
+      srcBrainDef: editing.getDocument(),
       isOpen: true,
-      onOpenChange: (open) => {
-        calls.push(`open:${open}`);
-      },
+      onOpenChange,
     });
     const dialogs = elementsIn(tree).filter((element) => element.type === BrainEditorDialog);
     assert.equal(dialogs.length, 1);
     const dialog = dialogs[0];
     assert.ok(dialog);
+    return dialog;
+  }
+
+  /** An editing of a stored brain that records its calls, and the session standing over it. */
+  function standing() {
+    const store = new BrainsStore(session(undefined));
+    const id = seedBrain(store, "Chaser");
+    const calls: string[] = [];
+    const editing: BrainEditing = {
+      ...openBrainEditing(store, id),
+      change: () => {
+        calls.push("change");
+      },
+      close: () => {
+        calls.push("close");
+      },
+    };
+    const dialog = dialogOver(store, editing, (open) => {
+      calls.push(`open:${open}`);
+    });
     return { editing, calls, dialog };
   }
 
@@ -95,12 +105,32 @@ describe("BrainEditorSession", () => {
 
     assert.equal(dialog.props.continuous, true);
     assert.equal(dialog.props.isOpen, true);
-    assert.equal(dialog.props.srcBrainDef, editing.srcBrainDef);
+    assert.ok(editing.getDocument());
+    assert.equal(dialog.props.srcBrainDef, editing.getDocument());
     assert.equal(dialog.props.onChange, editing.change);
     assert.equal(dialog.props.onSubmit, undefined);
   });
 
-  it("flushes the editing before reporting the dialog closed", () => {
+  it("stands the dialog on the store's newer version of the brain once the editing adopts it", () => {
+    const store = new BrainsStore(session(undefined));
+    const id = seedBrain(store, "Chaser");
+    const editing = openBrainEditing(store, id);
+    let notified = 0;
+    editing.subscribe(() => {
+      notified += 1;
+    });
+    const before = dialogOver(store, editing);
+
+    store.renameBrain(id, "Runner");
+    const after = dialogOver(store, editing);
+
+    assert.equal(notified, 1);
+    assert.notEqual(after.props.srcBrainDef, before.props.srcBrainDef);
+    assert.equal(after.props.srcBrainDef, editing.getDocument());
+    assert.equal((after.props.srcBrainDef as BrainDef | undefined)?.id(), id);
+  });
+
+  it("closes the editing before reporting the dialog closed", () => {
     const { calls, dialog } = standing();
 
     (dialog.props.onOpenChange as (open: boolean) => void)(false);

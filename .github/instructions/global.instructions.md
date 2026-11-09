@@ -32,6 +32,9 @@ What to write:
   allowed values, and nullability semantics.
 - Brief inline comments where the logic itself is non-obvious and a reader
   would genuinely benefit from a hint about intent or an invariant.
+- A JSDoc block is a short paragraph, about ten lines at most. It states
+  what the symbol is and how to use it; a protocol, an ordering or a
+  lifecycle that needs more belongs in a docs page the comment names.
 
 What not to write:
 

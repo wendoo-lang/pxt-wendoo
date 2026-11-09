@@ -800,7 +800,8 @@ the current slice alone.
     simx is a channel, not a store: its frame persists across sim restarts
     and runs but is reallocated on a page reload or project teardown, so
     no state may live only there: the id manifest and the brains live in
-    the project's files, which the frame re-reads at start, and everything
+    the project's files, which the frame re-reads at start and when
+    MakeCode reports a change, and everything
     it holds is derived from them and from what the program and MakeCode
     publish to it. It is not product
     UI, but its frame is visible and renders a brand strip: the logotype and an open-editor

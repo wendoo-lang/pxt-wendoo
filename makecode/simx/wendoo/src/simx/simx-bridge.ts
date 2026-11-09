@@ -10,11 +10,13 @@ import type {
 } from "@wendoo/makecode-session";
 import { connectMakeCodeSession, messagePortSessionPort } from "@wendoo/makecode-session";
 import { SIMXEDITOR_PORT_MESSAGE_TYPE } from "../vendor/simxeditor.js";
-import { BrainsProject, type ProjectFiles } from "./brains-project.js";
+import { BrainsProject } from "./brains-project.js";
 import { enrichCatalogIcons } from "./catalog-icons.js";
+import { IDS_MODULE_FILE } from "./ids-module.js";
 import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
 import { ProjectAssets, type ProjectAssetsProvider } from "./project-assets.js";
+import { type ProjectFiles, type ProjectFileWatchTimings, watchProjectFiles } from "./project-files.js";
 import {
   connectSimChannel,
   SIM_CHANNEL_VERSION,
@@ -36,8 +38,8 @@ export interface SimxServingOptions {
   frame: SimxFrame;
   /**
    * The MakeCode project's files in this simulator extension's folder, which
-   * the project's brains are read from at start and written to, and the ids
-   * module is read from and written to.
+   * the project's brains and the ids module are read from at start and
+   * whenever MakeCode reports them changed, and written to.
    */
   files: ProjectFiles;
   /**
@@ -58,10 +60,12 @@ export interface SimxServingOptions {
    * request the asset provider fails, the code of every image or icon
    * that cannot be rendered in full, the code of a catalog whose target
    * has no icon palette, the code of every ids module and brains module
-   * problem, and the code of every failed read or write of the project's
-   * files.
+   * problem, and the code of every failed read, write or subscription of
+   * the project's files.
    */
   log: SimxLog;
+  /** Timings of the watch of `files`' change notifications; each left out takes its default. */
+  fileWatchTimings?: ProjectFileWatchTimings;
   /**
    * Id of the MakeCode target running the program, for example `microbit`
    * or `arcade`, declared to the editor in each makecode session's hello,
@@ -212,6 +216,11 @@ class CounterpartSession {
     this._session?.publishManifest(reading);
   }
 
+  /** Publish the id manifest `reading` to the peer, once the first publications are out. */
+  publishManifest(reading: MakeCodeManifestReading): void {
+    if (this._publishing) this._session?.publishManifest(reading);
+  }
+
   /** Publish the asset snapshot `snapshot` to the peer, once the first publications are out. */
   publishAssets(snapshot: readonly MakeCodeAsset[]): void {
     if (this._publishing) this._session?.publishAssets(snapshot);
@@ -250,35 +259,31 @@ interface ProjectServer {
 }
 
 /**
- * Serve the MakeCode project running beside this simulator extension to
- * every counterpart session attached, one per editor tab, keyed by the tab's
- * key. The project's brains are read from `files` at once and compiled and
- * written here alone: each session's brains requests are answered from the
- * one project, its pushes compiled and written, and its creates minted. The
- * brains are compiled in an environment built from the latest catalog, the
- * project's id manifest and the asset snapshot, and recompiled whenever one
- * of them changes. Each compile that changes what a program runs is posted
- * to the running program as a program update the moment it is made, without
- * waiting on the project write, and the last update of every program is
- * posted again each time the program starts. The project's id manifest is
- * read from `files` at once and allocated and written here alone. The
- * program's messages are read on `channel`, and the program is asked for its
- * catalog at once. Each catalog the program posts is rendered once as it
- * arrives, its icons as `iconUrl` data URIs under the hosting `target`'s
- * icon palette, and its vocabulary allocated into the manifest; then it is
- * published into every session, followed by the manifest, whether or not
- * the allocation changed. A rejected message from the program is logged by
- * its code and discards the latest catalog, so no session receives a
- * catalog older than the program's newest. Once a session is established,
- * the latest catalog, then the current manifest, then the project's asset
- * snapshot, listed from `assets`, then the project's name, listed beside it,
- * as the session's project info, then the project's brains are published
- * into it; the snapshot and the name are published into every session again
- * whenever they change, and the brains after every drain of the project's
- * brains that landed anything.
+ * Serve the MakeCode project beside this simulator extension to every
+ * attached counterpart session, one per editor tab. The project's brains and
+ * id manifest are read from `files`, allocated, compiled and written here
+ * alone, re-read when MakeCode reports a change, and recompiled whenever the
+ * catalog, the manifest or the asset snapshot changes. Each session receives
+ * the catalog, the manifest, the asset snapshot, the project's name and the
+ * brains once established and again as each changes; compiles that change a
+ * program are posted to the running program at once. The protocol and the
+ * ordering rules are in docs/session-management.md.
  */
 function startProjectServer(options: SimxServingOptions): ProjectServer {
   const { log } = options;
+  const unwatch = watchProjectFiles(
+    options.files,
+    log,
+    (names) => {
+      brains.reported(names);
+      if (names.includes(IDS_MODULE_FILE)) manifest.reported();
+    },
+    () => {
+      brains.rescan();
+      manifest.reported();
+    },
+    options.fileWatchTimings
+  );
   const channel = connectSimChannel(options.frame, options.channel);
   const live = new LivePrograms((update) => {
     channel.postProgramUpdate(update);
@@ -329,6 +334,10 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
     projectAssets.onName((name) => {
       for (const counterpart of counterparts.values()) counterpart.publishName(name);
     }),
+    manifest.onChange((reading) => {
+      brains.adoptManifest(reading);
+      for (const counterpart of counterparts.values()) counterpart.publishManifest(reading);
+    }),
   ];
 
   channel.requestCatalog();
@@ -357,6 +366,7 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
       for (const unsubscribe of channelUnsubscribes) {
         unsubscribe();
       }
+      unwatch();
       projectAssets.dispose();
       manifest.dispose();
       brains.dispose();
@@ -366,33 +376,15 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
 }
 
 /**
- * Join the MakeCode program running beside this simulator extension to the
- * editor in each MakeCode editor tab that talks to this frame, over
- * the ports MakeCode brokers between the frames. Each `simxeditorport`
- * message from `parentOrigin` carrying a port opens a new makecode session
- * with the editor over that port, declaring `target` when one is given, and
- * closes the previous session of the tab the message's `peer` names; a
- * message naming no `peer` names the tab keyed by this frame's own
- * `channel`. Every other message is ignored. The program is asked for its
- * catalog at once. The project's brains are read from `files` at once,
- * compiled here in an environment following the program's catalog, the id
- * manifest and the asset snapshot, and written to `files` here alone; every
- * session's brains requests are answered from them, its pushes compiled and
- * written, and its creates minted. Each compile that changes what a program
- * runs is posted to the running program at once, and the last update of
- * every program is posted again each time the program starts. The project's
- * id manifest is read from `files` at once, and every catalog's vocabulary
- * is allocated into it and written to `files` here alone. The program's
- * latest catalog, its icons rendered under the `target`'s icon palette, then
- * the current manifest, then the latest asset snapshot, then the project's
- * name, then the project's brains are published into each session once it is
- * established; each later catalog is published into every session followed
- * by the manifest, each later snapshot and name into every session, and the
- * brains into every session after each write of them; a message from the
- * program rejected by its code is logged and discards the latest catalog. An
- * editor
- * hello declaring a newer makecode protocol is logged by its code, and no
- * session is served over that port.
+ * Join the MakeCode program beside this simulator extension to the editor in
+ * each MakeCode editor tab that talks to this frame, over the ports MakeCode
+ * brokers between the frames: each `simxeditorport` message from
+ * `parentOrigin` opens a makecode session for the tab its `peer` names (the
+ * frame's own `channel` when it names none), replacing that tab's previous
+ * session, and declares `target` in the hello when one is given. The
+ * project is served to every session as {@link startProjectServer}
+ * describes; the program's messages are read on `channel`. An editor hello
+ * declaring a newer makecode protocol is logged by its code and not served.
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
   const { frame, parentOrigin, log } = options;

@@ -17,11 +17,12 @@ import {
 } from "@wendoo/makecode-session";
 import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../authoring/authoring-environment.js";
 import { serializeBrainSource } from "../authoring/brain-source.js";
-import type { ProjfsClient } from "../vendor/projfs.js";
+import { type ProjfsClient, ProjfsError } from "../vendor/projfs.js";
 import { BrainEngine } from "./brain-engine.js";
 import { BRAINS_MODULE_FILE, type CompiledBrainEntry, readBrainsModule, writeBrainsModule } from "./brains-module.js";
-import { BrainsProject, BrainsProjectProblemCode, type ProjectFiles } from "./brains-project.js";
+import { BrainsProject, BrainsProjectProblemCode } from "./brains-project.js";
 import { LivePrograms } from "./live-programs.js";
+import type { ProjectFiles } from "./project-files.js";
 import type { ProgramUpdate } from "./sim-channel.js";
 import type { SimxLog } from "./simx-bridge.js";
 import {
@@ -414,6 +415,7 @@ describe("brains project", () => {
           options.push(deleteOptions);
           return client.delete(name, deleteOptions);
         },
+        subscribe: (onChange) => client.subscribe(onChange),
       });
 
       await push(writeOf(CHASER, "Chaser"), recording);
@@ -712,6 +714,7 @@ describe("brains project", () => {
           return client.write(name, content, options);
         },
         delete: (name, options) => client.delete(name, options),
+        subscribe: (onChange) => client.subscribe(onChange),
       });
       const answers = [push(writeOf(CHASER, "Chaser"), gatedProject)];
       await until(() => !gated);
@@ -1069,6 +1072,412 @@ describe("brains project", () => {
       const pulledBefore = await before;
       assert.deepEqual(pulledBefore.ok && pulledBefore.value.map((brain) => brain.id), [CHASER]);
       assert.deepEqual(await after, { ok: true, value: [] });
+    });
+  });
+
+  describe("change reports", () => {
+    /** Routes the change notifications MakeCode sends the spec's client straight to `on`; resolves once subscribed. */
+    function watch(on: BrainsProject = project): Promise<void> {
+      return client.subscribe((names) => {
+        on.reported(names);
+      });
+    }
+
+    /** The brains `on` announces from now on, each announcement in order. */
+    function announcements(on: BrainsProject = project): MakeCodeBrainSummary[][] {
+      const announced: MakeCodeBrainSummary[][] = [];
+      on.onChange((brains) => {
+        announced.push(brains);
+      });
+      return announced;
+    }
+
+    /** The summary of the brain `id` named `name` holding `source`, registered from the source hashed `compiled`. */
+    function summary(id: string, name: string, source: string, compiled: string | null): MakeCodeBrainSummary {
+      return { id, name, sourceHash: brainSourceHash(source), compiledSourceHash: compiled };
+    }
+
+    it("adopts a source edited by hand: recompiled, the module rewritten, the program posted live, the brains announced", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      const announced = announcements();
+      const mutations = host.mutations.length;
+      posted.length = 0;
+      const edited = restartingSource(CHASER, "Chaser");
+
+      host.edit(`brains/${CHASER}.src.json`, edited, { notify: true });
+      await until(() => registered().get(CHASER)?.sourceHash === brainSourceHash(edited));
+      await drained();
+
+      assert.deepEqual(host.mutations.slice(mutations), [`write ${BRAINS_MODULE_FILE}`]);
+      assert.deepEqual(
+        posted.map((update) => [update.documentId, update.sourceHash]),
+        [[CHASER, brainSourceHash(edited)]]
+      );
+      const current = summary(CHASER, "Chaser", edited, brainSourceHash(edited));
+      assert.deepEqual(announced.at(-1), [current]);
+      assert.deepEqual(await list(), { ok: true, value: [current] });
+      assert.deepEqual(await pull([CHASER]), {
+        ok: true,
+        value: [{ id: CHASER, name: "Chaser", source: edited, compiledSourceHash: brainSourceHash(edited) }],
+      });
+    });
+
+    it("ignores the report of its own writes: the source and module read back as written change nothing", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      const announced = announcements();
+      const mutations = host.mutations.length;
+      const reads = host.reads.length;
+      posted.length = 0;
+
+      host.notify([`brains/${CHASER}.src.json`, BRAINS_MODULE_FILE]);
+      await until(() => host.reads.length === reads + 2);
+      await drained();
+
+      assert.deepEqual(host.reads.slice(reads).sort(), [BRAINS_MODULE_FILE, `brains/${CHASER}.src.json`]);
+      assert.equal(host.mutations.length, mutations);
+      assert.deepEqual(posted, []);
+      assert.deepEqual(announced, []);
+    });
+
+    it("skips a report for a brain whose push is queued, and the push lands over the hand edit", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      const release = host.holdReply(`write brains/${RUNNER}.src.json`);
+      const landing = push(writeOf(RUNNER, "Runner renamed"));
+      await until(() => host.file(`brains/${RUNNER}.src.json`) === sourceOf(RUNNER, "Runner renamed"));
+      const queued = push(writeOf(CHASER, "Chaser pushed"));
+      await delay(5);
+      const reads = host.reads.length;
+
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser by hand"), { notify: true });
+      await delay(5);
+      release();
+      assert.ok((await landing).ok);
+      assert.ok((await queued).ok);
+      await drained();
+
+      assert.ok(!host.reads.slice(reads).includes(`brains/${CHASER}.src.json`));
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser pushed"));
+      assert.equal(registered().get(CHASER)?.name, "Chaser pushed");
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => [brain.id, brain.sourceHash]), [
+        [CHASER, brainSourceHash(sourceOf(CHASER, "Chaser pushed"))],
+        [RUNNER, brainSourceHash(sourceOf(RUNNER, "Runner renamed"))],
+      ]);
+    });
+
+    it("removes a brain whose source is deleted by hand, rewriting the module without it and posting its removal", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      const announced = announcements();
+      posted.length = 0;
+
+      host.remove(`brains/${CHASER}.src.json`, { notify: true });
+      await until(() => !registered().has(CHASER));
+      await drained();
+
+      assert.deepEqual([...registered().keys()], [RUNNER]);
+      assert.deepEqual(posted, [{ documentId: CHASER, name: "", sourceHash: "", bytecode: new Uint8Array(0) }]);
+      const runner = summary(RUNNER, "Runner", sourceOf(RUNNER, "Runner"), brainSourceHash(sourceOf(RUNNER, "Runner")));
+      assert.deepEqual(announced.at(-1), [runner]);
+      assert.deepEqual(await list(), { ok: true, value: [runner] });
+      assert.ok(!host.mutations.includes(`delete brains/${CHASER}.src.json`));
+    });
+
+    it("adds a source written by hand under an id it did not hold, registering it", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      const added = sourceOf(RUNNER, "Runner");
+
+      host.edit(`brains/${RUNNER}.src.json`, added, { notify: true });
+      await until(() => registered().has(RUNNER));
+      await drained();
+
+      assert.deepEqual(await list(), {
+        ok: true,
+        value: [
+          summary(CHASER, "Chaser", sourceOf(CHASER, "Chaser"), brainSourceHash(sourceOf(CHASER, "Chaser"))),
+          summary(RUNNER, "Runner", added, brainSourceHash(added)),
+        ],
+      });
+    });
+
+    it("heals a brains module damaged by hand once MakeCode reports it, writing it once and logging its code", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      const kept = registered();
+      const writes = moduleWrites();
+
+      host.edit(BRAINS_MODULE_FILE, "garbage", { notify: true });
+      await until(() => readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.size === 2);
+      await drained();
+
+      assert.deepEqual(registered(), kept);
+      assert.equal(moduleWrites(), writes + 1);
+      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_UNREADABLE")));
+    });
+
+    it("holds a brains module made newer-format by hand as it is: nothing written, pushes failing by its code", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      const newer = writeBrainsModule([]).replace("wendoo-brains-format 1", "wendoo-brains-format 2");
+
+      host.edit(BRAINS_MODULE_FILE, newer, { notify: true });
+      await until(() => log.errors.some((line) => line.startsWith("BRAINS_MODULE_FORMAT_NEWER")));
+      const pushed = await push(writeOf(CHASER, "Renamed"));
+      await drained();
+
+      assert.equal(pushed.ok, false);
+      assert.match(pushed.ok ? "" : pushed.message, /^BRAINS_MODULE_FORMAT_NEWER\b/);
+      assert.equal(host.file(BRAINS_MODULE_FILE), newer);
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser"));
+    });
+
+    it("retries a re-read the project fails, adopting the hand edit once the read lands", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      const edited = restartingSource(CHASER, "Chaser");
+      host.edit(`brains/${CHASER}.src.json`, edited);
+      host.open = false;
+
+      host.notify([`brains/${CHASER}.src.json`]);
+      await until(() => log.errors.filter((line) => line.startsWith("PROJECT_CLOSED: ")).length >= 2);
+      host.open = true;
+      await until(() => registered().get(CHASER)?.sourceHash === brainSourceHash(edited));
+
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.sourceHash), [brainSourceHash(edited)]);
+    });
+
+    it("re-reads every brain file on a rescan, adopting a source edited by hand that no report named", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      const edited = restartingSource(CHASER, "Chaser");
+      host.edit(`brains/${CHASER}.src.json`, edited);
+
+      project.rescan();
+      await until(() => registered().get(CHASER)?.sourceHash === brainSourceHash(edited));
+
+      const listed = await list();
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.sourceHash), [brainSourceHash(edited)]);
+    });
+
+    it("ignores the report of its own write of a brain whose write was landing when the report arrived", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      const announced = announcements();
+      const second = restartingSource(CHASER, "Chaser");
+      const release = host.holdReply(`write brains/${CHASER}.src.json`);
+      const pushed = push(writeOf(CHASER, "Chaser", second));
+      await until(() => host.file(`brains/${CHASER}.src.json`) === second);
+      const mutations = host.mutations.length;
+      const reads = host.reads.length;
+      posted.length = 0;
+
+      host.notify([`brains/${CHASER}.src.json`]);
+      await delay(5);
+      release();
+      assert.ok((await pushed).ok);
+      await until(() => host.reads.length === reads + 1);
+      await drained();
+
+      assert.deepEqual(host.reads.slice(reads), [`brains/${CHASER}.src.json`]);
+      assert.equal(host.mutations.length, mutations);
+      assert.deepEqual(posted, []);
+      assert.equal(announced.length, 1);
+      assert.deepEqual(announced[0], [summary(CHASER, "Chaser", second, brainSourceHash(second))]);
+    });
+
+    it("adopts a hand edit of a brain whose only queued change is a recompile, registering the hand edit", async () => {
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+      const fresh = open();
+      await watch(fresh);
+      await until(() => log.errors.some((line) => line.startsWith("QUOTA_EXCEEDED")));
+      const reads = host.reads.length;
+      const edited = restartingSource(CHASER, "Chaser");
+
+      host.edit(`brains/${CHASER}.src.json`, edited, { notify: true });
+      await until(() => host.reads.length > reads);
+      host.remove("filler.bin");
+      await until(() => host.file(BRAINS_MODULE_FILE) !== undefined);
+      await drained(fresh);
+
+      assert.ok(host.reads.slice(reads).includes(`brains/${CHASER}.src.json`));
+      assert.deepEqual([...registered().keys()], [CHASER]);
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(edited));
+      assert.ok(!host.mutations.includes(`write brains/${CHASER}.src.json`));
+      const listed = await list(fresh);
+      assert.deepEqual(listed.ok && listed.value, [summary(CHASER, "Chaser", edited, brainSourceHash(edited))]);
+    });
+
+    it("holds a source mangled by hand verbatim as it holds one at start, keeping the brain's registration", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      const lastGood = registered().get(CHASER);
+      const announced = announcements();
+      const mutations = host.mutations.length;
+      posted.length = 0;
+
+      host.edit(`brains/${CHASER}.src.json`, "not json {", { notify: true });
+      await until(() => announced.length > 0);
+      await drained();
+
+      assert.deepEqual(registered().get(CHASER), lastGood);
+      assert.equal(host.mutations.length, mutations);
+      assert.deepEqual(posted, []);
+      const held = summary(CHASER, "Chaser", "not json {", lastGood?.sourceHash ?? null);
+      assert.deepEqual(announced, [[held]]);
+      assert.deepEqual(await pull([CHASER]), {
+        ok: true,
+        value: [{ id: CHASER, name: "Chaser", source: "not json {", compiledSourceHash: lastGood?.sourceHash ?? null }],
+      });
+    });
+
+    it("re-reads a source whose skipped push MakeCode refuses, adopting the hand edit the push would have replaced", async () => {
+      let refuse = false;
+      const refusing = open({
+        list: () => client.list(),
+        read: (name) => client.read(name),
+        write: (name, content, options) =>
+          refuse && name === `brains/${CHASER}.src.json`
+            ? Promise.reject(new ProjfsError("FAILED", "write refused"))
+            : client.write(name, content, options),
+        delete: (name, options) => client.delete(name, options),
+        subscribe: (onChange) => client.subscribe(onChange),
+      });
+      await watch(refusing);
+      await push(writeOf(CHASER, "Chaser"), refusing);
+      await push(writeOf(RUNNER, "Runner"), refusing);
+      const release = host.holdReply(`write brains/${RUNNER}.src.json`);
+      const landing = push(writeOf(RUNNER, "Runner renamed"), refusing);
+      await until(() => host.file(`brains/${RUNNER}.src.json`) === sourceOf(RUNNER, "Runner renamed"));
+      const queued = push(writeOf(CHASER, "Chaser pushed"), refusing);
+      await delay(5);
+      const edited = sourceOf(CHASER, "Chaser by hand");
+
+      host.edit(`brains/${CHASER}.src.json`, edited, { notify: true });
+      await delay(5);
+      refuse = true;
+      release();
+      assert.ok((await landing).ok);
+      const answer = await queued;
+      await drained(refusing);
+      const listed = await list(refusing);
+
+      assert.equal(answer.ok, false);
+      assert.match(answer.ok ? "" : answer.message, /^FAILED\b/);
+      assert.equal(host.file(`brains/${CHASER}.src.json`), edited);
+      assert.deepEqual(listed.ok && listed.value.map((brain) => [brain.id, brain.name, brain.sourceHash]), [
+        [CHASER, "Chaser by hand", brainSourceHash(edited)],
+        [RUNNER, "Runner renamed", brainSourceHash(sourceOf(RUNNER, "Runner renamed"))],
+      ]);
+    });
+
+    it("re-reads a source whose skipped push fails with its drain's module write, adopting the hand edit", async () => {
+      await watch();
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      const release = host.holdReply(`write brains/${RUNNER}.src.json`);
+      const landing = push(writeOf(RUNNER, "Runner renamed"));
+      await until(() => host.file(`brains/${RUNNER}.src.json`) === sourceOf(RUNNER, "Runner renamed"));
+      const queued = push(writeOf(CHASER, "Chaser pushed"));
+      await delay(5);
+      const edited = sourceOf(CHASER, "Chaser by hand");
+
+      host.edit(`brains/${CHASER}.src.json`, edited, { notify: true });
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+      await delay(5);
+      release();
+      assert.ok((await landing).ok);
+      const answer = await queued;
+      await drained();
+      const listed = await list();
+
+      assert.equal(answer.ok, false);
+      assert.match(answer.ok ? "" : answer.message, /^QUOTA_EXCEEDED\b/);
+      assert.equal(host.file(`brains/${CHASER}.src.json`), edited);
+      assert.deepEqual(listed.ok && listed.value.map((brain) => [brain.id, brain.name, brain.sourceHash]), [
+        [CHASER, "Chaser by hand", brainSourceHash(edited)],
+        [RUNNER, "Runner renamed", brainSourceHash(sourceOf(RUNNER, "Runner renamed"))],
+      ]);
+    });
+  });
+
+  describe("the view served while a drain lands", () => {
+    it("pairs a listed and pulled registration with the source it was compiled from until that source lands", async () => {
+      const first = sourceOf(CHASER, "Chaser");
+      await applied(writeOf(CHASER, "Chaser", first));
+      const second = restartingSource(CHASER, "Chaser");
+      const release = host.holdReply(`write brains/${CHASER}.src.json`);
+
+      const pushed = push(writeOf(CHASER, "Chaser", second));
+      await until(() => host.file(`brains/${CHASER}.src.json`) === second);
+      const listedMidDrain = await list();
+      const pulledMidDrain = await pull([CHASER]);
+      release();
+      assert.ok((await pushed).ok);
+
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(second));
+      assert.deepEqual(listedMidDrain, {
+        ok: true,
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash(first),
+            compiledSourceHash: brainSourceHash(first),
+          },
+        ],
+      });
+      assert.deepEqual(pulledMidDrain, {
+        ok: true,
+        value: [{ id: CHASER, name: "Chaser", source: first, compiledSourceHash: brainSourceHash(first) }],
+      });
+      assert.deepEqual(await list(), {
+        ok: true,
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash(second),
+            compiledSourceHash: brainSourceHash(second),
+          },
+        ],
+      });
+    });
+
+    it("keeps a removed brain listed with its registration until its delete lands", async () => {
+      const source = sourceOf(CHASER, "Chaser");
+      await applied(writeOf(CHASER, "Chaser", source));
+      const release = host.holdReply(`delete brains/${CHASER}.src.json`);
+
+      const removed = push({ op: "remove", brainId: CHASER });
+      await until(() => host.file(`brains/${CHASER}.src.json`) === undefined);
+      const listedMidDrain = await list();
+      release();
+      assert.ok((await removed).ok);
+
+      assert.equal(registered().has(CHASER), false);
+      assert.deepEqual(listedMidDrain, {
+        ok: true,
+        value: [
+          {
+            id: CHASER,
+            name: "Chaser",
+            sourceHash: brainSourceHash(source),
+            compiledSourceHash: brainSourceHash(source),
+          },
+        ],
+      });
+      assert.deepEqual(await list(), { ok: true, value: [] });
     });
   });
 

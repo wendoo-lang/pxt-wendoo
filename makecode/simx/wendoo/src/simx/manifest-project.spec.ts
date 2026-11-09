@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
+import type { MakeCodeIdManifest, MakeCodeManifestReading } from "@wendoo/makecode-session";
 import { MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import type { ProjfsClient } from "../vendor/projfs.js";
 import { IDS_MODULE_FILE, IDS_MODULE_FORMAT, readIdsModule, writeIdsModule } from "./ids-module.js";
@@ -96,7 +96,7 @@ describe("manifest project", () => {
       assert.deepEqual(log.errors, []);
     });
 
-    it("reads the module once, at construction", async () => {
+    it("reads the module at construction, and not again while no change is reported", async () => {
       host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST));
       const project = open();
       await project.current();
@@ -228,6 +228,160 @@ describe("manifest project", () => {
       await wait(30);
 
       assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(reading.manifest ?? MANIFEST));
+    });
+  });
+
+  describe("change reports", () => {
+    /** Opens a project over the spec's files routing MakeCode's change notifications to it, and the readings it announces. */
+    async function watched(): Promise<{ project: ManifestProject; announced: MakeCodeManifestReading[] }> {
+      const project = open();
+      const announced: MakeCodeManifestReading[] = [];
+      project.onChange((reading) => {
+        announced.push(reading);
+      });
+      await client.subscribe(() => {
+        project.reported();
+      });
+      return { project, announced };
+    }
+
+    it("adopts a module edited by hand, allocating the last catalog over what it declares without renumbering it", async () => {
+      const { project, announced } = await watched();
+      await project.adopt(catalog(["actuator.chime.ring"]));
+      const edited: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.chime.ring", id: 1040 }],
+        operators: [],
+        types: [{ name: "Beacon", atom: 1030, fields: ["y", "x"] }],
+        next: { action: 1041, operator: 1024, atom: 1031 },
+      };
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule(edited), { notify: true });
+      while (announced.length === 0) await wait(1);
+
+      assert.deepEqual(announced, [{ manifest: edited }]);
+      assert.deepEqual(await project.current(), { manifest: edited });
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(edited));
+      assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
+    });
+
+    it("allocates over an edited module the names it lacks, writing the result", async () => {
+      const { project, announced } = await watched();
+      await project.adopt(catalog(["actuator.chime.ring", "actuator.beacon.flash"]));
+      const edited: MakeCodeIdManifest = {
+        actions: [{ name: "actuator.chime.ring", id: 1040 }],
+        operators: [],
+        types: [{ name: "Beacon", atom: 1024, fields: ["x", "y"] }],
+        next: { action: 1041, operator: 1024, atom: 1025 },
+      };
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule(edited), { notify: true });
+      while (announced.length === 0) await wait(1);
+      await project.current();
+
+      const grown: MakeCodeIdManifest = {
+        ...edited,
+        actions: [...edited.actions, { name: "actuator.beacon.flash", id: 1041 }],
+        next: { action: 1042, operator: 1024, atom: 1025 },
+      };
+      assert.deepEqual(announced, [{ manifest: grown }]);
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(grown));
+    });
+
+    it("ignores the report of its own write: the module read back as written changes nothing", async () => {
+      const { project, announced } = await watched();
+      await project.adopt(catalog(["actuator.chime.ring"]));
+      const reads = host.reads.length;
+
+      host.notify([IDS_MODULE_FILE]);
+      while (host.reads.length === reads) await wait(1);
+      await project.current();
+
+      assert.deepEqual(announced, []);
+      assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
+    });
+
+    /**
+     * Allocates a catalog of one tile, then a catalog of two others, in a
+     * watched project -- the first tile keeping its id though the last catalog
+     * no longer declares it -- then puts `change` to the ids module by hand,
+     * notified; resolves once the project has written the module back, with
+     * the allocation it held and the readings it announced.
+     */
+    async function restoredAfter(change: () => void): Promise<{
+      held: MakeCodeManifestReading;
+      announced: MakeCodeManifestReading[];
+      project: ManifestProject;
+    }> {
+      const { project, announced } = await watched();
+      await project.adopt(catalog(["actuator.beacon.old"]));
+      const held = await project.adopt(catalog(["actuator.chime.ring", "actuator.beacon.flash"]));
+      assert.equal(held.manifest?.actions.length, 3);
+      change();
+      while (host.mutations.length < 3) await wait(1);
+      await project.current();
+      return { held, announced, project };
+    }
+
+    it("restores a module damaged by hand from the allocation it holds, changing no id and logging the code once", async () => {
+      const { held, announced, project } = await restoredAfter(() => {
+        const text = host.file(IDS_MODULE_FILE) ?? "";
+        host.edit(IDS_MODULE_FILE, text.replace('"actuator.chime.ring"', "actuator.chime.ring"), { notify: true });
+      });
+
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(held.manifest ?? MANIFEST));
+      assert.deepEqual(await project.current(), held);
+      assert.deepEqual(announced, []);
+      assert.deepEqual(host.mutations, [
+        `write ${IDS_MODULE_FILE}`,
+        `write ${IDS_MODULE_FILE}`,
+        `write ${IDS_MODULE_FILE}`,
+      ]);
+      assert.equal(
+        log.errors.filter((line) => line.startsWith(`${MakeCodeManifestProblemCode.ENTRY_MALFORMED}: `)).length,
+        1
+      );
+    });
+
+    it("restores an unreadable module from the allocation it holds", async () => {
+      const { held, announced } = await restoredAfter(() => {
+        host.edit(IDS_MODULE_FILE, "garbage typed by hand", { notify: true });
+      });
+
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(held.manifest ?? MANIFEST));
+      assert.deepEqual(announced, []);
+      assert.equal(
+        log.errors.filter((line) => line.startsWith(`${MakeCodeManifestProblemCode.UNREADABLE}: `)).length,
+        1
+      );
+    });
+
+    it("restores a module deleted by hand from the allocation it holds", async () => {
+      const { held, announced, project } = await restoredAfter(() => {
+        host.remove(IDS_MODULE_FILE, { notify: true });
+      });
+
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(held.manifest ?? MANIFEST));
+      assert.deepEqual(await project.current(), held);
+      assert.deepEqual(announced, []);
+      assert.deepEqual(log.errors, []);
+    });
+
+    it("holds a module made newer-format by hand under FORMAT_NEWER, never writing it", async () => {
+      const { project, announced } = await watched();
+      const allocated = await project.adopt(catalog(["actuator.chime.ring"]));
+      const newer = writeIdsModule(allocated.manifest ?? MANIFEST).replace(
+        `wendoo-ids-format ${IDS_MODULE_FORMAT}`,
+        `wendoo-ids-format ${IDS_MODULE_FORMAT + 1}`
+      );
+
+      host.edit(IDS_MODULE_FILE, newer, { notify: true });
+      while (announced.length === 0) await wait(1);
+      await project.adopt(catalog(["actuator.chime.ring", "actuator.beacon.flash"]));
+      await wait(20);
+
+      assert.deepEqual(announced, [{ manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER }]);
+      assert.equal(host.file(IDS_MODULE_FILE), newer);
+      assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
     });
   });
 });

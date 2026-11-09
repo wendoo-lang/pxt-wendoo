@@ -399,10 +399,11 @@ MakeCode's project-file messages (projfs), and answers the brains family
 from them (`BrainsProject`, `makecode/simx/wendoo/src/simx/brains-project.ts`,
 over `BrainEngine` in `brain-engine.ts`). The project's files are the
 only durable state: the simx reads every brain source and the brains
-module once when its frame starts, and everything it holds in memory --
-each brain's name, source and source hash, and the registrations the
-module holds -- is derived from them and updated as its writes land, so
-a simx started afresh serves exactly what the last one wrote.
+module when its frame starts, and reads again each one MakeCode reports
+changed, and everything it holds in memory -- each brain's name, source
+and source hash, and the registrations the module holds -- is derived
+from them and updated as its writes land, so a simx started afresh
+serves exactly what the last one wrote.
 
 - SCOPE: projfs lets a simx see and change only the folder named by
   the key its frame was created for (`wendoo-lang/pxt-wendoo/`), by
@@ -475,7 +476,7 @@ a simx started afresh serves exactly what the last one wrote.
   reads as registering nothing and is never rewritten -- pushes and
   creates fail by its code while it stands, and nothing is recompiled.
   Each problem is written to the console by its code when the simx
-  reads the module at start.
+  reads the module, at start or on a reported change.
 - THE ENGINE'S ENVIRONMENT: brains compile in an environment built with
   `buildAuthoringEnvironment` from the latest catalog the simx published,
   its icons rendered, and the id manifest it holds, its asset literals
@@ -520,7 +521,12 @@ a simx started afresh serves exactly what the last one wrote.
   a module write per drain plus one write per brain against projfs's
   rate of 30 writes and deletes per 10 seconds, over which MakeCode
   holds the writes and applies them as the window allows; changes
-  arriving while a drain writes join the next.
+  arriving while a drain writes join the next. While a drain lands, a
+  list, a pull and the brains publication pair each brain's registration
+  with the source it was compiled from: a new registration is served once
+  its source has landed -- with the module for a recompile, with the
+  source file for a push -- and a removed brain is served until its
+  source file is deleted.
 - REBUILD: whenever the catalog, the id manifest or the asset snapshot
   changes, the engine rebuilds its environment and recompiles every
   brain, a queued write included: a brain whose registration the
@@ -529,22 +535,25 @@ a simx started afresh serves exactly what the last one wrote.
   pack brain's tiles registers its program; one that leaves them
   unresolved keeps the last good registration; an allocation that moves
   a pack tile's id rewrites the program.
-- HEALING: when the simx starts, a brain whose registration is missing,
-  damaged or compiled from another source's hash -- the module deleted
-  in MakeCode's Explorer, an entry garbled, a source edited by hand --
-  is recompiled from its source, and a module holding anything but the
-  registrations of the brains the project holds (orphans of deleted
-  sources, an unreadable or superseded text) is rewritten from them. A
-  rebuild heals the same way. A pack brain heals once a catalog binding
-  its pack arrives. A heal's module write that MakeCode refuses is
-  retried after a wait doubling from 500 ms up to 30 s, for as long as
-  it takes, unless the refusal is one no retry can overcome.
-- PUBLICATION: once a drain lands anything, the simx publishes the
-  project's brain summaries into every session (`makecode:brains`), so
-  a second tab learns of a first tab's push, create or removal and of a
-  rebuild's registrations. Each session receives the summaries on
-  establish too, after the catalog, the manifest, the asset snapshot
-  and the name.
+- HEALING: when the simx starts, and when MakeCode reports the module
+  changed to a text other than the one the simx last read or wrote, a
+  brain whose registration is missing, damaged or compiled from another
+  source's hash -- the module deleted in MakeCode's Explorer, an entry
+  garbled, a source edited by hand -- is recompiled from its source, and
+  a module holding anything but the registrations of the brains the
+  project holds (orphans of deleted sources, an unreadable or superseded
+  text) is rewritten from them, once. A rebuild heals the same way. A
+  pack brain heals once a catalog binding its pack arrives. A heal's
+  module write that MakeCode refuses is retried after a wait doubling
+  from 500 ms up to 30 s, for as long as it takes, unless the refusal is
+  one no retry can overcome.
+- PUBLICATION: once a drain lands anything, and once a re-read of the
+  project's brain files changes what the simx holds, the simx publishes
+  the project's brain summaries into every session (`makecode:brains`),
+  so a second tab learns of a first tab's push, create or removal, of a
+  rebuild's registrations, and of a hand edit. Each session receives
+  the summaries on establish too, after the catalog, the manifest, the
+  asset snapshot and the name.
 - LIVE UPDATE: a compile reaches the running game at once, apart from
   the drain. The moment a compile changes a brain's registration -- a
   push's, a create's, a rebuild's or a heal's -- the simx posts a
@@ -612,10 +621,24 @@ a simx started afresh serves exactly what the last one wrote.
   in Blocks -- grouped under `wendoo-lang/pxt-wendoo` and
   `wendoo-lang/pxt-wendoo/brains`, each with a delete action, and
   they travel with the project wherever its files go.
-- HAND EDITS: a source or `brains.g.ts` edited, damaged or deleted in
-  MakeCode is seen when the simx next starts -- a page reload or a
-  respawned column frame -- which heals it and publishes the result; a
-  simulator restart that keeps the simx frame reads nothing again.
+- HAND EDITS: the simx subscribes to MakeCode's project-file change
+  notifications before it reads anything, and reads again each source,
+  `brains.g.ts` and `ids.g.ts` a notification names, so a file edited,
+  added, damaged or deleted in MakeCode is seen within MakeCode's
+  notification delay (250 ms after the last change, at most 2 s after the
+  first). Its own writes, which MakeCode reports too, are told apart by
+  content: a source or module read back as the text the simx holds or
+  last wrote changes nothing, and a source whose brain has a write or a
+  removal queued is not read: that change lands over it, and a source
+  whose queued change fails is read again. A source of another text is
+  adopted as a push is -- compiled under the convergence rule, its
+  registration rewritten into the module when it changes, posted live,
+  and published -- its source written nowhere; a source gone removes its
+  brain, and the module is rewritten without it; a new source is added.
+  A refused subscription is asked again after a wait doubling from 500 ms
+  up to 30 s, every brain file and `ids.g.ts` being read again once it is
+  acknowledged; a refusal no retry can overcome is logged once. A failed
+  re-read is retried at the same waits.
 
 ## The id manifest
 
@@ -672,10 +695,19 @@ namespace wendooIds {
   allocation line that does not follow the format, a second line naming
   one registration, or a damaged watermark line is skipped
   (`MAKECODE_MANIFEST_ENTRY_MALFORMED`) and the rest is read. Each problem
-  is written to the console by its code, the frame holds what it read
-  without the problem, and its next allocation replaces the damaged file. A
-  file hand-edited while the frame runs is read, and healed, when the frame
-  next starts.
+  is written to the console by its code. At start, the frame holds what it
+  read without the problem, and its next allocation replaces the damaged
+  file. While the frame runs, a file MakeCode reports changed is read
+  again within MakeCode's notification delay, a text equal to the one the
+  frame last read or wrote changing nothing. A file deleted, unreadable or
+  holding a malformed line is restored: the frame keeps the allocation it
+  holds and writes it back as the module, changing no id. A file of a
+  newer format is held and never written. A readable file holding another
+  allocation is adopted as it declares, the names the last catalog holds
+  and it lacks allocated above it, and the file is written when that
+  allocation differs from what it declares. When the reading changes, the
+  frame publishes the manifest into every session and the brains rebuild
+  on it.
 - THE PROGRAM: `writeIdsModule` and `readIdsModule`
   (`makecode/simx/wendoo/src/simx/ids-module.ts`) are a writer and reader pair.
   The VM extension's registration selftest compiles the module's generated
@@ -877,8 +909,13 @@ it always shows the session view.
   MakeCode allows 30 per 10 seconds. Closing the editor flushes the
   unflushed edit at once, before the dialog goes; closing hands over
   and discards nothing else, and reverting is the editor's own undo.
-  The dialog keeps the document it opened on for as long as it stays
-  open, whatever the flushes store. A flush that throws is logged
+  While the editing holds no unflushed edit, the dialog follows the
+  store's version of its brain: a version with another source hash than
+  the one the editing last opened or flushed, once the store holds it
+  with no pending edit, becomes the dialog's document, which stands it
+  afresh; its own flushes are never taken back. While it holds an
+  unflushed edit, its own edits win: the flush stores them over the
+  store's version. A flush that throws is logged
   under `BRAIN_FLUSH_FAILED` and keeps its edit unflushed, so the next
   edit's flush, or the close, tries again. Edits live only in memory
   until the project answers them: closing the page drops any not yet
@@ -1014,7 +1051,8 @@ and refreshes from every later publication:
   reconciles over its own channel instead.
 - LATER PUBLICATIONS: each later publication refreshes the store the
   same way -- a brain another tab created or changed is pulled and
-  adopted, one it removed is dropped, a brain holding a pending edit is
+  adopted, reaching a brain editor open on it (see CONTINUOUS EDITING,
+  above), one it removed is dropped, a brain holding a pending edit is
   neither pulled nor dropped -- and pushes nothing. The store draws no
   conclusion from the order of a publication and a push reply on the
   port: each is judged by its hashes.

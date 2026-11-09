@@ -735,6 +735,29 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assert.deepEqual([...received.brains.keys()], [id]);
     assert.equal(received.pending.size, 0);
     assert.equal(host.listed.filter((name) => name.endsWith(".src.json")).length, 1);
+
+    const editing = openBrainEditing(designer.brains, id);
+    const opened = editing.getDocument();
+    let adoptions = 0;
+    editing.subscribe(() => {
+      adoptions += 1;
+    });
+    reopenWithSecondRule(own.brains, id);
+    await saved(host, own, "the first tab's re-edit to be saved");
+    const resaved = own.brains.getSnapshot().brains.get(id)?.sourceHash;
+    await eventually(
+      () => editing.getDocument(),
+      (held) => held !== opened,
+      "the second tab's open editor to adopt the re-edit"
+    );
+    editing.close();
+
+    const adopted = editing.getDocument();
+    assert.ok(adopted);
+    assert.equal(brainSourceHash(serializeBrainSource(adopted)), resaved);
+    assert.equal((adopted.pages().get(0) as BrainPageDef).children().size(), 2);
+    assert.equal(designer.brains.getSnapshot().brains.get(id)?.sourceHash, resaved);
+    assert.equal(adoptions, 1);
   });
 
   it("keeps the brains of two tab and column pairs, for two projects, apart", async () => {
@@ -1614,7 +1637,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       await saved(host, tab, "the new brain to be saved");
       await brainsUntil(tab, (state) => state.pending.size === 0, "the new brain to be acknowledged");
       const editing = openBrainEditing(brains, id);
-      const working = editing.srcBrainDef;
+      const working = editing.getDocument();
       assert.ok(working);
       const page = working.pages().get(0) as BrainPageDef;
 

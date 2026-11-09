@@ -37,11 +37,18 @@ You are an independent comment reviewer. Do NOT edit any files; only read and re
    contrasts it with an alternative; (c) merely restates what the code literally
    does; (d) carries a plan-only or work-item marker (a phase name, a
    milestone, a ticket id); or (e) describes what a DIFFERENT symbol does,
-   what this symbol is NOT, or redirects the reader to another API. A comment
-   PASSES if it states only what the symbol is (purpose, inputs, outputs,
-   invariants, errors) or a genuine non-obvious intent or constraint.
+   what this symbol is NOT, or redirects the reader to another API; or (f)
+   runs long: a JSDoc block is a short paragraph of about ten lines at most,
+   so for every block the diff adds or changes, read the WHOLE block in the
+   file (the diff shows changed lines only) and fail one that exceeds that,
+   however accurate it is. A comment PASSES if it states only what the symbol
+   is (purpose, inputs, outputs, invariants, errors) or a genuine non-obvious
+   intent or constraint, within that length.
 
 4. Report each failing comment as `file:line` with the offending text, which
-   rule (a-e) it breaks, and a corrected version that states what the symbol is.
+   rule (a-f) it breaks, and a corrected version that states what the symbol
+   is; for rule (f), the corrected version is the short paragraph plus one
+   clause naming the docs page the moved narrative belongs in, and the report
+   says which sentences move there.
    End with a single line: `VERDICT: PASS` (no violations) or `VERDICT: FAIL`.
 ----
