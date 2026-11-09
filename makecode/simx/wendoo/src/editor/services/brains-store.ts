@@ -1,17 +1,23 @@
-import type { IBrainDef, WendooEnvironment } from "@wendoo/core/app";
-import { BrainDef } from "@wendoo/core/app";
-import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
+import type { BrainDef, IBrainDef, WendooEnvironment } from "@wendoo/core/app";
+import { logger } from "@wendoo/core/app";
 import type { TypeId } from "@wendoo/core/runtime";
 import type {
   MakeCodeAsset,
-  MakeCodeBrain,
-  MakeCodeBrainPush,
   MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeIdManifest,
   MakeCodeManifestReading,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+  MakeCodeWireCompileOutcome,
+  MakeCodeWireDiagnostic,
 } from "@wendoo/makecode-session";
-import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
+import {
+  brainSourceHash,
+  MakeCodeBrainsError,
+  MakeCodeBrainsErrorCode,
+  MakeCodeManifestProblemCode,
+} from "@wendoo/makecode-session";
 import type { AssetLiteral } from "../../authoring/asset-literals";
 import type {
   AuthoringEnvironment,
@@ -21,20 +27,21 @@ import type {
 } from "../../authoring/authoring-environment";
 import { buildAuthoringEnvironment } from "../../authoring/authoring-environment";
 import type { BrainLiteral, UnresolvedBrainReference } from "../../authoring/brain-literals";
-import type { BrainSourceCompile } from "../../authoring/brain-source";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
   BRAIN_SOURCE_INVALID,
-  compileBrainSource,
+  checkBrainSource,
   readBrainSource,
   serializeBrainSource,
+  wireDiagnostics,
 } from "../../authoring/brain-source";
-import { emptyIdManifest, sameIdManifest } from "../../authoring/id-allocation";
+import { adoptIds } from "../../authoring/id-allocation";
 import type { EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
 
 /**
  * The delays, in milliseconds, before each retry of a failed push of a
- * brain's latest edit, and before each re-run of a failed reconciliation:
+ * brain's latest edit or of a failed create, and before each re-run of a
+ * failed reconciliation:
  * the first retry waits the first delay, each retry that fails waits the
  * next, and every retry after the last waits the last.
  */
@@ -46,12 +53,22 @@ function retryDelay(attempt: number): number {
 }
 
 /**
- * Stable code of a brain whose source places tiles the store's environment
+ * Stable code of a brain whose source places tiles the compile's environment
  * holds no tile for -- pack tiles while no catalog binds their pack. A compile
- * reading any is not a good one: the brain keeps its last good compiled form,
- * and the store never pushes the compile's program.
+ * reading any is not a good one: the brain keeps its last good compiled form.
  */
 export const BRAIN_TILE_UNRESOLVED = "BRAIN_TILE_UNRESOLVED";
+
+/**
+ * Stable code logged at warn level, once per brain per source hash, when the
+ * simulator extension's compile outcome for a source differs from the
+ * store's own compile of the same source: in its diagnostics' codes, its
+ * unresolved tiles, or whether it produced a program.
+ */
+export const MAKECODE_COMPILE_MISMATCH = "MAKECODE_COMPILE_MISMATCH";
+
+/** The prefix of the key {@link BrainsViewState.pending} holds for each brain creation awaiting its brain. */
+const CREATE_KEY_PREFIX = "create/";
 
 /**
  * Stable code of the catalog pending state, {@link BrainsViewState.catalogPending}:
@@ -70,8 +87,12 @@ export interface UnresolvedTile {
 /** The session readings a {@link BrainsStore} follows. */
 export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText" | "assets">;
 
-/** The session a {@link BrainsStore} syncs its brains with the MakeCode project over, and takes the project's id manifest from. */
-export type BrainsSyncSource = Pick<EditorSessionStore, "onBrainsChannel" | "onManifest">;
+/**
+ * The session a {@link BrainsStore} syncs its brains with the MakeCode
+ * project over, and takes the project's id manifest and brains publications
+ * from.
+ */
+export type BrainsSyncSource = Pick<EditorSessionStore, "onBrainsChannel" | "onManifest" | "onBrains">;
 
 /** The session a {@link BrainsStore} follows, in the `useSyncExternalStore` shape: a subscribe function and a snapshot reader. */
 export interface BrainsSessionSource {
@@ -81,15 +102,11 @@ export interface BrainsSessionSource {
   getSnapshot(): BrainsSessionState;
 }
 
-/** A brain's last successful compile. */
-export interface CompiledBrain {
-  /** The compiled program in the binary form the MakeCode Wendoo VM loads. */
-  readonly bytecode: Uint8Array;
-  /** Hash of the source text the bytecode was compiled from. */
-  readonly sourceHash: string;
-}
-
-/** One brain the store holds. */
+/**
+ * One brain the store holds. Its compile facts are the simulator extension's
+ * once a push reply carrying its outcome for {@link source} has landed, and
+ * the store's own compile's until then.
+ */
 export interface BrainEntry {
   /** The brain's display name, as its document carries it. */
   readonly name: string;
@@ -98,22 +115,23 @@ export interface BrainEntry {
   /** Hash of {@link source}. */
   readonly sourceHash: string;
   /** Diagnostics of compiling {@link source}, in the order they were reported. */
-  readonly diagnostics: readonly BrainBuildDiagnostic[];
+  readonly diagnostics: readonly MakeCodeWireDiagnostic[];
   /**
-   * The tiles {@link source} places that the store's environment holds no
+   * The tiles {@link source} places that the compile's environment holds no
    * tile for, in the order first placed; empty when every tile resolved.
-   * While any is listed, the latest compile is not a good one, and
-   * {@link compiled} is the last good compile.
+   * While any is listed, the compile is not a good one, and
+   * {@link compiledSourceHash} names the last good one.
    */
   readonly unresolvedTiles: readonly UnresolvedTile[];
   /**
-   * The latest good compile -- one that produced bytecode with every tile
-   * resolved -- or `undefined` when none has. It compiled {@link source}
-   * exactly when its `sourceHash` equals {@link sourceHash}; otherwise the
-   * latest compile failed or left tiles unresolved, and this is the last good
-   * one.
+   * Hash of the source the brain's registration in the project was compiled
+   * from -- equal to {@link sourceHash} exactly when it was compiled from
+   * {@link source} -- or `null` when the project registers no compiled form
+   * of the brain: as the simulator extension last reported it, in a pull, a
+   * publication or a push reply, and as a good compile of the store's own
+   * predicts it for an edit not answered yet.
    */
-  readonly compiled: CompiledBrain | undefined;
+  readonly compiledSourceHash: string | null;
 }
 
 /**
@@ -140,19 +158,21 @@ export interface BrainsViewState {
   /** The brains, keyed by document id, in the order they were first stored. */
   readonly brains: ReadonlyMap<string, BrainEntry>;
   /**
-   * Ids of the brains whose latest edit -- add, apply, rename or removal --
-   * the MakeCode project has not acknowledged, in the order first recorded:
-   * edits made while no reconciled handshake could carry them, edits whose
-   * push is in flight, and edits whose push failed. An id leaves the set when the project acknowledges a
-   * push carrying its latest edit, however late; acknowledging a push of an
-   * earlier edit leaves it pending. An id the brains do not hold names a
-   * removal.
+   * Ids of the brains whose latest edit -- apply, rename or removal -- the
+   * MakeCode project has not answered, in the order first recorded: edits
+   * made while no reconciled handshake could carry them, edits whose push is
+   * in flight, and edits whose push failed. An id leaves the set when the
+   * project answers a push carrying its latest edit, however late; answering
+   * a push of an earlier edit leaves it pending. An id the brains do not hold
+   * names a removal. Beside the ids, the set holds a key starting `create/`,
+   * which names no brain, for each brain creation {@link BrainsStore.addBrain}
+   * asked for whose brain the store does not hold yet.
    */
   readonly pending: ReadonlySet<string>;
   /**
-   * How many pushes have gone out and await the project's answer: each
-   * counts from its departure until the project acknowledges or fails it, or
-   * the handshake it went out on ends, however long that takes.
+   * How many pushes and creates have gone out and await the project's
+   * answer: each counts from its departure until the project answers or
+   * fails it, or the handshake it went out on ends, however long that takes.
    */
   readonly pushesInFlight: number;
   /**
@@ -217,21 +237,62 @@ export interface BrainsViewState {
   readonly catalogPending: boolean;
 }
 
+/** An entry the store compiled, with what its compile found. */
+interface CompiledEntry {
+  /** The entry, its compile facts the store's own. */
+  readonly entry: BrainEntry;
+  /** What the store's own compile found, for comparing with the simulator extension's outcome. */
+  readonly local: LocalCompile;
+}
+
+/** What the store's own compile of one source found, compared against the simulator extension's outcome for it. */
+interface LocalCompile {
+  /** Hash of the source compiled. */
+  readonly sourceHash: string;
+  /** The compile's diagnostic codes, in reported order. */
+  readonly codes: readonly number[];
+  /** The tiles the compile read as unresolved, in the order first placed. */
+  readonly unresolvedTiles: readonly string[];
+  /** Whether the compile was a good one: it produced a program and read every tile as resolved. */
+  readonly good: boolean;
+}
+
+/** One brain creation {@link BrainsStore.addBrain} asked for, until the store holds its brain or it fails. */
+interface Create {
+  /** The key {@link BrainsViewState.pending} holds for it. */
+  readonly key: string;
+  /** Display name of the brain to create. */
+  readonly name: string;
+  /** Settles the creation with the created brain's document id. */
+  readonly resolve: (id: string) => void;
+  /** Settles the creation as failed. */
+  readonly reject: (error: unknown) => void;
+  /** Whether its request is in flight. */
+  sending: boolean;
+  /** The created brain's document id, once the project answered it. */
+  id: string | undefined;
+}
+
 /**
  * The editor's brains as the UI consumes them: brain documents keyed by
- * document id, each with its compile state, compiled in an environment built
- * from the followed session's catalog and the project's id manifest, and
- * rebuilt whenever a manifest arrives after a different catalog or holding
- * a different allocation. Components read {@link getSnapshot} and subscribe with
- * {@link subscribe} (both `useSyncExternalStore`-shaped).
+ * document id, each with its compile state, compiled for live diagnostics in
+ * an environment built from the followed session's catalog and the
+ * project's id manifest, and rebuilt whenever a manifest arrives after a
+ * different catalog or holding a different allocation. Components read
+ * {@link getSnapshot} and subscribe with {@link subscribe} (both
+ * `useSyncExternalStore`-shaped).
  *
  * Every document written to the store is compiled at once in the current
- * environment. A failed compile keeps the document and records its
- * diagnostics, beside the last good compile; so does a compile reading any
- * tile the document places as one the environment does not hold, which also
- * records those tiles under {@link BRAIN_TILE_UNRESOLVED}. A document whose
- * source text equals the source the store holds for its brain changes
- * nothing: it is not compiled, and no edit is recorded.
+ * environment, and the compile's diagnostics, unresolved tiles -- recorded
+ * under {@link BRAIN_TILE_UNRESOLVED} -- and the registration a good compile
+ * would make are shown until the simulator extension's outcome for the same
+ * source lands in a push reply; that outcome is then shown in their place.
+ * An outcome that differs from the store's own compile of the same source --
+ * in its diagnostics' codes, its unresolved tiles, or whether it produced a
+ * program -- is logged under {@link MAKECODE_COMPILE_MISMATCH}, once per brain
+ * per source hash. A document whose source text equals the source the store
+ * holds for its brain changes nothing: it is not compiled, and no edit is
+ * recorded.
  *
  * The environment binds the catalog's packs under the project's id
  * allocation, which the store adopts, as it is, from each manifest the sync
@@ -240,8 +301,7 @@ export interface BrainsViewState {
  * rebuilds the environment from the two. A manifest of a newer format leaves
  * every pack unbound, reported under its stable code after the catalog's
  * diagnostics. Whenever the environment is rebuilt, every brain is
- * recompiled in it; one whose compiled form changes is recorded as edited,
- * and pushed.
+ * recompiled in it for its diagnostics; nothing is pushed.
  *
  * The environment's asset literals follow the session's asset snapshot: a
  * literal per listed asset of a catalog asset type, and a literal per such
@@ -259,29 +319,37 @@ export interface BrainsViewState {
  * under {@link BrainsViewState.unresolvedBrains}.
  *
  * Given a sync source, the store keeps its brains in step with the MakeCode
- * project over each makecode handshake. When a handshake has completed and
- * delivered its first manifest, the store reconciles: it lists the
- * project's brains, pulls those whose source differs from the
- * store's or whose compiled form the list reports missing or compiled from
- * other source, adopts each pulled brain it holds no pending edit of, drops
- * each brain the project no longer holds that has no pending edit, then
- * pushes every pend. A failed reconciliation is re-run over the same
- * handshake after each of {@link PUSH_RETRY_DELAYS_MS} in turn, and then
- * after the last of them again and again, while the session stays connected
- * and no later handshake has completed. A pulled source that is not a brain
- * document is listed in {@link BrainsViewState.damaged} and never overwritten
- * by itself; a pulled source whose compiled form was not compiled from it,
- * or whose compile now makes another program, is recompiled and, when that
- * compile is a good one, pushed. Once reconciled, each
- * edit is pushed as it is made, pending until the project acknowledges it.
- * A push awaits the project's answer however long it takes, and fails only
- * on a failure answer or when its handshake ends. A failed push of a brain's
- * latest edit is retried, unless the brain is listed damaged, after each of
+ * project over each makecode handshake, from the brains publications the
+ * simulator extension makes. The handshake's first publication reconciles:
+ * the store pulls every published brain it holds no copy of or whose copy's
+ * source differs, adopts each pulled brain it holds no pending edit of,
+ * drops each brain the project no longer holds that has no pending edit,
+ * then pushes every pend and sends every creation asked for. Each later
+ * publication refreshes the store the same way, pulling only the brains
+ * holding no pending edit, and takes each published compiled source hash of
+ * a source the store holds. A reconciliation whose pull fails is re-run over
+ * the same handshake after each of {@link PUSH_RETRY_DELAYS_MS} in turn, and
+ * then after the last of them again and again, while the session stays
+ * connected and no later handshake has completed. A pulled source that is
+ * not a brain document, or embeds another id, is listed in
+ * {@link BrainsViewState.damaged} and never overwritten by itself, nor pulled
+ * again while the project holds the same text.
+ *
+ * Once reconciled, each edit is pushed as it is made, carrying the brain's
+ * source alone, and pending until the project answers it. A push awaits the
+ * project's answer however long it takes, and fails only on a failure answer
+ * or when its handshake ends. A failed push of a brain's latest edit is
+ * retried, unless the brain is listed damaged, after each of
  * {@link PUSH_RETRY_DELAYS_MS} in turn and then after the last of them, again
  * and again, while the handshake it went out on stays reconciled and
- * connected; every pend is pushed when the next handshake has reconciled. A
- * push carries the brain as the store holds it: its source and the compiled
- * form and hash of one compile.
+ * connected; every pend is pushed when the next handshake has reconciled.
+ *
+ * {@link addBrain} asks the simulator extension to create a brain, which it
+ * names and mints; the creation is pending until the store holds the
+ * created brain. A creation is sent once a handshake has reconciled; a
+ * failed one is retried as a failed push is, and one whose handshake ends
+ * while it is in flight fails with `CLOSED`, the project's next publication
+ * holding the brain if it was created.
  */
 export class BrainsStore {
   private readonly _session: BrainsSessionSource;
@@ -317,12 +385,29 @@ export class BrainsStore {
   private _brains: ReadonlyMap<string, BrainEntry> = new Map();
   private _pending: ReadonlySet<string> = new Set();
   private _damaged: ReadonlyMap<string, BrainDamage> = new Map();
+  /** The source hash of each damaged brain's source as the project held it when the damage was found. */
+  private readonly _damagedHashes = new Map<string, string>();
+  /** The count of edits made to each brain, by document id: a push carries the count it was made at. */
+  private readonly _edits = new Map<string, number>();
+  /** The store's own compile of each brain's latest source, by document id. */
+  private readonly _local = new Map<string, LocalCompile>();
+  /** The source hashes each brain's compile mismatch was logged for, by document id. */
+  private readonly _mismatches = new Map<string, Set<string>>();
+  /** The creations asked for whose brain the store does not hold yet, in the order asked. */
+  private _creates: readonly Create[] = [];
+  private _createCount = 0;
   /** The channel of the latest handshake, or `undefined` before the first. */
   private _channel: MakeCodeBrainsChannel | undefined;
+  /** The latest brains publication of the latest handshake, or `undefined` before its first. */
+  private _published: readonly MakeCodeBrainSummary[] | undefined;
   /** Whether the latest handshake's reconciliation has finished and the session has stayed connected since. */
   private _reconciled = false;
-  /** The latest handshake's channel while its reconciliation waits for the handshake's first manifest. */
-  private _awaitingManifest: MakeCodeBrainsChannel | undefined;
+  /** Whether a reconciliation is running. */
+  private _syncing = false;
+  /** Whether a reconciliation is due once the running one ends. */
+  private _syncDue = false;
+  /** How many reconciliations over the latest handshake have failed in a row. */
+  private _syncFailures = 0;
   /** The scheduled retry of each brain whose latest push failed, by document id. */
   private readonly _retries = new Map<string, ReturnType<typeof setTimeout>>();
   private _pushesInFlight = 0;
@@ -330,7 +415,7 @@ export class BrainsStore {
 
   /**
    * @param session - The session whose catalog the environment is built from, and whose connectivity decides which edits pend.
-   * @param sync - The session the brains are synced with the MakeCode project over, and the project's id manifest is taken from. When omitted, the store syncs nothing, binds no pack, builds its environment from the catalog the session holds now, and pends every edit made while the session is not connected.
+   * @param sync - The session the brains are synced with the MakeCode project over, and the project's id manifest and brains are taken from. When omitted, the store syncs nothing, binds no pack, builds its environment from the catalog the session holds now, pends every edit made while the session is not connected, and creates no brain.
    */
   constructor(session: BrainsSessionSource, sync?: BrainsSyncSource) {
     this._session = session;
@@ -346,7 +431,10 @@ export class BrainsStore {
       this.handshakeCompleted(channel);
     });
     sync?.onManifest((reading) => {
-      this.manifestPublished(reading);
+      this.adoptManifest(reading);
+    });
+    sync?.onBrains((brains) => {
+      this.brainsPublished(brains);
     });
   }
 
@@ -376,15 +464,30 @@ export class BrainsStore {
   }
 
   /**
-   * Creates an empty one-page brain named `name` and stores it as
-   * {@link applyBrain} does. Returns its minted document id.
+   * Asks the simulator extension to create an empty one-page brain named
+   * `name`, pending until the store holds it: sent at once while the store is
+   * reconciled, else once the next handshake has reconciled. Resolves with
+   * the created brain's document id once the store holds the brain; rejects
+   * with a `MakeCodeBrainsError` carrying `CLOSED` when the handshake carrying
+   * the request ends before its answer. With no sync source it never settles.
    *
    * @param name - Display name of the brain; any text, including empty or one another brain carries.
    */
-  addBrain(name: string): string {
-    const definition = BrainDef.emptyBrainDef(this._environment.environment.brainServices, name);
-    this.store(definition);
-    return definition.id();
+  addBrain(name: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const create: Create = {
+        key: `${CREATE_KEY_PREFIX}${++this._createCount}`,
+        name,
+        resolve,
+        reject,
+        sending: false,
+        id: undefined,
+      };
+      this._creates = [...this._creates, create];
+      this.publish();
+      const channel = this._channel;
+      if (channel !== undefined && this.pushesOver(channel)) this.sendCreate(channel, create);
+    });
   }
 
   /**
@@ -424,6 +527,7 @@ export class BrainsStore {
     const brains = new Map(this._brains);
     brains.delete(id);
     this._brains = brains;
+    this._local.delete(id);
     this.edited(id);
     this.publish();
   }
@@ -431,8 +535,8 @@ export class BrainsStore {
   /**
    * Pushes the store's copy of the brain `id` to the MakeCode project over
    * the damaged source the project holds, clearing the damage once the
-   * project acknowledges it. Does nothing unless the brain is listed
-   * damaged, the store holds it, and the store is reconciled
+   * project answers it. Does nothing unless the brain is listed damaged, the
+   * store holds it, and the store is reconciled
    * ({@link BrainsViewState.reconciled}).
    *
    * @param id - Document id of the brain.
@@ -453,22 +557,42 @@ export class BrainsStore {
     const source = serializeBrainSource(definition);
     const held = this._brains.get(id);
     if (held?.source === source) return;
+    const { entry, local } = this.compiled(definition.name(), source, held?.compiledSourceHash ?? null);
+    this._brains = new Map(this._brains).set(id, entry);
+    this._local.set(id, local);
+    this.edited(id);
+    this.publish();
+  }
+
+  /**
+   * The entry holding `source`, a brain named `name`, compiled in the
+   * current environment, with what the compile found: `compiledSourceHash`
+   * is the source's hash for a good compile and `registered` otherwise.
+   * Throws when `source` is not a brain document.
+   */
+  private compiled(name: string, source: string, registered: string | null): CompiledEntry {
     this._environment.assetLiterals.bindSource(source);
     this._environment.brainLiterals.bindSource(source);
     const sourceHash = brainSourceHash(source);
-    const compile = compileBrainSource(this._environment.environment, source);
-    const bytecode = goodBytecode(compile);
-    const entry: BrainEntry = {
-      name: definition.name(),
-      source,
-      sourceHash,
-      diagnostics: compile.diagnostics,
-      unresolvedTiles: unresolvedTilesOf(compile),
-      compiled: bytecode === undefined ? held?.compiled : { bytecode, sourceHash },
+    const compile = checkBrainSource(this._environment.environment, source);
+    const good = compile.linked && compile.unresolvedTiles.length === 0;
+    const diagnostics = wireDiagnostics(compile.diagnostics);
+    return {
+      entry: {
+        name,
+        source,
+        sourceHash,
+        diagnostics,
+        unresolvedTiles: unresolvedTilesOf(compile.unresolvedTiles),
+        compiledSourceHash: good ? sourceHash : registered,
+      },
+      local: {
+        sourceHash,
+        codes: diagnostics.map((diagnostic) => diagnostic.code),
+        unresolvedTiles: compile.unresolvedTiles,
+        good,
+      },
     };
-    this._brains = new Map(this._brains).set(id, entry);
-    this.edited(id);
-    this.publish();
   }
 
   /**
@@ -477,6 +601,7 @@ export class BrainsStore {
    * sync source, records it pending only when the session is not connected.
    */
   private edited(id: string): void {
+    this._edits.set(id, (this._edits.get(id) ?? 0) + 1);
     const connected = this._session.getSnapshot().status === "connected";
     if (this._sync === undefined) {
       if (!connected) this.recordPending(id);
@@ -506,7 +631,7 @@ export class BrainsStore {
 
   /**
    * Pushes the store's latest state of the brain `id` over `channel`: its
-   * entry, or its removal when the store holds none. Records the brain
+   * source, or its removal when the store holds none. Records the brain
    * pending, counts the push in flight until the project answers it or the
    * handshake `channel` belongs to ends, however long that takes, and cancels
    * any retry scheduled for the brain.
@@ -517,33 +642,35 @@ export class BrainsStore {
     clearTimeout(this._retries.get(id));
     this._retries.delete(id);
     const entry = this._brains.get(id);
-    const push: MakeCodeBrainPush =
+    const edit = this._edits.get(id) ?? 0;
+    const push: MakeCodeWireBrainPush =
       entry === undefined
         ? { op: "remove", brainId: id }
-        : { op: "write", brain: { id, name: entry.name, source: entry.source, compiled: entry.compiled } };
+        : { op: "write", brain: { id, name: entry.name, source: entry.source } };
     this.recordPending(id);
     this._pushesInFlight += 1;
     this.publish();
     channel.pushBrain(push).then(
-      () => {
+      (outcome) => {
         this._pushesInFlight -= 1;
-        this.pushAcknowledged(id, entry);
+        this.pushAnswered(id, edit, outcome);
       },
       () => {
         this._pushesInFlight -= 1;
-        this.pushFailed(channel, id, entry, attempt);
+        this.pushFailed(channel, id, edit, attempt);
       }
     );
   }
 
   /**
-   * Clears the damage of the brain `id`, whose push of `pushed` -- its entry
-   * then, `undefined` for a removal -- the project acknowledged, and clears
-   * its pend, cancelling any scheduled retry, when `pushed` is still its
-   * latest state. Publishes.
+   * Takes the project's answer to a push of the brain `id` made at its edit
+   * count `edit`: shows `outcome` when it is the outcome for the brain's
+   * current source, clears the brain's damage, and clears its pend,
+   * cancelling any scheduled retry, when `edit` is still its latest edit.
+   * Publishes.
    */
-  private pushAcknowledged(id: string, pushed: BrainEntry | undefined): void {
-    if (this._pending.has(id) && this._brains.get(id) === pushed) {
+  private pushAnswered(id: string, edit: number, outcome: MakeCodeWireCompileOutcome | null): void {
+    if (this._pending.has(id) && this._edits.get(id) === edit) {
       const pending = new Set(this._pending);
       pending.delete(id);
       this._pending = pending;
@@ -554,27 +681,46 @@ export class BrainsStore {
       const damaged = new Map(this._damaged);
       damaged.delete(id);
       this._damaged = damaged;
+      this._damagedHashes.delete(id);
     }
+    if (outcome !== null) this.adoptOutcome(id, outcome);
     this.publish();
   }
 
   /**
-   * Handles the failure of the push over `channel` of `pushed` -- the brain
-   * `id`'s entry then, `undefined` for a removal -- and publishes. When
-   * `pushed` is still the brain's latest state, the brain is not damaged,
-   * and edits reach the project over `channel`, retries the
-   * push after the delay {@link PUSH_RETRY_DELAYS_MS} holds at `attempt`, or
-   * its last delay past the end, provided edits still reach the project over
-   * `channel` then.
+   * Takes the simulator extension's `outcome` for a source of the brain
+   * `id`: logs {@link MAKECODE_COMPILE_MISMATCH} once per source hash when it
+   * differs from the store's own compile of that source, and shows it when
+   * the brain's current source is that source.
    */
-  private pushFailed(
-    channel: MakeCodeBrainsChannel,
-    id: string,
-    pushed: BrainEntry | undefined,
-    attempt: number
-  ): void {
+  private adoptOutcome(id: string, outcome: MakeCodeWireCompileOutcome): void {
+    const local = this._local.get(id);
+    const logged = this._mismatches.get(id) ?? new Set<string>();
+    if (local?.sourceHash === outcome.sourceHash && !logged.has(outcome.sourceHash) && !sameCompile(local, outcome)) {
+      this._mismatches.set(id, logged.add(outcome.sourceHash));
+      logger.warn(MAKECODE_COMPILE_MISMATCH, { brainId: id, sourceHash: outcome.sourceHash });
+    }
+    const entry = this._brains.get(id);
+    if (entry?.sourceHash !== outcome.sourceHash) return;
+    this._brains = new Map(this._brains).set(id, {
+      ...entry,
+      diagnostics: outcome.diagnostics,
+      unresolvedTiles: unresolvedTilesOf(outcome.unresolvedTiles),
+      compiledSourceHash: outcome.compiled?.sourceHash ?? null,
+    });
+  }
+
+  /**
+   * Handles the failure of the push over `channel` of the brain `id` made at
+   * its edit count `edit`, and publishes. When `edit` is still the brain's
+   * latest edit, the brain is not damaged, and edits reach the project over
+   * `channel`, retries the push after the delay {@link PUSH_RETRY_DELAYS_MS}
+   * holds at `attempt`, or its last delay past the end, provided edits still
+   * reach the project over `channel` then.
+   */
+  private pushFailed(channel: MakeCodeBrainsChannel, id: string, edit: number, attempt: number): void {
     this.publish();
-    if (this._brains.get(id) !== pushed || this._damaged.has(id) || !this.pushesOver(channel)) return;
+    if (this._edits.get(id) !== edit || this._damaged.has(id) || !this.pushesOver(channel)) return;
     const retry = setTimeout(() => {
       this._retries.delete(id);
       if (this.pushesOver(channel)) this.push(channel, id, attempt + 1);
@@ -582,143 +728,245 @@ export class BrainsStore {
     this._retries.set(id, retry);
   }
 
-  /** Pushes every pending brain that is not damaged over `channel`. */
+  /**
+   * Sends `create` over `channel`, counting it in flight until the project
+   * answers it or the handshake ends, then takes the created brain.
+   *
+   * @param attempt - How many failed sends of the creation precede this one: 0 for a first send.
+   */
+  private sendCreate(channel: MakeCodeBrainsChannel, create: Create, attempt = 0): void {
+    create.sending = true;
+    this._pushesInFlight += 1;
+    this.publish();
+    channel.createBrain(create.name).then(
+      (brain) => {
+        this._pushesInFlight -= 1;
+        create.sending = false;
+        create.id = brain.id;
+        this.publish();
+        if (!this.settleCreates()) void this.pullCreated(channel, brain.id);
+      },
+      (error: unknown) => {
+        this._pushesInFlight -= 1;
+        create.sending = false;
+        if (error instanceof MakeCodeBrainsError && error.code === MakeCodeBrainsErrorCode.CLOSED) {
+          this._creates = this._creates.filter((held) => held !== create);
+          this.publish();
+          create.reject(error);
+          return;
+        }
+        this.publish();
+        if (!this.pushesOver(channel)) return;
+        setTimeout(() => {
+          if (this.pushesOver(channel) && this._creates.includes(create) && !create.sending) {
+            this.sendCreate(channel, create, attempt + 1);
+          }
+        }, retryDelay(attempt));
+      }
+    );
+  }
+
+  /**
+   * Pulls the brain `id` a creation made over `channel` and holds it; a pull
+   * that fails leaves the brain to the next reconciliation.
+   */
+  private async pullCreated(channel: MakeCodeBrainsChannel, id: string): Promise<void> {
+    let pulled: MakeCodeWireBrain[];
+    try {
+      pulled = await channel.pullBrains([id]);
+    } catch {
+      return;
+    }
+    if (this._channel !== channel || this._brains.has(id) || this._pending.has(id)) return;
+    const brain = pulled.find((held) => held.id === id);
+    if (brain === undefined) return;
+    const read = this.readPulled(brain);
+    if (typeof read === "string") return;
+    this._brains = new Map(this._brains).set(id, read.entry);
+    this._local.set(id, read.local);
+    this.settleCreates();
+    this.publish();
+  }
+
+  /**
+   * Resolves every creation whose brain the store now holds, removing it
+   * from the creations. Returns whether any resolved; publishes nothing.
+   */
+  private settleCreates(): boolean {
+    const done = this._creates.filter((create) => create.id !== undefined && this._brains.has(create.id));
+    if (done.length === 0) return false;
+    this._creates = this._creates.filter((create) => !done.includes(create));
+    for (const create of done) create.resolve(create.id as string);
+    return true;
+  }
+
+  /** Pushes every pending brain that is not damaged, and sends every creation not sent, over `channel`. */
   private flush(channel: MakeCodeBrainsChannel): void {
     for (const id of this._pending) {
       if (!this._damaged.has(id)) this.push(channel, id);
     }
+    for (const create of this._creates) {
+      if (!create.sending && create.id === undefined) this.sendCreate(channel, create);
+    }
   }
 
-  /** Adopts `channel` as the latest handshake's, to reconcile over once the handshake delivers its first manifest. */
+  /** Adopts `channel` as the latest handshake's, to reconcile over once the handshake delivers its first brains publication. */
   private handshakeCompleted(channel: MakeCodeBrainsChannel): void {
     const wasReconciled = this._reconciled;
     this._channel = channel;
+    this._published = undefined;
     this._reconciled = false;
-    this._awaitingManifest = channel;
+    this._syncFailures = 0;
     if (wasReconciled) this.publish();
   }
 
-  /**
-   * Adopts the manifest `reading` the MakeCode side published, then, when it
-   * is the latest handshake's first, reconciles over that handshake.
-   */
-  private manifestPublished(reading: MakeCodeManifestReading): void {
-    this.adoptManifest(reading);
-    const channel = this._awaitingManifest;
-    this._awaitingManifest = undefined;
-    if (channel !== undefined && this._channel === channel) void this.reconcile(channel);
+  /** Takes `brains` as the latest handshake's latest brains publication, and reconciles with it. */
+  private brainsPublished(brains: readonly MakeCodeBrainSummary[]): void {
+    if (this._channel === undefined) return;
+    this._published = brains;
+    this.requestSync();
+  }
+
+  /** Reconciles with the latest publication once any running reconciliation ends. */
+  private requestSync(): void {
+    this._syncDue = true;
+    if (!this._syncing) void this.runSync();
   }
 
   /**
-   * Brings the store and the project into step over `channel`: lists, pulls
-   * what differs, adopts or records it, drops what the project no longer
-   * holds, then pushes the pends and the recompiled brains. Abandoned when a
-   * later handshake takes over. When a request fails while the session is
-   * connected and `channel` is still the latest handshake's, re-runs after
-   * the delay {@link PUSH_RETRY_DELAYS_MS} holds at `attempt`, or its last
-   * delay past the end, provided both still hold then.
-   *
-   * @param attempt - How many failed reconciliations over `channel` precede this one: 0 for the first.
+   * Runs reconciliations with the latest publication until none is due. A
+   * failed one is re-run after the delay {@link PUSH_RETRY_DELAYS_MS} holds at
+   * the count of failures in a row, or its last delay past the end, while the
+   * session stays connected and its handshake is the latest.
    */
-  private async reconcile(channel: MakeCodeBrainsChannel, attempt = 0): Promise<void> {
-    let listed: MakeCodeBrainSummary[];
-    let wanted: string[];
-    let pulled: MakeCodeBrain[];
+  private async runSync(): Promise<void> {
+    this._syncing = true;
     try {
-      listed = await channel.listBrains();
-      if (this._channel !== channel) return;
-      wanted = listed.filter((summary) => this.wantsPull(summary)).map((summary) => summary.id);
+      while (this._syncDue) {
+        this._syncDue = false;
+        const channel = this._channel;
+        const brains = this._published;
+        if (channel === undefined || brains === undefined) continue;
+        if (await this.reconcile(channel, brains)) {
+          this._syncFailures = 0;
+          continue;
+        }
+        if (!this.reconcilesOver(channel)) continue;
+        const delay = retryDelay(this._syncFailures);
+        this._syncFailures += 1;
+        setTimeout(() => {
+          if (this.reconcilesOver(channel)) this.requestSync();
+        }, delay);
+      }
+    } finally {
+      this._syncing = false;
+    }
+  }
+
+  /**
+   * Brings the store into step with the publication `brains` over
+   * `channel`: pulls what differs, adopts or records it, drops what the
+   * project no longer holds, and takes the published compiled source hashes;
+   * on the handshake's first, then pushes the pends and sends the creations.
+   * A brain pending when the run starts or when its pull answers is neither
+   * adopted nor dropped. Resolves `false` when the pull fails, and `true`
+   * otherwise, abandoning the run when a later handshake takes over.
+   */
+  private async reconcile(channel: MakeCodeBrainsChannel, brains: readonly MakeCodeBrainSummary[]): Promise<boolean> {
+    const first = !this._reconciled;
+    const pendingAtStart = this._pending;
+    const pending = (id: string): boolean => pendingAtStart.has(id) || this._pending.has(id);
+    const wanted = brains.filter((summary) => this.wantsPull(summary, first)).map((summary) => summary.id);
+    let pulled: MakeCodeWireBrain[];
+    try {
       pulled = wanted.length === 0 ? [] : await channel.pullBrains(wanted);
     } catch {
-      if (!this.reconcilesOver(channel)) return;
-      setTimeout(() => {
-        if (this.reconcilesOver(channel)) void this.reconcile(channel, attempt + 1);
-      }, retryDelay(attempt));
-      return;
+      return false;
     }
-    if (this._channel !== channel) return;
+    if (this._channel !== channel) return true;
 
-    const brains = new Map(this._brains);
+    const entries = new Map(this._brains);
     const damaged = new Map(this._damaged);
-    const recompiled: string[] = [];
     for (const brain of pulled) {
       const read = this.readPulled(brain);
       if (typeof read === "string") {
         damaged.set(brain.id, { code: read, name: brain.name });
+        this._damagedHashes.set(brain.id, brainSourceHash(brain.source));
         continue;
       }
       damaged.delete(brain.id);
-      if (this._pending.has(brain.id)) continue;
-      brains.set(brain.id, read.entry);
-      if (read.recompiled) recompiled.push(brain.id);
+      this._damagedHashes.delete(brain.id);
+      if (pending(brain.id)) continue;
+      entries.set(brain.id, read.entry);
+      this._local.set(brain.id, read.local);
     }
-    const held = new Set(listed.map((summary) => summary.id));
+    const held = new Set(brains.map((summary) => summary.id));
     const pulledIds = new Set(pulled.map((brain) => brain.id));
     for (const id of wanted) {
       if (!pulledIds.has(id)) held.delete(id);
     }
     for (const id of this._brains.keys()) {
-      if (!held.has(id) && !this._pending.has(id)) brains.delete(id);
+      if (!held.has(id) && !pending(id)) {
+        entries.delete(id);
+        this._local.delete(id);
+      }
     }
     for (const id of this._damaged.keys()) {
-      if (!held.has(id)) damaged.delete(id);
+      if (!held.has(id)) {
+        damaged.delete(id);
+        this._damagedHashes.delete(id);
+      }
     }
-    this._brains = brains;
+    for (const summary of brains) {
+      const entry = entries.get(summary.id);
+      if (entry?.sourceHash === summary.sourceHash && entry.compiledSourceHash !== summary.compiledSourceHash) {
+        entries.set(summary.id, { ...entry, compiledSourceHash: summary.compiledSourceHash });
+      }
+    }
+    this._brains = entries;
     this._damaged = damaged;
     this._reconciled = true;
+    this.settleCreates();
     this.publish();
-    this.flush(channel);
-    for (const id of recompiled) this.push(channel, id);
+    if (first) this.flush(channel);
+    return true;
   }
 
   /**
-   * Whether a reconciliation pulls the listed brain: the store holds no copy
-   * of it, its copy's source differs, or the project lists its compiled form
-   * as missing (`null`) or compiled from other source. A summary carrying no
-   * `compiledSourceHash` says nothing about the compiled form.
+   * Whether a reconciliation pulls the published brain: the store holds no
+   * copy of it or its copy's source differs, it holds no pending edit of it
+   * unless this is the handshake's first reconciliation, and the project's
+   * source is not the damaged text it held when its damage was found.
    */
-  private wantsPull(summary: MakeCodeBrainSummary): boolean {
-    if (this._brains.get(summary.id)?.sourceHash !== summary.sourceHash) return true;
-    const { compiledSourceHash } = summary;
-    return compiledSourceHash !== undefined && compiledSourceHash !== summary.sourceHash;
+  private wantsPull(summary: MakeCodeBrainSummary, first: boolean): boolean {
+    if (this._brains.get(summary.id)?.sourceHash === summary.sourceHash) return false;
+    if (!first && this._pending.has(summary.id)) return false;
+    return this._damagedHashes.get(summary.id) !== summary.sourceHash;
   }
 
   /**
    * Reads a pulled brain in the current environment: its damage when its
    * source is not a brain document or embeds a different id, and otherwise
-   * the entry holding it, compiled at once. A compile that is not a good one
-   * keeps the pulled compiled form as the last good one. `recompiled` reports
-   * a good compile making another program than the pulled compiled form.
+   * the entry holding it, compiled at once, with the compiled source hash
+   * the project reports.
    */
-  private readPulled(brain: MakeCodeBrain): BrainDamageCode | { entry: BrainEntry; recompiled: boolean } {
-    const environment = this._environment.environment;
+  private readPulled(brain: MakeCodeWireBrain): BrainDamageCode | CompiledEntry {
     this._environment.assetLiterals.bindSource(brain.source);
     this._environment.brainLiterals.bindSource(brain.source);
     let definition: BrainDef;
     try {
-      definition = readBrainSource(environment, brain.source);
+      definition = readBrainSource(this._environment.environment, brain.source);
     } catch {
       return BRAIN_SOURCE_INVALID;
     }
     if (definition.id() !== brain.id) return BRAIN_SOURCE_ID_MISMATCH;
-    let compile: BrainSourceCompile;
+    let compiled: CompiledEntry;
     try {
-      compile = compileBrainSource(environment, brain.source);
+      compiled = this.compiled(definition.name(), brain.source, null);
     } catch {
       return BRAIN_SOURCE_INVALID;
     }
-    const sourceHash = brainSourceHash(brain.source);
-    const bytecode = goodBytecode(compile);
-    const entry: BrainEntry = {
-      name: definition.name(),
-      source: brain.source,
-      sourceHash,
-      diagnostics: compile.diagnostics,
-      unresolvedTiles: unresolvedTilesOf(compile),
-      compiled: bytecode === undefined ? brain.compiled : { bytecode, sourceHash },
-    };
-    const recompiled = bytecode !== undefined && !sameCompiled(brain.compiled, entry.compiled);
-    return { entry, recompiled };
+    return { ...compiled, entry: { ...compiled.entry, compiledSourceHash: brain.compiledSourceHash } };
   }
 
   /**
@@ -730,13 +978,11 @@ export class BrainsStore {
    */
   private adoptManifest(reading: MakeCodeManifestReading): void {
     const newer = reading.problem === MakeCodeManifestProblemCode.FORMAT_NEWER;
-    const ids = newer ? undefined : (reading.manifest ?? emptyIdManifest());
-    const held = this._ids;
-    const sameIds = held === undefined || ids === undefined ? held === ids : sameIdManifest(held, ids);
+    const { ids, changed } = adoptIds(reading, this._ids);
     const newerChanged = newer !== this._manifestNewer;
     this._ids = ids;
     this._manifestNewer = newer;
-    if (!sameIds || this._catalogText !== this._builtCatalogText) {
+    if (changed || this._catalogText !== this._builtCatalogText) {
       this.rebuild();
     } else if (!newerChanged) {
       return;
@@ -746,38 +992,30 @@ export class BrainsStore {
 
   /**
    * Rebuilds the environment from the session's catalog and the allocation
-   * held, then recompiles every brain in it, each compile that is not a good
-   * one leaving the brain at its last good compiled form. A brain whose
-   * compiled form changes is recorded as edited, and so is a pending brain
-   * whose diagnostics or unresolved tiles alone change, so its pend clears
-   * on the push of its new entry.
+   * held, then recompiles every brain in it for its diagnostics and
+   * unresolved tiles, keeping each brain's compiled source hash.
    */
   private rebuild(): void {
     this._environment = this.buildEnvironment();
     const brains = new Map(this._brains);
-    const edited: string[] = [];
     for (const [id, held] of this._brains) {
-      let compile: BrainSourceCompile;
+      let entry: BrainEntry;
       try {
-        compile = compileBrainSource(this._environment.environment, held.source);
+        const compiled = this.compiled(held.name, held.source, held.compiledSourceHash);
+        entry = compiled.entry;
+        this._local.set(id, compiled.local);
       } catch {
         continue;
       }
-      const bytecode = goodBytecode(compile);
-      const compiled = bytecode === undefined ? held.compiled : { bytecode, sourceHash: held.sourceHash };
-      const unresolvedTiles = unresolvedTilesOf(compile);
       if (
-        sameCompiled(compiled, held.compiled) &&
-        sameDiagnostics(compile.diagnostics, held.diagnostics) &&
-        sameUnresolvedTiles(unresolvedTiles, held.unresolvedTiles)
+        sameDiagnostics(entry.diagnostics, held.diagnostics) &&
+        sameUnresolvedTiles(entry.unresolvedTiles, held.unresolvedTiles)
       ) {
         continue;
       }
-      brains.set(id, { ...held, diagnostics: compile.diagnostics, unresolvedTiles, compiled });
-      if (!sameCompiled(compiled, held.compiled) || this._pending.has(id)) edited.push(id);
+      brains.set(id, { ...held, diagnostics: entry.diagnostics, unresolvedTiles: entry.unresolvedTiles });
     }
     this._brains = brains;
-    for (const id of edited) this.edited(id);
   }
 
   /**
@@ -850,6 +1088,12 @@ export class BrainsStore {
     return found;
   }
 
+  /** The pends: the pending brain ids, then the key of each creation awaiting its brain. */
+  private pendingView(): ReadonlySet<string> {
+    if (this._creates.length === 0) return this._pending;
+    return new Set([...this._pending, ...this._creates.map((create) => create.key)]);
+  }
+
   private readState(): BrainsViewState {
     return {
       environment: this._environment.environment,
@@ -866,7 +1110,7 @@ export class BrainsStore {
       packLiterals: this._environment.packLiterals,
       typePages: this._environment.typePages,
       unresolvedBrains: this.unresolvedBrains(),
-      pending: this._pending,
+      pending: this.pendingView(),
       pushesInFlight: this._pushesInFlight,
       damaged: this._damaged,
       reconciled: this._reconciled,
@@ -882,18 +1126,9 @@ export class BrainsStore {
   }
 }
 
-/**
- * The bytecode of `compile` when it is a good compile: one that produced
- * bytecode and read every tile its source places as a tile the environment
- * holds. `undefined` otherwise.
- */
-function goodBytecode(compile: BrainSourceCompile): Uint8Array | undefined {
-  return compile.unresolvedTiles.length === 0 ? compile.bytecode : undefined;
-}
-
-/** The tiles `compile` read as missing-tile placeholders, each under {@link BRAIN_TILE_UNRESOLVED}. */
-function unresolvedTilesOf(compile: BrainSourceCompile): readonly UnresolvedTile[] {
-  return compile.unresolvedTiles.map((tileId) => ({ tileId, code: BRAIN_TILE_UNRESOLVED }));
+/** `tileIds` as unresolved tiles, each under {@link BRAIN_TILE_UNRESOLVED}. */
+function unresolvedTilesOf(tileIds: readonly string[]): readonly UnresolvedTile[] {
+  return tileIds.map((tileId) => ({ tileId, code: BRAIN_TILE_UNRESOLVED }));
 }
 
 /** Whether `a` and `b` list the same tiles, in the same order. */
@@ -901,17 +1136,27 @@ function sameUnresolvedTiles(a: readonly UnresolvedTile[], b: readonly Unresolve
   return a.length === b.length && a.every((tile, index) => tile.tileId === b[index]?.tileId);
 }
 
-/** Whether `a` and `b` are the same compiled form: both absent, or the same bytes compiled from the same source. */
-function sameCompiled(a: CompiledBrain | undefined, b: CompiledBrain | undefined): boolean {
-  if (a === undefined || b === undefined) return a === b;
-  if (a.sourceHash !== b.sourceHash || a.bytecode.length !== b.bytecode.length) return false;
-  return a.bytecode.every((byte, index) => byte === b.bytecode[index]);
-}
-
 /** Whether `a` and `b` report the same diagnostics, code for code and message for message. */
-function sameDiagnostics(a: readonly BrainBuildDiagnostic[], b: readonly BrainBuildDiagnostic[]): boolean {
+function sameDiagnostics(a: readonly MakeCodeWireDiagnostic[], b: readonly MakeCodeWireDiagnostic[]): boolean {
   return (
     a.length === b.length &&
     a.every((diagnostic, index) => diagnostic.code === b[index]?.code && diagnostic.message === b[index]?.message)
+  );
+}
+
+/**
+ * Whether the store's own compile `local` and the simulator extension's
+ * `outcome` of the same source agree: the same diagnostic codes in the same
+ * order, the same unresolved tiles, and both good compiles or neither -- the
+ * outcome's a good one when the registration it reports was compiled from
+ * its source.
+ */
+function sameCompile(local: LocalCompile, outcome: MakeCodeWireCompileOutcome): boolean {
+  return (
+    local.good === (outcome.compiled?.sourceHash === outcome.sourceHash) &&
+    local.codes.length === outcome.diagnostics.length &&
+    local.codes.every((code, index) => code === outcome.diagnostics[index]?.code) &&
+    local.unresolvedTiles.length === outcome.unresolvedTiles.length &&
+    local.unresolvedTiles.every((tileId, index) => tileId === outcome.unresolvedTiles[index])
   );
 }

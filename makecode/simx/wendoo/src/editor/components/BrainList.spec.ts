@@ -3,6 +3,7 @@ import { after, afterEach, before, beforeEach, describe, it, mock } from "node:t
 import type { IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import type { MakeCodeBrainSummary, MakeCodeBrainsChannel } from "@wendoo/makecode-session";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BRAIN_ASSET_UNRESOLVED } from "../../authoring/asset-literals.js";
@@ -16,8 +17,11 @@ import type { BrainsSessionState, BrainsViewState } from "../services/brains-sto
 import { BRAIN_TILE_UNRESOLVED, BrainsStore } from "../services/brains-store.js";
 import { EditorRequests } from "../services/editor-requests.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
+import { FrameProject } from "../test-support/frame-project.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import { listedDiagnostics } from "./BrainDiagnostics.js";
 import {
+  answerCreatedBrain,
   answerCreateRequest,
   answerEditorRequest,
   answerOpenRequest,
@@ -146,8 +150,8 @@ describe("BrainList", () => {
   });
 
   it("lists the store's brains in store order, one row per document id, with edit and actions controls", () => {
-    const first = store.addBrain("Chaser");
-    const second = store.addBrain("Runner");
+    const first = seedBrain(store, "Chaser");
+    const second = seedBrain(store, "Runner");
 
     const markup = render(store);
 
@@ -161,8 +165,8 @@ describe("BrainList", () => {
   });
 
   it("renames a row in place: same document id, same position, the new name", () => {
-    const first = store.addBrain("Chaser");
-    const second = store.addBrain("Runner");
+    const first = seedBrain(store, "Chaser");
+    const second = seedBrain(store, "Runner");
 
     store.renameBrain(first, "Hunter");
 
@@ -173,8 +177,8 @@ describe("BrainList", () => {
   });
 
   it("drops the row of a removed brain, leaving the others", () => {
-    const first = store.addBrain("Chaser");
-    const second = store.addBrain("Runner");
+    const first = seedBrain(store, "Chaser");
+    const second = seedBrain(store, "Runner");
 
     store.removeBrain(first);
 
@@ -182,8 +186,8 @@ describe("BrainList", () => {
   });
 
   it("renders brains with duplicate names as separate rows under their own ids", () => {
-    const first = store.addBrain("Chaser");
-    const second = store.addBrain("Chaser");
+    const first = seedBrain(store, "Chaser");
+    const second = seedBrain(store, "Chaser");
 
     assert.deepEqual(rows(render(store)), [
       [first, "Chaser"],
@@ -192,8 +196,8 @@ describe("BrainList", () => {
   });
 
   it("badges a brain's listed diagnostics with their count and the brain's compile state", () => {
-    const failing = store.addBrain("Chaser");
-    const clean = store.addBrain("Runner");
+    const failing = seedBrain(store, "Chaser");
+    const clean = seedBrain(store, "Runner");
     applyFailingBrain(store, failing);
     const entry = store.getSnapshot().brains.get(failing);
     assert.ok(entry);
@@ -209,7 +213,7 @@ describe("BrainList", () => {
   });
 
   it("shows no badge while the latest apply compiled clean, and a stale badge once a later apply fails", () => {
-    const id = store.addBrain("Chaser");
+    const id = seedBrain(store, "Chaser");
     applyCompilingBrain(store, id);
     assert.doesNotMatch(rowMarkup(render(store), id), /data-testid="brain-error-badge"/);
 
@@ -234,8 +238,8 @@ describe("BrainList", () => {
     }
 
     it("marks a damaged brain it holds a copy of with the coded notice and a Restore for that brain", () => {
-      const damaged = store.addBrain("Chaser");
-      const intact = store.addBrain("Runner");
+      const damaged = seedBrain(store, "Chaser");
+      const intact = seedBrain(store, "Runner");
 
       const markup = renderDamaged(new Map([[damaged, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }]]));
 
@@ -247,7 +251,7 @@ describe("BrainList", () => {
     });
 
     it("disables Restore, keeping the notice, while the store is not reconciled with the project", () => {
-      const damaged = store.addBrain("Chaser");
+      const damaged = seedBrain(store, "Chaser");
       const damage = new Map([[damaged, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }] as const]);
 
       const unreconciled = rowMarkup(renderDamaged(damage, [], false), damaged);
@@ -259,7 +263,7 @@ describe("BrainList", () => {
     });
 
     it("lists a damaged brain it holds no copy of under the project's name, with the notice alone", () => {
-      const held = store.addBrain("Runner");
+      const held = seedBrain(store, "Runner");
 
       const markup = renderDamaged(new Map([["abcdabcdabcdabcd", { code: BRAIN_SOURCE_ID_MISMATCH, name: "Chaser" }]]));
 
@@ -282,7 +286,7 @@ describe("BrainList", () => {
     });
 
     it("drops the notice once the damage clears", () => {
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       assert.match(
         renderDamaged(new Map([[id, { code: BRAIN_SOURCE_INVALID, name: "Chaser" }]])),
         /data-testid="brain-damaged-notice"/
@@ -306,8 +310,8 @@ describe("BrainList", () => {
     }
 
     it("marks a brain using an asset the project no longer holds with the coded notice, and no other brain", () => {
-      const using = store.addBrain("Chaser");
-      const other = store.addBrain("Runner");
+      const using = seedBrain(store, "Chaser");
+      const other = seedBrain(store, "Runner");
       const literal = {
         tileId: "tile.literal->struct:<Picture>->img1",
         typeId: "struct:<Picture>",
@@ -332,7 +336,7 @@ describe("BrainList", () => {
   describe("pending catalog", () => {
     it("shows no badge on a brain placing unresolved tiles while no catalog is held, keeping its diagnostics in the store", () => {
       const ringer = applyRingingBrain(store, "Ringer");
-      const failing = store.addBrain("Chaser");
+      const failing = seedBrain(store, "Chaser");
       applyFailingBrain(store, failing);
       assert.equal(store.getSnapshot().catalogPending, true);
       const entry = store.getSnapshot().brains.get(ringer);
@@ -470,10 +474,60 @@ describe("open requests", () => {
     mock.restoreAll();
   });
 
+  describe("answerCreatedBrain", () => {
+    /** A store reconciled over a channel creating brains in a fresh frame project. */
+    async function creatingStore(): Promise<BrainsStore> {
+      const project = new FrameProject();
+      let published: ((brains: MakeCodeBrainSummary[]) => void) | undefined;
+      let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
+      const synced = new BrainsStore(SESSION, {
+        onBrainsChannel: (listener) => {
+          handshake = listener;
+          return () => {};
+        },
+        onManifest: () => () => {},
+        onBrains: (listener) => {
+          published = listener;
+          return () => {};
+        },
+      });
+      handshake?.({
+        listBrains: () => Promise.resolve(project.summaries()),
+        pullBrains: (ids) => Promise.resolve(ids.flatMap((id) => project.get(id) ?? [])),
+        pushBrain: (push) =>
+          Promise.resolve(
+            push.op === "write" ? project.write(push.brain.id, push.brain.name, push.brain.source) : null
+          ),
+        createBrain: (name) => Promise.resolve(project.create(name)),
+      });
+      published?.([]);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.ok(synced.getSnapshot().reconciled);
+      return synced;
+    }
+
+    it("puts the keyboard on the created brain's Edit button, then opens the editor on it, once the store holds it", async () => {
+      const synced = await creatingStore();
+
+      const id = await synced.addBrain("Chaser");
+      const list = view(synced, null);
+
+      assert.equal(answerCreatedBrain(list, id), true);
+      assert.deepEqual(list.changes, [`focus:${id}`, `editor:${id}`]);
+    });
+
+    it("changes nothing for a created brain the store does not hold yet", () => {
+      const list = view(store, null);
+
+      assert.equal(answerCreatedBrain(list, "createdcreatedcr"), false);
+      assert.deepEqual(list.changes, []);
+    });
+  });
+
   describe("answerOpenRequest", () => {
     it("opens the editor on the named brain the store holds, the keyboard put on its Edit button first", () => {
-      store.addBrain("Chaser");
-      const hero = store.addBrain("Hero");
+      seedBrain(store, "Chaser");
+      const hero = seedBrain(store, "Hero");
       const list = view(store, null);
 
       answerOpenRequest(list, hero);
@@ -484,8 +538,8 @@ describe("open requests", () => {
     });
 
     it("switches an editor open on another brain to the named brain", () => {
-      const chaser = store.addBrain("Chaser");
-      const hero = store.addBrain("Hero");
+      const chaser = seedBrain(store, "Chaser");
+      const hero = seedBrain(store, "Hero");
       const list = view(store, chaser);
 
       answerOpenRequest(list, hero);
@@ -494,7 +548,7 @@ describe("open requests", () => {
     });
 
     it("leaves an editor open on the named brain open on it", () => {
-      const hero = store.addBrain("Hero");
+      const hero = seedBrain(store, "Hero");
       const list = view(store, hero);
 
       answerOpenRequest(list, hero);
@@ -504,7 +558,7 @@ describe("open requests", () => {
     });
 
     it("closes an open add dialog before opening the editor", () => {
-      const hero = store.addBrain("Hero");
+      const hero = seedBrain(store, "Hero");
       const list = view(store, null, { kind: "add" });
 
       answerOpenRequest(list, hero);
@@ -514,7 +568,7 @@ describe("open requests", () => {
     });
 
     it("leaves the list as it is for a brain the store does not hold, logging its stable code", () => {
-      const chaser = store.addBrain("Chaser");
+      const chaser = seedBrain(store, "Chaser");
       const list = view(store, chaser, { kind: "rename", id: chaser, name: "Chaser" });
 
       answerOpenRequest(list, "abcdabcdabcdabcd");
@@ -535,7 +589,7 @@ describe("open requests", () => {
 
   describe("answerEditorRequest", () => {
     it("opens the editor on the brain an open request's instance name denotes", () => {
-      const hero = store.addBrain("Hero");
+      const hero = seedBrain(store, "Hero");
       const list = view(store, null);
 
       answerEditorRequest(list, { kind: "open", qName: `wendooBrains.p_${hero}` });
@@ -562,7 +616,7 @@ describe("open requests", () => {
     });
 
     it("leaves the list as it is for an instance name denoting no brain, logging the stable code", () => {
-      store.addBrain("Hero");
+      seedBrain(store, "Hero");
       const list = view(store, null);
 
       answerEditorRequest(list, { kind: "open", qName: "wendooPrograms.p_abcdabcdabcdabcd" });

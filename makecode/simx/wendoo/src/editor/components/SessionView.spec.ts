@@ -13,6 +13,7 @@ import type { BrainsViewState } from "../services/brains-store.js";
 import { BrainsStore, CATALOG_PENDING } from "../services/brains-store.js";
 import { EditorRequests } from "../services/editor-requests.js";
 import type { EditorSessionStore, EditorSessionViewState } from "../services/editor-session-store.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import { SessionView } from "./SessionView.js";
 
 const CATALOG_TEXT = '{"packs":[{"name":"motion","tiles":[{"name":"move","kind":"actuator"}]}]}';
@@ -54,7 +55,7 @@ function render(
     getSnapshot: () => state,
   } as unknown as EditorSessionStore;
   const held = new BrainsStore(store);
-  for (const name of brainNames) held.addBrain(name);
+  for (const name of brainNames) seedBrain(held, name);
   const brainsView = { ...held.getSnapshot(), ...brainsFields };
   const brains = { subscribe: held.subscribe, getSnapshot: () => brainsView } as unknown as BrainsStore;
   return renderToStaticMarkup(

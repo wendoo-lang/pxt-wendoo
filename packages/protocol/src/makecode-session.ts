@@ -5,18 +5,17 @@ import type {
   PeerSessionPort,
 } from "@wendoo/bridge-app/peer-session";
 import { connectPeerSession } from "@wendoo/bridge-app/peer-session";
-import { base64ToBytes, bytesToBase64 } from "@wendoo/service-api";
 import type { MakeCodeAsset, MakeCodeAssetsMessage } from "./makecode-assets.js";
 import type {
-  MakeCodeBrain,
-  MakeCodeBrainPush,
   MakeCodeBrainSummary,
   MakeCodeBrainsErrorPayload,
+  MakeCodeBrainsMessage,
   MakeCodeBrainsReplyMessage,
   MakeCodeBrainsRequest,
   MakeCodeBrainsRequestMessage,
   MakeCodeWireBrain,
   MakeCodeWireBrainPush,
+  MakeCodeWireCompileOutcome,
 } from "./makecode-brains.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import type { MakeCodeManifestMessage, MakeCodeManifestReading } from "./makecode-manifest.js";
@@ -102,6 +101,7 @@ export type MakeCodeSessionMessage =
   | MakeCodeManifestMessage
   | MakeCodeAssetsMessage
   | MakeCodeProjectInfoMessage
+  | MakeCodeBrainsMessage
   | MakeCodeBrainsRequestMessage
   | MakeCodeBrainsReplyMessage
   | MakeCodePingMessage
@@ -176,6 +176,15 @@ export interface MakeCodeSession {
    * function.
    */
   onProjectInfo(listener: (info: MakeCodeProjectInfo) => void): () => void;
+  /** Publish the project's brains to the peer, whole. */
+  publishBrains(brains: readonly MakeCodeBrainSummary[]): void;
+  /**
+   * Subscribe to the project's brains published by the peer, each
+   * publication delivered whole. Publications received while no listener is
+   * attached are replayed to the next listener that attaches. Returns an
+   * unsubscribe function.
+   */
+  onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void;
   /**
    * Ask the peer serving the project for the brains the project holds.
    * Resolves with the peer's list; rejects with a `MakeCodeBrainsError`
@@ -186,21 +195,28 @@ export interface MakeCodeSession {
   listBrains(): Promise<MakeCodeBrainSummary[]>;
   /**
    * Ask the peer serving the project for the full brains `ids` names.
-   * Resolves with the requested brains the project holds, in request order,
-   * each compiled program decoded to bytes; rejects as {@link listBrains}
-   * does.
+   * Resolves with the requested brains the project holds, in request order;
+   * rejects as {@link listBrains} does.
    *
    * @param ids - Document ids of the brains to return.
    */
-  pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]>;
+  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]>;
   /**
    * Ask the peer serving the project to apply `push` to the project's
-   * brains. Resolves once the peer acknowledges it; rejects as
-   * {@link listBrains} does.
+   * brains. Resolves once the peer has applied it, with a write's compile
+   * outcome or `null` for a removal; rejects as {@link listBrains} does.
    *
    * @param push - The change to apply.
    */
-  pushBrain(push: MakeCodeBrainPush): Promise<void>;
+  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null>;
+  /**
+   * Ask the peer serving the project to create an empty brain named `name`.
+   * Resolves once the brain's source is in the project, with the brain as
+   * the project holds it; rejects as {@link listBrains} does.
+   *
+   * @param name - Display name of the brain; any text, including empty.
+   */
+  createBrain(name: string): Promise<MakeCodeBrainSummary>;
   /**
    * Subscribe to the brains requests the peer sends, for the party serving
    * the project to answer: each is delivered once per listener with the
@@ -275,6 +291,9 @@ class EstablishedSession implements MakeCodeSession {
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   /** Project facts received while no project-info listener was attached, in arrival order. */
   private readonly _bufferedProjectInfo: MakeCodeProjectInfo[] = [];
+  private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
+  /** Brains publications received while no brains listener was attached, in arrival order. */
+  private readonly _bufferedBrains: MakeCodeBrainSummary[][] = [];
   private readonly _pending = new Map<string, PendingRequest>();
   /** Resolvers of the pings awaiting their pong, by ping id. */
   private readonly _pings = new Map<string, () => void>();
@@ -347,21 +366,45 @@ class EstablishedSession implements MakeCodeSession {
     };
   }
 
+  publishBrains(brains: readonly MakeCodeBrainSummary[]): void {
+    this._session.postMessage({ type: "makecode:brains", payload: { brains: [...brains] } });
+  }
+
+  onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void {
+    this._brainsListeners.add(listener);
+    for (const brains of this._bufferedBrains.splice(0)) listener(brains);
+    return () => {
+      this._brainsListeners.delete(listener);
+    };
+  }
+
   async listBrains(): Promise<MakeCodeBrainSummary[]> {
     const reply = await this.request((id) => ({ type: "makecode:brainsList", id }), "makecode:brainsListReply");
     return reply.payload.brains;
   }
 
-  async pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]> {
+  async pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
     const reply = await this.request(
       (id) => ({ type: "makecode:brainsPull", id, payload: { ids: [...ids] } }),
       "makecode:brainsPullReply"
     );
-    return reply.payload.brains.map(brainFromWire);
+    return reply.payload.brains;
   }
 
-  async pushBrain(push: MakeCodeBrainPush): Promise<void> {
-    await this.request((id) => ({ type: "makecode:brainsPush", id, payload: pushToWire(push) }), "makecode:brainsAck");
+  async pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
+    const reply = await this.request(
+      (id) => ({ type: "makecode:brainsPush", id, payload: push }),
+      "makecode:brainsPushReply"
+    );
+    return reply.payload;
+  }
+
+  async createBrain(name: string): Promise<MakeCodeBrainSummary> {
+    const reply = await this.request(
+      (id) => ({ type: "makecode:brainsCreate", id, payload: { name } }),
+      "makecode:brainsCreateReply"
+    );
+    return reply.payload.brain;
   }
 
   onBrainsRequest(listener: (request: MakeCodeBrainsRequest) => void): () => void {
@@ -424,9 +467,10 @@ class EstablishedSession implements MakeCodeSession {
 
   /**
    * Routes one message from the peer: answers a ping with its pong, settles
-   * the ping a pong answers, routes catalogs, manifests, asset snapshots and
-   * project facts to their listeners, brains requests to the request
-   * listeners, and replies to their requests; drops the rest.
+   * the ping a pong answers, routes catalogs, manifests, asset snapshots,
+   * project facts and brains publications to their listeners, brains
+   * requests to the request listeners, and replies to their requests; drops
+   * the rest.
    */
   private receive(message: SessionTraffic): void {
     if (message.type === "makecode:ping") {
@@ -476,10 +520,20 @@ class EstablishedSession implements MakeCodeSession {
       for (const listener of this._projectInfoListeners) listener(info);
       return;
     }
+    if (message.type === "makecode:brains") {
+      const { brains } = message.payload;
+      if (this._brainsListeners.size === 0) {
+        this._bufferedBrains.push(brains);
+        return;
+      }
+      for (const listener of this._brainsListeners) listener(brains);
+      return;
+    }
     if (
       message.type === "makecode:brainsList" ||
       message.type === "makecode:brainsPull" ||
-      message.type === "makecode:brainsPush"
+      message.type === "makecode:brainsPush" ||
+      message.type === "makecode:brainsCreate"
     ) {
       const request = this.incoming(message);
       if (this._requestListeners.size === 0) {
@@ -532,16 +586,25 @@ class EstablishedSession implements MakeCodeSession {
           kind: "pull",
           ids: message.payload.ids,
           reply: (brains) => {
-            answer({ type: "makecode:brainsPullReply", id, payload: { brains: brains.map(brainToWire) } });
+            answer({ type: "makecode:brainsPullReply", id, payload: { brains: [...brains] } });
           },
           fail: failWith(MakeCodeBrainsErrorCode.READ_FAILED),
         };
       case "makecode:brainsPush":
         return {
           kind: "push",
-          push: pushFromWire(message.payload),
-          ack: () => {
-            answer({ type: "makecode:brainsAck", id });
+          push: message.payload,
+          reply: (outcome) => {
+            answer({ type: "makecode:brainsPushReply", id, payload: outcome });
+          },
+          fail: failWith(MakeCodeBrainsErrorCode.WRITE_FAILED),
+        };
+      case "makecode:brainsCreate":
+        return {
+          kind: "create",
+          name: message.payload.name,
+          reply: (brain) => {
+            answer({ type: "makecode:brainsCreateReply", id, payload: { brain } });
           },
           fail: failWith(MakeCodeBrainsErrorCode.WRITE_FAILED),
         };
@@ -555,34 +618,4 @@ function closedError(): Error {
     MakeCodeBrainsErrorCode.CLOSED,
     "The makecode session ended before the brains request was answered."
   );
-}
-
-/** `brain` as the program-as-bytes API carries it, its compiled program decoded from base64. */
-function brainFromWire(brain: MakeCodeWireBrain): MakeCodeBrain {
-  const { compiled, ...rest } = brain;
-  return compiled === undefined
-    ? rest
-    : { ...rest, compiled: { bytecode: base64ToBytes(compiled.bytecode), sourceHash: compiled.sourceHash } };
-}
-
-/** `brain` as the wire carries it, its compiled program encoded as base64. */
-function brainToWire(brain: MakeCodeBrain): MakeCodeWireBrain {
-  const { compiled, ...rest } = brain;
-  return compiled === undefined
-    ? rest
-    : { ...rest, compiled: { bytecode: bytesToBase64(compiled.bytecode), sourceHash: compiled.sourceHash } };
-}
-
-/** `push` as the wire carries it, a written brain's compiled program encoded as base64. */
-function pushToWire(push: MakeCodeBrainPush): MakeCodeWireBrainPush {
-  return push.op === "remove"
-    ? { op: "remove", brainId: push.brainId }
-    : { op: "write", brain: brainToWire(push.brain) };
-}
-
-/** `push` as the program-as-bytes API carries it, a written brain's compiled program decoded from base64. */
-function pushFromWire(push: MakeCodeWireBrainPush): MakeCodeBrainPush {
-  return push.op === "remove"
-    ? { op: "remove", brainId: push.brainId }
-    : { op: "write", brain: brainFromWire(push.brain) };
 }

@@ -84,14 +84,17 @@ is legal on the other side.
   one session per tab, and its root entry (`src/editor`) is the editor
   webapp, booting as the editor tab the front door's registration declares.
 - A simx component is a messaging endpoint, not a place for product logic.
-  Brain authoring belongs in the editor (`makecode/simx/wendoo/src/editor`);
+  The simx entry of `makecode/simx/wendoo` is also the project's brain
+  engine: it compiles the project's brains, mints new ones, and alone writes
+  their module, holding nothing the project's files do not hold. Brain
+  authoring belongs in the editor (`makecode/simx/wendoo/src/editor`);
   execution belongs in the extension.
 
 ### Editor Webapp (`makecode/simx/wendoo/src/editor`)
 
 - The editor entry (`makecode/simx/wendoo/src/editor`) owns the Wendoo editor
-  webapp: brain authoring, project management, compiler integration, artifact
-  loading, and diagnostics.
+  webapp: brain authoring, project management, and diagnostics, with a local
+  compile for live diagnostics; the compiled artifact is the simx engine's.
 - It reaches the MakeCode project only over its session with the simx entry
   of `makecode/simx/wendoo`, on the port MakeCode brokers; the simx frame is
   the one writer of the project's files. Do not add a second, direct path

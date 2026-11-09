@@ -1,15 +1,28 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
+import { stream } from "@wendoo/core";
+import type { WendooEnvironment } from "@wendoo/core/app";
+import { BrainDef, CoreHostActions, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
+import { ParseDiagCode } from "@wendoo/core/brain/compiler";
+import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
+import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import {
   brainSourceHash,
-  type MakeCodeBrain,
-  type MakeCodeBrainPush,
   type MakeCodeBrainSummary,
-  type MakeCodeBrainsRequest,
+  type MakeCodeIdManifest,
+  type MakeCodeManifestReading,
+  type MakeCodeWireBrain,
+  type MakeCodeWireBrainPush,
+  type MakeCodeWireCompileOutcome,
 } from "@wendoo/makecode-session";
+import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../authoring/authoring-environment.js";
+import { serializeBrainSource } from "../authoring/brain-source.js";
 import type { ProjfsClient } from "../vendor/projfs.js";
-import { BRAINS_MODULE_FILE, readBrainsModule, writeBrainsModule } from "./brains-module.js";
-import { BrainsProject } from "./brains-project.js";
+import { BrainEngine } from "./brain-engine.js";
+import { BRAINS_MODULE_FILE, type CompiledBrainEntry, readBrainsModule, writeBrainsModule } from "./brains-module.js";
+import { BrainsProject, BrainsProjectProblemCode, type ProjectFiles } from "./brains-project.js";
+import { LivePrograms } from "./live-programs.js";
+import type { ProgramUpdate } from "./sim-channel.js";
 import type { SimxLog } from "./simx-bridge.js";
 import {
   FakeProjfsHost,
@@ -35,15 +48,113 @@ class RecordingLog implements SimxLog {
   }
 }
 
-/** The source text of a brain document `id` named `name`, as the editor pretty-prints it. */
+/** Resolves once `condition` holds, polling every millisecond. */
+async function until(condition: () => boolean): Promise<void> {
+  while (!condition()) await delay(1);
+}
+
+/** Resolves after `ms` milliseconds. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** The source text of an empty brain document `id` named `name`, as the editor pretty-prints it. */
 function sourceOf(id: string, name: string): string {
   return JSON.stringify({ version: 1, id, name, pages: [] }, null, 2);
 }
 
-/** A brain as the editor pushes it: its source and a compiled form of that source. */
-function brain(id: string, name: string, bytecode: Uint8Array = Uint8Array.from([1, 2, 3])): MakeCodeBrain {
-  const source = sourceOf(id, name);
-  return { id, name, source, compiled: { bytecode, sourceHash: brainSourceHash(source) } };
+/** A write of the empty brain `id` named `name`. */
+function writeOf(id: string, name: string, source = sourceOf(id, name)): MakeCodeWireBrainPush {
+  return { op: "write", brain: { id, name, source } };
+}
+
+/** The first rule of `definition`'s first page. */
+function firstRule(definition: BrainDef): BrainRuleDef {
+  return (definition.pages().get(0) as BrainPageDef).children().get(0) as BrainRuleDef;
+}
+
+/** The tile `tileId` from `environment`'s catalogs. Throws when none holds it. */
+function tile(environment: WendooEnvironment, tileId: string) {
+  for (const catalog of environment.tileCatalogs()) {
+    const found = catalog.get(tileId);
+    if (found) return found;
+  }
+  throw new Error(`no tile ${tileId}`);
+}
+
+/**
+ * The source of the brain `id` named `name`, authored by `author` in an
+ * environment binding `catalog` under `ids`, core-only when omitted.
+ */
+function authored(
+  id: string,
+  name: string,
+  author: (environment: WendooEnvironment, rule: BrainRuleDef) => void,
+  catalog?: string,
+  ids?: MakeCodeIdManifest
+): string {
+  const { environment } = buildAuthoringEnvironment(catalog, ids);
+  const definition = BrainDef.emptyBrainDef(environment.brainServices, name);
+  author(environment, firstRule(definition));
+  return serializeBrainSource(definition).replace(/"id": "[^"]+"/, `"id": "${id}"`);
+}
+
+/** The source of the brain `id` whose rule reads `WHEN on page entered DO restart page`. */
+function restartingSource(id: string, name: string): string {
+  return authored(id, name, (environment, rule) => {
+    rule.when().appendTile(tile(environment, mkSensorTileId(CoreHostActions.OnPageEntered.key)));
+    rule.do().appendTile(tile(environment, mkActuatorTileId(CoreHostActions.RestartPage.key)));
+  });
+}
+
+/** The source of the brain `id` placing an actuator on its WHEN side: a placement the compiler rejects. */
+function misplacedSource(id: string, name: string): string {
+  return authored(id, name, (environment, rule) => {
+    rule.when().appendTile(tile(environment, mkActuatorTileId(CoreHostActions.SwitchPage.key)));
+  });
+}
+
+/** A catalog whose one pack declares the ring tile. */
+const CHIME_CATALOG = JSON.stringify({
+  packs: [{ name: "chime", tiles: [{ name: "actuator.chime.ring", kind: "actuator" }] }],
+});
+
+/** The ring tile's id. */
+const RING_TILE = mkActuatorTileId("actuator.chime.ring");
+
+/** The allocation of {@link CHIME_CATALOG} in a project holding no manifest. */
+const CHIME_IDS: MakeCodeIdManifest = {
+  actions: [{ name: "actuator.chime.ring", id: 1024 }],
+  operators: [],
+  types: [],
+  next: { action: 1025, operator: 1024, atom: 1024 },
+};
+
+/** {@link CHIME_IDS} with the ring tile allocated another id. */
+const RENUMBERED_IDS: MakeCodeIdManifest = {
+  actions: [{ name: "actuator.chime.ring", id: 1030 }],
+  operators: [],
+  types: [],
+  next: { action: 1031, operator: 1024, atom: 1024 },
+};
+
+/** The source of the brain `id` whose rule reads `WHEN on page entered DO ring`, authored binding {@link CHIME_CATALOG}. */
+function ringingSource(id: string, name: string): string {
+  return authored(
+    id,
+    name,
+    (environment, rule) => {
+      rule.when().appendTile(tile(environment, mkSensorTileId(CoreHostActions.OnPageEntered.key)));
+      rule.do().appendTile(tile(environment, RING_TILE));
+    },
+    CHIME_CATALOG,
+    CHIME_IDS
+  );
+}
+
+/** The manifest reading holding `ids`. */
+function readingOf(ids: MakeCodeIdManifest): MakeCodeManifestReading {
+  return { manifest: structuredClone(ids) };
 }
 
 const CHASER = "chaserchaserchas";
@@ -53,33 +164,51 @@ describe("brains project", () => {
   let host: FakeProjfsHost;
   let client: ProjfsClient;
   let log: RecordingLog;
+  let posted: ProgramUpdate[];
   let project: BrainsProject;
+  let projects: BrainsProject[];
+
+  /** A new project over `files`, posting live into {@link posted}, disposed by the spec's cleanup. */
+  function open(files: ProjectFiles = client, timings = { retryDelayMs: 5, maxRetryDelayMs: 20 }): BrainsProject {
+    const opened = new BrainsProject(
+      files,
+      log,
+      new LivePrograms((update) => {
+        posted.push(update);
+      }),
+      timings
+    );
+    projects.push(opened);
+    return opened;
+  }
 
   beforeEach(() => {
     host = new FakeProjfsHost();
     client = host.client();
     log = new RecordingLog();
-    project = new BrainsProject(client, log);
+    posted = [];
+    projects = [];
+    project = open();
   });
 
   afterEach(() => {
+    for (const opened of projects) opened.dispose();
     client.dispose();
   });
 
-  /** Asks the project for its list and resolves with the answer. */
+  /** Asks `on` for its list and resolves with the answer. */
   function list(on: BrainsProject = project): Promise<Answer<MakeCodeBrainSummary[]>> {
     return new Promise((resolve) => {
-      const request: MakeCodeBrainsRequest = {
+      on.serve({
         kind: "list",
         reply: (brains) => resolve({ ok: true, value: [...brains] }),
         fail: (message) => resolve({ ok: false, message }),
-      };
-      on.serve(request);
+      });
     });
   }
 
-  /** Asks the project for the brains `ids` and resolves with the answer. */
-  function pull(ids: string[], on: BrainsProject = project): Promise<Answer<MakeCodeBrain[]>> {
+  /** Asks `on` for the brains `ids` and resolves with the answer. */
+  function pull(ids: string[], on: BrainsProject = project): Promise<Answer<MakeCodeWireBrain[]>> {
     return new Promise((resolve) => {
       on.serve({
         kind: "pull",
@@ -90,21 +219,38 @@ describe("brains project", () => {
     });
   }
 
-  /** Asks the project to apply `change` and resolves with the answer. */
-  function push(change: MakeCodeBrainPush): Promise<Answer<undefined>> {
+  /** Asks `on` to apply `change` and resolves with the answer. */
+  function push(
+    change: MakeCodeWireBrainPush,
+    on: BrainsProject = project
+  ): Promise<Answer<MakeCodeWireCompileOutcome | null>> {
     return new Promise((resolve) => {
-      project.serve({
+      on.serve({
         kind: "push",
         push: change,
-        ack: () => resolve({ ok: true, value: undefined }),
+        reply: (outcome) => resolve({ ok: true, value: outcome }),
         fail: (message) => resolve({ ok: false, message }),
       });
     });
   }
 
-  /** Pushes a write of `written` and asserts the project acknowledged it. */
-  async function write(written: MakeCodeBrain): Promise<void> {
-    assert.deepEqual(await push({ op: "write", brain: written }), { ok: true, value: undefined });
+  /** Asks `on` to create a brain named `name` and resolves with the answer. */
+  function create(name: string, on: BrainsProject = project): Promise<Answer<MakeCodeBrainSummary>> {
+    return new Promise((resolve) => {
+      on.serve({
+        kind: "create",
+        name,
+        reply: (brain) => resolve({ ok: true, value: brain }),
+        fail: (message) => resolve({ ok: false, message }),
+      });
+    });
+  }
+
+  /** Pushes `change`, asserts the project applied it, and resolves with its outcome. */
+  async function applied(change: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
+    const answer = await push(change);
+    assert.ok(answer.ok, answer.ok ? "" : answer.message);
+    return answer.value;
   }
 
   /** The entries the project's brains module registers, read with the module's own reader. */
@@ -116,238 +262,549 @@ describe("brains project", () => {
     return reading.entries;
   }
 
+  /** How many times the brains module was written. */
+  function moduleWrites(): number {
+    return host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length;
+  }
+
+  /** Resolves once every drain `on` has queued has landed. */
+  async function drained(on: BrainsProject = project): Promise<void> {
+    await on.current();
+    await delay(5);
+    await host.settled();
+    await delay(5);
+  }
+
   describe("push", () => {
-    it("writes the source verbatim to brains/<id>.src.json and registers the compiled form in brains.g.ts, then acknowledges", async () => {
-      const chaser = brain(
-        CHASER,
-        "Chaser",
-        Uint8Array.from({ length: 256 }, (_, index) => index)
-      );
+    it("compiles a pushed source, writes it verbatim and registers its program, then replies with the outcome", async () => {
+      const source = restartingSource(CHASER, "Chaser");
 
-      await write(chaser);
+      const outcome = await applied(writeOf(CHASER, "Chaser", source));
 
-      assert.equal(host.file(`brains/${CHASER}.src.json`), chaser.source);
-      assert.deepEqual(registered().get(CHASER), {
-        id: CHASER,
-        name: "Chaser",
-        sourceHash: chaser.compiled?.sourceHash,
-        bytecode: chaser.compiled?.bytecode,
+      assert.deepEqual(outcome, {
+        sourceHash: brainSourceHash(source),
+        compiled: { sourceHash: brainSourceHash(source) },
+        diagnostics: [],
+        unresolvedTiles: [],
+      });
+      assert.equal(host.file(`brains/${CHASER}.src.json`), source);
+      const entry = registered().get(CHASER);
+      assert.equal(entry?.name, "Chaser");
+      assert.equal(entry?.sourceHash, brainSourceHash(source));
+      const decoded = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(entry?.bytecode ?? new Uint8Array()), {
+        precision: MAKECODE_VM_PRECISION,
+        typeRegistry: buildAuthoringEnvironment(undefined).environment.brainServices.runtime.types,
+      });
+      assert.equal(decoded.profileId, 2001);
+    });
+
+    it("replies to a source that fails to compile with its error codes, keeping the brain's last good registration", async () => {
+      const good = restartingSource(CHASER, "Chaser");
+      await applied(writeOf(CHASER, "Chaser", good));
+      const lastGood = registered().get(CHASER);
+      const broken = misplacedSource(CHASER, "Chaser");
+
+      const outcome = await applied(writeOf(CHASER, "Chaser", broken));
+
+      assert.equal(outcome?.sourceHash, brainSourceHash(broken));
+      assert.deepEqual(outcome?.compiled, { sourceHash: brainSourceHash(good) });
+      assert.ok(outcome?.diagnostics.some((diagnostic) => diagnostic.code === ParseDiagCode.TilePlacementSideMismatch));
+      assert.equal(host.file(`brains/${CHASER}.src.json`), broken);
+      assert.deepEqual(registered().get(CHASER), lastGood);
+    });
+
+    it("replies to a first source that fails to compile with no registration, registering nothing", async () => {
+      const broken = misplacedSource(CHASER, "Chaser");
+
+      const outcome = await applied(writeOf(CHASER, "Chaser", broken));
+
+      assert.equal(outcome?.compiled, null);
+      assert.equal(registered().has(CHASER), false);
+      assert.deepEqual(await list(), {
+        ok: true,
+        value: [{ id: CHASER, name: "Chaser", sourceHash: brainSourceHash(broken), compiledSourceHash: null }],
       });
     });
 
+    it("replies to a source placing tiles no catalog binds with its unresolved tiles, keeping the last good registration", async () => {
+      const good = sourceOf(CHASER, "Ringer");
+      await applied(writeOf(CHASER, "Ringer", good));
+      const ringing = ringingSource(CHASER, "Ringer");
+
+      const outcome = await applied(writeOf(CHASER, "Ringer", ringing));
+
+      assert.deepEqual(outcome?.unresolvedTiles, [RING_TILE]);
+      assert.deepEqual(outcome?.compiled, { sourceHash: brainSourceHash(good) });
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(good));
+    });
+
     it("keeps every other brain's registration when it writes one", async () => {
-      await write(brain(CHASER, "Chaser"));
-      await write(brain(RUNNER, "Runner", Uint8Array.from([9])));
-      await write(brain(CHASER, "Chaser renamed", Uint8Array.from([7, 7])));
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      await applied(writeOf(CHASER, "Chaser renamed"));
 
       assert.deepEqual([...registered().keys()].sort(), [CHASER, RUNNER]);
       assert.equal(registered().get(CHASER)?.name, "Chaser renamed");
-      assert.deepEqual(registered().get(RUNNER)?.bytecode, Uint8Array.from([9]));
+      assert.equal(registered().get(RUNNER)?.name, "Runner");
     });
 
-    it("drops a brain's registration when a write carries no compiled form", async () => {
-      await write(brain(CHASER, "Chaser"));
-      const { compiled: _, ...uncompiled } = brain(CHASER, "Chaser");
+    it("removes a brain in both forms, replying null, and replies null removing one the project does not hold", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
 
-      await write(uncompiled);
-
-      assert.equal(host.file(`brains/${CHASER}.src.json`), uncompiled.source);
-      assert.equal(registered().has(CHASER), false);
-    });
-
-    it("removes a brain in both forms, and acknowledges removing one the project does not hold", async () => {
-      await write(brain(CHASER, "Chaser"));
-      await write(brain(RUNNER, "Runner"));
-
-      assert.deepEqual(await push({ op: "remove", brainId: CHASER }), { ok: true, value: undefined });
-      assert.deepEqual(await push({ op: "remove", brainId: "absentabsentabse" }), { ok: true, value: undefined });
+      assert.equal(await applied({ op: "remove", brainId: CHASER }), null);
+      assert.equal(await applied({ op: "remove", brainId: "absentabsentabse" }), null);
 
       assert.equal(host.file(`brains/${CHASER}.src.json`), undefined);
       assert.deepEqual([...registered().keys()], [RUNNER]);
     });
 
-    it("drops the registration of a brain whose source is gone from the project when it next writes", async () => {
-      await write(brain(CHASER, "Chaser"));
-      host.remove(`brains/${CHASER}.src.json`);
+    it("stores a pushed text that is not a brain document, replying with no diagnostic and keeping its registration", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      const lastGood = registered().get(CHASER);
 
-      await write(brain(RUNNER, "Runner"));
+      const outcome = await applied(writeOf(CHASER, "Chaser", "not json {"));
+
+      assert.deepEqual(outcome, {
+        sourceHash: brainSourceHash("not json {"),
+        compiled: { sourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")) },
+        diagnostics: [],
+        unresolvedTiles: [],
+      });
+      assert.equal(host.file(`brains/${CHASER}.src.json`), "not json {");
+      assert.deepEqual(registered().get(CHASER), lastGood);
+    });
+
+    it("keeps the registration of a brain whose compile throws, logging its code once per source", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      const lastGood = registered().get(CHASER);
+      const throwing = mock.method(BrainEngine.prototype, "compile", () => {
+        throw new Error("encoder failed");
+      });
+      try {
+        const outcome = await applied(writeOf(CHASER, "Renamed"));
+        await applied(writeOf(CHASER, "Renamed"));
+
+        assert.deepEqual(outcome, {
+          sourceHash: brainSourceHash(sourceOf(CHASER, "Renamed")),
+          compiled: { sourceHash: lastGood?.sourceHash },
+          diagnostics: [],
+          unresolvedTiles: [],
+        });
+      } finally {
+        throwing.mock.restore();
+      }
+
+      assert.equal(registered().get(CHASER)?.bytecode.length, lastGood?.bytecode.length);
+      assert.equal(registered().get(CHASER)?.sourceHash, lastGood?.sourceHash);
+      assert.equal(log.errors.filter((line) => line.startsWith(BrainsProjectProblemCode.COMPILE_THREW)).length, 1);
+      assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Renamed"));
+    });
+
+    it("writes artifacts only: no write or delete is flagged as a user edit", async () => {
+      const options: unknown[] = [];
+      const recording = open({
+        list: () => client.list(),
+        read: (name) => client.read(name),
+        write: (name, content, writeOptions) => {
+          options.push(writeOptions);
+          return client.write(name, content, writeOptions);
+        },
+        delete: (name, deleteOptions) => {
+          options.push(deleteOptions);
+          return client.delete(name, deleteOptions);
+        },
+      });
+
+      await push(writeOf(CHASER, "Chaser"), recording);
+      await push({ op: "remove", brainId: CHASER }, recording);
+
+      assert.equal(options.length, 4);
+      assert.ok(options.every((written) => written === undefined));
+    });
+  });
+
+  describe("create", () => {
+    it("creates an empty brain under a minted id, writing its source and registration, and replies with its summary", async () => {
+      const answer = await create("Chaser");
+
+      assert.ok(answer.ok);
+      const { id, name, sourceHash, compiledSourceHash } = answer.value;
+      assert.equal(id.length, 16);
+      assert.equal(name, "Chaser");
+      const source = host.file(`brains/${id}.src.json`);
+      assert.ok(source !== undefined);
+      assert.equal(JSON.parse(source).id, id);
+      assert.equal(JSON.parse(source).name, "Chaser");
+      assert.equal(JSON.parse(source).pages.length, 1);
+      assert.equal(sourceHash, brainSourceHash(source));
+      assert.equal(compiledSourceHash, sourceHash);
+      assert.equal(registered().get(id)?.sourceHash, sourceHash);
+    });
+
+    it("mints a distinct id for each create, two of one name included", async () => {
+      const answers = await Promise.all([create("Chaser"), create("Chaser")]);
+
+      const ids = answers.map((answer) => (answer.ok ? answer.value.id : ""));
+      assert.equal(new Set(ids).size, 2);
+      assert.deepEqual([...registered().keys()].sort(), [...ids].sort());
+      assert.equal(moduleWrites(), 1);
+    });
+
+    it("fails a create whose source the project refuses, the refusal's code leading the message", async () => {
+      await project.current();
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+
+      const answer = await create("Chaser");
+
+      assert.equal(answer.ok, false);
+      assert.match(answer.ok ? "" : answer.message, /^QUOTA_EXCEEDED\b/);
+    });
+  });
+
+  describe("rebuild", () => {
+    it("registers a pack brain once a catalog binding its pack arrives, writing the module once and posting it live", async () => {
+      const ringing = ringingSource(CHASER, "Ringer");
+      const outcome = await applied(writeOf(CHASER, "Ringer", ringing));
+      assert.equal(outcome?.compiled, null);
+      const writes = moduleWrites();
+
+      project.adoptCatalog(CHIME_CATALOG, readingOf(CHIME_IDS));
+      await drained();
+
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(ringing));
+      assert.equal(moduleWrites(), writes + 1);
+      assert.deepEqual(
+        posted.map((update) => [update.documentId, update.sourceHash]),
+        [[CHASER, brainSourceHash(ringing)]]
+      );
+    });
+
+    it("rewrites the module with a pack brain's new program when the manifest renumbers its tile", async () => {
+      project.adoptCatalog(CHIME_CATALOG, readingOf(CHIME_IDS));
+      await applied(writeOf(CHASER, "Ringer", ringingSource(CHASER, "Ringer")));
+      const before = registered().get(CHASER);
+
+      project.adoptManifest(readingOf(RENUMBERED_IDS));
+      await drained();
+
+      const after = registered().get(CHASER);
+      assert.equal(after?.sourceHash, before?.sourceHash);
+      assert.notDeepEqual(after?.bytecode, before?.bytecode);
+      assert.equal(posted.length, 2);
+    });
+
+    it("recompiles on a new asset snapshot, writing nothing when no registration changes", async () => {
+      await applied(writeOf(CHASER, "Chaser", restartingSource(CHASER, "Chaser")));
+      const mutations = host.mutations.length;
+
+      project.adoptAssets([{ kind: "image", id: "img1" }]);
+      await drained();
+
+      assert.equal(host.mutations.length, mutations);
+      assert.equal(posted.length, 1);
+    });
+
+    it("keeps a pack brain's last good registration when a catalog without its pack arrives", async () => {
+      project.adoptCatalog(CHIME_CATALOG, readingOf(CHIME_IDS));
+      await applied(writeOf(CHASER, "Ringer", ringingSource(CHASER, "Ringer")));
+      const before = registered().get(CHASER);
+      const writes = moduleWrites();
+
+      project.adoptCatalog('{"packs":[]}', readingOf(CHIME_IDS));
+      await drained();
+
+      assert.deepEqual(registered().get(CHASER), before);
+      assert.equal(moduleWrites(), writes);
+    });
+
+    it("recompiles a queued push in the rebuilt environment before writing it", async () => {
+      await project.current();
+      const ringing = ringingSource(CHASER, "Ringer");
+      host.hold();
+      const answer = push(writeOf(CHASER, "Ringer", ringing));
+      await delay(5);
+      project.adoptCatalog(CHIME_CATALOG, readingOf(CHIME_IDS));
+      host.release();
+
+      assert.ok((await answer).ok);
+      await drained();
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(ringing));
+    });
+  });
+
+  describe("healing at start", () => {
+    /** The registration a compile of `source`, the brain `id` named `name`, makes in a core-only environment. */
+    function registrationOf(id: string, name: string, source: string): Promise<CompiledBrainEntry> {
+      const scratch = new FakeProjfsHost();
+      const scratchClient = scratch.client();
+      const scratchProject = new BrainsProject(scratchClient, new RecordingLog(), new LivePrograms(() => {}));
+      return new Promise((resolve, reject) => {
+        scratchProject.serve({
+          kind: "push",
+          push: writeOf(id, name, source),
+          reply: () => {
+            const entry = readBrainsModule(scratch.file(BRAINS_MODULE_FILE) ?? "").entries.get(id);
+            scratchProject.dispose();
+            scratchClient.dispose();
+            if (entry === undefined) reject(new Error(`no registration of ${id}`));
+            else resolve(entry);
+          },
+          fail: (message) => reject(new Error(message)),
+        });
+      });
+    }
+
+    /** Seeds the project with the sources `brains` holds and the module `module`, then opens a fresh project over it. */
+    async function reopened(brains: Record<string, string>, module?: string): Promise<BrainsProject> {
+      for (const [id, source] of Object.entries(brains)) host.edit(`brains/${id}.src.json`, source);
+      if (module !== undefined) host.edit(BRAINS_MODULE_FILE, module);
+      const mutations = host.mutations.length;
+      const fresh = open();
+      await drained(fresh);
+      host.mutations.splice(0, mutations);
+      return fresh;
+    }
+
+    it("registers a brain whose registration is missing, rewriting the module and posting it live", async () => {
+      const runner = await registrationOf(RUNNER, "Runner", sourceOf(RUNNER, "Runner"));
+      await reopened(
+        { [CHASER]: sourceOf(CHASER, "Chaser"), [RUNNER]: sourceOf(RUNNER, "Runner") },
+        writeBrainsModule([runner])
+      );
+
+      assert.deepEqual([...registered().keys()].sort(), [CHASER, RUNNER]);
+      assert.deepEqual(
+        posted.map((update) => update.documentId),
+        [CHASER]
+      );
+    });
+
+    it("registers every brain of a deleted brains module", async () => {
+      await reopened({ [CHASER]: sourceOf(CHASER, "Chaser"), [RUNNER]: sourceOf(RUNNER, "Runner") });
+
+      assert.deepEqual([...registered().keys()].sort(), [CHASER, RUNNER]);
+      assert.equal(moduleWrites(), 1);
+    });
+
+    it("re-registers a brain whose registration was compiled from another source", async () => {
+      const stale = await registrationOf(CHASER, "Chaser", sourceOf(CHASER, "Chaser"));
+      const edited = restartingSource(CHASER, "Chaser");
+
+      await reopened({ [CHASER]: edited }, writeBrainsModule([stale]));
+
+      assert.equal(registered().get(CHASER)?.sourceHash, brainSourceHash(edited));
+    });
+
+    it("heals a malformed registration, logging its code and leaving another brain's source untouched", async () => {
+      const chaser = await registrationOf(CHASER, "Chaser", sourceOf(CHASER, "Chaser"));
+      const runner = await registrationOf(RUNNER, "Runner", sourceOf(RUNNER, "Runner"));
+      const text = writeBrainsModule([chaser, runner]);
+
+      await reopened(
+        { [CHASER]: sourceOf(CHASER, "Chaser"), [RUNNER]: sourceOf(RUNNER, "Runner") },
+        text.replace(`"${RUNNER}", "Runner", hex\``, `"${RUNNER}", Runner, hex\``)
+      );
+
+      assert.deepEqual(registered().get(RUNNER), runner);
+      assert.deepEqual(registered().get(CHASER), chaser);
+      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_ENTRY_MALFORMED")));
+      assert.ok(!host.mutations.includes(`write brains/${CHASER}.src.json`));
+    });
+
+    it("rewrites an unreadable brains module from the brain sources, logging its code", async () => {
+      await reopened({ [CHASER]: sourceOf(CHASER, "Chaser") }, "garbage");
+
+      assert.deepEqual([...registered().keys()], [CHASER]);
+      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_UNREADABLE")));
+    });
+
+    it("drops the registration of a brain whose source is gone", async () => {
+      const chaser = await registrationOf(CHASER, "Chaser", sourceOf(CHASER, "Chaser"));
+      const runner = await registrationOf(RUNNER, "Runner", sourceOf(RUNNER, "Runner"));
+
+      await reopened({ [RUNNER]: sourceOf(RUNNER, "Runner") }, writeBrainsModule([chaser, runner]));
 
       assert.deepEqual([...registered().keys()], [RUNNER]);
     });
 
-    it("writes artifacts only: no write or delete is flagged as a user edit", async () => {
-      const posted: unknown[] = [];
-      const recording = new BrainsProject(
-        {
-          list: () => client.list(),
-          read: (name) => client.read(name),
-          write: (name, content, options) => {
-            posted.push(options);
-            return client.write(name, content, options);
-          },
-          delete: (name, options) => {
-            posted.push(options);
-            return client.delete(name, options);
-          },
-        },
-        log
-      );
-      await new Promise<void>((resolve) => {
-        recording.serve({
-          kind: "push",
-          push: { op: "write", brain: brain(CHASER, "Chaser") },
-          ack: () => resolve(),
-          fail: () => resolve(),
-        });
-      });
-      await new Promise<void>((resolve) => {
-        recording.serve({
-          kind: "push",
-          push: { op: "remove", brainId: CHASER },
-          ack: () => resolve(),
-          fail: () => resolve(),
-        });
-      });
+    it("writes nothing for a project whose registrations are current, posting nothing", async () => {
+      const chaser = await registrationOf(CHASER, "Chaser", sourceOf(CHASER, "Chaser"));
 
-      assert.equal(posted.length, 4);
-      assert.ok(posted.every((options) => options === undefined));
+      await reopened({ [CHASER]: sourceOf(CHASER, "Chaser") }, writeBrainsModule([chaser]));
+
+      assert.deepEqual(host.mutations, []);
+      assert.deepEqual(posted, []);
+    });
+
+    it("leaves a pack brain unregistered until a catalog binding its pack arrives", async () => {
+      const fresh = await reopened({ [CHASER]: ringingSource(CHASER, "Ringer") });
+      assert.equal(host.file(BRAINS_MODULE_FILE), undefined);
+
+      fresh.adoptCatalog(CHIME_CATALOG, readingOf(CHIME_IDS));
+      await drained(fresh);
+
+      assert.deepEqual([...registered().keys()], [CHASER]);
+    });
+
+    it("retries a refused heal write at the retry waits until it lands", async () => {
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+      await reopened({ [CHASER]: sourceOf(CHASER, "Chaser") });
+      assert.ok(log.errors.some((line) => line.startsWith("QUOTA_EXCEEDED")));
+      assert.equal(host.file(BRAINS_MODULE_FILE), undefined);
+
+      host.remove("filler.bin");
+      await until(() => host.file(BRAINS_MODULE_FILE) !== undefined);
+
+      assert.deepEqual([...registered().keys()], [CHASER]);
+    });
+  });
+
+  describe("a brains module of a newer format", () => {
+    it("is left as it is: sources served with no registration, pushes and creates failing by its code", async () => {
+      const newer = writeBrainsModule([]).replace("wendoo-brains-format 1", "wendoo-brains-format 2");
+      host.edit(BRAINS_MODULE_FILE, newer);
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
+      const fresh = open();
+
+      const listed = await list(fresh);
+      const pushed = await push(writeOf(CHASER, "Chaser"), fresh);
+      const created = await create("Runner", fresh);
+
+      assert.deepEqual(listed.ok && listed.value.map((brain) => brain.compiledSourceHash), [null]);
+      for (const answer of [pushed, created]) {
+        assert.equal(answer.ok, false);
+        assert.match(answer.ok ? "" : answer.message, /^BRAINS_MODULE_FORMAT_NEWER\b/);
+      }
+      assert.equal(host.file(BRAINS_MODULE_FILE), newer);
+      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_FORMAT_NEWER")));
+      assert.deepEqual(posted, []);
     });
   });
 
   describe("coalescing", () => {
-    it("writes the brains module once for a burst of pushes, acknowledging each push", async () => {
-      const brains = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc", "dddddddddddddddd"].map((id) =>
-        brain(id, id)
-      );
+    it("writes the brains module once for a burst of pushes, replying to each push", async () => {
+      await project.current();
+      const ids = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc", "dddddddddddddddd"];
 
-      const answers = await Promise.all(brains.map((pushed) => push({ op: "write", brain: pushed })));
+      const answers = await Promise.all(ids.map((id) => push(writeOf(id, id))));
 
       assert.ok(answers.every((answer) => answer.ok));
-      assert.equal(host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length, 1);
-      assert.equal(host.mutations.length, brains.length + 1);
-      assert.deepEqual([...registered().keys()].sort(), brains.map((pushed) => pushed.id).sort());
-    });
-
-    it("gathers the pushes that arrive while a drain reads the project into that drain", async () => {
-      await write(brain(CHASER, "Chaser"));
-      host.hold();
-      const first = push({ op: "write", brain: brain(RUNNER, "Runner") });
-      // the drain opens with one list request, held by the host
-      await until(() => host.pending === 1);
-      const later = [
-        push({ op: "write", brain: brain("aaaaaaaaaaaaaaaa", "A") }),
-        push({ op: "remove", brainId: CHASER }),
-      ];
-      host.release();
-
-      for (const answer of await Promise.all([first, ...later])) assert.ok(answer.ok);
-      assert.deepEqual([...registered().keys()].sort(), ["aaaaaaaaaaaaaaaa", RUNNER]);
-      assert.equal(host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length, 2);
+      assert.equal(moduleWrites(), 1);
+      assert.equal(host.mutations.length, ids.length + 1);
+      assert.deepEqual([...registered().keys()].sort(), ids);
     });
 
     it("writes the pushes that arrive while a drain writes in the next drain, writing the module once more", async () => {
-      await write(brain(CHASER, "Chaser"));
-      let open: () => void = () => {};
-      const opened = new Promise<void>((resolve) => {
-        open = resolve;
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
       });
       let gated = true;
-      const gatedProject = new BrainsProject(
-        {
-          list: () => client.list(),
-          read: (name) => client.read(name),
-          write: async (name, content, options) => {
-            if (gated) {
-              gated = false;
-              await opened;
-            }
-            return client.write(name, content, options);
-          },
-          delete: (name, options) => client.delete(name, options),
+      const gatedProject = open({
+        list: () => client.list(),
+        read: (name) => client.read(name),
+        write: async (name, content, options) => {
+          if (gated) {
+            gated = false;
+            await released;
+          }
+          return client.write(name, content, options);
         },
-        log
-      );
-      const answers: Promise<Answer<undefined>>[] = [];
-      const pushTo = (change: MakeCodeBrainPush): void => {
-        answers.push(
-          new Promise((resolve) => {
-            gatedProject.serve({
-              kind: "push",
-              push: change,
-              ack: () => resolve({ ok: true, value: undefined }),
-              fail: (message) => resolve({ ok: false, message }),
-            });
-          })
-        );
-      };
-      pushTo({ op: "write", brain: brain(RUNNER, "Runner") });
+        delete: (name, options) => client.delete(name, options),
+      });
+      const answers = [push(writeOf(CHASER, "Chaser"), gatedProject)];
       await until(() => !gated);
-      pushTo({ op: "write", brain: brain("aaaaaaaaaaaaaaaa", "A") });
-      pushTo({ op: "remove", brainId: CHASER });
-      open();
+      answers.push(
+        push(writeOf(RUNNER, "Runner"), gatedProject),
+        push({ op: "remove", brainId: CHASER }, gatedProject)
+      );
+      release();
 
       for (const answer of await Promise.all(answers)) assert.ok(answer.ok);
-      assert.deepEqual([...registered().keys()].sort(), ["aaaaaaaaaaaaaaaa", RUNNER]);
-      assert.equal(host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length, 3);
+      assert.deepEqual([...registered().keys()], [RUNNER]);
+      assert.equal(moduleWrites(), 2);
     });
 
     it("leaves the brains module unwritten when a drain changes no registration", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      await write(chaser);
+      await applied(writeOf(CHASER, "Chaser"));
       const before = host.mutations.length;
 
-      await write(chaser);
+      await applied(writeOf(CHASER, "Chaser"));
 
       assert.deepEqual(host.mutations.slice(before), [`write brains/${CHASER}.src.json`]);
     });
 
-    it("writes one brain's source once for two pushes of it in one drain, the later winning, and acknowledges both", async () => {
-      const answers = await Promise.all([
-        push({ op: "write", brain: brain(CHASER, "First") }),
-        push({ op: "write", brain: brain(CHASER, "Second") }),
-      ]);
+    it("writes one brain's source once for two pushes of it in one drain, the later winning, and replies to both", async () => {
+      await project.current();
+
+      const answers = await Promise.all([push(writeOf(CHASER, "First")), push(writeOf(CHASER, "Second"))]);
 
       assert.ok(answers.every((answer) => answer.ok));
       assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Second"));
       assert.equal(registered().get(CHASER)?.name, "Second");
       assert.deepEqual(host.mutations, [`write ${BRAINS_MODULE_FILE}`, `write brains/${CHASER}.src.json`]);
     });
+
+    it("announces the brains after each drain that lands anything", async () => {
+      const announced: MakeCodeBrainSummary[][] = [];
+      project.onChange((brains) => {
+        announced.push(brains);
+      });
+
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      await applied(writeOf(RUNNER, "Runner"));
+      await drained();
+      await applied({ op: "remove", brainId: CHASER });
+      await drained();
+
+      assert.deepEqual(
+        announced.map((brains) => brains.map((brain) => brain.id)),
+        [[CHASER], [CHASER, RUNNER], [RUNNER]]
+      );
+    });
   });
 
   describe("refusals", () => {
-    it("fails a push whose brains module would exceed the folder's quota, carrying QUOTA_EXCEEDED, writing nothing", async () => {
-      const oversized = brain(CHASER, "Chaser", new Uint8Array(PROJFS_SCOPE_QUOTA_BYTES / 2));
+    it("fails a push whose brains module the folder's quota refuses, carrying QUOTA_EXCEEDED, writing nothing", async () => {
+      await project.current();
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+      const mutations = host.mutations.length;
 
-      const answer = await push({ op: "write", brain: oversized });
+      const answer = await push(writeOf(CHASER, "Chaser"));
 
       assert.equal(answer.ok, false);
       assert.match(answer.ok ? "" : answer.message, /^QUOTA_EXCEEDED\b/);
-      assert.deepEqual(host.mutations, []);
+      assert.equal(host.mutations.length, mutations);
     });
 
-    it("fails a list and a pull with the reason when no project is open in MakeCode", async () => {
+    it("retries reading the project while no project is open in MakeCode, serving once one is", async () => {
       host.open = false;
+      const fresh = open();
+      const listed = list(fresh);
+      await until(() => log.errors.some((line) => line.startsWith("PROJECT_CLOSED")));
 
-      const listed = await list();
-      const pulled = await pull([CHASER]);
+      host.open = true;
 
-      assert.equal(listed.ok, false);
-      assert.match(listed.ok ? "" : listed.message, /^PROJECT_CLOSED\b/);
-      assert.equal(pulled.ok, false);
+      assert.deepEqual(await listed, { ok: true, value: [] });
     });
   });
 
   describe("MakeCode's rate", () => {
-    /** Brains with distinct ids, `count` of them. */
-    function brains(count: number): MakeCodeBrain[] {
-      return Array.from({ length: count }, (_, index) => brain(`brain${String(index).padStart(11, "0")}`, `B${index}`));
+    /** Writes of empty brains with distinct ids, `count` of them. */
+    function writes(count: number): MakeCodeWireBrainPush[] {
+      return Array.from({ length: count }, (_, index) =>
+        writeOf(`brain${String(index).padStart(11, "0")}`, `B${index}`)
+      );
     }
 
-    it("saves a drain of the brains module and more sources than the rate allows completely, acknowledging every push", async () => {
-      const pushed = brains(PROJFS_RATE_LIMIT + 5);
+    it("saves a drain of the brains module and more sources than the rate allows completely, replying to every push", async () => {
+      await project.current();
+      const pushed = writes(PROJFS_RATE_LIMIT + 5);
       let answered = 0;
-      const answers = pushed.map((written) =>
-        push({ op: "write", brain: written }).then((answer) => {
+      const answers = pushed.map((change) =>
+        push(change).then((answer) => {
           answered += 1;
           return answer;
         })
@@ -357,51 +814,49 @@ describe("brains project", () => {
 
       host.now += PROJFS_RATE_WINDOW_MS;
 
-      for (const answer of await Promise.all(answers)) assert.deepEqual(answer, { ok: true, value: undefined });
+      for (const answer of await Promise.all(answers)) assert.ok(answer.ok);
       assert.equal(host.mutations.length, pushed.length + 1);
-      assert.deepEqual([...registered().keys()].sort(), pushed.map((written) => written.id).sort());
-      for (const written of pushed) assert.equal(host.file(`brains/${written.id}.src.json`), written.source);
+      assert.equal(registered().size, pushed.length);
       assert.deepEqual(log.errors, []);
     });
 
     it("loses the pushes over the rate when MakeCode refuses writes over it", async () => {
+      await project.current();
       host.defersOverRate = false;
-      const pushed = brains(PROJFS_RATE_LIMIT + 5);
 
-      const answers = await Promise.all(pushed.map((written) => push({ op: "write", brain: written })));
+      const answers = await Promise.all(writes(PROJFS_RATE_LIMIT + 5).map((change) => push(change)));
 
       const refused = answers.filter((answer) => !answer.ok);
       assert.equal(refused.length, 6);
       for (const answer of refused) assert.match(answer.ok ? "" : answer.message, /^RATE_LIMITED\b/);
     });
 
-    it("acknowledges a push only once its own source has landed when the rate holds part of a drain", async () => {
+    it("replies to a push only once its own source has landed when the rate holds part of a drain", async () => {
+      await project.current();
       host.spendMutations(PROJFS_RATE_LIMIT - 2);
 
-      const chaser = push({ op: "write", brain: brain(CHASER, "Chaser") });
-      const runner = push({ op: "write", brain: brain(RUNNER, "Runner") });
+      const chaser = push(writeOf(CHASER, "Chaser"));
+      const runner = push(writeOf(RUNNER, "Runner"));
       let runnerAnswered = false;
       void runner.then(() => {
         runnerAnswered = true;
       });
-      assert.deepEqual(await chaser, { ok: true, value: undefined });
+      assert.ok((await chaser).ok);
       await until(() => host.heldOnWindow === 1);
       assert.equal(host.file(`brains/${RUNNER}.src.json`), undefined);
       assert.equal(runnerAnswered, false);
       host.now += PROJFS_RATE_WINDOW_MS;
 
-      assert.deepEqual(await runner, { ok: true, value: undefined });
+      assert.ok((await runner).ok);
       assert.equal(host.file(`brains/${RUNNER}.src.json`), sourceOf(RUNNER, "Runner"));
     });
   });
 
   describe("project switches", () => {
     it("fails the pushes of a drain MakeCode holds when another project opens, writing nothing into it", async () => {
+      await project.current();
       host.spendMutations(PROJFS_RATE_LIMIT);
-      const answers = Promise.all([
-        push({ op: "write", brain: brain(CHASER, "Chaser") }),
-        push({ op: "write", brain: brain(RUNNER, "Runner") }),
-      ]);
+      const answers = Promise.all([push(writeOf(CHASER, "Chaser")), push(writeOf(RUNNER, "Runner"))]);
       await until(() => host.heldOnWindow === 1);
 
       host.switchProject();
@@ -416,9 +871,10 @@ describe("brains project", () => {
     });
 
     it("writes a held drain into the next project when MakeCode applies requests to whichever project is open", async () => {
+      await project.current();
       host.bindsRequestsToProject = false;
       host.spendMutations(PROJFS_RATE_LIMIT);
-      const answer = push({ op: "write", brain: brain(CHASER, "Chaser") });
+      const answer = push(writeOf(CHASER, "Chaser"));
       await until(() => host.heldOnWindow === 1);
 
       host.switchProject();
@@ -430,22 +886,28 @@ describe("brains project", () => {
   });
 
   describe("unregistered frames", () => {
-    it("fails a push from a frame MakeCode does not serve, carrying UNREGISTERED", async () => {
+    it("serves nothing to a frame MakeCode does not serve, logging UNREGISTERED and asking no more", async () => {
       host.registered = false;
-
-      const answer = await push({ op: "write", brain: brain(CHASER, "Chaser") });
-
-      assert.equal(answer.ok, false);
-      assert.match(answer.ok ? "" : answer.message, /^UNREGISTERED\b/);
-      assert.ok(log.errors.some((line) => line.startsWith("UNREGISTERED")));
-    });
-
-    it("leaves the push unanswered when MakeCode drops an unserved frame's requests", async () => {
-      host.registered = false;
-      host.answersUnregistered = false;
       let answered = false;
 
-      void push({ op: "write", brain: brain(CHASER, "Chaser") }).then(() => {
+      void push(writeOf(CHASER, "Chaser")).then(() => {
+        answered = true;
+      });
+      await until(() => log.errors.some((line) => line.startsWith("UNREGISTERED")));
+      const logged = log.errors.length;
+      await delay(50);
+
+      assert.equal(answered, false);
+      assert.equal(log.errors.length, logged);
+    });
+
+    it("leaves every request unanswered when MakeCode drops an unserved frame's requests", async () => {
+      host.registered = false;
+      host.answersUnregistered = false;
+      const fresh = open();
+      let answered = false;
+
+      void list(fresh).then(() => {
         answered = true;
       });
       await delay(50);
@@ -455,14 +917,13 @@ describe("brains project", () => {
   });
 
   describe("late replies", () => {
-    it("acknowledges a push whose writes MakeCode answers long after the client reports them slow", async () => {
-      client.dispose();
+    it("replies to a push whose writes MakeCode answers long after the client reports them slow", async () => {
       const slow: string[] = [];
-      client = host.client({ slowReplyMs: 5, onSlowReply: (request) => slow.push(request.subtype) });
-      project = new BrainsProject(client, log);
+      const slowClient = host.client({ slowReplyMs: 5, onSlowReply: (request) => slow.push(request.subtype) });
       host.hold();
+      const fresh = open(slowClient);
       let answered = false;
-      const answer = push({ op: "write", brain: brain(CHASER, "Chaser") }).then((result) => {
+      const answer = push(writeOf(CHASER, "Chaser"), fresh).then((result) => {
         answered = true;
         return result;
       });
@@ -472,20 +933,21 @@ describe("brains project", () => {
 
       host.release();
 
-      assert.deepEqual(await answer, { ok: true, value: undefined });
+      assert.ok((await answer).ok);
       assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Chaser"));
       assert.deepEqual(log.errors, []);
+      slowClient.dispose();
     });
   });
 
   describe("MakeCode's text editor showing a source", () => {
     it("keeps a saved push over typing made in the source just before it", async () => {
-      await write(brain(CHASER, "Chaser"));
+      await applied(writeOf(CHASER, "Chaser"));
       host.openInEditor(`brains/${CHASER}.src.json`);
       host.reloadDelayMs = 40;
 
       host.typeInEditor("typed before the push", 20);
-      await write(brain(CHASER, "Renamed"));
+      await applied(writeOf(CHASER, "Renamed"));
       await delay(60);
 
       assert.equal(host.file(`brains/${CHASER}.src.json`), sourceOf(CHASER, "Renamed"));
@@ -493,23 +955,23 @@ describe("brains project", () => {
 
     it("loses the push to the typing when MakeCode answers before its editor reloads and saves typing meanwhile", async () => {
       host.holdsSavesDuringReload = false;
-      await write(brain(CHASER, "Chaser"));
+      await applied(writeOf(CHASER, "Chaser"));
       host.openInEditor(`brains/${CHASER}.src.json`);
       host.reloadDelayMs = 40;
 
       host.typeInEditor("typed before the push", 20);
-      await write(brain(CHASER, "Renamed"));
+      await applied(writeOf(CHASER, "Renamed"));
       await delay(60);
 
       assert.equal(host.file(`brains/${CHASER}.src.json`), "typed before the push");
     });
 
     it("saves typing made after the editor reloads a push, over the push", async () => {
-      await write(brain(CHASER, "Chaser"));
+      await applied(writeOf(CHASER, "Chaser"));
       host.openInEditor(`brains/${CHASER}.src.json`);
       host.reloadDelayMs = 20;
 
-      await write(brain(CHASER, "Renamed"));
+      await applied(writeOf(CHASER, "Renamed"));
       host.typeInEditor("typed after the push", 10);
       await delay(30);
 
@@ -518,285 +980,141 @@ describe("brains project", () => {
   });
 
   describe("list and pull", () => {
-    it("lists each brain source in brains/ by id, with its name and the hash of its text, and nothing else", async () => {
-      await write(brain(CHASER, "Chaser"));
-      await write(brain(RUNNER, "Runner"));
+    it("lists each brain source in brains/ read at start by id, with its name, its hash and its registration's", async () => {
+      host.edit(`brains/${CHASER}.src.json`, sourceOf(CHASER, "Chaser"));
       host.edit("notes.txt", "not a brain");
       host.edit("brains/nested/inner.src.json", sourceOf("inner", "Inner"));
       host.edit("brains/stray.json", "{}");
+      const fresh = open();
+      await drained(fresh);
 
-      const answer = await list();
+      const listed = await list(fresh);
 
-      assert.ok(answer.ok);
-      assert.deepEqual(
-        answer.value.sort((a, b) => a.id.localeCompare(b.id)),
-        [
-          {
-            id: CHASER,
-            name: "Chaser",
-            sourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
-            compiledSourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
-          },
-          {
-            id: RUNNER,
-            name: "Runner",
-            sourceHash: brainSourceHash(sourceOf(RUNNER, "Runner")),
-            compiledSourceHash: brainSourceHash(sourceOf(RUNNER, "Runner")),
-          },
-        ]
-      );
+      const hash = brainSourceHash(sourceOf(CHASER, "Chaser"));
+      assert.deepEqual(listed, {
+        ok: true,
+        value: [{ id: CHASER, name: "Chaser", sourceHash: hash, compiledSourceHash: hash }],
+      });
     });
 
     it("lists nothing for a project holding no brains", async () => {
       assert.deepEqual(await list(), { ok: true, value: [] });
     });
 
-    it("pulls the requested brains in request order with their compiled forms, bytes intact, leaving out absent ids", async () => {
-      const chaser = brain(
-        CHASER,
-        "Chaser",
-        Uint8Array.from({ length: 256 }, (_, index) => 255 - index)
-      );
-      const runner = brain(RUNNER, "Runner");
-      await write(chaser);
-      await write(runner);
+    it("pulls the requested brains in request order with their compiled source hashes, leaving out absent ids", async () => {
+      const broken = misplacedSource(RUNNER, "Runner");
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner", broken));
 
-      const answer = await pull([RUNNER, "absentabsentabse", CHASER]);
+      const pulled = await pull([RUNNER, "absentabsentabse", CHASER]);
 
-      assert.deepEqual(answer, { ok: true, value: [runner, chaser] });
-    });
-
-    it("pulls a brain whose module registration is gone without a compiled form", async () => {
-      const { compiled: _, ...uncompiled } = brain(CHASER, "Chaser");
-      await write(uncompiled);
-
-      assert.deepEqual(await pull([CHASER]), { ok: true, value: [uncompiled] });
-    });
-
-    it("serves the same brains to a fresh instance over the same project, holding nothing of its own", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      await write(chaser);
-      const restarted = new BrainsProject(client, log);
-
-      assert.deepEqual(await list(restarted), {
+      assert.deepEqual(pulled, {
         ok: true,
         value: [
+          { id: RUNNER, name: "Runner", source: broken, compiledSourceHash: null },
           {
             id: CHASER,
             name: "Chaser",
-            sourceHash: chaser.compiled?.sourceHash,
-            compiledSourceHash: chaser.compiled?.sourceHash,
+            source: sourceOf(CHASER, "Chaser"),
+            compiledSourceHash: brainSourceHash(sourceOf(CHASER, "Chaser")),
           },
         ],
       });
-      assert.deepEqual(await pull([CHASER], restarted), { ok: true, value: [chaser] });
     });
-  });
 
-  describe("damaged files", () => {
-    it("lists and pulls a hand-mangled source verbatim, named from its registration", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      await write(chaser);
+    it("serves a fresh instance over the same project exactly what the last one wrote", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      await applied(writeOf(RUNNER, "Runner"));
+      const written = await list();
+
+      const fresh = open();
+
+      assert.deepEqual(await list(fresh), written);
+      assert.deepEqual(await pull([CHASER], fresh), await pull([CHASER]));
+    });
+
+    it("lists and pulls a hand-mangled source verbatim, named from its registration, keeping the registration", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      const registration = registered().get(CHASER);
       host.edit(`brains/${CHASER}.src.json`, "not json {");
+      const fresh = open();
 
-      const listed = await list();
-      const pulled = await pull([CHASER]);
+      const listed = await list(fresh);
+      const pulled = await pull([CHASER], fresh);
 
-      assert.deepEqual(listed, {
-        ok: true,
-        value: [
-          {
-            id: CHASER,
-            name: "Chaser",
-            sourceHash: brainSourceHash("not json {"),
-            compiledSourceHash: chaser.compiled?.sourceHash,
-          },
-        ],
-      });
-      assert.deepEqual(pulled, { ok: true, value: [{ ...chaser, source: "not json {" }] });
+      assert.deepEqual(listed.ok && listed.value.map((brain) => [brain.name, brain.sourceHash]), [
+        ["Chaser", brainSourceHash("not json {")],
+      ]);
+      assert.deepEqual(pulled.ok && pulled.value.map((brain) => brain.source), ["not json {"]);
+      await drained(fresh);
+      assert.deepEqual(registered().get(CHASER), registration);
     });
 
     it("names a mangled source it holds no registration of with an empty name", async () => {
       host.edit(`brains/${CHASER}.src.json`, '{"name": 42');
+      const fresh = open();
 
-      assert.deepEqual(await list(), {
-        ok: true,
-        value: [{ id: CHASER, name: "", sourceHash: brainSourceHash('{"name": 42'), compiledSourceHash: null }],
-      });
+      const listed = await list(fresh);
+
+      assert.deepEqual(listed.ok && listed.value.map((brain) => [brain.name, brain.compiledSourceHash]), [["", null]]);
     });
 
-    it("serves sources without compiled forms from an unreadable brains module, logging its code, and heals it on the next push", async () => {
-      await write(brain(CHASER, "Chaser"));
-      host.edit(BRAINS_MODULE_FILE, "garbage");
-      const runner = brain(RUNNER, "Runner");
-
-      const pulled = await pull([CHASER]);
-      assert.deepEqual(pulled, {
-        ok: true,
-        value: [{ id: CHASER, name: "Chaser", source: sourceOf(CHASER, "Chaser") }],
-      });
-      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_UNREADABLE")));
-      await write(runner);
-
-      assert.deepEqual([...registered().keys()], [RUNNER]);
-    });
-
-    it("skips a damaged registration, serving every other brain's compiled form", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      await write(chaser);
-      await write(brain(RUNNER, "Runner"));
-      const text = host.file(BRAINS_MODULE_FILE) ?? "";
-      host.edit(BRAINS_MODULE_FILE, text.replace(`"${RUNNER}", "Runner", hex\``, `"${RUNNER}", Runner, hex\``));
-
-      const pulled = await pull([CHASER, RUNNER]);
-
-      assert.ok(pulled.ok);
-      assert.deepEqual(pulled.value[0], chaser);
-      assert.equal(pulled.value[1].compiled, undefined);
-      assert.ok(log.errors.some((line) => line.startsWith("BRAINS_MODULE_ENTRY_MALFORMED")));
-    });
-
-    it("leaves a brains module of a newer format as it is, failing pushes and serving sources without compiled forms", async () => {
-      await write(brain(CHASER, "Chaser"));
-      const newer = (host.file(BRAINS_MODULE_FILE) ?? "").replace("wendoo-brains-format 1", "wendoo-brains-format 2");
-      host.edit(BRAINS_MODULE_FILE, newer);
-      const mutations = host.mutations.length;
-
-      const pushed = await push({ op: "write", brain: brain(RUNNER, "Runner") });
-      const pulled = await pull([CHASER]);
-
-      assert.equal(pushed.ok, false);
-      assert.match(pushed.ok ? "" : pushed.message, /^BRAINS_MODULE_FORMAT_NEWER\b/);
-      assert.equal(host.file(BRAINS_MODULE_FILE), newer);
-      assert.equal(host.mutations.length, mutations);
-      assert.ok(pulled.ok);
-      assert.equal(pulled.value[0].compiled, undefined);
-    });
-  });
-
-  describe("compiled source hash", () => {
-    /** Each listed brain's `compiledSourceHash` by id, `"absent"` for a summary carrying none. */
-    async function listedCompiled(): Promise<Record<string, string | null>> {
-      const answer = await list();
-      assert.ok(answer.ok);
-      return Object.fromEntries(
-        answer.value.map((summary) => [
-          summary.id,
-          Object.hasOwn(summary, "compiledSourceHash") ? (summary.compiledSourceHash ?? null) : "absent",
-        ])
-      );
-    }
-
-    it("lists the hash each brain's registration carries, whether or not it matches the source", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      const runner = brain(RUNNER, "Runner");
-      await write(chaser);
-      await write({ ...runner, compiled: { bytecode: Uint8Array.from([4]), sourceHash: brainSourceHash("older") } });
-
-      assert.deepEqual(await listedCompiled(), {
-        [CHASER]: brainSourceHash(chaser.source),
-        [RUNNER]: brainSourceHash("older"),
-      });
-    });
-
-    it("lists null for a brain brains.g.ts holds no registration of", async () => {
-      await write(brain(CHASER, "Chaser"));
-      const { compiled: _, ...uncompiled } = brain(RUNNER, "Runner");
-      await write(uncompiled);
-
-      assert.deepEqual(await listedCompiled(), {
-        [CHASER]: brainSourceHash(sourceOf(CHASER, "Chaser")),
-        [RUNNER]: null,
-      });
-    });
-
-    it("lists null for every brain once brains.g.ts is deleted", async () => {
-      await write(brain(CHASER, "Chaser"));
-      await write(brain(RUNNER, "Runner"));
-      host.remove(BRAINS_MODULE_FILE);
-
-      assert.deepEqual(await listedCompiled(), { [CHASER]: null, [RUNNER]: null });
-    });
-
-    it("lists null for every brain of an unreadable brains.g.ts", async () => {
-      await write(brain(CHASER, "Chaser"));
-      host.edit(BRAINS_MODULE_FILE, "garbage");
-
-      assert.deepEqual(await listedCompiled(), { [CHASER]: null });
-    });
-
-    it("lists null for a brain whose registration is malformed, and every other brain's hash", async () => {
-      await write(brain(CHASER, "Chaser"));
-      await write(brain(RUNNER, "Runner"));
-      const text = host.file(BRAINS_MODULE_FILE) ?? "";
-      host.edit(BRAINS_MODULE_FILE, text.replace(`"${RUNNER}", "Runner", hex\``, `"${RUNNER}", Runner, hex\``));
-
-      assert.deepEqual(await listedCompiled(), {
-        [CHASER]: brainSourceHash(sourceOf(CHASER, "Chaser")),
-        [RUNNER]: null,
-      });
-    });
-
-    it("leaves the hash out for every brain of a brains.g.ts of a newer format", async () => {
-      await write(brain(CHASER, "Chaser"));
-      const newer = (host.file(BRAINS_MODULE_FILE) ?? "").replace("wendoo-brains-format 1", "wendoo-brains-format 2");
-      host.edit(BRAINS_MODULE_FILE, newer);
-
-      assert.deepEqual(await listedCompiled(), { [CHASER]: "absent" });
-    });
-  });
-
-  describe("interleaving", () => {
-    it("answers a pull asked before a removal with the brain, and one asked after without it", async () => {
-      const chaser = brain(CHASER, "Chaser");
-      await write(chaser);
-      host.hold();
+    it("answers a pull asked before a removal lands with the brain, and one asked after without it", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
 
       const before = pull([CHASER]);
-      // a pull of one brain reads the module and that brain's source
-      await until(() => host.pending === 2);
-      const removed = push({ op: "remove", brainId: CHASER });
-      // the drain opens with one list request
-      await until(() => host.pending === 3);
-      host.release();
+      await applied({ op: "remove", brainId: CHASER });
+      const after = pull([CHASER]);
 
-      assert.deepEqual(await before, { ok: true, value: [chaser] });
-      assert.ok((await removed).ok);
-      assert.deepEqual(await pull([CHASER]), { ok: true, value: [] });
+      const pulledBefore = await before;
+      assert.deepEqual(pulledBefore.ok && pulledBefore.value.map((brain) => brain.id), [CHASER]);
+      assert.deepEqual(await after, { ok: true, value: [] });
+    });
+  });
+
+  describe("live updates", () => {
+    it("posts a pushed program to the running program as it is compiled, before the project's write lands", async () => {
+      await project.current();
+      host.hold();
+      const source = restartingSource(CHASER, "Chaser");
+
+      const answer = push(writeOf(CHASER, "Chaser", source));
+      await until(() => posted.length === 1);
+
+      assert.equal(host.file(`brains/${CHASER}.src.json`), undefined);
+      assert.deepEqual(
+        [posted[0].documentId, posted[0].name, posted[0].sourceHash],
+        [CHASER, "Chaser", brainSourceHash(source)]
+      );
+      host.release();
+      assert.ok((await answer).ok);
     });
 
-    it("keeps two brains' pushes apart when they interleave with lists", async () => {
-      const answers = await Promise.all([
-        push({ op: "write", brain: brain(CHASER, "Chaser") }),
-        list(),
-        push({ op: "write", brain: brain(RUNNER, "Runner") }),
-        push({ op: "write", brain: brain(CHASER, "Chaser 2") }),
-      ]);
+    it("posts nothing for a push whose compile keeps the registration", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
 
-      assert.ok(answers.every((answer) => answer.ok));
-      const listed = await list();
-      assert.ok(listed.ok);
-      assert.deepEqual(listed.value.map((summary) => [summary.id, summary.name]).sort(), [
-        [CHASER, "Chaser 2"],
-        [RUNNER, "Runner"],
-      ]);
-      assert.deepEqual(writeBrainsModule(registered().values()), host.file(BRAINS_MODULE_FILE));
+      await applied(writeOf(CHASER, "Chaser", misplacedSource(CHASER, "Chaser")));
+      await applied(writeOf(CHASER, "Chaser", ringingSource(CHASER, "Chaser")));
+
+      assert.equal(posted.length, 1);
+    });
+
+    it("posts a removal to the running program as an update carrying no program", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+
+      await applied({ op: "remove", brainId: CHASER });
+
+      assert.deepEqual(posted.at(-1), { documentId: CHASER, name: "", sourceHash: "", bytecode: new Uint8Array(0) });
+    });
+
+    it("posts the program a create registers", async () => {
+      const answer = await create("Chaser");
+
+      assert.ok(answer.ok);
+      assert.deepEqual(
+        posted.map((update) => [update.documentId, update.sourceHash]),
+        [[answer.value.id, answer.value.sourceHash]]
+      );
     });
   });
 });
-
-/** Resolves after `ms` milliseconds. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Resolves once `condition` holds, checking it after every turn of the event loop until it does. */
-function until(condition: () => boolean): Promise<void> {
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (condition()) resolve();
-      else setTimeout(check, 0);
-    };
-    check();
-  });
-}

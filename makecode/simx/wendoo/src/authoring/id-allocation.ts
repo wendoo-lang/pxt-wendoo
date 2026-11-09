@@ -1,5 +1,11 @@
 import { TARGET_ACTION_ID_BASE, TARGET_FUNC_ID_BASE, TARGET_TYPE_ATOM_BASE } from "@wendoo/core/runtime";
-import type { MakeCodeIdEntry, MakeCodeIdManifest, MakeCodeTypeIdEntry } from "@wendoo/makecode-session";
+import type {
+  MakeCodeIdEntry,
+  MakeCodeIdManifest,
+  MakeCodeManifestReading,
+  MakeCodeTypeIdEntry,
+} from "@wendoo/makecode-session";
+import { MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import type { ParsedCatalog } from "./catalog";
 
 /**
@@ -119,4 +125,31 @@ export function allocateIds(manifest: MakeCodeIdManifest, catalog: ParsedCatalog
 /** Whether `a` and `b` allocate the same ids, entry for entry and watermark for watermark. */
 export function sameIdManifest(a: MakeCodeIdManifest, b: MakeCodeIdManifest): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The id allocation a manifest reading holds, and whether it differs from the allocation held before it. */
+export interface AdoptedIds {
+  /**
+   * The allocation to bind packs under: the reading's manifest, an empty
+   * allocation when it holds none, and `undefined` when the reading is of a
+   * newer format.
+   */
+  readonly ids: MakeCodeIdManifest | undefined;
+  /** Whether {@link ids} differs from the allocation held before: one present and one not, or two unequal allocations. */
+  readonly changed: boolean;
+}
+
+/**
+ * The allocation `reading` holds, compared with `held`: under
+ * `FORMAT_NEWER` no allocation, otherwise the reading's manifest or an
+ * empty one.
+ *
+ * @param reading - A manifest reading, as the simulator extension publishes it.
+ * @param held - The allocation held before it, or `undefined` for none.
+ */
+export function adoptIds(reading: MakeCodeManifestReading, held: MakeCodeIdManifest | undefined): AdoptedIds {
+  const ids =
+    reading.problem === MakeCodeManifestProblemCode.FORMAT_NEWER ? undefined : (reading.manifest ?? emptyIdManifest());
+  const same = held === undefined || ids === undefined ? held === ids : sameIdManifest(held, ids);
+  return { ids, changed: !same };
 }

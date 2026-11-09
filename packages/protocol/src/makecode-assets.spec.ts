@@ -194,7 +194,7 @@ describe("makecode session assets", () => {
 
     port.deliver({ type: "makecode:assets", payload: { assets: SNAPSHOT } });
     port.deliver({ type: "makecode:catalog", payload: { content: "a catalog" } });
-    port.deliver({ type: "makecode:brainsAck", id: "no-such-request" });
+    port.deliver({ type: "makecode:brainsPushReply", id: "no-such-request", payload: null });
     port.deliver({ type: "makecode:somethingNewer", payload: { assets: [] } });
     port.deliver({ type: "makecode:assets", payload: { assets: [] } });
 

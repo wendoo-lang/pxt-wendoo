@@ -785,6 +785,12 @@ the current slice alone.
     allocator -- it allocates the vocabulary of each catalog the program
     posts into the project's id manifest, alone writes the manifest to
     `ids.g.ts`, and publishes it into every session after each catalog --
+    and the project's brain engine -- it compiles every brain the project
+    holds in an environment built from the catalog, the manifest and the
+    asset snapshot, mints the brains a tab asks it to create, alone writes
+    `brains.g.ts` and the brain sources, feeds the running program from its
+    own compiles, and publishes the project's brain summaries into every
+    session --
     and its root entry (`index.html`, sources in `src/editor`) is the
     editor webapp, booting as the editor
     tab the front door's registration declares; `src/authoring` holds the
@@ -793,8 +799,10 @@ the current slice alone.
     a brain source, which both entries may import. A
     simx is a channel, not a store: its frame persists across sim restarts
     and runs but is reallocated on a page reload or project teardown, so
-    no state may live only there: the id manifest lives in the project's
-    file, and the frame holds a copy it reads at start. It is not product
+    no state may live only there: the id manifest and the brains live in
+    the project's files, which the frame re-reads at start, and everything
+    it holds is derived from them and from what the program and MakeCode
+    publish to it. It is not product
     UI, but its frame is visible and renders a brand strip: the logotype and an open-editor
     control taking one of three states by the tabs MakeCode lists -- none
     for no tab, a button for one, a select for several; no session
@@ -823,7 +831,9 @@ the current slice alone.
     becomes citable precedent for more of it.
   - The editor entry of `makecode/simx/wendoo` (`src/editor`) owns the
     Wendoo editor webapp: brain authoring, project
-    management, compiler integration, diagnostics, and the docs surface (the core docs pages from
+    management, diagnostics -- a local environment compiling each brain for
+    live diagnostics as it is edited, the engine's outcome standing as the
+    truth -- and the docs surface (the core docs pages from
     `@wendoo/docs`, in a sidebar the brain editor opens; every other
     visible catalog tile of a
     kind with a docs category, the packs' sensors and actuators among

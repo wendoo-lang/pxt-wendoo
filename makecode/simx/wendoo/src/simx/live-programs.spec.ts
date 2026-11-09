@@ -1,24 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { MakeCodeBrainPush } from "@wendoo/makecode-session";
+import type { CompiledBrainEntry } from "./brains-module.js";
 import { LivePrograms } from "./live-programs.js";
 import type { ProgramUpdate } from "./sim-channel.js";
 
-/** A write push of the brain `id`, compiled to `bytes` from source hashed `sourceHash`, or uncompiled when `sourceHash` is omitted. */
-function write(id: string, name: string, sourceHash?: string, bytes: number[] = [1, 2, 3]): MakeCodeBrainPush {
-  const source = `{"id":"${id}","name":"${name}","edit":${Math.random()}}`;
-  return {
-    op: "write",
-    brain:
-      sourceHash === undefined
-        ? { id, name, source }
-        : { id, name, source, compiled: { bytecode: Uint8Array.from(bytes), sourceHash } },
-  };
-}
-
-/** A removal push of the brain `id`. */
-function remove(id: string): MakeCodeBrainPush {
-  return { op: "remove", brainId: id };
+/** The registration of the brain `id` named `name`, its program `bytes` compiled from source hashed `sourceHash`. */
+function registration(id: string, name: string, sourceHash: string, bytes: number[] = [1, 2, 3]): CompiledBrainEntry {
+  return { id, name, sourceHash, bytecode: Uint8Array.from(bytes) };
 }
 
 /** Live programs posting into an array, with the array. */
@@ -34,22 +22,22 @@ const A = "aaaaaaaaaaaaaaaa";
 const B = "bbbbbbbbbbbbbbbb";
 
 describe("live programs", () => {
-  it("posts a pushed program's compiled form, by id, name, bytes, and source hash", () => {
+  it("posts a registration's program, by id, name, bytes, and source hash", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Chaser", "00000001", [9, 8, 7]));
+    live.post(registration(A, "Chaser", "00000001", [9, 8, 7]));
 
     assert.deepEqual(posted, [
       { documentId: A, name: "Chaser", sourceHash: "00000001", bytecode: Uint8Array.from([9, 8, 7]) },
     ]);
   });
 
-  it("posts each push whose compiled form was compiled from other source than the last it posted", () => {
+  it("posts each registration compiled from other source than the last it posted", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(write(A, "Chaser", "00000002"));
-    live.push(write(A, "Chaser", "00000001"));
+    live.post(registration(A, "Chaser", "00000001"));
+    live.post(registration(A, "Chaser", "00000002"));
+    live.post(registration(A, "Chaser", "00000001"));
 
     assert.deepEqual(
       posted.map((update) => update.sourceHash),
@@ -57,48 +45,38 @@ describe("live programs", () => {
     );
   });
 
-  it("posts nothing for a push carrying the compiled form it posted last, though the source changed", () => {
+  it("posts nothing for a registration carrying the program it posted last, though its name changed", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(write(A, "Renamed", "00000001"));
+    live.post(registration(A, "Chaser", "00000001"));
+    live.post(registration(A, "Runner", "00000001"));
 
     assert.equal(posted.length, 1);
   });
 
-  it("posts a push carrying the same source compiled to other bytes than it posted last", () => {
+  it("posts a registration of the same source compiled to other bytes than it posted last", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Chaser", "00000001", [1, 2, 3]));
-    live.push(write(A, "Chaser", "00000001", [1, 2, 3, 4]));
-    live.push(write(A, "Chaser", "00000001", [1, 2, 4, 4]));
-    live.push(write(A, "Chaser", "00000001", [1, 2, 4, 4]));
+    live.post(registration(A, "Chaser", "00000001", [1, 2, 3]));
+    live.post(registration(A, "Chaser", "00000001", [1, 2, 4]));
+    live.post(registration(A, "Chaser", "00000001", [1, 2, 4, 5]));
 
     assert.deepEqual(
       posted.map((update) => [...update.bytecode]),
       [
         [1, 2, 3],
-        [1, 2, 3, 4],
-        [1, 2, 4, 4],
+        [1, 2, 4],
+        [1, 2, 4, 5],
       ]
     );
   });
 
-  it("posts nothing for a push carrying no compiled form", () => {
+  it("keeps each program's last post apart: one program's registration says nothing about another's", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Half built"));
-
-    assert.deepEqual(posted, []);
-  });
-
-  it("keeps each program's last post apart: one program's push says nothing about another's", () => {
-    const { live, posted } = recording();
-
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(write(B, "Runner", "00000001"));
-    live.push(write(B, "Runner", "00000001"));
+    live.post(registration(A, "Chaser", "00000001"));
+    live.post(registration(B, "Runner", "00000001"));
+    live.post(registration(A, "Chaser", "00000001"));
 
     assert.deepEqual(
       posted.map((update) => update.documentId),
@@ -109,12 +87,13 @@ describe("live programs", () => {
   it("posts a removal as an update carrying no program, once, and the program again when it returns", () => {
     const { live, posted } = recording();
 
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(remove(A));
-    live.push(remove(A));
-    live.push(write(A, "Chaser", "00000001"));
+    live.post(registration(A, "Chaser", "00000001"));
+    live.remove(A);
+    live.remove(A);
+    live.post(registration(A, "Chaser", "00000001"));
 
-    assert.deepEqual(posted.slice(1), [
+    assert.deepEqual(posted, [
+      { documentId: A, name: "Chaser", sourceHash: "00000001", bytecode: Uint8Array.from([1, 2, 3]) },
       { documentId: A, name: "", sourceHash: "", bytecode: new Uint8Array(0) },
       { documentId: A, name: "Chaser", sourceHash: "00000001", bytecode: Uint8Array.from([1, 2, 3]) },
     ]);
@@ -123,28 +102,30 @@ describe("live programs", () => {
   it("posts a removal of a program it never posted, which the running program may hold", () => {
     const { live, posted } = recording();
 
-    live.push(remove(A));
+    live.remove(A);
 
     assert.deepEqual(posted, [{ documentId: A, name: "", sourceHash: "", bytecode: new Uint8Array(0) }]);
   });
 
   it("re-posts the last update of every program on request, in the order each was first posted", () => {
     const { live, posted } = recording();
-    live.push(write(A, "Chaser", "00000001"));
-    live.push(write(B, "Runner", "00000002"));
-    live.push(write(A, "Chaser", "00000003"));
-    live.push(remove(B));
+    live.post(registration(A, "Chaser", "00000001"));
+    live.post(registration(B, "Runner", "00000002"));
+    live.post(registration(A, "Chaser", "00000003"));
     posted.length = 0;
 
     live.repost();
 
-    assert.deepEqual(posted, [
-      { documentId: A, name: "Chaser", sourceHash: "00000003", bytecode: Uint8Array.from([1, 2, 3]) },
-      { documentId: B, name: "", sourceHash: "", bytecode: new Uint8Array(0) },
-    ]);
+    assert.deepEqual(
+      posted.map((update) => [update.documentId, update.sourceHash]),
+      [
+        [A, "00000003"],
+        [B, "00000002"],
+      ]
+    );
   });
 
-  it("re-posts nothing before any push", () => {
+  it("re-posts nothing before any post", () => {
     const { live, posted } = recording();
 
     live.repost();

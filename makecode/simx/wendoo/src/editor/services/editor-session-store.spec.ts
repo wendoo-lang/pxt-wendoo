@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type {
   MakeCodeAsset,
+  MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionState,
@@ -20,6 +21,7 @@ class FakeSession implements MakeCodeEditorSession {
   private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
+  private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
   onStateChange(listener: (state: MakeCodeEditorSessionState) => void): () => void {
@@ -54,6 +56,13 @@ class FakeSession implements MakeCodeEditorSession {
     this._projectInfoListeners.add(listener);
     return () => {
       this._projectInfoListeners.delete(listener);
+    };
+  }
+
+  onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void {
+    this._brainsListeners.add(listener);
+    return () => {
+      this._brainsListeners.delete(listener);
     };
   }
 
@@ -93,6 +102,11 @@ class FakeSession implements MakeCodeEditorSession {
     for (const listener of this._assetsListeners) listener(assets);
   }
 
+  /** A brains publication arriving from the counterpart. */
+  deliverBrains(brains: MakeCodeBrainSummary[]): void {
+    for (const listener of this._brainsListeners) listener(brains);
+  }
+
   /** A reading of the project's facts arriving from the counterpart. */
   deliverProjectInfo(info: MakeCodeProjectInfo): void {
     for (const listener of this._projectInfoListeners) listener(info);
@@ -125,6 +139,7 @@ function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
       if (push.op === "remove") removed.push(push.brainId);
       return new Promise(() => {});
     },
+    createBrain: () => new Promise(() => {}),
   };
 }
 
@@ -290,5 +305,26 @@ describe("editor session store", () => {
     session.deliverManifest({ manifest: null });
 
     assert.deepEqual(readings, [{ manifest: null }, allocated]);
+  });
+
+  it("hands out each brains publication as the session delivers it, and none once unsubscribed", () => {
+    const { store, session } = startedStore();
+    const publications: MakeCodeBrainSummary[][] = [];
+    const unsubscribe = store.onBrains((brains) => {
+      publications.push(brains);
+    });
+    const chaser: MakeCodeBrainSummary = {
+      id: "chaserchaserchas",
+      name: "Chaser",
+      sourceHash: "1a2b3c4d",
+      compiledSourceHash: null,
+    };
+
+    session.deliverBrains([]);
+    session.deliverBrains([chaser]);
+    unsubscribe();
+    session.deliverBrains([]);
+
+    assert.deepEqual(publications, [[], [chaser]]);
   });
 });

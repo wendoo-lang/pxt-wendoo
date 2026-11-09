@@ -6,13 +6,6 @@ interface ModalProps {
   title: string;
   /** Invoked when the dialog requests close (Escape, the close button, or a click outside). */
   onClose: () => void;
-  /**
-   * Runs once the panel has closed and is handing the keyboard back, after the
-   * panel's own DOM is gone. Call `event.preventDefault()` and focus an element
-   * to take the keyboard over; leaving the event alone returns it to whatever
-   * held it when the panel opened.
-   */
-  onCloseAutoFocus?: (event: Event) => void;
   children: ReactNode;
 }
 
@@ -21,7 +14,7 @@ interface ModalProps {
  * primitives. Mount it to open it and unmount it to close it; on unmount the
  * keyboard returns to the element that held it when the panel opened.
  */
-export function Modal({ title, onClose, onCloseAutoFocus, children }: ModalProps) {
+export function Modal({ title, onClose, children }: ModalProps) {
   useEffect(() => {
     const previous = document.activeElement;
     return () => {
@@ -40,11 +33,7 @@ export function Modal({ title, onClose, onCloseAutoFocus, children }: ModalProps
         }
       }}
     >
-      <DialogContent
-        aria-describedby={undefined}
-        className="max-w-md border-border"
-        onCloseAutoFocus={onCloseAutoFocus}
-      >
+      <DialogContent aria-describedby={undefined} className="max-w-md border-border">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

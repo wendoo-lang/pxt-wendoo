@@ -19,7 +19,7 @@ import {
 import type { DocTab } from "@wendoo/docs";
 import { listedTileEntries } from "@wendoo/docs/DocsSidebar";
 import { type AuthoringEnvironment, buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
-import { compileBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
+import { checkBrainSource, serializeBrainSource } from "../../authoring/brain-source.js";
 import { parseCatalog } from "../../authoring/catalog.js";
 import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import { PackBindingCode } from "../../authoring/pack-binding.js";
@@ -214,7 +214,7 @@ describe("pack literals", () => {
     const built = bound();
 
     const source = serializeBrainSource(spotting(built, RED));
-    const compiled = compileBrainSource(built.environment, source);
+    const compiled = checkBrainSource(built.environment, source);
 
     const document = JSON.parse(source);
     assert.equal(literalTile(built, RED).persist, false);
@@ -224,7 +224,7 @@ describe("pack literals", () => {
     );
     assert.equal(document.pages[0].rules[0].when[1], RED);
     assert.deepEqual(compiled.diagnostics, []);
-    assert.ok(compiled.bytecode);
+    assert.ok(compiled.linked);
   });
 
   it("offers a literal at a slot of its type", () => {

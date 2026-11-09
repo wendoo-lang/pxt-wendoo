@@ -15,6 +15,7 @@ import { BrainsProvider } from "../contexts/brains.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
 import { elementsIn } from "../test-support/element-tree.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import { BrainEditor, BrainEditorSession } from "./BrainEditor.js";
 
 /** A connected session carrying `catalogText`, as a brains store follows it. */
@@ -39,14 +40,14 @@ function render(store: BrainsStore, brainId: string): string {
 describe("BrainEditor", () => {
   it("mounts the brain editor dialog on a stored brain", () => {
     const store = new BrainsStore(session(undefined));
-    const id = store.addBrain("Chaser");
+    const id = seedBrain(store, "Chaser");
 
     assert.equal(typeof render(store, id), "string");
   });
 
   it("mounts over an environment built from a session catalog", () => {
     const store = new BrainsStore(session('{"packs":[{"name":"motion","tiles":[{"name":"move"}]}]}'));
-    const id = store.addBrain("Chaser");
+    const id = seedBrain(store, "Chaser");
 
     assert.equal(typeof render(store, id), "string");
   });
@@ -56,7 +57,7 @@ describe("BrainEditorSession", () => {
   /** An editing of a stored brain that records its calls, and the session standing over it. */
   function standing() {
     const store = new BrainsStore(session(undefined));
-    const id = store.addBrain("Chaser");
+    const id = seedBrain(store, "Chaser");
     const calls: string[] = [];
     const editing: BrainEditing = {
       srcBrainDef: store.getBrain(id),

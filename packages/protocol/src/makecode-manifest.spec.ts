@@ -168,7 +168,7 @@ describe("makecode session manifest", () => {
 
     port.deliver({ type: "makecode:catalog", payload: { content: "a catalog" } });
     port.deliver({ type: "makecode:manifest", payload: { manifest: MANIFEST } });
-    port.deliver({ type: "makecode:brainsAck", id: "no-such-request" });
+    port.deliver({ type: "makecode:brainsPushReply", id: "no-such-request", payload: null });
     port.deliver({ type: "makecode:assets", payload: { assets: [] } });
 
     assert.deepEqual(readings, [{ manifest: MANIFEST }]);

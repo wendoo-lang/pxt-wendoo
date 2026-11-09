@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
+import type { MakeCodeBrainSummary } from "./makecode-brains.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import type { MakeCodeBrainsChannel, MakeCodeEditorSessionState } from "./makecode-editor-session.js";
 import type { MakeCodeManifestReading } from "./makecode-manifest.js";
@@ -33,6 +34,11 @@ const READING: MakeCodeManifestReading = {
 /** An asset snapshot holding one image. */
 const ASSETS: MakeCodeAsset[] = [{ kind: "image", id: "image1", previewUrl: "data:image/png;base64," }];
 
+/** A brains publication holding one brain. */
+const BRAINS: MakeCodeBrainSummary[] = [
+  { id: "abcdabcdabcdabcd", name: "Chaser", sourceHash: "1a2b3c4d", compiledSourceHash: "1a2b3c4d" },
+];
+
 /** Resolves with `read()` once `predicate` holds for it, polling until {@link WAIT_MS}. */
 async function eventually<T>(read: () => T, predicate: (value: T) => boolean, what: string): Promise<T> {
   const deadline = Date.now() + WAIT_MS;
@@ -51,17 +57,27 @@ interface Delivered {
   manifests: MakeCodeManifestReading[];
   assets: MakeCodeAsset[][];
   projectInfo: MakeCodeProjectInfo[];
+  brains: MakeCodeBrainSummary[][];
   channels: MakeCodeBrainsChannel[];
 }
 
 /** Records everything `session` delivers. */
 function record(session: MakeCodePortEditorSession): Delivered {
-  const delivered: Delivered = { states: [], catalogs: [], manifests: [], assets: [], projectInfo: [], channels: [] };
+  const delivered: Delivered = {
+    states: [],
+    catalogs: [],
+    manifests: [],
+    assets: [],
+    projectInfo: [],
+    brains: [],
+    channels: [],
+  };
   session.onStateChange((state) => delivered.states.push(state));
   session.onCatalog((content) => delivered.catalogs.push(content));
   session.onManifest((reading) => delivered.manifests.push(reading));
   session.onAssets((assets) => delivered.assets.push(assets));
   session.onProjectInfo((info) => delivered.projectInfo.push(info));
+  session.onBrains((brains) => delivered.brains.push(brains));
   session.onBrainsChannel((channel) => delivered.channels.push(channel));
   return delivered;
 }
@@ -111,7 +127,8 @@ describe("port-backed editor session", () => {
   /**
    * Attaches a fresh port to `session` and connects the MakeCode side over
    * the other end, declaring `target`; resolves with that side's session,
-   * whose brains list answers with no brains.
+   * whose brains list answers with no brains and whose create answers with
+   * an empty brain under the name asked for.
    */
   async function pair(session: MakeCodePortEditorSession, target = "arcade"): Promise<MakeCodeSession> {
     const { port1, port2 } = channel();
@@ -120,6 +137,9 @@ describe("port-backed editor session", () => {
     peers.push(peer);
     peer.onBrainsRequest((request) => {
       if (request.kind === "list") request.reply([]);
+      if (request.kind === "create") {
+        request.reply({ id: "createdcreatedcr", name: request.name, sourceHash: "00000000", compiledSourceHash: null });
+      }
     });
     return peer;
   }
@@ -384,6 +404,43 @@ describe("port-backed editor session", () => {
     );
 
     assert.deepEqual(delivered.projectInfo, [{ name: "first" }, { name: "second" }]);
+  });
+
+  it("delivers the brains publications of the current port's handshake only", async () => {
+    const { session, delivered } = started();
+    const first = await pair(session);
+    first.publishBrains(BRAINS);
+    await eventually(
+      () => delivered.brains.length,
+      (count) => count === 1,
+      "the first port's brains"
+    );
+
+    const second = await pair(session);
+    first.publishBrains([{ ...BRAINS[0], id: "from-the-first-port" }]);
+    second.publishBrains([]);
+    await eventually(
+      () => delivered.brains.length,
+      (count) => count === 2,
+      "the second port's brains"
+    );
+
+    assert.deepEqual(delivered.brains, [BRAINS, []]);
+  });
+
+  it("creates a brain over the brains channel of the current port's handshake", async () => {
+    const { session, delivered } = started();
+    await pair(session);
+    await eventually(
+      () => delivered.channels.length,
+      (count) => count === 1,
+      "the handshake's channel"
+    );
+
+    const created = await delivered.channels[0].createBrain("Chaser");
+
+    assert.equal(created.id, "createdcreatedcr");
+    assert.equal(created.name, "Chaser");
   });
 
   it("delivers the manifests of the current port's handshake only, after the catalog each follows", async () => {

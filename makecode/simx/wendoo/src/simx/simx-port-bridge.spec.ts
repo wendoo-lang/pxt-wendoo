@@ -6,13 +6,15 @@ import {
   connectMakeCodeSession,
   MAKECODE_SESSION_PROTOCOL_VERSION,
   type MakeCodeAsset,
+  type MakeCodeBrainSummary,
   MakeCodeBrainsErrorCode,
   type MakeCodeIdManifest,
   type MakeCodeManifestReading,
   type MakeCodeProjectInfo,
   type MakeCodeSession,
   type MakeCodeSessionMessage,
-  type MakeCodeWireBrain,
+  type MakeCodeWireBrainSource,
+  type MakeCodeWireCompileOutcome,
   messagePortSessionPort,
 } from "@wendoo/makecode-session";
 import type { ProjfsClient } from "../vendor/projfs.js";
@@ -92,21 +94,30 @@ interface Received {
   projectInfo: MakeCodeProjectInfo[];
 }
 
+/** The message type of a brains publication. */
+const BRAINS_PUBLICATION = "makecode:brains";
+
 /**
  * The editor's end of a port brokered to the simulator extension, driven raw
  * by the spec: it records every message arriving, and the spec reads them in
- * order.
+ * order, the brains publications apart.
  */
 class RawEditor {
   /** Every message arrived, in order. */
   readonly arrived: ReceivedMessage[] = [];
+  /** The brains each brains publication arrived carried, in order. */
+  readonly brains: MakeCodeBrainSummary[][] = [];
   private _read = 0;
   private readonly _port: MessagePort;
 
   constructor(port: MessagePort) {
     this._port = port;
     port.addEventListener("message", (event) => {
-      this.arrived.push(event.data as ReceivedMessage);
+      const message = event.data as ReceivedMessage;
+      this.arrived.push(message);
+      if (message.type === BRAINS_PUBLICATION) {
+        this.brains.push((message.payload as { brains: MakeCodeBrainSummary[] }).brains);
+      }
     });
     port.start();
   }
@@ -116,21 +127,33 @@ class RawEditor {
     this._port.postMessage(message);
   }
 
-  /** Resolves with the first message not read yet, once it has arrived. */
+  /** Resolves with the first message not read yet other than a brains publication, once it has arrived. */
   async nextMessage(): Promise<ReceivedMessage> {
-    await eventually(
-      () => this.arrived.length,
-      (count) => count > this._read,
-      "the next message"
-    );
-    const message = this.arrived[this._read];
-    this._read += 1;
-    return message;
+    for (;;) {
+      await eventually(
+        () => this.arrived.length,
+        (count) => count > this._read,
+        "the next message"
+      );
+      const message = this.arrived[this._read];
+      this._read += 1;
+      if (message.type !== BRAINS_PUBLICATION) return message;
+    }
   }
 
-  /** The messages arrived and not read yet. */
+  /** Resolves with the brains the next brains publication carries, once one arrives after the `seen` ones before it. */
+  async nextBrains(seen: number): Promise<MakeCodeBrainSummary[]> {
+    await eventually(
+      () => this.brains.length,
+      (count) => count > seen,
+      "the next brains publication"
+    );
+    return this.brains[seen];
+  }
+
+  /** The messages other than brains publications arrived and not read yet. */
   unread(): ReceivedMessage[] {
-    return this.arrived.slice(this._read);
+    return this.arrived.slice(this._read).filter((message) => message.type !== BRAINS_PUBLICATION);
   }
 }
 
@@ -710,20 +733,25 @@ describe("simx port bridge", () => {
       };
     }
 
-    it("publishes into a session on establish the catalog, then the manifest allocating it, then the asset snapshot, then the name", async () => {
+    it("publishes into a session on establish the catalog, then the manifest allocating it, then the asset snapshot, then the name, then the brains", async () => {
       assets.answer();
+      host.edit("brains/abcdabcdabcdabcd.src.json", JSON.stringify({ version: 1, id: "abcdabcdabcdabcd", pages: [] }));
       const frame = start();
       frame.programPosts(tileCatalog("actuator.beacon.flash"));
 
       const editor = await joinRaw(frame);
+      await editor.nextBrains(0);
 
-      assert.deepEqual(await editor.nextMessage(), catalogMessage(tileCatalog("actuator.beacon.flash")));
       assert.deepEqual(
-        await editor.nextMessage(),
-        manifestMessage({ manifest: tilesManifest("actuator.beacon.flash") })
+        editor.arrived.slice(1, 6).map((message) => message.type),
+        ["makecode:catalog", "makecode:manifest", "makecode:assets", "makecode:projectInfo", "makecode:brains"]
       );
-      assert.equal((await editor.nextMessage()).type, "makecode:assets");
-      assert.equal((await editor.nextMessage()).type, "makecode:projectInfo");
+      assert.deepEqual(editor.arrived[1], catalogMessage(tileCatalog("actuator.beacon.flash")));
+      assert.deepEqual(editor.arrived[2], manifestMessage({ manifest: tilesManifest("actuator.beacon.flash") }));
+      assert.deepEqual(
+        editor.brains[0].map((brain) => brain.id),
+        ["abcdabcdabcdabcd"]
+      );
     });
 
     it("publishes the project's ids module first into a session established before any catalog", async () => {
@@ -788,21 +816,29 @@ describe("simx port bridge", () => {
   });
 
   describe("brains requests", () => {
-    /** A brain as the editor pushes it on the wire, its compiled program covering every byte value. */
-    function wireBrain(id: string, name: string): MakeCodeWireBrain {
-      const source = JSON.stringify({ version: 1, id, name, pages: [] }, null, 2);
-      const bytecode = Buffer.from(Uint8Array.from({ length: 256 }, (_, index) => index)).toString("base64");
-      return { id, name, source, compiled: { bytecode, sourceHash: brainSourceHash(source) } };
+    /** A brain as the editor pushes it on the wire: an empty brain document. */
+    function wireBrain(id: string, name: string): MakeCodeWireBrainSource {
+      return { id, name, source: JSON.stringify({ version: 1, id, name, pages: [] }, null, 2) };
     }
 
-    it("answers the editor's push, list and pull from the project's files, writing both forms", async () => {
+    /** The outcome of compiling `brain`, a source compiling clean with its program registered. */
+    function cleanOutcome(brain: MakeCodeWireBrainSource): MakeCodeWireCompileOutcome {
+      const sourceHash = brainSourceHash(brain.source);
+      return { sourceHash, compiled: { sourceHash }, diagnostics: [], unresolvedTiles: [] };
+    }
+
+    it("compiles the editor's push and answers it with the outcome, then serves list and pull from the project", async () => {
       const frame = start();
       frame.programPosts(CATALOG_TEXT);
       const editor = await joinEditor(frame, CATALOG_TEXT);
       const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
 
       editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
-      assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+      assert.deepEqual(await editor.nextMessage(), {
+        type: "makecode:brainsPushReply",
+        id: "push-1",
+        payload: cleanOutcome(chaser),
+      });
       editor.send({ type: "makecode:brainsList", id: "list-1" });
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsListReply",
@@ -822,7 +858,7 @@ describe("simx port bridge", () => {
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsPullReply",
         id: "pull-1",
-        payload: { brains: [chaser] },
+        payload: { brains: [{ ...chaser, compiledSourceHash: brainSourceHash(chaser.source) }] },
       });
 
       assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
@@ -832,26 +868,52 @@ describe("simx port bridge", () => {
       );
     });
 
-    it("answers every tab's brains requests from the one project: a push over one tab's session lists over another's", async () => {
+    it("creates a brain the editor asks for, answering with its summary once its source is in the project", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const editor = await joinEditor(frame, CATALOG_TEXT);
+
+      editor.send({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "Chaser" } });
+      const reply = await editor.nextMessage();
+
+      assert.equal(reply.type, "makecode:brainsCreateReply");
+      assert.equal(reply.id, "create-1");
+      const { brain } = reply.payload as { brain: MakeCodeBrainSummary };
+      assert.equal(brain.name, "Chaser");
+      assert.equal(brain.compiledSourceHash, brain.sourceHash);
+      assert.equal(brainSourceHash(host.file(`brains/${brain.id}.src.json`) ?? ""), brain.sourceHash);
+    });
+
+    it("publishes the brains into every tab's session after a push over one tab's lands", async () => {
       const frame = start();
       frame.programPosts(CATALOG_TEXT);
       const own = await joinEditor(frame, CATALOG_TEXT);
       const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      const established = (await designer.nextBrains(0)).length;
+      assert.equal(established, 0);
       const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
 
-      designer.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
-      assert.deepEqual(await designer.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+      own.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
 
-      assert.deepEqual(await listedBrains(own, "list-1"), { type: "makecode:brainsListReply", ids: [chaser.id] });
+      assert.deepEqual(await designer.nextBrains(1), [
+        {
+          id: chaser.id,
+          name: "Chaser",
+          sourceHash: brainSourceHash(chaser.source),
+          compiledSourceHash: brainSourceHash(chaser.source),
+        },
+      ]);
+      assert.equal((await own.nextMessage()).type, "makecode:brainsPushReply");
+      assert.deepEqual(await listedBrains(designer, "list-1"), { type: "makecode:brainsListReply", ids: [chaser.id] });
     });
 
-    it("serves the project's brains after its frame reloads, holding none of its own", async () => {
+    it("serves the project's brains after its frame reloads, holding nothing but what it reads", async () => {
       const frame = start();
       frame.programPosts(CATALOG_TEXT);
       const editor = await joinEditor(frame, CATALOG_TEXT);
       const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
       editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
-      assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+      assert.equal((await editor.nextMessage()).type, "makecode:brainsPushReply");
 
       bridges.splice(0)[0].dispose();
       clients.splice(0)[0].dispose();
@@ -863,7 +925,7 @@ describe("simx port bridge", () => {
       assert.deepEqual(await returned.nextMessage(), {
         type: "makecode:brainsPullReply",
         id: "pull-1",
-        payload: { brains: [chaser] },
+        payload: { brains: [{ ...chaser, compiledSourceHash: brainSourceHash(chaser.source) }] },
       });
     });
 
@@ -889,10 +951,7 @@ describe("simx port bridge", () => {
     });
 
     describe("program updates to the running program", () => {
-      /** The compiled program `wireBrain` pushes, as bytes. */
-      const PUSHED_BYTES = Uint8Array.from({ length: 256 }, (_, index) => index);
-
-      it("posts a pushed program to the running program at once, before the project's write lands", async () => {
+      it("posts a pushed program to the running program as it compiles, before the project's write lands", async () => {
         const frame = start();
         frame.programPosts(CATALOG_TEXT);
         const editor = await joinEditor(frame, CATALOG_TEXT);
@@ -906,36 +965,33 @@ describe("simx port bridge", () => {
           "the program update"
         );
 
-        assert.deepEqual(postedProgramUpdates(frame.posted), [
-          {
-            version: SIM_CHANNEL_VERSION,
-            documentId: chaser.id,
-            name: "Chaser",
-            sourceHash: brainSourceHash(chaser.source),
-            bytecode: PUSHED_BYTES,
-          },
-        ]);
+        const [update] = postedProgramUpdates(frame.posted);
+        assert.deepEqual(
+          [update.version, update.documentId, update.name, update.sourceHash],
+          [SIM_CHANNEL_VERSION, chaser.id, "Chaser", brainSourceHash(chaser.source)]
+        );
+        assert.ok(update.bytecode.length > 0);
         assert.equal(host.file(`brains/${chaser.id}.src.json`), undefined);
         assert.equal(host.file("brains.g.ts"), undefined);
         host.release();
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+        assert.equal((await editor.nextMessage()).type, "makecode:brainsPushReply");
         assert.equal(host.file(`brains/${chaser.id}.src.json`), chaser.source);
       });
 
-      it("posts nothing for a push carrying the compiled form it posted last, though its source changed", async () => {
+      it("posts nothing for a push whose compile keeps the registration", async () => {
         const frame = start();
         frame.programPosts(CATALOG_TEXT);
         const editor = await joinEditor(frame, CATALOG_TEXT);
         const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
-        const halfBuilt = { ...chaser, source: `${chaser.source}\n` };
+        const mangled = { ...chaser, source: "not json {" };
 
         editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
-        editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "write", brain: halfBuilt } });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+        assert.equal((await editor.nextMessage()).type, "makecode:brainsPushReply");
+        editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "write", brain: mangled } });
+        assert.equal((await editor.nextMessage()).type, "makecode:brainsPushReply");
 
         assert.equal(postedProgramUpdates(frame.posted).length, 1);
-        assert.equal(host.file(`brains/${chaser.id}.src.json`), halfBuilt.source);
+        assert.equal(host.file(`brains/${chaser.id}.src.json`), mangled.source);
       });
 
       it("posts a removal to the running program as an update carrying no program", async () => {
@@ -944,10 +1000,10 @@ describe("simx port bridge", () => {
         const editor = await joinEditor(frame, CATALOG_TEXT);
         const chaser = wireBrain("abcdabcdabcdabcd", "Chaser");
         editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
+        assert.equal((await editor.nextMessage()).type, "makecode:brainsPushReply");
 
         editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "remove", brainId: chaser.id } });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsPushReply", id: "push-2", payload: null });
 
         assert.deepEqual(postedProgramUpdates(frame.posted).at(-1), {
           version: SIM_CHANNEL_VERSION,
@@ -966,8 +1022,8 @@ describe("simx port bridge", () => {
         const runner = wireBrain("efghefghefghefgh", "Runner");
         editor.send({ type: "makecode:brainsPush", id: "push-1", payload: { op: "write", brain: chaser } });
         editor.send({ type: "makecode:brainsPush", id: "push-2", payload: { op: "write", brain: runner } });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-1" });
-        assert.deepEqual(await editor.nextMessage(), { type: "makecode:brainsAck", id: "push-2" });
+        assert.equal((await editor.nextMessage()).id, "push-1");
+        assert.equal((await editor.nextMessage()).id, "push-2");
 
         frame.programPings();
 

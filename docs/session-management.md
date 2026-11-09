@@ -72,7 +72,7 @@ this lane's declaration is `MakeCodeDeviceProfileNumericId` in
 - The map is keyed by WORLD, not by MakeCode target: the VM is
   target-agnostic and computes in 64-bit floating point on every
   MakeCode target, so every target shares the one world.
-- `MAKECODE_VM_PROFILE_ID` is the `sts-f64` id; the editor stamps it
+- `MAKECODE_VM_PROFILE_ID` is the `sts-f64` id; the engine stamps it
   into every brain it compiles.
 - The map is append-only: an entry is never renumbered, and a removed
   entry's id is never reused.
@@ -163,8 +163,8 @@ brains request-reply family. The editor-tab messages themselves
   frame finishes loading while the tab is ready. Each new port replaces
   the previous one between the same two frames on both sides: the old
   handshake ends, its requests reject with `MAKECODE_BRAINS_CLOSED`, and
-  the brains store reconciles over the new handshake's brains channel,
-  pushing its pends.
+  the brains store reconciles from the new handshake's first brains
+  publication, pushing its pends.
   The simx accepts a port only from `parentOrigin`.
 - ONE SESSION PER TAB: the simx frame holds one session per editor tab
   that talks to it, keyed by the port message's `peer`, the tab's key; a
@@ -174,10 +174,10 @@ brains request-reply family. The editor-tab messages themselves
   registration naming the frame in its `simulator` field. A new port
   replaces only its own peer's session. Every session receives every
   publication, and all of them are served from the one project.
-- ONE WRITER: the tab gains no write path. It requests brains over its
-  session, and the simx frame answers through projfs, writes the
-  project's files, the id manifest among them, and posts live program
-  updates on the sim channel.
+- ONE WRITER: the tab gains no write path. It pushes source and asks for
+  brains over its session, and the simx frame answers through projfs,
+  compiles, writes the project's files, the id manifest and the brains
+  module among them, and posts live program updates on the sim channel.
 - TWO TABS, ONE PROJECT: two MakeCode tabs open on one project each hold
   their own editor tab and simx frame, and both write the project
   through their own simx. Nothing arbitrates between them: the last
@@ -217,12 +217,14 @@ session data, declared when the kind's handshake binds:
 ## The brains payload family
 
 Brains travel between the editor and the party serving the MakeCode
-project as a request-reply family under the kind's namespace. Payload
-kinds carry no versions of their own: the family is additive under
-`MAKECODE_SESSION_PROTOCOL_VERSION`, and every party ignores a
-`makecode:*` type it does not know (the kind's session object routes
-catalogs, id manifests and asset snapshots to their listeners and replies
-to their requests, and drops everything else).
+project as a request-reply family and a publication under the kind's
+namespace. Payload kinds carry no versions of their own: the family is
+additive under `MAKECODE_SESSION_PROTOCOL_VERSION`, and every party
+ignores a `makecode:*` type it does not know (the kind's session object
+routes catalogs, id manifests, asset snapshots, project facts and brains
+publications to their listeners and replies to their requests, and drops
+everything else). No bytecode crosses the port in either direction: the
+editor sends source, and the serving party compiles.
 
 - REQUEST-REPLY: every request carries an envelope `id`, and its reply
   carries the same `id`, the folder-session protocol's `folder:ack` /
@@ -234,57 +236,73 @@ to their requests, and drops everything else).
   pending until the handshake ends -- which, in the editor, the
   heartbeat brings about once the peer leaves two pings in a row
   unanswered (see "Liveness in this lane", below).
+- A BRAIN SUMMARY is `{ id, name, sourceHash, compiledSourceHash }`:
+  `sourceHash` is `brainSourceHash` of the source text as the project
+  holds it now, and `compiledSourceHash` the source hash the brain's
+  current registration of its compiled form was compiled from -- equal to
+  `sourceHash` exactly when that compiled form was compiled from the
+  current source -- or `null` when the project holds no registration of
+  the brain the serving party can read.
 - `makecode:brainsList` (editor -> project): answered by
-  `makecode:brainsListReply` carrying `{ brains: [{ id, name,
-  sourceHash, compiledSourceHash? }] }` -- every brain the project
-  holds, `sourceHash` being `brainSourceHash` of the source text as the
-  project holds it now. `compiledSourceHash` reports the project's
-  compiled form of the brain in three states: a STRING is the source
-  hash the brain's current registration carries (equal to `sourceHash`
-  exactly when the compiled form was compiled from the current source);
-  `null` means the serving party read the project and found no current
-  registration of the brain -- no entry, an unreadable entry, or no
-  readable compiled-form file -- which a push of the brain restores;
-  ABSENT means the serving party does not report it (it predates the
-  field, or cannot read the compiled-form file's format), and the
-  editor draws no conclusion from it. The absent state is what keeps an
-  editor from pushing forever at a peer that can never report a
-  current registration.
+  `makecode:brainsListReply` carrying `{ brains: [summary] }`, every
+  brain the project holds.
 - `makecode:brainsPull` (editor -> project) with `{ ids }`: answered by
   `makecode:brainsPullReply` carrying `{ brains: [{ id, name, source,
-  compiled?: { bytecode, sourceHash } }] }` in request order; an id the
-  project does not hold has no entry.
-- `makecode:brainsPush` (editor -> project) with `{ op: "write", brain }`
-  (the pull entry's shape; a write replaces both forms) or `{ op:
-  "remove", brainId }`: answered by `makecode:brainsAck` once applied.
+  compiledSourceHash }] }` in request order; an id the project does not
+  hold has no entry.
+- `makecode:brainsPush` (editor -> project) with `{ op: "write", brain:
+  { id, name, source } }` or `{ op: "remove", brainId }`: answered by
+  `makecode:brainsPushReply` once applied, carrying a write's COMPILE
+  OUTCOME and `null` for a removal. The outcome is `{ sourceHash,
+  compiled, diagnostics, unresolvedTiles }`: `sourceHash` the hash of
+  the pushed source; `compiled` the registration the project holds once
+  the push is applied, `{ sourceHash }` of the source it was compiled
+  from -- the pushed source's when this compile produced a program with
+  every tile resolved, an earlier source's when it did not and an
+  earlier one did -- or `null` when none has; `diagnostics` the compile's
+  diagnostics; and `unresolvedTiles` the ids of the tiles the source
+  places that the serving party's environment holds no tile for, each
+  once, in the order first placed.
+- A WIRE DIAGNOSTIC is `{ code, severity, message, params? }`
+  (`MakeCodeWireDiagnostic`): the upstream compiler's stable numeric
+  `code`, its `severity` (`error`, `warning` or `info`), its `message`,
+  and the `params` the message interpolates, each a text, a number or a
+  list of texts. The kind declares it itself; it does not import the
+  compiler's types.
+- `makecode:brainsCreate` (editor -> project) with `{ name }`: asks the
+  serving party to create an empty brain under a document id it mints,
+  answered by `makecode:brainsCreateReply` carrying `{ brain: summary }`
+  once the brain's source is in the project.
+- `makecode:brains` (project -> editor) carries `{ brains: [summary] }`,
+  every brain the project holds: a publication on the catalog's
+  discipline, whole, a later one replacing an earlier one. The kind's
+  session publishes with `publishBrains` and delivers with `onBrains`,
+  replaying publications received before the first listener attaches;
+  the editor session object delivers the publications of the current
+  handshake only (`onBrains`).
 - `makecode:brainsError` answers any request that failed, carrying `{
   code, message }`: `MAKECODE_BRAINS_READ_FAILED` for a list or pull,
-  `MAKECODE_BRAINS_WRITE_FAILED` for a push.
+  `MAKECODE_BRAINS_WRITE_FAILED` for a push or a create.
 - An entry's `id` is the brain's ADDRESS -- the document id its source
   file is keyed by -- which the serving party takes from the file name,
   never from the source; `source` is carried verbatim whether or not it
-  is a valid brain document; `compiled.sourceHash` is the hash of the
-  source the program was compiled from, the hash the compiled form
-  embeds.
-- BINARY ENCODING: `compiled.bytecode` is base64 text, the platform's
-  wire norm for bytes (`FileContentPayload`'s `encoding: "base64"` in
-  `@wendoo/bridge-protocol`), encoded and decoded with
-  `@wendoo/service-api`'s `bytesToBase64` / `base64ToBytes`. The kind's
-  API takes and returns bytes; only the wire carries text.
+  is a valid brain document.
 - The editor session object hands out a BRAINS CHANNEL per completed
-  makecode handshake (`onBrainsChannel`); its requests travel on that
-  handshake and reject once it ends, and every later handshake -- over
-  each port MakeCode brokers next -- hands out a new one.
+  makecode handshake (`onBrainsChannel`) -- `listBrains`, `pullBrains`,
+  `pushBrain` and `createBrain`; its requests travel on that handshake
+  and reject once it ends, and every later handshake -- over each port
+  MakeCode brokers next -- hands out a new one.
 - Only the editor requests; the party serving the project answers.
   The kind's session hands each incoming request to its
   `onBrainsRequest` listeners (buffered until the first attaches) as a
-  `list`, `pull`, or `push` request carrying the senders of its answer:
-  `reply` for a list or a pull, `ack` for a push, and `fail(message)`,
-  which answers `MAKECODE_BRAINS_READ_FAILED` for a list or a pull and
-  `MAKECODE_BRAINS_WRITE_FAILED` for a push. A request is answered once;
-  a later answer, or any answer after the session is disposed, is not
-  sent. The simx serves them from the project (see "The simx write
-  path", below).
+  `list`, `pull`, `push` or `create` request carrying the senders of its
+  answer: `reply` for each, carrying a list's summaries, a pull's
+  brains, a push's outcome or `null`, or a create's summary, and
+  `fail(message)`, which answers `MAKECODE_BRAINS_READ_FAILED` for a
+  list or a pull and `MAKECODE_BRAINS_WRITE_FAILED` for a push or a
+  create. A request is answered once; a later answer, or any answer
+  after the session is disposed, is not sent. The simx serves them from
+  the project (see "The simx write path", below).
 
 ## The manifest publication
 
@@ -375,11 +393,16 @@ one, and nothing is requested or answered.
 
 ## The simx write path
 
-The simx answers the brains family from the MakeCode project's files,
-through MakeCode's project-file messages (projfs). It holds no brains
-of its own: every answer is read from the project when the request
-arrives, and every push is written to it, so a simx started afresh
-serves exactly what the last one wrote.
+The simx is the project's brain engine: it compiles every brain the
+project holds, alone writes the project's brain files through
+MakeCode's project-file messages (projfs), and answers the brains family
+from them (`BrainsProject`, `makecode/simx/wendoo/src/simx/brains-project.ts`,
+over `BrainEngine` in `brain-engine.ts`). The project's files are the
+only durable state: the simx reads every brain source and the brains
+module once when its frame starts, and everything it holds in memory --
+each brain's name, source and source hash, and the registrations the
+module holds -- is derived from them and updated as its writes land, so
+a simx started afresh serves exactly what the last one wrote.
 
 - SCOPE: projfs lets a simx see and change only the folder named by
   the key its frame was created for (`wendoo-lang/pxt-wendoo/`), by
@@ -393,15 +416,16 @@ serves exactly what the last one wrote.
   is a plain copy. Its frame-parameter helpers (`getSimxChannel`, `getTargetId`,
   `getProjectId`) are how the simx reads its frame URL.
 - SOURCE FORM: `brains/<documentId>.src.json` holds the brain document
-  exactly as pushed (the editor's two-space pretty print). A list names
-  each such file by its id, with the document's `name`, the
-  `brainSourceHash` of the file's text, and as `compiledSourceHash` the
-  source hash `brains.g.ts` registers the brain under -- `null` when the
-  module is missing or unreadable or holds no readable entry for the
-  brain, and left out while the module is of a newer format (see
-  below); a pull returns the text verbatim. A text that is not a readable brain document is still
-  listed and pulled -- the editor's corruption handling takes it from
-  there -- and is named from its registration, else empty.
+  exactly as pushed or created (the editor's two-space pretty print). A
+  list and the brains publication name each such file by its id, with
+  the document's `name`, the `brainSourceHash` of the file's text, and as
+  `compiledSourceHash` the source hash `brains.g.ts` registers the brain
+  under -- `null` when the module holds no readable entry for the brain,
+  and for every brain while the module is of a newer format (see below);
+  a pull returns the text verbatim. A text that is not a readable brain
+  document is still listed and pulled -- the editor's corruption
+  handling takes it from there -- and is named from its registration,
+  else empty.
 - COMPILED FORM: `brains.g.ts`, at the folder root, is ONE generated
   module declaring every brain's compiled form, which the project
   compiles with the rest of its code. After two comment lines it
@@ -439,8 +463,8 @@ serves exactly what the last one wrote.
   declaration name is not the one its id and name make reads as
   damaged. The VM extension's registration selftest compiles the
   module's generated form in real Arcade and micro:bit projects, from
-  the folder path a project holds it at, with programs the editor
-  compiled from the brain sources checked in beside it.
+  the folder path a project holds it at, with programs compiled from the
+  brain sources through the authoring compile path checked in beside it.
 - READING A DAMAGED MODULE: the reader never throws. A module
   declaring no format, or declaring format 1 without opening the
   `wendooBrains` namespace (one declaring its entries in a superseded
@@ -448,50 +472,93 @@ serves exactly what the last one wrote.
   (`BRAINS_MODULE_UNREADABLE`); one entry that does not follow the
   format is skipped (`BRAINS_MODULE_ENTRY_MALFORMED`) and the rest are
   read; a module declaring a newer format (`BRAINS_MODULE_FORMAT_NEWER`)
-  reads as registering nothing and is never rewritten -- pushes fail
-  while it stands. Each problem is written to the console by its code;
-  a list reports the affected brains' `compiledSourceHash` as `null`
-  (left out for a newer-format module, whose registrations this simx
-  cannot read and must not replace), and a pull serves them without
-  compiled forms, which the editor's staleness rule recompiles and
-  pushes.
-- PUSH: a push writes (or, for `remove`, deletes) the brain's source
-  file and regenerates `brains.g.ts` from the registrations it holds for
-  brains whose source file exists, with the push applied: a write
-  carrying a compiled form registers it, one carrying none drops the
-  registration, and a removal drops it. Deleting a source the project
+  reads as registering nothing and is never rewritten -- pushes and
+  creates fail by its code while it stands, and nothing is recompiled.
+  Each problem is written to the console by its code when the simx
+  reads the module at start.
+- THE ENGINE'S ENVIRONMENT: brains compile in an environment built with
+  `buildAuthoringEnvironment` from the latest catalog the simx published,
+  its icons rendered, and the id manifest it holds, its asset literals
+  following the latest asset snapshot and its brain literals the
+  project's brains -- the inputs the editor builds its own environment
+  from, so both compile a source alike. Before any catalog arrives it is
+  core-only, so a pack tile a brain places compiles as unresolved. A
+  catalog the program posts is adopted with the manifest allocating it;
+  a message from the program rejected by its code leaves the engine's
+  catalog as it was.
+- CONVERGENCE: each compile is applied by one rule: a compile producing
+  a program with every tile resolved replaces the brain's registration,
+  and any other -- one stopped by an error, one reading any tile as
+  unresolved, a source that is not a brain document -- keeps the brain's
+  last good registration, under the name the brain now carries. A
+  compile that throws keeps it too, with no diagnostic, and is logged
+  under `BRAINS_PROJECT_COMPILE_THREW` once per brain per source hash.
+  Each compile that changes a registration's program is posted live
+  (below).
+- PUSH: a write is compiled the moment it arrives, its source and the
+  registration the convergence rule leaves queued for the next drain,
+  and answered, once its source file has landed, with its compile's
+  outcome; a removal posts the brain's removal live and is answered with
+  `null` once its source file is deleted. Deleting a source the project
   does not hold counts as done. Every write and delete is an ARTIFACT
   (never `dirty`), so a brain save never restarts the running program;
   a written file open in MakeCode's text editor reloads to show it,
   replacing typing not yet saved from it, and the write is answered
   once the editor shows it, so no later save of the editor's older
-  text can land over an acknowledged push.
-- COALESCING: pushes queue and apply in drains. A drain reads the
-  project, then takes every push queued by then -- the latest push of
-  each brain, when a brain was pushed more than once, all of its
-  requests answered together -- writes `brains.g.ts` once (skipped when
-  its text would not change), then each brain's source file. A burst of
-  pushes, such as a reconnection's flush, costs one module write plus
-  one write per brain against projfs's rate of 30 writes and deletes
-  per 10 seconds, over which MakeCode holds the writes and applies them
-  as the window allows; pushes arriving while a drain writes join the
-  next.
-- LIVE UPDATE: a push also reaches the running game at once, apart from
-  the drain. The moment a push arrives, before it joins a drain, the simx
-  posts a program update to the running program over the extension
-  channel (see "The extension channel"): a write carrying a compiled form
-  other than the last update the simx posted for that brain -- compiled
-  from other source, or the same source compiled to other bytes, as the
-  editor's staleness rule pushes -- posts that compiled form; a write
-  carrying the compiled form it posted last (a source edit that does not
-  compile pushes the last good compiled form beside it) or carrying none
-  posts nothing; a removal
-  posts an update carrying no program. The post never waits on projfs:
-  the game takes a save at the channel's speed while the project write
-  trails at the drain's pace, the same bytes at two speeds. The simx
-  keeps the last update it posted for each brain and posts them all again
-  at every program start (the extension's ping), so a game restarted
-  before a drain landed still runs the latest save. In the program, the
+  text can land over an answered push.
+- CREATE: a create mints an empty one-page brain through the engine's
+  brain services (`BrainDef.emptyBrainDef`), compiles it, queues its
+  write, and is answered with the brain's summary once its source has
+  landed.
+- COALESCING: changes queue and apply in drains. A drain takes every
+  change queued by then -- the latest of each brain, when a brain was
+  pushed more than once, all of its requests answered together --
+  writes `brains.g.ts` once (skipped when its text would not change),
+  generated from the registrations of the brains whose source the
+  project holds with the drain's changes applied, then each brain's
+  source file. A burst of pushes, such as a reconnection's flush, costs
+  a module write per drain plus one write per brain against projfs's
+  rate of 30 writes and deletes per 10 seconds, over which MakeCode
+  holds the writes and applies them as the window allows; changes
+  arriving while a drain writes join the next.
+- REBUILD: whenever the catalog, the id manifest or the asset snapshot
+  changes, the engine rebuilds its environment and recompiles every
+  brain, a queued write included: a brain whose registration the
+  convergence rule changes is queued, the module is rewritten in the
+  next drain, and the program is posted live. A catalog that resolves a
+  pack brain's tiles registers its program; one that leaves them
+  unresolved keeps the last good registration; an allocation that moves
+  a pack tile's id rewrites the program.
+- HEALING: when the simx starts, a brain whose registration is missing,
+  damaged or compiled from another source's hash -- the module deleted
+  in MakeCode's Explorer, an entry garbled, a source edited by hand --
+  is recompiled from its source, and a module holding anything but the
+  registrations of the brains the project holds (orphans of deleted
+  sources, an unreadable or superseded text) is rewritten from them. A
+  rebuild heals the same way. A pack brain heals once a catalog binding
+  its pack arrives. A heal's module write that MakeCode refuses is
+  retried after a wait doubling from 500 ms up to 30 s, for as long as
+  it takes, unless the refusal is one no retry can overcome.
+- PUBLICATION: once a drain lands anything, the simx publishes the
+  project's brain summaries into every session (`makecode:brains`), so
+  a second tab learns of a first tab's push, create or removal and of a
+  rebuild's registrations. Each session receives the summaries on
+  establish too, after the catalog, the manifest, the asset snapshot
+  and the name.
+- LIVE UPDATE: a compile reaches the running game at once, apart from
+  the drain. The moment a compile changes a brain's registration -- a
+  push's, a create's, a rebuild's or a heal's -- the simx posts a
+  program update to the running program over the extension channel
+  (see "The extension channel"), unless the last update it posted for
+  that brain carried the same program (the same bytes compiled from the
+  same source hash); a compile that keeps the registration posts
+  nothing, and a removal posts an update carrying no program. The post
+  never waits on projfs: the game takes a save at the channel's speed
+  while the project write trails at the drain's pace, the same bytes at
+  two speeds. The simx keeps the last update it posted for each brain
+  and posts them all again at every program start (the extension's
+  ping), so a game restarted before a drain landed still runs the
+  latest save. In the program, the
   channel handler only queues an update; the next program host drain
   applies it to the compiled-brain registration of its document id,
   through the loader's checks as at cold start, plus one: an update
@@ -525,28 +592,30 @@ serves exactly what the last one wrote.
   waits for every answer however long it takes and only notes a slow
   one in the console; when the frame is torn down, its pending
   requests end with `DISPOSED`, their outcome unknown, and recovery
-  falls to the editor's pend and the next handshake.
-- ACKS AND REFUSALS: a push is acknowledged once its source file has
-  landed after its drain's module write, so an acknowledged push is in
-  the project in both forms; a push fails only on a refusal, never on
-  a slow answer. A refused write fails the pushes it carried with
+  falls to the editor's pend and the next handshake. A read of the
+  project at start that MakeCode fails is retried after a wait doubling
+  from 500 ms up to 30 s, for as long as it takes; a refusal no retry
+  can overcome (`PERMISSION_DENIED`, `UNREGISTERED`, `INVALID_NAME`,
+  `INVALID_REQUEST`) is logged once, and no session is then served.
+- ANSWERS AND REFUSALS: a push or a create is answered once its source
+  file has landed after its drain's module write, so an answered push
+  is in the project in both forms; it fails only on a refusal, never on
+  a slow answer. A refused write fails the requests it carried with
   `MAKECODE_BRAINS_WRITE_FAILED`, the projfs code leading the message
   (`QUOTA_EXCEEDED: ...`, `PROJECT_CLOSED: ...`); a refused module
-  write fails every push of its drain and writes no source. The
+  write fails every request of its drain and writes no source. The
   editor keeps a failed push pending and retries it over the same
   handshake, and the next reconciled handshake pushes it too (see
-  "Brain sync", below). A list or a pull the project cannot serve fails
-  with `MAKECODE_BRAINS_READ_FAILED` and the projfs code likewise.
+  "Brain sync", below).
 - VISIBILITY: both forms are ordinary project files. They appear in
   MakeCode's Explorer -- shown in the JavaScript and Python views, not
   in Blocks -- grouped under `wendoo-lang/pxt-wendoo` and
   `wendoo-lang/pxt-wendoo/brains`, each with a delete action, and
   they travel with the project wherever its files go.
-- DETECTING HAND EDITS: the editor compares hashes when a handshake
-  reconciles, so a source edited in MakeCode, and a `brains.g.ts`
-  edited, damaged, or deleted there, is healed at the next handshake
-  (an editor reload or a reconnection); a simulator restart that keeps
-  the simx frame opens no new handshake.
+- HAND EDITS: a source or `brains.g.ts` edited, damaged or deleted in
+  MakeCode is seen when the simx next starts -- a page reload or a
+  respawned column frame -- which heals it and publishes the result; a
+  simulator restart that keeps the simx frame reads nothing again.
 
 ## The id manifest
 
@@ -733,15 +802,19 @@ it always shows the session view.
   below the docs button and above the brain list, carrying its code as
   `data-code`, and only while it applies.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
-  the catalog and the id manifest, from which it builds the environment
-  brains are edited and compiled in -- the catalog's packs bound under the
-  manifest's ids (see "The id manifest", above): a catalog arriving is
-  held, and the manifest following it rebuilds the environment once, when
-  the catalog or the allocation differs from those it was built from,
-  every brain recompiled in each rebuild -- the asset snapshot, which its environment's asset
-  literals follow (below), and the status, and it syncs its brains with
-  the MakeCode project over each handshake's brains channel (see "Brain
-  sync", below). The brains are kept through every status.
+  the catalog and the id manifest, from which it builds the local
+  environment brains are edited in and compiled in for live diagnostics
+  -- the catalog's packs bound under the manifest's ids (see "The id
+  manifest", above): a catalog arriving is held, and the manifest
+  following it rebuilds the environment once, when the catalog or the
+  allocation differs from those it was built from, every brain
+  recompiled in each rebuild for its diagnostics -- the asset snapshot,
+  which its environment's asset literals follow (below), and the status,
+  and it syncs its brains with the MakeCode project from each
+  handshake's brains publications over its brains channel (see "Brain
+  sync", below). The local compile is advisory: the engine's outcome for
+  a source, once a push reply carries it, is what the store shows. The
+  brains are kept through every status.
 - ASSET LITERALS: for each catalog type declaring an asset kind (the
   catalog's `asset` key, for example `image`), the store's environment
   holds one literal tile per snapshot asset of that kind, minted through
@@ -792,7 +865,8 @@ it always shows the session view.
   the compile state -- `current`, `stale`, or `none` -- as
   `data-compile`), and shows on no brain placing unresolved pack tiles
   while the catalog is pending (below). Rows also rename and remove
-  brains; adding a brain names it and opens the editor on it.
+  brains; adding a brain names it, asks the engine to create it, and
+  opens the editor on it once the store holds it.
 - CONTINUOUS EDITING: the brain editor has no OK or Cancel. Every edit
   the dialog reports -- a command, an undo, a redo, a load -- reaches
   the store through the editing's debounced flush: once
@@ -807,14 +881,15 @@ it always shows the session view.
   open, whatever the flushes store. A flush that throws is logged
   under `BRAIN_FLUSH_FAILED` and keeps its edit unflushed, so the next
   edit's flush, or the close, tries again. Edits live only in memory
-  until the project acknowledges them: closing the page drops any not
-  yet acknowledged.
+  until the project answers them: closing the page drops any not yet
+  answered.
 - The SAVE STATE says whether the brains are saved to the MakeCode
   project, from the store's facts: `saved` while nothing is pending;
-  `saving` while something is pending and a push is in flight;
-  `unsaved` while something is pending and no push is in flight --
-  disconnected, reconciling, waiting to retry, or held by a damaged
-  source. It is machine-layer only, shown nowhere: the session view's
+  `saving` while something is pending and a push or a create is in
+  flight; `unsaved` while something is pending and nothing is in flight
+  -- disconnected, reconciling, waiting to retry, or held by a damaged
+  source. A create counts pending, under a `create/<n>` key naming no
+  brain, until the store holds its brain. It is machine-layer only, shown nowhere: the session view's
   root element carries the state as `data-save-state`, the pend count
   as `data-pending`, the pushes in flight as `data-in-flight`, and
   `reconciled` as `data-reconciled`. A damaged brain, the one state
@@ -913,94 +988,97 @@ it always shows the session view.
 
 ## Brain sync
 
-The editor is authoritative for in-flight edits and the MakeCode
-project is durable truth. The brains store reconciles on every brains
-channel once its handshake has delivered its first manifest, then pushes
-each edit as it is made:
+The editor is authoritative for in-flight edits; the MakeCode project is
+durable truth, and the simx engine's compile is the truth about each
+source's compiled form. The brains store reconciles from each brains
+channel's first brains publication, then pushes each edit as it is made
+and refreshes from every later publication:
 
 - LIFECYCLE: the session object is the binding, so every channel
   belongs to the one project the tab frame was opened in, and each keeps
   every brain and pend. Brains authored before the first handshake are
   pending, so the first handshake merges: they push to the project, and
   its brains are pulled beside them.
-- RECONCILIATION: once the handshake has delivered its first manifest,
-  adopted as every manifest is (see "The id manifest", above), list the
-  project's brains; pull every listed brain the
-  store holds no copy of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
-  is `null` or differs from its `sourceHash` (a summary without
-  `compiledSourceHash` pulls on the source rule alone); adopt each
-  pulled brain the store holds no pending edit of (a pending edit wins,
-  and the flush pushes it); drop each brain the project no longer holds
-  that has no pending edit; then push every pend. A request that fails
+- RECONCILIATION: once the handshake has delivered its first brains
+  publication, pull every published brain the store holds no copy of or
+  whose copy's `sourceHash` differs; adopt each pulled brain the store
+  holds no pending edit of (a pending edit wins, and the flush pushes
+  it), with the `compiledSourceHash` the project reports; drop each
+  brain the project no longer holds that has no pending edit; take the
+  published `compiledSourceHash` of every source the store holds; then
+  push every pend and send every create asked for. A pull that fails
   abandons that run, pends intact, and the reconciliation re-runs over
   the same channel after each of `PUSH_RETRY_DELAYS_MS` in turn, then
   after the last of them again and again, while the session stays
   connected and no later handshake has completed; a later handshake
   reconciles over its own channel instead.
+- LATER PUBLICATIONS: each later publication refreshes the store the
+  same way -- a brain another tab created or changed is pulled and
+  adopted, one it removed is dropped, a brain holding a pending edit is
+  neither pulled nor dropped -- and pushes nothing. The store draws no
+  conclusion from the order of a publication and a push reply on the
+  port: each is judged by its hashes.
 - RECONCILED: the store's `reconciled` is `true` while the session is
   connected and the latest handshake's reconciliation has finished;
   it turns `false` at the next disconnection and while a new handshake
   reconciles. Edits made and re-pushes asked while it is `false` do
   not reach the project at once.
-- PUSH: once reconciled, each add, apply, rename, or removal made while
+- PUSH: once reconciled, each apply, rename, or removal made while
   connected is pushed at once; one made otherwise is recorded pending.
-  A push carries the brain exactly as the store holds it -- source plus
-  the compiled form and hash of ONE compile (the convergence rule; a
-  failed compile carries the last good compiled form); a removal pushes
-  as `remove`. A compile reading any tile the brain places as one the
-  store's environment does not hold is not a good compile either: the
-  push carries the last good compiled form, never that compile's
-  program. A push records its brain pending as it goes out, and the
-  project's acknowledgment of it clears the pend only while it carries
-  the brain's latest state, however late it arrives. A push is in flight
+  A push carries the brain's source alone; a removal pushes as
+  `remove`. A push records its brain pending as it goes out, and the
+  project's answer to it clears the pend only while it carries the
+  brain's latest edit, however late it arrives. A push is in flight
   until the column frame answers it -- once projfs has landed it, however
   long MakeCode's write rate holds it -- or its handshake ends: a push to
   a column frame that has gone rejects with `CLOSED` once the heartbeat
   ends its handshake, its pend standing for the next reconciled
   handshake's flush. A push the project refuses fails, and a failed push
-  of a brain's latest state is retried after each of
+  of a brain's latest edit is retried after each of
   `PUSH_RETRY_DELAYS_MS` (500 ms doubling to 8 s) in turn, then every 8 s
   for as long as the push keeps failing, while the handshake stays
   reconciled and connected and the brain is not damaged; a newer edit's
   push takes over from the retries. Pends flush on the next reconciled
-  handshake; until acknowledged they survive every status.
-- STALENESS: a pulled brain whose compiled form is absent, was
-  compiled from other source (its `sourceHash` differs from the
-  source's hash -- someone edited the source out of band), or differs
-  from the program the store's environment compiles of the source -- its
-  pack vocabulary bound under other ids -- is recompiled from the pulled
-  source and, when that compile succeeds, the fresh pair is pushed. The
-  same holds for every held brain whenever the environment is rebuilt: a
-  brain whose compiled form changes is pushed. A pulled source that parses but fails to compile is
-  held with its diagnostics beside the project's compiled form as the
-  last good one, and nothing is pushed. A pulled or held brain whose
-  compile reads any of its tiles as one the environment does not hold
-  -- a pack tile while no catalog binds its pack -- is held the same
-  way at its last good compiled form, and nothing is pushed for that
-  compile; once a later catalog or allocation resolves every tile, the
-  rebuild recompiles it and pushes the fresh pair when it differs.
-- COMPILED-FORM HEALING: because the list reports the compiled form, a
-  project whose `brains.g.ts` lost or garbled a brain's registration --
-  the file deleted in MakeCode's Explorer, an entry damaged, a
-  registration left from other source -- has that brain pulled even
-  when the store's copy of the source matches, and the staleness rule
-  pushes the fresh pair, rewriting the module. Every brain whose
-  registration is current is left alone. Healing happens when a
-  handshake reconciles: a fresh editor tab, or a port MakeCode brokers
-  anew to a respawned column frame. Damage done while a handshake stays open is not seen
-  until the next one.
+  handshake; until answered they survive every status.
+- LOCAL COMPILE AND OUTCOMES: every source the store holds is compiled
+  in its local environment as it is written, for live diagnostics while
+  a brain is edited: its diagnostics, its unresolved tiles
+  (`BRAIN_TILE_UNRESOLVED`), and the `compiledSourceHash` the convergence
+  rule predicts -- the source's own hash for a good compile, the last
+  registration's otherwise. When a push reply carries the engine's
+  outcome for the brain's current source, the store shows it instead:
+  its diagnostics, its unresolved tiles, and its `compiled` hash. An
+  outcome that differs from the store's own compile of the same source
+  -- in its diagnostics' codes, its unresolved tiles, or whether it
+  produced a program -- is logged under `MAKECODE_COMPILE_MISMATCH`,
+  once per brain per source hash, and the engine's is shown. A pulled
+  brain shows its local compile's diagnostics beside the
+  `compiledSourceHash` the project reports. A rebuild of the local
+  environment recompiles every brain for its diagnostics and pushes
+  nothing: the engine recompiles and heals the project's compiled forms
+  itself (see "The simx write path", above).
+- CREATION: `addBrain(name)` asks the engine to create the brain
+  (`makecode:brainsCreate`): sent at once while reconciled, else once
+  the next handshake has reconciled, and pending until the store holds
+  the created brain, which it pulls on the reply or takes from a
+  publication, whichever lands first; it then resolves with the brain's
+  id, and the brain list opens the editor on it. A create the engine
+  refuses is retried as a failed push is; one whose handshake ends
+  while it is in flight fails with `CLOSED`, its pend dropped, the next
+  publication holding the brain if it was created.
 - CORRUPTION: a pulled source that is not a brain document is listed in
   the store's `damaged` map under `BRAIN_SOURCE_INVALID`, and one whose
   embedded id differs from its address under `BRAIN_SOURCE_ID_MISMATCH`,
   each with the display name the pull carried.
   The store never crashes on it and never overwrites it by itself: a
   held copy stays as it was, edits to a damaged brain (removals
-  included) stay pending, and the flush skips it. `repushBrain(id)`
-  restores the project from the held copy -- offered only when the
-  store holds one; otherwise the way out is fixing or deleting the file
-  in the project, which the next reconciliation sees. An acknowledged
-  push of the brain, or a later pull finding the source repaired or
-  gone, clears the damage.
+  included) stay pending, and the flush skips it; a damaged source is
+  not pulled again while the project holds the same text.
+  `repushBrain(id)` restores the project from the held copy -- offered
+  only when the store holds one; otherwise the way out is fixing or
+  deleting the file in the project, which the next publication shows.
+  An answered push of the brain, or a later pull finding the source
+  repaired or gone, clears the damage.
 
 ## The brand strip
 

@@ -10,18 +10,14 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { PeerSessionErrorCode } from "@wendoo/bridge-app";
-import { stream } from "@wendoo/core";
 import type { WendooEnvironment } from "@wendoo/core/app";
 import { BrainDef, CoreHostActions, LogLevel, logger, mkActuatorTileId, mkSensorTileId } from "@wendoo/core/app";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type {
-  MakeCodeBrainSummary,
   MakeCodeBrainsRequestMessage,
   MakeCodeHeartbeatOptions,
   MakeCodeIdManifest,
   MakeCodePortEditorSession,
-  MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
 import {
   brainSourceHash,
@@ -30,11 +26,10 @@ import {
   MakeCodeBrainsErrorCode,
   messagePortSessionPort,
 } from "@wendoo/makecode-session";
-import { buildAuthoringEnvironment, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
+import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
 import {
   BRAIN_SOURCE_ID_MISMATCH,
   BRAIN_SOURCE_INVALID,
-  compileBrainSource,
   readBrainSource,
   serializeBrainSource,
 } from "../../authoring/brain-source.js";
@@ -52,6 +47,8 @@ import {
 } from "../../simx/test-support/projfs-host.js";
 import type { ProjfsClient } from "../../vendor/projfs.js";
 import { FLUSH_DEBOUNCE_MS, openBrainEditing } from "../brain/editing.js";
+import { type FrameProject, frameProjectOf } from "../test-support/frame-project.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import type { BrainsViewState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 import { connectionStatus } from "./connection-status.js";
@@ -128,7 +125,7 @@ function authorCompilingRule(environment: WendooEnvironment, definition: BrainDe
 
 /** Adds a brain named `name` with a compiling rule to `brains`, returning its id. */
 function authorBrain(brains: BrainsStore, name: string): string {
-  const id = brains.addBrain(name);
+  const id = seedBrain(brains, name);
   const edited = brains.getBrain(id);
   assert.ok(edited);
   authorCompilingRule(brains.getSnapshot().environment, edited);
@@ -142,7 +139,7 @@ function authorBrain(brains: BrainsStore, name: string): string {
  * when the store's environment does not bind both tiles.
  */
 function authorPackBrain(brains: BrainsStore, name: string, sensor: string, actuator: string): string {
-  const id = brains.addBrain(name);
+  const id = seedBrain(brains, name);
   const edited = brains.getBrain(id);
   assert.ok(edited);
   const rule = firstRule(edited);
@@ -186,50 +183,39 @@ function pageRules(brains: BrainsStore, id: string): number {
   return (held.pages().get(0) as BrainPageDef).children().size();
 }
 
-/** A brain as a project holds it after an editor pushed it, in the wire form: its source and that source's compiled form. */
-function projectBrain(name: string): MakeCodeWireBrain {
+/** An empty brain document named `name`, as a project holds its source. */
+function projectBrain(name: string): { id: string; name: string; source: string } {
   const { environment } = buildAuthoringEnvironment(undefined);
   const definition = BrainDef.emptyBrainDef(environment.brainServices, name);
-  const source = serializeBrainSource(definition);
-  const { bytecode } = compileBrainSource(environment, source);
-  assert.ok(bytecode);
-  return {
-    id: definition.id(),
-    name,
-    source,
-    compiled: { bytecode: Buffer.from(bytecode).toString("base64"), sourceHash: brainSourceHash(source) },
-  };
+  return { id: definition.id(), name, source: serializeBrainSource(definition) };
 }
 
 /** The source of `brain` with a compiling rule authored into it, as an out-of-band editor would save it. */
-function editedOutOfBand(brain: Pick<MakeCodeWireBrain, "source">): string {
+function editedOutOfBand(brain: { source: string }): string {
   const { environment } = buildAuthoringEnvironment(undefined);
   const definition = readBrainSource(environment, brain.source);
   authorCompilingRule(environment, definition);
   return serializeBrainSource(definition);
 }
 
-/** A project holding `brains`, keyed by id. */
-function projectOf(...brains: MakeCodeWireBrain[]): Map<string, MakeCodeWireBrain> {
-  return new Map(brains.map((brain) => [brain.id, brain]));
-}
+/** A project holding `brains`, each written to it as the frame writes a push. */
+const projectOf = frameProjectOf;
 
 /** A brains request the scripted column frame received. */
 type ReceivedRequest = MakeCodeBrainsRequestMessage;
 
 /**
  * A column frame played by the spec over the raw far end of a brokered
- * port: it sends its makecode hello at once, publishes its id manifest on
- * each editor hello, and answers the editor's brains requests from its
- * in-memory project -- or, while held, queues the answers until released.
- * It records every request it receives and counts the editor hellos, one
- * per handshake. Its list carries each
- * brain's compiled source hash only when opened to report it; otherwise it
- * answers as a column frame predating that field does.
+ * port: it sends its makecode hello at once, publishes its id manifest and
+ * its project's brains on each editor hello, and answers the editor's brains
+ * requests from its in-memory project -- or, while held, queues the answers
+ * until released. It records every request it receives and counts the
+ * editor hellos, one per handshake. It publishes the brains again only on
+ * the spec's word.
  */
 class ScriptedColumn {
-  /** The brains the project holds, by document id, in the wire form. */
-  readonly project: Map<string, MakeCodeWireBrain>;
+  /** The project it serves, shared with any later column frame over the same project. */
+  readonly project: FrameProject;
   /** The id manifest it publishes, or `null` when the project holds none. */
   manifest: MakeCodeIdManifest | null = null;
   /** Every brains request received, in order. */
@@ -237,23 +223,20 @@ class ScriptedColumn {
   /** How many editor hellos arrived. */
   hellos = 0;
   held = false;
-  /** How many of the next lists are answered with a `READ_FAILED` error reply. */
-  failingLists = 0;
+  /** How many of the next pulls are answered with a `READ_FAILED` error reply. */
+  failingPulls = 0;
   /** Whether pushes are received and never answered. */
   dropsPushes = false;
   private readonly _queue: (() => void)[] = [];
   private readonly _port: MessagePort;
-  private readonly _reportsCompiled: boolean;
 
   /**
    * @param port - The far end of the port brokered to the editor tab.
-   * @param project - The brains the project holds, shared with any later column frame over the same project.
-   * @param reportsCompiled - Whether its list carries each brain's compiled source hash, `null` for a brain with no compiled form.
+   * @param project - The project it serves, shared with any later column frame over the same project.
    */
-  constructor(port: MessagePort, project: Map<string, MakeCodeWireBrain>, reportsCompiled: boolean) {
+  constructor(port: MessagePort, project: FrameProject) {
     this._port = port;
     this.project = project;
-    this._reportsCompiled = reportsCompiled;
     port.addEventListener("message", (event) => {
       this.handle(event.data as Record<string, unknown>);
     });
@@ -264,6 +247,11 @@ class ScriptedColumn {
   /** Sends `message` to the editor as it is. */
   send(message: object): void {
     this._port.postMessage(message);
+  }
+
+  /** Publishes the project's brains to the editor. */
+  publishBrains(): void {
+    this.send({ type: "makecode:brains", payload: { brains: this.project.summaries() } });
   }
 
   /** Answers every request held so far, in arrival order, and stops holding. */
@@ -287,10 +275,12 @@ class ScriptedColumn {
       case "makecode:hello":
         this.hellos += 1;
         this.send({ type: "makecode:manifest", payload: { manifest: this.manifest } });
+        this.publishBrains();
         return;
       case "makecode:brainsList":
       case "makecode:brainsPull":
-      case "makecode:brainsPush": {
+      case "makecode:brainsPush":
+      case "makecode:brainsCreate": {
         const request = message as unknown as ReceivedRequest;
         this.requests.push(request);
         if (request.type === "makecode:brainsPush" && this.dropsPushes) return;
@@ -309,8 +299,10 @@ class ScriptedColumn {
   private answer(request: ReceivedRequest): object {
     switch (request.type) {
       case "makecode:brainsList":
-        if (this.failingLists > 0) {
-          this.failingLists -= 1;
+        return { type: "makecode:brainsListReply", id: request.id, payload: { brains: this.project.summaries() } };
+      case "makecode:brainsPull":
+        if (this.failingPulls > 0) {
+          this.failingPulls -= 1;
           return {
             type: "makecode:brainsError",
             id: request.id,
@@ -318,30 +310,25 @@ class ScriptedColumn {
           };
         }
         return {
-          type: "makecode:brainsListReply",
-          id: request.id,
-          payload: {
-            brains: [...this.project.values()].map((brain) => {
-              const summary: MakeCodeBrainSummary = {
-                id: brain.id,
-                name: brain.name,
-                sourceHash: brainSourceHash(brain.source),
-              };
-              if (this._reportsCompiled) summary.compiledSourceHash = brain.compiled?.sourceHash ?? null;
-              return summary;
-            }),
-          },
-        };
-      case "makecode:brainsPull":
-        return {
           type: "makecode:brainsPullReply",
           id: request.id,
           payload: { brains: request.payload.ids.flatMap((id) => this.project.get(id) ?? []) },
         };
-      case "makecode:brainsPush":
-        if (request.payload.op === "write") this.project.set(request.payload.brain.id, request.payload.brain);
-        else this.project.delete(request.payload.brainId);
-        return { type: "makecode:brainsAck", id: request.id };
+      case "makecode:brainsPush": {
+        const { payload } = request;
+        if (payload.op === "remove") {
+          this.project.remove(payload.brainId);
+          return { type: "makecode:brainsPushReply", id: request.id, payload: null };
+        }
+        const outcome = this.project.write(payload.brain.id, payload.brain.name, payload.brain.source);
+        return { type: "makecode:brainsPushReply", id: request.id, payload: outcome };
+      }
+      case "makecode:brainsCreate":
+        return {
+          type: "makecode:brainsCreateReply",
+          id: request.id,
+          payload: { brain: this.project.create(request.payload.name) },
+        };
     }
   }
 }
@@ -511,8 +498,9 @@ describe("brains sync between the editor tab and the column frame over a brokere
   }
 
   /**
-   * Resolves once `host`'s project holds every brain `tab` holds, in both
-   * forms as the store holds them, and no source of a brain it does not.
+   * Resolves once `host`'s project holds every brain `tab` holds, its source
+   * as the store holds it and its registration of the compiled source hash
+   * the store holds, and no source of a brain it does not.
    */
   async function saved(host: FakeProjfsHost, tab: EditorTab, what: string): Promise<void> {
     await eventually(
@@ -525,7 +513,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
           [...held].every(
             ([id, entry]) =>
               host.file(`brains/${id}.src.json`) === entry.source &&
-              reading.entries.get(id)?.sourceHash === entry.compiled?.sourceHash
+              (reading.entries.get(id)?.sourceHash ?? null) === entry.compiledSourceHash
           )
         );
       },
@@ -613,12 +601,12 @@ describe("brains sync between the editor tab and the column frame over a brokere
     await saved(host, tab, "the brain to be saved");
 
     const stored = tab.brains.getSnapshot().brains.get(id);
-    assert.ok(stored?.compiled);
+    assert.ok(stored);
+    assert.equal(stored.compiledSourceHash, stored.sourceHash);
     assert.equal(host.file(`brains/${id}.src.json`), stored.source);
     const updates = postedProgramUpdates(column.frame.posted).filter((update) => update.documentId === id);
     assert.ok(updates.length > 0);
-    assert.equal(updates.at(-1)?.sourceHash, stored.compiled.sourceHash);
-    assert.deepEqual(updates.at(-1)?.bytecode, stored.compiled.bytecode);
+    assert.equal(updates.at(-1)?.sourceHash, stored.sourceHash);
     await brainsUntil(tab, (state) => state.pending.size === 0, "the push to be acknowledged");
   });
 
@@ -682,8 +670,9 @@ describe("brains sync between the editor tab and the column frame over a brokere
     await brainsUntil(authoring, (state) => state.reconciled, "the authoring editor to reconcile");
     const id = authorPackBrain(authoring.brains, "Walker", "sensor.walk.pressed", "actuator.walk.step");
     await saved(host, authoring, "the brain to be saved");
-    const project = authoring.brains.getSnapshot().brains.get(id)?.compiled;
+    const project = authoring.brains.getSnapshot().brains.get(id)?.compiledSourceHash;
     assert.ok(project);
+    const registered = readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id);
     closeTab(authoring);
     disposeColumn(running);
     const writesBeforeReopen = host.mutations.length;
@@ -706,16 +695,46 @@ describe("brains sync between the editor tab and the column frame over a brokere
     );
     stopped.frame.programPings();
 
-    assert.deepEqual(reopened.brains.getSnapshot().brains.get(id)?.compiled, project);
-    assert.deepEqual(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id)?.bytecode, project.bytecode);
+    assert.equal(reopened.brains.getSnapshot().brains.get(id)?.compiledSourceHash, project);
+    assert.deepEqual(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(id), registered);
     assert.deepEqual(
       host.mutations.slice(writesBeforeReopen).filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`),
       [],
       "the project's compiled form is never rewritten"
     );
-    for (const update of postedProgramUpdates(stopped.frame.posted)) {
-      if (update.documentId === id) assert.deepEqual(update.bytecode, project.bytecode);
-    }
+    assert.deepEqual(
+      postedProgramUpdates(stopped.frame.posted).filter((update) => update.documentId === id),
+      [],
+      "the running program keeps the compiled form it was built with"
+    );
+  });
+
+  it("brings a brain one tab saves to a second tab on the same column frame, through the brains publication", async () => {
+    const host = new FakeProjfsHost();
+    const column = startColumn(host);
+    const own = openTab();
+    const designer = openTab();
+    broker(column, own);
+    const { port1, port2 } = channel();
+    column.frame.brokerPort(port1, "https://arcade.makecode.com", "owner/repo-designer");
+    designer.session.attachPort(messagePortSessionPort(port2));
+    await brainsUntil(own, (state) => state.reconciled, "the first tab to reconcile");
+    await brainsUntil(designer, (state) => state.reconciled, "the second tab to reconcile");
+
+    const id = authorBrain(own.brains, "Chaser");
+    await saved(host, own, "the first tab's brain to be saved");
+    const ownEntry = own.brains.getSnapshot().brains.get(id);
+    const received = await brainsUntil(
+      designer,
+      (state) => state.brains.get(id)?.sourceHash === ownEntry?.sourceHash,
+      "the second tab to pull the saved brain"
+    );
+
+    assert.equal(received.brains.get(id)?.compiledSourceHash, ownEntry?.sourceHash);
+    assert.deepEqual([...own.brains.getSnapshot().brains.keys()], [id]);
+    assert.deepEqual([...received.brains.keys()], [id]);
+    assert.equal(received.pending.size, 0);
+    assert.equal(host.listed.filter((name) => name.endsWith(".src.json")).length, 1);
   });
 
   it("keeps the brains of two tab and column pairs, for two projects, apart", async () => {
@@ -769,18 +788,14 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
   describe("with a scripted column frame", () => {
     /** A scripted column frame over `project` on `port`, closed by the spec's cleanup. */
-    function scriptOn(
-      port: MessagePort,
-      project: Map<string, MakeCodeWireBrain>,
-      reportsCompiled = false
-    ): ScriptedColumn {
-      const column = new ScriptedColumn(port, project, reportsCompiled);
+    function scriptOn(port: MessagePort, project: FrameProject): ScriptedColumn {
+      const column = new ScriptedColumn(port, project);
       scripted.push(column);
       return column;
     }
 
     /** Brokers a fresh port pair between a new scripted column frame over `project` and `tab`. */
-    function brokerScripted(tab: EditorTab, project: Map<string, MakeCodeWireBrain>): ScriptedColumn {
+    function brokerScripted(tab: EditorTab, project: FrameProject): ScriptedColumn {
       const { port1, port2 } = channel();
       const column = scriptOn(port1, project);
       tab.session.attachPort(messagePortSessionPort(port2));
@@ -789,18 +804,17 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
     /**
      * Pairs a new editor tab with a new scripted column frame over `project`
-     * and resolves once the editor has reconciled -- the column frame
-     * answered its list and every pull it needed.
+     * and resolves once the editor has reconciled -- it took the column
+     * frame's brains publication and every pull it needed.
      */
-    async function pair(project: Map<string, MakeCodeWireBrain>): Promise<{ tab: EditorTab; simx: ScriptedColumn }> {
+    async function pair(project: FrameProject): Promise<{ tab: EditorTab; simx: ScriptedColumn }> {
       const tab = openTab();
       const simx = brokerScripted(tab, project);
-      await eventually(
-        () => simx.requestsOf("makecode:brainsList").length,
-        (count) => count > 0,
-        "the editor's list"
+      await brainsUntil(
+        tab,
+        (state) => state.reconciled && state.brains.size === project.size,
+        "the editor to reconcile"
       );
-      await brainsUntil(tab, (state) => state.brains.size === project.size, "the editor to reconcile");
       return { tab, simx };
     }
 
@@ -811,37 +825,44 @@ describe("brains sync between the editor tab and the column frame over a brokere
       return far;
     }
 
-    it("pushes an authored brain to the project, source and compiled form of one compile, and holds nothing pending", async () => {
+    it("pushes an authored brain's source alone, takes the column frame's outcome, and holds nothing pending", async () => {
       const { tab, simx } = await pair(projectOf());
       const { brains } = tab;
 
-      const id = brains.addBrain("Chaser");
-      const edited = brains.getBrain(id);
-      assert.ok(edited);
-      authorCompilingRule(brains.getSnapshot().environment, edited);
-      brains.applyBrain(edited);
+      const id = authorBrain(brains, "Chaser");
       const entry = brains.getSnapshot().brains.get(id);
-      assert.ok(entry?.compiled);
+      assert.ok(entry);
       const stored = await eventually(
         () => simx.project.get(id),
         (brain) => brain?.source === entry.source,
         "the applied brain to reach the project"
       );
 
-      assert.deepEqual(stored, {
-        id,
-        name: "Chaser",
-        source: entry.source,
-        compiled: { bytecode: Buffer.from(entry.compiled.bytecode).toString("base64"), sourceHash: entry.sourceHash },
-      });
+      assert.deepEqual(stored, { id, name: "Chaser", source: entry.source, compiledSourceHash: entry.sourceHash });
+      assert.ok(
+        simx
+          .requestsOf("makecode:brainsPush")
+          .every((request) => request.type === "makecode:brainsPush" && request.payload.op === "write")
+      );
       await brainsUntil(tab, (state) => state.pending.size === 0, "nothing pending");
+      assert.equal(brains.getSnapshot().brains.get(id)?.compiledSourceHash, entry.sourceHash);
     });
 
-    it("flushes the pends of a disconnection over a re-brokered port, deletions included, clearing them on the acks", async () => {
+    it("creates a brain through the column frame, resolving once the store holds it", async () => {
+      const { tab, simx } = await pair(projectOf());
+
+      const id = await tab.brains.addBrain("Chaser");
+
+      assert.equal(simx.requestsOf("makecode:brainsCreate").length, 1);
+      assert.equal(tab.brains.getSnapshot().brains.get(id)?.source, simx.project.get(id)?.source);
+      assert.equal(tab.brains.getSnapshot().pending.size, 0);
+    });
+
+    it("flushes the pends of a disconnection over a re-brokered port, deletions included, clearing them on the answers", async () => {
       const { tab, simx } = await pair(projectOf());
       const { brains } = tab;
-      const kept = brains.addBrain("Chaser");
-      const removed = brains.addBrain("Runner");
+      const kept = seedBrain(brains, "Chaser");
+      const removed = seedBrain(brains, "Runner");
       await eventually(
         () => simx.project.size,
         (size) => size === 2,
@@ -851,7 +872,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
       brains.renameBrain(kept, "Hider");
       brains.removeBrain(removed);
-      const added = brains.addBrain("Seeker");
+      const added = seedBrain(brains, "Seeker");
       assert.deepEqual([...brains.getSnapshot().pending].sort(), [kept, removed, added].sort());
       const returned = scriptOn(far, simx.project);
 
@@ -870,43 +891,29 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const { tab, simx } = await pair(projectOf(remote));
       const { brains } = tab;
       const far = await dropSimx(simx, tab);
-      const offline = brains.addBrain("Offline");
+      const offline = seedBrain(brains, "Offline");
       brains.renameBrain(remote.id, "Renamed offline");
 
       const resumed = scriptOn(far, simx.project);
-      await eventually(
-        () => resumed.requestsOf("makecode:brainsList").length,
-        (count) => count > 0,
-        "the re-brokered handshake's list"
-      );
-      await brainsUntil(tab, (state) => state.pending.size === 0, "the pends to clear");
+      await brainsUntil(tab, (state) => state.reconciled && state.pending.size === 0, "the pends to clear");
 
+      assert.equal(resumed.hellos, 1);
       assert.deepEqual([...brains.getSnapshot().brains.keys()], [remote.id, offline]);
       assert.equal(brains.getSnapshot().brains.get(remote.id)?.name, "Renamed offline");
       assert.equal(resumed.project.get(remote.id)?.name, "Renamed offline");
       assert.equal(resumed.project.has(offline), true);
     });
 
-    it("recompiles a brain whose source was edited out of band and pushes the fresh pair", async () => {
+    it("adopts a brain whose source was edited out of band, pushing nothing", async () => {
       const original = projectBrain("Remote");
       const edited = { ...original, source: editedOutOfBand(original) };
       const { tab, simx } = await pair(projectOf(edited));
+      await delay(50);
 
-      const stored = await eventually(
-        () => simx.project.get(edited.id),
-        (brain) => brain?.compiled?.sourceHash === brainSourceHash(edited.source),
-        "the recompiled pair to reach the project"
-      );
-
-      assert.equal(stored?.source, edited.source);
       const entry = tab.brains.getSnapshot().brains.get(edited.id);
-      assert.equal(entry?.compiled?.sourceHash, brainSourceHash(edited.source));
-      const bytes = new Uint8Array(Buffer.from(stored?.compiled?.bytecode ?? "", "base64"));
-      const program = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(bytes), {
-        precision: MAKECODE_VM_PRECISION,
-        typeRegistry: tab.brains.getSnapshot().environment.brainServices.runtime.types,
-      });
-      assert.equal(program.profileId, 2001);
+      assert.equal(entry?.source, edited.source);
+      assert.equal(entry?.compiledSourceHash, brainSourceHash(edited.source));
+      assert.deepEqual(simx.requestsOf("makecode:brainsPush"), []);
     });
 
     it("lists a corrupt source as damaged without overwriting it, keeping the held copy for a re-push on request", async () => {
@@ -915,7 +922,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const { brains } = tab;
       const held = brains.getSnapshot().brains.get(remote.id);
       const far = await dropSimx(simx, tab);
-      simx.project.set(remote.id, { ...remote, source: "not json {" });
+      simx.project.set(remote.id, { ...remote, source: "not json {", compiledSourceHash: null });
 
       const returned = scriptOn(far, simx.project);
       const state = await brainsUntil(tab, (s) => s.damaged.size === 1, "the damage to be listed");
@@ -949,16 +956,9 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const remote = projectBrain("Remote");
       const { tab, simx } = await pair(projectOf(remote));
       const far = await dropSimx(simx, tab);
-      simx.project.set(remote.id, { ...remote, source: editedOutOfBand(remote) });
+      simx.project.write(remote.id, remote.name, editedOutOfBand(remote));
 
       const returned = scriptOn(far, simx.project);
-      returned.held = true;
-      await eventually(
-        () => returned.requestsOf("makecode:brainsList").length,
-        (count) => count === 1,
-        "the held list"
-      );
-      returned.release();
       returned.held = true;
       await eventually(
         () => returned.requestsOf("makecode:brainsPull").length,
@@ -973,69 +973,59 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(returned.project.get(remote.id)?.name, "Local");
     });
 
-    it("takes no action on the list of a column frame that reports no compiled forms, through handshake after handshake", async () => {
+    it("takes the compiled source hash the column frame publishes, never pushing to restore a registration, through handshake after handshake", async () => {
       const remote = projectBrain("Remote");
       const { tab, simx } = await pair(projectOf(remote));
       let far = await dropSimx(simx, tab);
-      const { compiled: _compiled, ...sourceOnly } = remote;
-      simx.project.set(remote.id, sourceOnly);
+      simx.project.registrations.delete(remote.id);
+      simx.project.set(remote.id, { ...remote, compiledSourceHash: null });
 
       for (let round = 0; round < 3; round++) {
         const returned = scriptOn(far, simx.project);
-        await eventually(
-          () => returned.requestsOf("makecode:brainsList").length,
-          (count) => count > 0,
-          "the returning column frame's list"
+        await brainsUntil(
+          tab,
+          (state) => state.reconciled && state.brains.get(remote.id)?.compiledSourceHash === null,
+          "the editor to take the published registration"
         );
-        await brainsUntil(tab, (state) => state.reconciled, "the editor to reconcile");
         await delay(50);
 
         assert.deepEqual(returned.requestsOf("makecode:brainsPull"), []);
         assert.deepEqual(returned.requestsOf("makecode:brainsPush"), []);
         far = await dropSimx(returned, tab);
       }
-      assert.equal(simx.project.get(remote.id), sourceOnly);
     });
 
-    it("pulls and heals a brain whose compiled form a reporting column frame lists as missing, once", async () => {
-      const remote = projectBrain("Remote");
-      const { tab, simx } = await pair(projectOf(remote));
-      const far = await dropSimx(simx, tab);
-      const { compiled: _compiled, ...sourceOnly } = remote;
-      simx.project.set(remote.id, sourceOnly);
+    it("pulls a brain a later publication brings, as another tab created it", async () => {
+      const { tab, simx } = await pair(projectOf());
+      const created = projectBrain("Elsewhere");
+      simx.project.write(created.id, created.name, created.source);
 
-      const returned = scriptOn(far, simx.project, true);
-      const stored = await eventually(
-        () => returned.project.get(remote.id),
-        (brain) => brain?.compiled !== undefined,
-        "the recompiled pair to reach the project"
-      );
+      simx.publishBrains();
 
-      assert.equal(returned.requestsOf("makecode:brainsPull").length, 1);
-      assert.equal(returned.requestsOf("makecode:brainsPush").length, 1);
-      assert.deepEqual(stored?.compiled, remote.compiled);
-      await brainsUntil(tab, (state) => state.pending.size === 0, "nothing pending");
+      const state = await brainsUntil(tab, (s) => s.brains.has(created.id), "the published brain to be pulled");
+      assert.equal(state.brains.get(created.id)?.source, created.source);
+      assert.equal(simx.requestsOf("makecode:brainsPull").length, 1);
     });
 
-    it("re-runs a reconciliation whose list the column frame refused while connected, then pushes edits as they are made", async () => {
+    it("re-runs a reconciliation whose pull the column frame refused while connected, then pushes edits as they are made", async () => {
       const remote = projectBrain("Remote");
       const tab = openTab();
       const { port1, port2 } = channel();
       const simx = scriptOn(port1, projectOf(remote));
-      simx.failingLists = 1;
+      simx.failingPulls = 1;
 
       tab.session.attachPort(messagePortSessionPort(port2));
       await eventually(
-        () => simx.requestsOf("makecode:brainsList").length,
+        () => simx.requestsOf("makecode:brainsPull").length,
         (count) => count === 1,
-        "the refused list"
+        "the refused pull"
       );
-      const id = tab.brains.addBrain("Local");
+      const id = seedBrain(tab.brains, "Local");
       assert.equal(tab.brains.getSnapshot().reconciled, false);
       await brainsUntil(tab, (state) => state.reconciled && state.pending.size === 0, "the re-run to reconcile");
 
       assert.equal(simx.hellos, 1);
-      assert.equal(simx.requestsOf("makecode:brainsList").length, 2);
+      assert.equal(simx.requestsOf("makecode:brainsPull").length, 2);
       assert.equal(tab.brains.getSnapshot().brains.get(remote.id)?.source, remote.source);
       assert.equal(simx.project.has(id), true);
       tab.brains.renameBrain(id, "Renamed");
@@ -1050,7 +1040,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const { tab, simx } = await pair(projectOf());
       simx.dropsPushes = true;
 
-      const id = tab.brains.addBrain("Chaser");
+      const id = seedBrain(tab.brains, "Chaser");
       await eventually(
         () => simx.requestsOf("makecode:brainsPush").length,
         (count) => count === 1,
@@ -1071,17 +1061,13 @@ describe("brains sync between the editor tab and the column frame over a brokere
     it("ignores payload types it does not know and replies to no request of its own", async () => {
       const tab = openTab();
       const simx = brokerScripted(tab, projectOf());
-      await eventually(
-        () => simx.requestsOf("makecode:brainsList").length,
-        (count) => count > 0,
-        "the editor's list"
-      );
+      await brainsUntil(tab, (state) => state.reconciled, "the editor to reconcile");
       simx.send({ type: "makecode:catalog", payload: { content: CATALOG } });
       await storeUntil(tab, (state) => state.catalogText === CATALOG, "the catalog");
 
       simx.send({ type: "makecode:somethingNewer", payload: { content: "not a catalog" } });
-      simx.send({ type: "makecode:brainsAck", id: "no-such-request" });
-      const id = tab.brains.addBrain("Chaser");
+      simx.send({ type: "makecode:brainsPushReply", id: "no-such-request", payload: null });
+      const id = seedBrain(tab.brains, "Chaser");
       await eventually(
         () => simx.project.has(id),
         (held) => held,
@@ -1089,7 +1075,8 @@ describe("brains sync between the editor tab and the column frame over a brokere
       );
 
       assert.equal(tab.store.getSnapshot().catalogText, CATALOG);
-      assert.equal(tab.brains.getSnapshot().pending.size, 0);
+      await brainsUntil(tab, (state) => state.pending.size === 0, "nothing pending");
+      assert.deepEqual(simx.requestsOf("makecode:brainsList"), []);
     });
   });
 
@@ -1204,20 +1191,17 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const id = authorBrain(tab.brains, "Chaser");
       await saved(host, tab, "the brain to be saved");
       const stored = tab.brains.getSnapshot().brains.get(id);
-      assert.ok(stored?.compiled);
+      assert.ok(stored);
+      assert.equal(stored.compiledSourceHash, stored.sourceHash);
       assert.equal(host.file(`brains/${id}.src.json`), stored.source);
-      assert.deepEqual(registrations().get(id), {
-        id,
-        name: "Chaser",
-        sourceHash: stored.sourceHash,
-        bytecode: stored.compiled.bytecode,
-      });
+      assert.equal(registrations().get(id)?.name, "Chaser");
+      assert.equal(registrations().get(id)?.sourceHash, stored.sourceHash);
 
       const fresh = reopenReal(tab, column);
       const pulled = await brainsUntil(fresh, (state) => state.brains.has(id), "the fresh editor to pull the brain");
 
       assert.equal(pulled.brains.get(id)?.source, stored.source);
-      assert.deepEqual(pulled.brains.get(id)?.compiled?.bytecode, stored.compiled.bytecode);
+      assert.equal(pulled.brains.get(id)?.compiledSourceHash, stored.sourceHash);
       assert.equal(pulled.pending.size, 0);
       assert.equal(pulled.damaged.size, 0);
     });
@@ -1227,17 +1211,17 @@ describe("brains sync between the editor tab and the column frame over a brokere
       const id = authorBrain(tab.brains, "Chaser");
       await saved(host, tab, "the first version to be saved");
       const first = tab.brains.getSnapshot().brains.get(id);
-      assert.ok(first?.compiled);
+      assert.ok(first);
 
       reopenWithSecondRule(tab.brains, id);
       await saved(host, tab, "the re-edit to be saved");
 
       const second = tab.brains.getSnapshot().brains.get(id);
-      assert.ok(second?.compiled);
+      assert.ok(second);
       assert.notEqual(second.source, first.source);
+      assert.equal(second.compiledSourceHash, second.sourceHash);
       assert.equal(host.file(`brains/${id}.src.json`), second.source);
       assert.equal(registrations().get(id)?.sourceHash, second.sourceHash);
-      assert.deepEqual(registrations().get(id)?.bytecode, second.compiled.bytecode);
 
       const fresh = reopenReal(tab, column);
       const pulled = await brainsUntil(
@@ -1252,17 +1236,25 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(registrations().get(id)?.sourceHash, second.sourceHash);
     });
 
-    it("saves only the latest of two re-edits of a saved brain that reach one drain, acknowledging both", async () => {
+    it("saves only the latest of two re-edits of a saved brain that reach one drain, answering both", async () => {
       const { tab } = await pairReal();
+      const busy = authorBrain(tab.brains, "Busy");
       const id = authorBrain(tab.brains, "Chaser");
-      await saved(host, tab, "the first version to be saved");
+      await saved(host, tab, "the first versions to be saved");
       const mutationsBefore = host.mutations.length;
       host.hold();
+      tab.brains.renameBrain(busy, "Busier");
+      await eventually(
+        () => host.pending,
+        (pending) => pending > 0,
+        "a drain to wait on MakeCode"
+      );
 
       reopenWithSecondRule(tab.brains, id);
       reopenWithSecondRule(tab.brains, id);
       const latest = tab.brains.getSnapshot().brains.get(id);
-      assert.ok(latest?.compiled);
+      assert.ok(latest);
+      await delay(50);
       host.release();
       await saved(host, tab, "the latest re-edit to be saved");
 
@@ -1271,9 +1263,11 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(registrations().get(id)?.sourceHash, latest.sourceHash);
       assert.deepEqual(host.mutations.slice(mutationsBefore), [
         `write ${BRAINS_MODULE_FILE}`,
+        `write brains/${busy}.src.json`,
+        `write ${BRAINS_MODULE_FILE}`,
         `write brains/${id}.src.json`,
       ]);
-      await brainsUntil(tab, (state) => state.pending.size === 0, "both pushes to be acknowledged");
+      await brainsUntil(tab, (state) => state.pending.size === 0, "every push to be answered");
     });
 
     it("removes a saved brain whose re-edit and removal reach one drain, in both forms", async () => {
@@ -1333,7 +1327,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(host.file(`brains/${id}.src.json`), first);
     });
 
-    it("recompiles a source edited by hand in MakeCode and saves the fresh pair", async () => {
+    it("has a restarted column frame recompile a source edited by hand in MakeCode, which the editor adopts", async () => {
       const { tab, column } = await pairReal();
       const id = authorBrain(tab.brains, "Chaser");
       await saved(host, tab, "the brain to be saved");
@@ -1348,15 +1342,13 @@ describe("brains sync between the editor tab and the column frame over a brokere
       );
 
       assert.equal(host.file(`brains/${id}.src.json`), edited);
-      assert.equal(tab.brains.getSnapshot().brains.get(id)?.source, edited);
-      const program = linkedBrainProgramFromBytes(
-        stream.byteArrayFromUint8Array(registrations().get(id)?.bytecode ?? new Uint8Array()),
-        {
-          precision: MAKECODE_VM_PRECISION,
-          typeRegistry: tab.brains.getSnapshot().environment.brainServices.runtime.types,
-        }
+      const adopted = await brainsUntil(
+        tab,
+        (state) => state.brains.get(id)?.source === edited,
+        "the editor to adopt the hand edit"
       );
-      assert.equal(program.profileId, 2001);
+      assert.equal(adopted.brains.get(id)?.compiledSourceHash, brainSourceHash(edited));
+      assert.equal(adopted.pending.size, 0);
     });
 
     it("lists a source mangled in MakeCode as damaged, and a Restore saves the held copy over it", async () => {
@@ -1381,7 +1373,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(host.file(`brains/${id}.src.json`), held);
     });
 
-    it("serves the brains of an unreadable brains.g.ts without compiled forms, which a fresh editor tab recompiles and saves", async () => {
+    it("has a restarted column frame rewrite an unreadable brains.g.ts, registering every brain again", async () => {
       const { tab, column } = await pairReal();
       const first = authorBrain(tab.brains, "Chaser");
       const second = authorBrain(tab.brains, "Runner");
@@ -1399,7 +1391,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
     });
 
-    it("heals a brains.g.ts declaring its brains in a superseded namespace at a fresh editor tab, sources intact", async () => {
+    it("has a restarted column frame heal a brains.g.ts declaring its brains in a superseded namespace, sources intact", async () => {
       const { tab, column } = await pairReal();
       const ids = [authorBrain(tab.brains, "Chaser"), authorBrain(tab.brains, "Runner")];
       await saved(host, tab, "both brains to be saved");
@@ -1421,7 +1413,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assert.equal(fresh.brains.getSnapshot().damaged.size, 0);
     });
 
-    it("heals a deleted brains.g.ts at a fresh editor tab, registering every brain's recompiled form", async () => {
+    it("has a restarted column frame heal a deleted brains.g.ts for a fresh editor tab, registering every brain's recompiled form", async () => {
       const { tab, column } = await pairReal();
       const ids = [authorBrain(tab.brains, "Chaser"), authorBrain(tab.brains, "Runner")];
       await saved(host, tab, "both brains to be saved");
@@ -1433,17 +1425,14 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
       for (const id of ids) {
         const entry = fresh.brains.getSnapshot().brains.get(id);
-        assert.ok(entry?.compiled);
-        assert.deepEqual(registrations().get(id), {
-          id,
-          name: entry.name,
-          sourceHash: entry.sourceHash,
-          bytecode: entry.compiled.bytecode,
-        });
+        assert.ok(entry);
+        assert.equal(entry.compiledSourceHash, entry.sourceHash);
+        assert.equal(registrations().get(id)?.name, entry.name);
+        assert.equal(registrations().get(id)?.sourceHash, entry.sourceHash);
       }
     });
 
-    it("heals a deleted brains.g.ts at the same editor's next handshake, registering every brain's recompiled form", async () => {
+    it("has a restarted column frame heal a deleted brains.g.ts under the same editor, registering every brain's recompiled form", async () => {
       const { tab, column } = await pairReal();
       const ids = [authorBrain(tab.brains, "Chaser"), authorBrain(tab.brains, "Runner")];
       await saved(host, tab, "both brains to be saved");
@@ -1454,24 +1443,15 @@ describe("brains sync between the editor tab and the column frame over a brokere
 
       for (const id of ids) {
         const entry = tab.brains.getSnapshot().brains.get(id);
-        assert.ok(entry?.compiled);
-        assert.equal(entry.compiled.sourceHash, entry.sourceHash);
-        assert.deepEqual(registrations().get(id), {
-          id,
-          name: entry.name,
-          sourceHash: entry.sourceHash,
-          bytecode: entry.compiled.bytecode,
-        });
-        const program = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(entry.compiled.bytecode), {
-          precision: MAKECODE_VM_PRECISION,
-          typeRegistry: tab.brains.getSnapshot().environment.brainServices.runtime.types,
-        });
-        assert.equal(program.profileId, 2001);
+        assert.ok(entry);
+        assert.equal(entry.compiledSourceHash, entry.sourceHash);
+        assert.equal(registrations().get(id)?.name, entry.name);
+        assert.equal(registrations().get(id)?.sourceHash, entry.sourceHash);
       }
       await brainsUntil(tab, (state) => state.pending.size === 0, "nothing pending");
     });
 
-    it("heals a malformed and a stale registration at the next handshake, leaving another brain's files untouched", async () => {
+    it("has a restarted column frame heal a malformed and a stale registration, leaving another brain's files untouched", async () => {
       const { tab, column } = await pairReal();
       const kept = authorBrain(tab.brains, "Kept");
       const malformed = authorBrain(tab.brains, "Malformed");

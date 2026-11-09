@@ -1,13 +1,14 @@
 /**
  * The compiled programs the MakeCode VM extension and its harness carry,
- * rendered from their checked-in brain sources through the editor's own
- * compile path; each rendered file is checked in beside its sources. For
- * the registration selftest that includes the editor's id allocation for the
- * selftest's catalog, the ids module and brains module the Wendoo simulator
- * extension writes of it, and the reference VM's trace of the program placing
- * a pack tile; for the arcade selftest, the ids module and brains module of
- * its programs, compiled against the arcade base pack's catalog under the
- * editor's allocation for it.
+ * rendered from their checked-in brain sources through the authoring
+ * compile path the simulator extension compiles brains with; each rendered
+ * file is checked in beside its sources. For the registration selftest that
+ * includes the simulator extension's id allocation for the selftest's
+ * catalog, the ids module and brains module the Wendoo simulator extension
+ * writes of it, and the reference VM's trace of the program placing a pack
+ * tile; for the arcade selftest, the ids module and brains module of its
+ * programs, compiled against the arcade base pack's catalog under the
+ * simulator extension's allocation for it.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -98,7 +99,7 @@ const SELFTEST_SOURCES = [
 /** The catalog the registration selftest's packs serialize, whose registration structure the selftest pins. */
 const SELFTEST_CATALOG = "makecode/tests/vm-conformance/selftest/catalog.json";
 
-/** The editor's id allocation for the selftest's catalog, relative to the repository root. */
+/** The simulator extension's id allocation for the selftest's catalog, relative to the repository root. */
 export const SELFTEST_IDS_FILE = "makecode/tests/vm-conformance/selftest/ids.g.json";
 
 /** The ids module the selftest project carries, as the simulator extension writes it. */
@@ -435,8 +436,8 @@ function selftestCatalog(): string {
 }
 
 /**
- * The editor's allocation for the selftest's catalog: the prior allocation
- * with every name the catalog declares appended, except
+ * The simulator extension's allocation for the selftest's catalog: the
+ * prior allocation with every name the catalog declares appended, except
  * {@link UNALLOCATED_TILE}, the tiles in {@link LATER_ALLOCATED_TILES}
  * appended by a second allocation after every other name.
  */
@@ -548,7 +549,7 @@ export function arcadeCatalog(): string {
   return JSON.stringify(JSON.parse(readRepoFile(ARCADE_CATALOG)));
 }
 
-/** The editor's allocation for the arcade selftest's catalog, made in a project holding {@link ARCADE_PRIOR_IDS}. */
+/** The simulator extension's allocation for the arcade selftest's catalog, made in a project holding {@link ARCADE_PRIOR_IDS}. */
 export function arcadeIds(): MakeCodeIdManifest {
   return allocateIds(ARCADE_PRIOR_IDS, parseCatalog(arcadeCatalog()));
 }
@@ -1583,7 +1584,7 @@ export function arcadeTypeNames(): {
 /**
  * What the reference VM makes of the variables of a brain authored in the
  * environment binding the arcade selftest's catalog, its page's rules the
- * sides `rules` names, compiled through the editor's compile path and run
+ * sides `rules` names, compiled through the authoring compile path and run
  * for `thinks` thinks in that environment, where every pack sensor reads nil
  * and every pack actuator does nothing: the value each variable `read` names
  * holds after -- `undefined` for one nothing wrote whose type has no starting

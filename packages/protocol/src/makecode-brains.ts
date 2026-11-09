@@ -44,8 +44,8 @@ export const MakeCodeBrainsErrorCode = {
    */
   READ_FAILED: "MAKECODE_BRAINS_READ_FAILED",
   /**
-   * The party serving the project could not apply a push to the project.
-   * Carried by a {@link MakeCodeBrainsErrorMessage}.
+   * The party serving the project could not apply a push or a create to the
+   * project. Carried by a {@link MakeCodeBrainsErrorMessage}.
    */
   WRITE_FAILED: "MAKECODE_BRAINS_WRITE_FAILED",
   /**
@@ -72,7 +72,10 @@ export class MakeCodeBrainsError extends Error {
   }
 }
 
-/** One brain the project holds, as a {@link MakeCodeBrainsListReplyMessage} lists it. */
+/**
+ * One brain the project holds, as the party serving the project lists and
+ * publishes it.
+ */
 export interface MakeCodeBrainSummary {
   /** The brain's document id: the id its source file is addressed by in the project. */
   id: string;
@@ -81,33 +84,17 @@ export interface MakeCodeBrainSummary {
   /** {@link brainSourceHash} of the brain's source text as the project holds it now. */
   sourceHash: string;
   /**
-   * What the project's compiled form of the brain says about its source:
-   *
-   * - a string: the {@link brainSourceHash} carried by the brain's current
-   *   registration of its compiled form -- equal to {@link sourceHash}
-   *   exactly when that compiled form was compiled from the source the
-   *   project holds now;
-   * - `null`: the serving party read the project and found no current
-   *   registration of the brain (no entry for it, an entry it cannot read,
-   *   or no readable compiled-form file at all); pushing the brain with a
-   *   compiled form restores one;
-   * - absent: the serving party does not report the registration -- it
-   *   predates this field, or holds compiled forms in a format it cannot
-   *   read or rewrite. The requester draws no conclusion from its absence.
+   * The {@link brainSourceHash} of the source the brain's current
+   * registration of its compiled form was compiled from -- equal to
+   * {@link sourceHash} exactly when that compiled form was compiled from the
+   * source the project holds now -- or `null` when the project holds no
+   * registration of the brain the serving party can read.
    */
-  compiledSourceHash?: string | null;
+  compiledSourceHash: string | null;
 }
 
-/** A brain's compiled form as carried on the wire. */
-export interface MakeCodeWireCompiledBrain {
-  /** The compiled program in the binary form the MakeCode Wendoo VM loads, encoded as base64. */
-  bytecode: string;
-  /** {@link brainSourceHash} of the source text the program was compiled from. */
-  sourceHash: string;
-}
-
-/** One brain as carried on the wire: its source and, when it has one, its compiled form. */
-export interface MakeCodeWireBrain {
+/** A brain's source as the editor pushes it: its id, its name and its source text. */
+export interface MakeCodeWireBrainSource {
   /**
    * The brain's document id: the id its source file is addressed by in the
    * project. The serving party takes it from the file's address, never from
@@ -122,18 +109,65 @@ export interface MakeCodeWireBrain {
    * verbatim, whether or not it is a valid brain document.
    */
   source: string;
-  /** The brain's compiled form, absent when the brain has none. */
-  compiled?: MakeCodeWireCompiledBrain;
+}
+
+/** One brain as a pull returns it: its source and what the project registers of its compiled form. */
+export interface MakeCodeWireBrain extends MakeCodeWireBrainSource {
+  /** As {@link MakeCodeBrainSummary.compiledSourceHash}: the source hash of the brain's registration, or `null` for none. */
+  compiledSourceHash: string | null;
+}
+
+/**
+ * One diagnostic of compiling a brain source, as carried on the wire: the
+ * compiler's or linker's report, its code stable across releases.
+ */
+export interface MakeCodeWireDiagnostic {
+  /** The upstream compiler's stable numeric code of the diagnostic. */
+  code: number;
+  /** `error` stops the build from producing a program; `warning` and `info` do not. */
+  severity: "error" | "warning" | "info";
+  /** Human-readable description of the diagnostic. */
+  message: string;
+  /**
+   * Machine-readable values {@link message} interpolates, by name: each a
+   * text, a number, or a list of texts. Absent when it interpolates none.
+   */
+  params?: Record<string, string | number | string[]>;
+}
+
+/**
+ * What the party serving the project made of a pushed source: its compile,
+ * and the registration of the brain's compiled form it holds after it.
+ */
+export interface MakeCodeWireCompileOutcome {
+  /** {@link brainSourceHash} of the source compiled: the pushed source. */
+  sourceHash: string;
+  /**
+   * The registration of the brain's compiled form the project holds once
+   * the push is applied: `{ sourceHash }` naming the source it was compiled
+   * from -- {@link sourceHash} when this compile produced a program with
+   * every tile resolved, an earlier source's hash when it did not and an
+   * earlier compile did -- or `null` when no compile of the brain has.
+   */
+  compiled: { sourceHash: string } | null;
+  /** The compile's diagnostics, in the order they were reported. */
+  diagnostics: MakeCodeWireDiagnostic[];
+  /**
+   * Ids of the tiles the source places that the serving party's environment
+   * holds no tile for, each once, in the order first placed; empty when
+   * every tile resolved.
+   */
+  unresolvedTiles: string[];
 }
 
 /**
  * One change to the project's brains, as carried on the wire: `write`
- * stores `brain` under its id, replacing both forms of any brain held under
- * it, and removing a compiled form `brain` does not carry; `remove` removes
- * the brain `brainId` in both forms, and is applied whether or not the
+ * stores `brain`'s source under its id, replacing the source held under it,
+ * and the serving party compiles it; `remove` removes the brain `brainId`,
+ * its source and its compiled form, and is applied whether or not the
  * project holds it.
  */
-export type MakeCodeWireBrainPush = { op: "write"; brain: MakeCodeWireBrain } | { op: "remove"; brainId: string };
+export type MakeCodeWireBrainPush = { op: "write"; brain: MakeCodeWireBrainSource } | { op: "remove"; brainId: string };
 
 /**
  * Asks the party serving the project for the brains the project holds. The
@@ -198,7 +232,7 @@ export interface MakeCodeBrainsPullReplyMessage {
 /**
  * Asks the party serving the project to apply one change to the project's
  * brains. The reply, carrying the same `id`, is a
- * {@link MakeCodeBrainsAckMessage} once the change is applied, or a
+ * {@link MakeCodeBrainsPushReplyMessage} once the change is applied, or a
  * {@link MakeCodeBrainsErrorMessage} carrying
  * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
  */
@@ -209,15 +243,53 @@ export interface MakeCodeBrainsPushMessage {
   payload: MakeCodeWireBrainPush;
 }
 
-/** Confirms that the {@link MakeCodeBrainsPushMessage} carrying the same `id` was applied. */
-export interface MakeCodeBrainsAckMessage {
-  type: "makecode:brainsAck";
+/**
+ * Answers the {@link MakeCodeBrainsPushMessage} carrying the same `id` once
+ * its change is applied: a write's {@link MakeCodeWireCompileOutcome}, or
+ * `null` for a removal.
+ */
+export interface MakeCodeBrainsPushReplyMessage {
+  type: "makecode:brainsPushReply";
   id: string;
+  payload: MakeCodeWireCompileOutcome | null;
+}
+
+/** Payload of a {@link MakeCodeBrainsCreateMessage}. */
+export interface MakeCodeBrainsCreatePayload {
+  /** Display name of the brain to create; any text, including empty or one another brain carries. */
+  name: string;
+}
+
+/**
+ * Asks the party serving the project to create an empty brain named
+ * `name` under a document id it mints. The reply, carrying the same `id`, is
+ * a {@link MakeCodeBrainsCreateReplyMessage} once the brain's source is in
+ * the project, or a {@link MakeCodeBrainsErrorMessage} carrying
+ * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
+ */
+export interface MakeCodeBrainsCreateMessage {
+  type: "makecode:brainsCreate";
+  /** Correlates the request with its reply; unique among the sender's requests on its connection. */
+  id: string;
+  payload: MakeCodeBrainsCreatePayload;
+}
+
+/** Payload of a {@link MakeCodeBrainsCreateReplyMessage}. */
+export interface MakeCodeBrainsCreateReplyPayload {
+  /** The brain created, as the project holds it now. */
+  brain: MakeCodeBrainSummary;
+}
+
+/** Answers a {@link MakeCodeBrainsCreateMessage}, carrying its `id`. */
+export interface MakeCodeBrainsCreateReplyMessage {
+  type: "makecode:brainsCreateReply";
+  id: string;
+  payload: MakeCodeBrainsCreateReplyPayload;
 }
 
 /** Payload of a {@link MakeCodeBrainsErrorMessage}. */
 export interface MakeCodeBrainsErrorPayload {
-  /** Stable code of the failure: `READ_FAILED` for a list or a pull, `WRITE_FAILED` for a push. */
+  /** Stable code of the failure: `READ_FAILED` for a list or a pull, `WRITE_FAILED` for a push or a create. */
   code: typeof MakeCodeBrainsErrorCode.READ_FAILED | typeof MakeCodeBrainsErrorCode.WRITE_FAILED;
   /** Human-readable description of the failure. */
   message: string;
@@ -230,45 +302,35 @@ export interface MakeCodeBrainsErrorMessage {
   payload: MakeCodeBrainsErrorPayload;
 }
 
+/** Payload of a {@link MakeCodeBrainsMessage}. */
+export interface MakeCodeBrainsPayload {
+  /** Every brain the project holds, one entry per id, in no particular order. */
+  brains: MakeCodeBrainSummary[];
+}
+
+/**
+ * The project's brains, published whole by the party serving the project.
+ * A later publication replaces an earlier one.
+ */
+export interface MakeCodeBrainsMessage {
+  type: "makecode:brains";
+  payload: MakeCodeBrainsPayload;
+}
+
 /** The brains requests: sent by the editor to the party serving the project. */
 export type MakeCodeBrainsRequestMessage =
   | MakeCodeBrainsListMessage
   | MakeCodeBrainsPullMessage
-  | MakeCodeBrainsPushMessage;
+  | MakeCodeBrainsPushMessage
+  | MakeCodeBrainsCreateMessage;
 
 /** The brains replies: sent by the party serving the project, each carrying its request's `id`. */
 export type MakeCodeBrainsReplyMessage =
   | MakeCodeBrainsListReplyMessage
   | MakeCodeBrainsPullReplyMessage
-  | MakeCodeBrainsAckMessage
+  | MakeCodeBrainsPushReplyMessage
+  | MakeCodeBrainsCreateReplyMessage
   | MakeCodeBrainsErrorMessage;
-
-/** A brain's compiled form, with its program as bytes. */
-export interface MakeCodeCompiledBrain {
-  /** The compiled program in the binary form the MakeCode Wendoo VM loads. */
-  bytecode: Uint8Array;
-  /** {@link brainSourceHash} of the source text the program was compiled from. */
-  sourceHash: string;
-}
-
-/** One brain, as a brains request returns or pushes it: its source and, when it has one, its compiled form. */
-export interface MakeCodeBrain {
-  /** The brain's document id: the id its source file is addressed by in the project. */
-  id: string;
-  /** The brain's display name; any text, including empty. */
-  name: string;
-  /** The brain's source text, verbatim, whether or not it is a valid brain document. */
-  source: string;
-  /** The brain's compiled form, its program as bytes; absent when the brain has none. */
-  compiled?: MakeCodeCompiledBrain;
-}
-
-/**
- * One change to the project's brains: `write` stores `brain` under its id,
- * replacing both forms of any brain held under it; `remove` removes the
- * brain `brainId` in both forms, whether or not the project holds it.
- */
-export type MakeCodeBrainPush = { op: "write"; brain: MakeCodeBrain } | { op: "remove"; brainId: string };
 
 /**
  * A list request from the peer, delivered to the party serving the project.
@@ -305,9 +367,9 @@ export interface MakeCodeBrainsPullRequest {
    * Answer with the requested brains the project holds, in request order,
    * leaving out each id it does not hold.
    *
-   * @param brains - The brains, each compiled program as bytes.
+   * @param brains - The brains.
    */
-  reply(brains: readonly MakeCodeBrain[]): void;
+  reply(brains: readonly MakeCodeWireBrain[]): void;
   /**
    * Answer that the project's brains could not be read, with
    * `MakeCodeBrainsErrorCode.READ_FAILED`.
@@ -319,15 +381,19 @@ export interface MakeCodeBrainsPullRequest {
 
 /**
  * A push request from the peer, delivered to the party serving the project.
- * Answer it once, with {@link ack} or {@link fail}; later answers are not
+ * Answer it once, with {@link reply} or {@link fail}; later answers are not
  * sent.
  */
 export interface MakeCodeBrainsPushRequest {
   readonly kind: "push";
-  /** The change to apply, each compiled program as bytes. */
-  readonly push: MakeCodeBrainPush;
-  /** Answer that the change is applied to the project. */
-  ack(): void;
+  /** The change to apply. */
+  readonly push: MakeCodeWireBrainPush;
+  /**
+   * Answer that the change is applied to the project.
+   *
+   * @param outcome - A write's compile outcome; `null` for a removal.
+   */
+  reply(outcome: MakeCodeWireCompileOutcome | null): void;
   /**
    * Answer that the change could not be applied, with
    * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
@@ -337,5 +403,33 @@ export interface MakeCodeBrainsPushRequest {
   fail(message: string): void;
 }
 
+/**
+ * A create request from the peer, delivered to the party serving the
+ * project. Answer it once, with {@link reply} or {@link fail}; later answers
+ * are not sent.
+ */
+export interface MakeCodeBrainsCreateRequest {
+  readonly kind: "create";
+  /** Display name of the brain to create; any text, including empty. */
+  readonly name: string;
+  /**
+   * Answer that the brain is created, its source in the project.
+   *
+   * @param brain - The brain created, as the project holds it now.
+   */
+  reply(brain: MakeCodeBrainSummary): void;
+  /**
+   * Answer that the brain could not be created, with
+   * `MakeCodeBrainsErrorCode.WRITE_FAILED`.
+   *
+   * @param message - Human-readable description of the failure.
+   */
+  fail(message: string): void;
+}
+
 /** A brains request from the peer, as the party serving the project receives it. */
-export type MakeCodeBrainsRequest = MakeCodeBrainsListRequest | MakeCodeBrainsPullRequest | MakeCodeBrainsPushRequest;
+export type MakeCodeBrainsRequest =
+  | MakeCodeBrainsListRequest
+  | MakeCodeBrainsPullRequest
+  | MakeCodeBrainsPushRequest
+  | MakeCodeBrainsCreateRequest;

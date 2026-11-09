@@ -1,4 +1,5 @@
 import type { MakeCodeAsset } from "./makecode-assets.js";
+import type { MakeCodeBrainSummary } from "./makecode-brains.js";
 import { CounterpartSession } from "./makecode-counterpart.js";
 import type {
   MakeCodeBrainsChannel,
@@ -62,8 +63,9 @@ export interface MakeCodePortEditorSessionOptions {
  *   {@link MakeCodeEditorSession.stop}.
  *
  * Every port attached opens a fresh handshake, replacing the previous
- * port's: the catalogs, id manifests, asset snapshots, project facts and
- * brains channel delivered come from the current handshake only.
+ * port's: the catalogs, id manifests, asset snapshots, project facts,
+ * brains publications and brains channel delivered come from the current
+ * handshake only.
  * While a handshake is established the session pings the counterpart, one
  * ping outstanding at a time, two after a miss: the first a heartbeat
  * interval after the handshake completes, each next one an interval after
@@ -143,6 +145,7 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
+  private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
   /** The port attached while no handshake has opened over it yet. */
   private _port: MakeCodeSessionPort | undefined;
@@ -214,6 +217,13 @@ class PortEditorSession implements MakeCodePortEditorSession {
     };
   }
 
+  onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void {
+    this._brainsListeners.add(listener);
+    return () => {
+      this._brainsListeners.delete(listener);
+    };
+  }
+
   onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
     this._brainsChannelListeners.add(listener);
     return () => {
@@ -267,6 +277,9 @@ class PortEditorSession implements MakeCodePortEditorSession {
       },
       projectInfo: (info) => {
         for (const listener of this._projectInfoListeners) listener(info);
+      },
+      brains: (brains) => {
+        for (const listener of this._brainsListeners) listener(brains);
       },
       rejected: (code) => {
         this._errorCode = code;

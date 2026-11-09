@@ -3,6 +3,7 @@ import type { BrainDef, IBrainDef, IBrainRuleDef, WendooEnvironment } from "@wen
 import { encodePersistedBrainJson } from "@wendoo/core/app";
 import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
 import { linkedBrainProgramToBytes } from "@wendoo/core/runtime";
+import type { MakeCodeWireDiagnostic } from "@wendoo/makecode-session";
 import { MAKECODE_VM_PROFILE_ID } from "@wendoo/makecode-session";
 import { MAKECODE_VM_PRECISION } from "./authoring-environment";
 
@@ -42,6 +43,21 @@ export function readBrainSource(environment: WendooEnvironment, source: string):
   return environment.deserializeBrainJsonFromPlain(JSON.parse(source), BRAIN_SOURCE_NAMESPACE) as BrainDef;
 }
 
+/** What checking one brain source found: its compile's diagnostics and unresolved tiles, and whether it links. */
+export interface BrainSourceCheck {
+  /** The compiler's and linker's diagnostics, in the order they were reported. */
+  readonly diagnostics: readonly BrainBuildDiagnostic[];
+  /** Whether the build produced a program: no error-severity diagnostic stopped it. */
+  readonly linked: boolean;
+  /**
+   * Ids of the tiles the source places that the environment it was checked
+   * in holds no tile for, each read as a missing-tile placeholder: each id
+   * once, in the order first placed, page by page and rule by rule. Empty
+   * when every tile resolved.
+   */
+  readonly unresolvedTiles: readonly string[];
+}
+
 /** What compiling one brain source produced. */
 export interface BrainSourceCompile {
   /** The compiler's and linker's diagnostics, in the order they were reported. */
@@ -77,6 +93,40 @@ function missingTileIds(definition: IBrainDef): string[] {
   return [...found];
 }
 
+/** The diagnostics, linked program and unresolved tiles of one compile and link of a brain source. */
+interface LinkedBrainSource {
+  readonly diagnostics: readonly BrainBuildDiagnostic[];
+  /** The linked program, or `undefined` when an error-severity diagnostic stopped the build. */
+  readonly program: ReturnType<WendooEnvironment["linkBrain"]>["program"];
+  readonly unresolvedTiles: readonly string[];
+}
+
+/**
+ * Reads the brain `source` holds in `environment`, then compiles and links
+ * it, reporting the tiles it places that `environment` holds no tile for.
+ * Throws when `source` is not a brain document.
+ */
+function linkBrainSource(environment: WendooEnvironment, source: string): LinkedBrainSource {
+  const definition = readBrainSource(environment, source);
+  const unresolvedTiles = missingTileIds(definition);
+  const result = environment.linkBrain(definition);
+  return { diagnostics: result.diagnostics.toArray(), program: result.program, unresolvedTiles };
+}
+
+/**
+ * Compiles and links the brain `source` holds in `environment`, reporting
+ * its diagnostics, whether it linked, and the tiles the source places that
+ * `environment` holds no tile for; encodes no program. Throws when `source`
+ * is not a brain document.
+ *
+ * @param environment - The environment to check in.
+ * @param source - Source text, as {@link serializeBrainSource} produces it.
+ */
+export function checkBrainSource(environment: WendooEnvironment, source: string): BrainSourceCheck {
+  const { diagnostics, program, unresolvedTiles } = linkBrainSource(environment, source);
+  return { diagnostics, linked: program !== undefined, unresolvedTiles };
+}
+
 /**
  * Compiles and links the brain `source` holds in `environment`, and encodes
  * the linked program for the MakeCode Wendoo VM: profile
@@ -89,17 +139,38 @@ function missingTileIds(definition: IBrainDef): string[] {
  * @param source - Source text, as {@link serializeBrainSource} produces it.
  */
 export function compileBrainSource(environment: WendooEnvironment, source: string): BrainSourceCompile {
-  const definition = readBrainSource(environment, source);
-  const unresolvedTiles = missingTileIds(definition);
-  const result = environment.linkBrain(definition);
-  const diagnostics = result.diagnostics.toArray();
-  if (result.program === undefined) {
+  const { diagnostics, program, unresolvedTiles } = linkBrainSource(environment, source);
+  if (program === undefined) {
     return { diagnostics, bytecode: undefined, unresolvedTiles };
   }
-  const bytes = linkedBrainProgramToBytes(result.program, {
+  const bytes = linkedBrainProgramToBytes(program, {
     profileId: MAKECODE_VM_PROFILE_ID,
     precision: MAKECODE_VM_PRECISION,
     typeRegistry: environment.brainServices.runtime.types,
   });
   return { diagnostics, bytecode: stream.byteArrayToUint8Array(bytes) as Uint8Array, unresolvedTiles };
+}
+
+/**
+ * `diagnostics` in their wire form: each one's code, severity and message,
+ * and the params its message interpolates -- each a text, a number, or a
+ * list of texts -- when it carries any.
+ *
+ * @param diagnostics - A compile's diagnostics, in reported order.
+ */
+export function wireDiagnostics(diagnostics: readonly BrainBuildDiagnostic[]): MakeCodeWireDiagnostic[] {
+  return diagnostics.map(({ code, severity, message, params }) => {
+    const wire: MakeCodeWireDiagnostic = { code, severity, message };
+    if (params !== undefined) {
+      const values: Record<string, string | number | string[]> = {};
+      for (const [name, value] of Object.entries(params) as [string, unknown][]) {
+        if (typeof value === "string" || typeof value === "number") values[name] = value;
+        else if (typeof value === "object" && value !== null && "toArray" in value) {
+          values[name] = (value as { toArray(): string[] }).toArray();
+        }
+      }
+      wire.params = values;
+    }
+    return wire;
+  });
 }

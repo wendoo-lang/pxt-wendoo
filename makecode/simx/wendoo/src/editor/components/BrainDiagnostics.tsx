@@ -1,21 +1,21 @@
-import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
+import type { MakeCodeWireDiagnostic } from "@wendoo/makecode-session";
 import { ChevronDown, ChevronRight, CircleAlert } from "lucide-react";
 import type { BrainEntry } from "@/services/brains-store";
 
 /**
  * How a brain's compiled form stands against its source:
  *
- * - `current` -- the brain's bytecode was compiled from its source;
+ * - `current` -- the brain's registration was compiled from its source;
  * - `stale` -- the latest compile failed or left tiles unresolved, and the
- *   brain keeps an earlier source's bytecode;
- * - `none` -- the brain holds no bytecode.
+ *   brain keeps an earlier source's registration;
+ * - `none` -- the brain has no registration.
  */
 export type BrainCompileState = "current" | "stale" | "none";
 
 /** The {@link BrainCompileState} of `entry`. */
 export function brainCompileState(entry: BrainEntry): BrainCompileState {
-  if (entry.compiled === undefined) return "none";
-  return entry.compiled.sourceHash === entry.sourceHash ? "current" : "stale";
+  if (entry.compiledSourceHash === null) return "none";
+  return entry.compiledSourceHash === entry.sourceHash ? "current" : "stale";
 }
 
 /**
@@ -26,7 +26,7 @@ export function brainCompileState(entry: BrainEntry): BrainCompileState {
  * @param entry - The brain the row shows.
  * @param catalogPending - The brains store's `catalogPending`: no catalog delivered yet.
  */
-export function listedDiagnostics(entry: BrainEntry, catalogPending: boolean): readonly BrainBuildDiagnostic[] {
+export function listedDiagnostics(entry: BrainEntry, catalogPending: boolean): readonly MakeCodeWireDiagnostic[] {
   if (catalogPending && entry.unresolvedTiles.length > 0) return [];
   return entry.diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
 }
@@ -86,7 +86,7 @@ export function BrainErrorBadge({ count, compileState, expanded, onToggle, brain
 
 interface BrainDiagnosticsListProps {
   /** The diagnostics to list, one row each, in order. */
-  diagnostics: readonly BrainBuildDiagnostic[];
+  diagnostics: readonly MakeCodeWireDiagnostic[];
 }
 
 /**

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { BrainBuildDiagnostic } from "@wendoo/core/brain";
 import { ParseDiagCode, TypeDiagCode } from "@wendoo/core/brain/compiler";
+import type { MakeCodeWireDiagnostic } from "@wendoo/makecode-session";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BrainEntry } from "../services/brains-store.js";
@@ -14,9 +14,9 @@ import {
   toggledBrainId,
 } from "./BrainDiagnostics.js";
 
-const ERROR: BrainBuildDiagnostic = { code: ParseDiagCode.ExpectedSensorOrActuator, severity: "error", message: "e" };
-const WARNING: BrainBuildDiagnostic = { code: TypeDiagCode.TileNotFound, severity: "warning", message: "w" };
-const INFO: BrainBuildDiagnostic = { code: TypeDiagCode.DataTypeConverted, severity: "info", message: "i" };
+const ERROR: MakeCodeWireDiagnostic = { code: ParseDiagCode.ExpectedSensorOrActuator, severity: "error", message: "e" };
+const WARNING: MakeCodeWireDiagnostic = { code: TypeDiagCode.TileNotFound, severity: "warning", message: "w" };
+const INFO: MakeCodeWireDiagnostic = { code: TypeDiagCode.DataTypeConverted, severity: "info", message: "i" };
 
 /** An entry for source hash `sourceHash` with `fields` layered over it. */
 function entryWith(fields: Partial<BrainEntry>): BrainEntry {
@@ -26,23 +26,23 @@ function entryWith(fields: Partial<BrainEntry>): BrainEntry {
     sourceHash: "aaaaaaaa",
     diagnostics: [],
     unresolvedTiles: [],
-    compiled: undefined,
+    compiledSourceHash: null,
     ...fields,
   };
 }
 
 describe("brainCompileState", () => {
-  it("is current when the latest compile produced bytecode for the entry's source", () => {
-    const entry = entryWith({ compiled: { bytecode: new Uint8Array(), sourceHash: "aaaaaaaa" } });
+  it("is current when the brain's registration was compiled from the entry's source", () => {
+    const entry = entryWith({ compiledSourceHash: "aaaaaaaa" });
     assert.equal(brainCompileState(entry), "current");
   });
 
-  it("is stale when the last good compile was of an earlier source", () => {
-    const entry = entryWith({ compiled: { bytecode: new Uint8Array(), sourceHash: "bbbbbbbb" } });
+  it("is stale when the brain's registration was compiled from an earlier source", () => {
+    const entry = entryWith({ compiledSourceHash: "bbbbbbbb" });
     assert.equal(brainCompileState(entry), "stale");
   });
 
-  it("is none when no compile has produced bytecode", () => {
+  it("is none when the brain has no registration", () => {
     assert.equal(brainCompileState(entryWith({})), "none");
   });
 });

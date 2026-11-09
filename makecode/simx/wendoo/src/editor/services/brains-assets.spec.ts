@@ -3,15 +3,15 @@ import { describe, it } from "node:test";
 import { mkLiteralTileId } from "@wendoo/core/app";
 import type {
   MakeCodeAsset,
-  MakeCodeBrain,
-  MakeCodeBrainPush,
   MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeManifestReading,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+  MakeCodeWireCompileOutcome,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
 import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
-import { compileBrainSource } from "../../authoring/brain-source.js";
 import {
   ASSET_CATALOG,
   assetCatalogIds,
@@ -51,30 +51,41 @@ class FakeSessionSource {
   }
 }
 
-/** One handshake's brains channel over a project holding `brains`, answering at once and recording pushes. */
+/**
+ * One handshake's brains channel over a project holding `brains`, answering
+ * at once: recording pushes and answering each with no compile outcome, and
+ * creating nothing.
+ */
 class ProjectChannel implements MakeCodeBrainsChannel {
-  readonly pushes: MakeCodeBrainPush[] = [];
+  readonly pushes: MakeCodeWireBrainPush[] = [];
 
-  constructor(private readonly brains: Map<string, MakeCodeBrain>) {}
+  constructor(private readonly brains: Map<string, MakeCodeWireBrain>) {}
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
-    return Promise.resolve(
-      [...this.brains.values()].map((brain) => ({
-        id: brain.id,
-        name: brain.name,
-        sourceHash: brainSourceHash(brain.source),
-        compiledSourceHash: brain.compiled?.sourceHash ?? null,
-      }))
-    );
+    return Promise.resolve(this.summaries());
   }
 
-  pullBrains(ids: readonly string[]): Promise<MakeCodeBrain[]> {
+  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
     return Promise.resolve(ids.flatMap((id) => this.brains.get(id) ?? []));
   }
 
-  pushBrain(push: MakeCodeBrainPush): Promise<void> {
+  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
     this.pushes.push(push);
-    return Promise.resolve();
+    return Promise.resolve(null);
+  }
+
+  createBrain(): Promise<MakeCodeBrainSummary> {
+    return Promise.reject(new Error("no brain is created over this channel"));
+  }
+
+  /** The project's brains, as its brains publication carries them. */
+  summaries(): MakeCodeBrainSummary[] {
+    return [...this.brains.values()].map((brain) => ({
+      id: brain.id,
+      name: brain.name,
+      sourceHash: brainSourceHash(brain.source),
+      compiledSourceHash: brain.compiledSourceHash,
+    }));
   }
 }
 
@@ -84,25 +95,18 @@ function settle(): Promise<void> {
 }
 
 /**
- * The project's brain placing the picture `img1` on both sides, with the
- * compiled form an editor holding the asset made of it, in an environment
- * binding the catalog under the allocation a project holding no manifest gets.
+ * The project's brain placing the picture `img1` on both sides, authored in
+ * an environment binding the catalog under the allocation a project holding
+ * no manifest gets, its registration compiled from its source.
  */
-function projectBrain(): MakeCodeBrain {
+function projectBrain(): MakeCodeWireBrain {
   const built = buildAuthoringEnvironment(ASSET_CATALOG, assetCatalogIds());
   built.assetLiterals.applySnapshot([picture("img1", "hero")]);
   const source = pictureBrainSource(built.environment, pictureTileId("img1")).replace(
     /"id": "[^"]+"/,
     `"id": "${BRAIN_ID}"`
   );
-  const compiled = compileBrainSource(built.environment, source);
-  assert.ok(compiled.bytecode);
-  return {
-    id: BRAIN_ID,
-    name: "Gallery",
-    source,
-    compiled: { bytecode: compiled.bytecode, sourceHash: brainSourceHash(source) },
-  };
+  return { id: BRAIN_ID, name: "Gallery", source, compiledSourceHash: brainSourceHash(source) };
 }
 
 /**
@@ -117,6 +121,7 @@ async function reconciledStore(assets: readonly MakeCodeAsset[] | undefined) {
   const channel = new ProjectChannel(new Map([[BRAIN_ID, brain]]));
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
   let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
+  let published: ((brains: MakeCodeBrainSummary[]) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
@@ -126,27 +131,34 @@ async function reconciledStore(assets: readonly MakeCodeAsset[] | undefined) {
       manifest = listener;
       return () => {};
     },
+    onBrains: (listener) => {
+      published = listener;
+      return () => {};
+    },
   });
   assert.ok(handshake);
   assert.ok(manifest);
+  assert.ok(published);
   const publish = manifest;
   const publishManifest = (): void => {
     publish({ manifest: assetCatalogIds() });
   };
   handshake(channel);
   publishManifest();
+  published(channel.summaries());
   await settle();
   assert.ok(store.getSnapshot().reconciled);
   return { session, store, channel, brain, publishManifest };
 }
 
 describe("brains store asset literals", () => {
-  it("compiles a pulled brain before any snapshot to the bytes it was pushed with, pushing nothing", async () => {
+  it("compiles a pulled brain clean before any snapshot, pushing nothing", async () => {
     const { store, channel, brain } = await reconciledStore(undefined);
 
     const entry = store.getSnapshot().brains.get(BRAIN_ID);
     assert.deepEqual(entry?.diagnostics, []);
-    assert.deepEqual(entry?.compiled?.bytecode, brain.compiled?.bytecode);
+    assert.deepEqual(entry?.unresolvedTiles, []);
+    assert.equal(entry?.compiledSourceHash, brain.compiledSourceHash);
     assert.deepEqual(channel.pushes, []);
     assert.deepEqual(store.getSnapshot().unresolvedAssets, new Map());
   });
@@ -189,8 +201,8 @@ describe("brains store asset literals", () => {
     assert.deepEqual(channel.pushes, []);
   });
 
-  it("flags a brain whose asset was deleted, keeping its bytes and pushing nothing", async () => {
-    const { session, store, channel, brain } = await reconciledStore([picture("img1", "hero")]);
+  it("flags a brain whose asset was deleted, keeping its entry and pushing nothing", async () => {
+    const { session, store, channel } = await reconciledStore([picture("img1", "hero")]);
     const before = store.getSnapshot();
 
     session.deliverAssets([picture("img2", "other")]);
@@ -198,7 +210,7 @@ describe("brains store asset literals", () => {
 
     const after = store.getSnapshot();
     assert.equal(after.environment, before.environment);
-    assert.deepEqual(after.brains.get(BRAIN_ID)?.compiled?.bytecode, brain.compiled?.bytecode);
+    assert.equal(after.brains.get(BRAIN_ID), before.brains.get(BRAIN_ID));
     assert.deepEqual(
       after.unresolvedAssets.get(BRAIN_ID)?.map((literal) => literal.id),
       ["img1"]
@@ -252,7 +264,7 @@ describe("brains store asset literals", () => {
   });
 
   it("binds the literals every held brain references in an environment rebuilt for a new catalog", async () => {
-    const { session, store, brain, publishManifest } = await reconciledStore(undefined);
+    const { session, store, publishManifest } = await reconciledStore(undefined);
 
     session.state = { ...session.state, catalogText: `${ASSET_CATALOG} ` };
     session.deliverAssets(undefined);
@@ -261,6 +273,6 @@ describe("brains store asset literals", () => {
 
     const entry = store.getSnapshot().brains.get(BRAIN_ID);
     assert.deepEqual(entry?.diagnostics, []);
-    assert.deepEqual(entry?.compiled?.bytecode, brain.compiled?.bytecode);
+    assert.deepEqual(entry?.unresolvedTiles, []);
   });
 });

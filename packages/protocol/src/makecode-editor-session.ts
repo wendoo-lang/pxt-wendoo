@@ -1,5 +1,6 @@
 import type { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
+import type { MakeCodeBrainSummary } from "./makecode-brains.js";
 import type { MakeCodeManifestReading } from "./makecode-manifest.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSession } from "./makecode-session.js";
@@ -49,7 +50,7 @@ export interface MakeCodeEditorSessionState {
  * travels on that handshake and rejects with `CLOSED` once the handshake
  * ends.
  */
-export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain">;
+export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain" | "createBrain">;
 
 /**
  * The editor's makecode session with the MakeCode project: one object for
@@ -85,6 +86,11 @@ export interface MakeCodeEditorSession {
    * delivered whole. Returns an unsubscribe function.
    */
   onProjectInfo(listener: (info: MakeCodeProjectInfo) => void): () => void;
+  /**
+   * Subscribe to the project's brains the counterpart publishes, each
+   * publication delivered whole. Returns an unsubscribe function.
+   */
+  onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void;
   /**
    * Subscribe to the brains channel of each makecode handshake with the
    * counterpart, delivered once the handshake completes. A channel is good

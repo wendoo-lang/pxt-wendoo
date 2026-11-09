@@ -1,4 +1,5 @@
 import { logger } from "@wendoo/core/app";
+import { MakeCodeBrainsError } from "@wendoo/makecode-session";
 import {
   Button,
   DropdownMenu,
@@ -172,6 +173,19 @@ export function answerOpenRequest(view: OpenRequestView, brainId: string): void 
 }
 
 /**
+ * Opens the brain editor on the brain `brainId` a create made, on the brain
+ * list whose state `view` reads and sets: puts the keyboard on the brain's
+ * Edit button, then opens the editor on it. Returns whether it did; a brain
+ * the store does not hold yet changes nothing.
+ */
+export function answerCreatedBrain(view: OpenRequestView, brainId: string): boolean {
+  if (!view.brains.has(brainId)) return false;
+  view.focusEditButton(brainId);
+  view.setEditingBrainId(brainId);
+  return true;
+}
+
+/**
  * Answers `request` on the brain list whose state `view` reads and sets, by
  * its kind, first dropping any open request held: a create request with
  * {@link answerCreateRequest}; an open request with {@link answerOpenRequest}
@@ -197,7 +211,8 @@ export function answerEditorRequest(view: OpenRequestView, request: EditorReques
  * document id and showing its name, with an edit affordance, a diagnostics
  * badge that expands the brain's coded diagnostics, and an actions menu to
  * rename or remove it; an empty state while there are none; and an add
- * action that names a new brain and opens the brain editor on it. Each row
+ * action that names a new brain and, once the store holds it, opens the brain
+ * editor on it. Each row
  * carries its brain's document id as `data-brain-id` and its name as
  * `data-brain-name`.
  *
@@ -226,10 +241,10 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   // Each listed brain's Edit button, so the add flow can put the keyboard on the
   // new brain's row before opening the editor over it.
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
-  // The brain the add dialog just created, read once the dialog has closed.
-  const brainToOpenAfterNaming = useRef<string | null>(null);
   // The brain an open request named before the store reconciled, opened once it has.
   const heldOpenBrainId = useRef<string | null>(null);
+  // The brain a create resolved with, opened once a render holds its row.
+  const [createdBrainId, setCreatedBrainId] = useState<string | null>(null);
   const headingId = useId();
   const requests = useEditorRequests();
 
@@ -261,24 +276,21 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
     answerOpenRequest(requestView(), brainId);
   }, [reconciled, requestView]);
 
+  useEffect(() => {
+    if (createdBrainId === null || !brains.has(createdBrainId)) return;
+    if (answerCreatedBrain(requestView(), createdBrainId)) setCreatedBrainId(null);
+  }, [createdBrainId, brains, requestView]);
+
   /**
-   * Opens the editor on the brain the add dialog just named, having first put the
-   * keyboard on that brain's Edit button so closing the editor lands there. Does
-   * nothing when the dialog closed without creating a brain, leaving its own
-   * focus restoration to stand.
+   * Asks the store to create a brain named `name`, and once the store holds
+   * it and its row is drawn opens the editor on it with
+   * {@link answerCreatedBrain}. A creation that fails is logged by its code
+   * and opens nothing.
    */
-  function openNamedBrain(event: Event) {
-    const brainId = brainToOpenAfterNaming.current;
-    brainToOpenAfterNaming.current = null;
-    if (brainId === null) {
-      return;
-    }
-    const editButton = editButtons.current.get(brainId);
-    if (editButton) {
-      event.preventDefault();
-      editButton.focus();
-    }
-    setEditingBrainId(brainId);
+  function addNamedBrain(name: string) {
+    store.addBrain(name).then(setCreatedBrainId, (error: unknown) => {
+      if (error instanceof MakeCodeBrainsError) logger.warn(error.code, { name });
+    });
   }
 
   return (
@@ -428,15 +440,7 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
       )}
 
       {dialog?.kind === "add" && (
-        <NameInputDialog
-          title="Add brain"
-          submitLabel="Add"
-          onSubmit={(name) => {
-            brainToOpenAfterNaming.current = store.addBrain(name);
-          }}
-          onClose={() => setDialog(null)}
-          onCloseAutoFocus={openNamedBrain}
-        />
+        <NameInputDialog title="Add brain" submitLabel="Add" onSubmit={addNamedBrain} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === "rename" && (
         <NameInputDialog

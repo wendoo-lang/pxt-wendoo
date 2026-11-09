@@ -1,5 +1,6 @@
 import type {
   MakeCodeAsset,
+  MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionErrorCode,
@@ -105,6 +106,15 @@ export class EditorSessionStore {
    */
   onManifest = (listener: (reading: MakeCodeManifestReading) => void): (() => void) => {
     return this._session.onManifest(listener);
+  };
+
+  /**
+   * Subscribe to the project's brains the MakeCode side publishes, each
+   * publication delivered whole as it arrives. Returns an unsubscribe
+   * function.
+   */
+  onBrains = (listener: (brains: MakeCodeBrainSummary[]) => void): (() => void) => {
+    return this._session.onBrains(listener);
   };
 
   /** Starts the session. */

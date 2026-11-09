@@ -1,25 +1,26 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { stream } from "@wendoo/core";
 import type { BrainDef, IBrainTileDef, WendooEnvironment } from "@wendoo/core/app";
 import { CoreHostActions, LogLevel, logger, mkActuatorTileId, mkLiteralTileId, mkSensorTileId } from "@wendoo/core/app";
 import { ParseDiagCode } from "@wendoo/core/brain/compiler";
 import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
-import { linkedBrainProgramFromBytes } from "@wendoo/core/runtime";
 import type {
   MakeCodeAsset,
+  MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
   MakeCodeManifestReading,
+  MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
 import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
-import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
+import { CATALOG_PACK_UNBOUND } from "../../authoring/authoring-environment.js";
 import { serializeBrainSource } from "../../authoring/brain-source.js";
 import { CATALOG_UNREADABLE, parseCatalog } from "../../authoring/catalog.js";
 import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import { ASSET_CATALOG, assetCatalogIds, PICTURE_TYPE, picture } from "../test-support/asset-catalog.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 import { EditorSessionStore } from "./editor-session-store.js";
@@ -53,6 +54,8 @@ class FakeManifestSync {
   private readonly _listeners = new Set<(reading: MakeCodeManifestReading) => void>();
 
   onBrainsChannel = (): (() => void) => () => {};
+
+  onBrains = (): (() => void) => () => {};
 
   onManifest = (listener: (reading: MakeCodeManifestReading) => void): (() => void) => {
     this._listeners.add(listener);
@@ -123,10 +126,10 @@ describe("brains store", () => {
   });
 
   describe("keying", () => {
-    it("adds a brain keyed by the id the upstream document machinery minted", () => {
+    it("holds a new brain keyed by the id the upstream document machinery minted", () => {
       const store = new BrainsStore(session);
 
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
 
       const entry = entryOf(store, id);
       assert.equal(JSON.parse(entry.source).id, id);
@@ -136,7 +139,7 @@ describe("brains store", () => {
 
     it("keeps a brain's id and key through a rename, recompiling it under the renamed source", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const before = entryOf(store, id);
 
       store.renameBrain(id, "Runner");
@@ -146,27 +149,27 @@ describe("brains store", () => {
       assert.equal(after.name, "Runner");
       assert.equal(JSON.parse(after.source).id, id);
       assert.notEqual(after.sourceHash, before.sourceHash);
-      assert.equal(after.compiled?.sourceHash, after.sourceHash);
+      assert.equal(after.compiledSourceHash, after.sourceHash);
     });
 
     it("holds brains with empty names as distinct brains, and keeps the key when renamed to empty", () => {
       const store = new BrainsStore(session);
-      const first = store.addBrain("");
-      const second = store.addBrain("");
-      const third = store.addBrain("Chaser");
+      const first = seedBrain(store, "");
+      const second = seedBrain(store, "");
+      const third = seedBrain(store, "Chaser");
 
       store.renameBrain(third, "");
 
       assert.equal(new Set([first, second, third]).size, 3);
       assert.deepEqual([...store.getSnapshot().brains.keys()], [first, second, third]);
       assert.equal(JSON.parse(entryOf(store, third).source).id, third);
-      assert.equal(entryOf(store, third).compiled?.sourceHash, entryOf(store, third).sourceHash);
+      assert.equal(entryOf(store, third).compiledSourceHash, entryOf(store, third).sourceHash);
     });
 
     it("holds brains with duplicate names apart: a rename or removal of one leaves the other untouched", () => {
       const store = new BrainsStore(session);
-      const first = store.addBrain("Chaser");
-      const second = store.addBrain("Chaser");
+      const first = seedBrain(store, "Chaser");
+      const second = seedBrain(store, "Chaser");
       const secondBefore = entryOf(store, second);
 
       store.renameBrain(first, "Runner");
@@ -180,7 +183,7 @@ describe("brains store", () => {
 
     it("removes a brain by id, and ignores ids it does not hold", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const snapshot = store.getSnapshot();
 
       store.removeBrain("no-such-brain");
@@ -194,7 +197,7 @@ describe("brains store", () => {
 
     it("stores an applied document under the id it carries", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const edited = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, edited);
 
@@ -217,9 +220,9 @@ describe("brains store", () => {
       logger.level = loggedLevel;
     });
 
-    it("compiles an applied brain to bytecode bound by hash to the exact source applied", () => {
+    it("compiles an applied brain clean, predicting its registration from the exact source applied", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const edited = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, edited);
 
@@ -232,23 +235,18 @@ describe("brains store", () => {
       ]);
       assert.equal(entry.sourceHash, brainSourceHash(entry.source));
       assert.deepEqual(entry.diagnostics, []);
-      assert.ok(entry.compiled);
-      assert.equal(entry.compiled.sourceHash, entry.sourceHash);
-      const decoded = linkedBrainProgramFromBytes(stream.byteArrayFromUint8Array(entry.compiled.bytecode), {
-        precision: MAKECODE_VM_PRECISION,
-        typeRegistry: store.getSnapshot().environment.brainServices.runtime.types,
-      });
-      assert.equal(decoded.profileId, 2001);
+      assert.deepEqual(entry.unresolvedTiles, []);
+      assert.equal(entry.compiledSourceHash, entry.sourceHash);
     });
 
     it("keeps a failed brain's document and coded diagnostics, beside its last good compile", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const good = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, good);
       store.applyBrain(good);
-      const lastGood = entryOf(store, id).compiled;
-      assert.ok(lastGood);
+      const lastGood = entryOf(store, id).compiledSourceHash;
+      assert.equal(lastGood, entryOf(store, id).sourceHash);
 
       const broken = definitionOf(store, id);
       authorMisplacedTile(store.getSnapshot().environment, broken);
@@ -261,13 +259,13 @@ describe("brains store", () => {
         entry.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((diagnostic) => diagnostic.code),
         [ParseDiagCode.TilePlacementSideMismatch]
       );
-      assert.equal(entry.compiled, lastGood);
-      assert.notEqual(entry.compiled?.sourceHash, entry.sourceHash);
+      assert.equal(entry.compiledSourceHash, lastGood);
+      assert.notEqual(entry.compiledSourceHash, entry.sourceHash);
     });
 
-    it("holds a brain whose first compile fails with its diagnostics and no compiled form", () => {
+    it("holds a brain whose first compile fails with its diagnostics and no registration", () => {
       const store = new BrainsStore(session);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const broken = definitionOf(store, id);
       authorMisplacedTile(store.getSnapshot().environment, broken);
 
@@ -275,14 +273,14 @@ describe("brains store", () => {
       store.applyBrain(broken);
 
       const entry = entryOf(store, id);
-      assert.equal(entry.compiled, undefined);
+      assert.equal(entry.compiledSourceHash, null);
       assert.ok(entry.diagnostics.some((diagnostic) => diagnostic.code === ParseDiagCode.TilePlacementSideMismatch));
     });
 
     it("compiles each brain on its own: one brain's failure leaves another's compile in place", () => {
       const store = new BrainsStore(session);
-      const healthy = store.addBrain("Chaser");
-      const failing = store.addBrain("Chaser");
+      const healthy = seedBrain(store, "Chaser");
+      const failing = seedBrain(store, "Chaser");
       const healthyDefinition = definitionOf(store, healthy);
       authorCompilingRule(store.getSnapshot().environment, healthyDefinition);
       store.applyBrain(healthyDefinition);
@@ -293,8 +291,8 @@ describe("brains store", () => {
       store.applyBrain(broken);
 
       assert.equal(entryOf(store, healthy), healthyEntry);
-      assert.equal(healthyEntry.compiled?.sourceHash, healthyEntry.sourceHash);
-      assert.notEqual(entryOf(store, failing).compiled?.sourceHash, entryOf(store, failing).sourceHash);
+      assert.equal(healthyEntry.compiledSourceHash, healthyEntry.sourceHash);
+      assert.notEqual(entryOf(store, failing).compiledSourceHash, entryOf(store, failing).sourceHash);
     });
   });
 
@@ -347,7 +345,7 @@ describe("brains store", () => {
       session.set({ catalogText: MOTION_CATALOG });
       const sync = new FakeManifestSync();
       const store = new BrainsStore(session, sync);
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const authoredBeforeRebuild = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, authoredBeforeRebuild);
 
@@ -357,20 +355,20 @@ describe("brains store", () => {
       store.applyBrain(authoredBeforeRebuild);
 
       const entry = entryOf(store, id);
-      assert.equal(entry.compiled?.sourceHash, entry.sourceHash);
+      assert.equal(entry.compiledSourceHash, entry.sourceHash);
       assert.equal(definitionOf(store, id).servicesTypeRegistry(), rebuilt.brainServices.runtime.types);
     });
 
     it("compiles a core-only brain with no catalog as current, recording no unresolved tiles", () => {
       const store = new BrainsStore(session);
 
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const edited = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, edited);
       store.applyBrain(edited);
 
       const entry = entryOf(store, id);
-      assert.equal(entry.compiled?.sourceHash, entry.sourceHash);
+      assert.equal(entry.compiledSourceHash, entry.sourceHash);
       assert.deepEqual(entry.unresolvedTiles, []);
     });
 
@@ -378,13 +376,13 @@ describe("brains store", () => {
       session.set({ catalogText: "not a catalog" });
       const store = new BrainsStore(session);
 
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       const edited = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, edited);
       store.applyBrain(edited);
 
       assert.deepEqual(store.getSnapshot().catalogDiagnostics, [{ code: CATALOG_UNREADABLE }]);
-      assert.equal(entryOf(store, id).compiled?.sourceHash, entryOf(store, id).sourceHash);
+      assert.equal(entryOf(store, id).compiledSourceHash, entryOf(store, id).sourceHash);
     });
   });
 
@@ -393,10 +391,10 @@ describe("brains store", () => {
       session.set({ status: "disconnected" });
       const store = new BrainsStore(session);
 
-      const added = store.addBrain("Chaser");
-      const applied = store.addBrain("Runner");
-      const renamed = store.addBrain("Hider");
-      const removed = store.addBrain("Seeker");
+      const added = seedBrain(store, "Chaser");
+      const applied = seedBrain(store, "Runner");
+      const renamed = seedBrain(store, "Hider");
+      const removed = seedBrain(store, "Seeker");
       session.set({ status: "connected" });
       const connectedSnapshot = store.getSnapshot();
       assert.deepEqual([...connectedSnapshot.pending], [added, applied, renamed, removed]);
@@ -413,18 +411,18 @@ describe("brains store", () => {
     it("records no pend for edits made while connected", () => {
       const store = new BrainsStore(session);
 
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       store.renameBrain(id, "Runner");
       store.applyBrain(definitionOf(store, id));
-      store.removeBrain(store.addBrain("Seeker"));
+      store.removeBrain(seedBrain(store, "Seeker"));
 
       assert.equal(store.getSnapshot().pending.size, 0);
     });
 
     it("records only the brain edited while disconnected when two brains are edited across a disconnection", () => {
       const store = new BrainsStore(session);
-      const editedConnected = store.addBrain("Chaser");
-      const editedDisconnected = store.addBrain("Chaser");
+      const editedConnected = seedBrain(store, "Chaser");
+      const editedDisconnected = seedBrain(store, "Chaser");
 
       store.renameBrain(editedConnected, "Runner");
       session.set({ status: "disconnected" });
@@ -443,12 +441,12 @@ describe("brains store", () => {
       });
       const before = store.getSnapshot();
 
-      store.addBrain("Chaser");
+      seedBrain(store, "Chaser");
       assert.equal(published, 1);
       assert.notEqual(store.getSnapshot(), before);
 
       unsubscribe();
-      store.addBrain("Runner");
+      seedBrain(store, "Runner");
       assert.equal(published, 1);
     });
   });
@@ -461,6 +459,7 @@ describe("brains store", () => {
       private readonly _catalogListeners = new Set<(content: string) => void>();
       private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
       private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
+      private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
       private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
       onStateChange(listener: (state: MakeCodeEditorSessionState) => void): () => void {
@@ -495,6 +494,13 @@ describe("brains store", () => {
         return () => {};
       }
 
+      onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void {
+        this._brainsListeners.add(listener);
+        return () => {
+          this._brainsListeners.delete(listener);
+        };
+      }
+
       onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
         this._brainsChannelListeners.add(listener);
         return () => {
@@ -527,14 +533,33 @@ describe("brains store", () => {
         for (const listener of this._assetsListeners) listener(assets);
       }
 
-      /** A makecode handshake completing over a project holding no brains. */
-      handshake(): void {
+      /**
+       * A makecode handshake completing over a project holding no brains,
+       * then the MakeCode side publishing them: its channel answers every
+       * push with no outcome, and creates one brain, `created`, which a pull
+       * returns once created.
+       */
+      handshake(created?: MakeCodeWireBrain): void {
+        let holds = false;
+        const summary = (brain: MakeCodeWireBrain): MakeCodeBrainSummary => ({
+          id: brain.id,
+          name: brain.name,
+          sourceHash: brainSourceHash(brain.source),
+          compiledSourceHash: brain.compiledSourceHash,
+        });
         const channel: MakeCodeBrainsChannel = {
           listBrains: () => Promise.resolve([]),
-          pullBrains: () => Promise.resolve([]),
-          pushBrain: () => Promise.resolve(),
+          pullBrains: (ids) =>
+            Promise.resolve(holds && created !== undefined && ids.includes(created.id) ? [created] : []),
+          pushBrain: () => Promise.resolve(null),
+          createBrain: () => {
+            if (created === undefined) return Promise.reject(new Error("no brain to create"));
+            holds = true;
+            return Promise.resolve(summary(created));
+          },
         };
         for (const listener of this._brainsChannelListeners) listener(channel);
+        for (const listener of this._brainsListeners) listener([]);
       }
     }
 
@@ -547,7 +572,7 @@ describe("brains store", () => {
 
       live.deliver(MOTION_CATALOG);
       live.deliverManifest({ manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER });
-      const id = store.addBrain("Chaser");
+      const id = seedBrain(store, "Chaser");
       live.setStatus("disconnected");
       store.renameBrain(id, "Runner");
 
@@ -575,6 +600,23 @@ describe("brains store", () => {
 
       assert.equal(literal?.label, "hero");
       assert.equal(store.getSnapshot().assetLiterals.get(mkLiteralTileId(PICTURE_TYPE, "img1"))?.label, "villain");
+    });
+
+    it("adds a brain through the live session's handshake, resolving with its id once it holds the brain", async () => {
+      const live = new LiveSession();
+      const sessionStore = new EditorSessionStore(live);
+      sessionStore.start();
+      live.setStatus("connected");
+      const store = new BrainsStore(sessionStore, sessionStore);
+      const source = JSON.stringify({ version: 1, id: "createdcreatedcr", name: "Chaser", pages: [] }, null, 2);
+      live.handshake({ id: "createdcreatedcr", name: "Chaser", source, compiledSourceHash: brainSourceHash(source) });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const id = await store.addBrain("Chaser");
+
+      assert.equal(id, "createdcreatedcr");
+      assert.equal(entryOf(store, id).compiledSourceHash, brainSourceHash(source));
+      assert.equal(store.getSnapshot().pending.size, 0);
     });
   });
 });

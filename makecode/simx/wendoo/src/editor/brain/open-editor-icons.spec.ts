@@ -21,11 +21,12 @@ import type { BrainDef, BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/mo
 import { BrainCommandHistory } from "@wendoo/core/brain/model";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
 import type {
-  MakeCodeBrain,
-  MakeCodeBrainPush,
   MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
   MakeCodeManifestReading,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+  MakeCodeWireCompileOutcome,
 } from "@wendoo/makecode-session";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorProvider, BrainRuleEditor, BrainTile } from "@wendoo/ui";
@@ -38,6 +39,8 @@ import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
+import { FrameProject } from "../test-support/frame-project.js";
+import { seedBrain } from "../test-support/seed-brain.js";
 import { openBrainEditing } from "./editing.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
 
@@ -131,18 +134,32 @@ class FakeSessionSource {
   }
 }
 
-/** One handshake's brains channel over a project holding no brain, answering every request at once. */
-class EmptyProjectChannel implements MakeCodeBrainsChannel {
+/**
+ * One handshake's brains channel over `project`, standing in for the frame:
+ * it answers every request at once, each push with the frame's compile
+ * outcome or `null` for a removal, and creates nothing.
+ */
+class ProjectChannel implements MakeCodeBrainsChannel {
+  constructor(private readonly project: FrameProject) {}
+
   listBrains(): Promise<MakeCodeBrainSummary[]> {
-    return Promise.resolve([]);
+    return Promise.resolve(this.project.summaries());
   }
 
-  pullBrains(): Promise<MakeCodeBrain[]> {
-    return Promise.resolve([]);
+  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
+    return Promise.resolve(ids.flatMap((id) => this.project.get(id) ?? []));
   }
 
-  pushBrain(_push: MakeCodeBrainPush): Promise<void> {
-    return Promise.resolve();
+  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
+    if (push.op === "remove") {
+      this.project.remove(push.brainId);
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(this.project.write(push.brain.id, push.brain.name, push.brain.source));
+  }
+
+  createBrain(): Promise<MakeCodeBrainSummary> {
+    return Promise.reject(new Error("no brain is created over this channel"));
   }
 }
 
@@ -183,6 +200,7 @@ async function openEditor() {
   const session = new FakeSessionSource(paintCatalog("before"));
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
   let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
+  let brains: ((published: MakeCodeBrainSummary[]) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
@@ -192,20 +210,32 @@ async function openEditor() {
       manifest = listener;
       return () => {};
     },
+    onBrains: (listener) => {
+      brains = listener;
+      return () => {};
+    },
   });
   assert.ok(handshake);
   assert.ok(manifest);
+  assert.ok(brains);
   const publish = manifest;
+  const project = new FrameProject();
   const deliverCatalog = (catalogText: string): void => {
+    const reading = { manifest: allocateIds(emptyIdManifest(), parseCatalog(catalogText)) };
     session.deliverCatalog(catalogText);
-    publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(catalogText)) });
+    project.engine.adoptCatalog(catalogText, reading);
+    publish(reading);
   };
-  handshake(new EmptyProjectChannel());
+  project.engine.adoptCatalog(paintCatalog("before"), {
+    manifest: allocateIds(emptyIdManifest(), parseCatalog(paintCatalog("before"))),
+  });
+  handshake(new ProjectChannel(project));
   publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(paintCatalog("before"))) });
+  brains([]);
   await settle();
   assert.ok(store.getSnapshot().reconciled);
 
-  const id = store.addBrain("Painter");
+  const id = seedBrain(store, "Painter");
   const authored = store.getBrain(id);
   assert.ok(authored);
   const environment = store.getSnapshot().environment;

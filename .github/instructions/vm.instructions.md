@@ -114,11 +114,12 @@ unless noted otherwise.
   platform's own random numbers in a program run, and any stream a test
   harness injects.
 - The editor (`makecode/simx/wendoo/src/editor`) is an authoring surface. It
-  may compile, inspect, and visualize, but the Arcade platform's execution
-  semantics are the extension's.
+  may compile for live diagnostics, inspect, and visualize, but the Arcade
+  platform's execution semantics are the extension's.
 - `makecode/simx/*` components are messaging endpoints between the editor and
-  the MakeCode project. They carry programs and state across the gap; they do
-  not execute bytecode.
+  the MakeCode project. The simx entry of `makecode/simx/wendoo` compiles the
+  project's brains and carries their programs to the project and the running
+  game; no simx component executes bytecode.
 - Anything that changes what a brain observes -- opcode behavior, host call
   results, handle resolution order -- is a VM-contract change, wherever in the
   path it is made.

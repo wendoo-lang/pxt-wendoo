@@ -37,7 +37,9 @@ Avoid these failure modes:
 - Scaffolding future features not needed for the current slice.
 - Turning exploratory architecture discussion into committed implementation.
 - Hiding missing contracts behind placeholder code.
-- Treating a simx component as a place for product logic.
+- Treating a simx component as a place for product logic beyond the brain
+  engine of `makecode/simx/wendoo`'s simx entry -- its compile of the
+  project's brains and the cache of them it derives from the project's files.
 - Treating the editor (`makecode/simx/wendoo/src/editor`) as the owner of
   Arcade execution semantics.
 - Letting `makecode/extensions/vm` diverge from the reference VM's observable
@@ -133,12 +135,14 @@ Be critical about where code belongs.
 - Transport between the editor and the MakeCode project. The simx entry of
   `makecode/simx/wendoo` (`src/simx`) serves the editor tab over the port
   MakeCode brokers and joins those two ends.
-- Nothing that decides product behavior, and nothing that executes bytecode.
+- Compiling the project's brains and writing their module, in the simx entry
+  of `makecode/simx/wendoo`; it executes no bytecode.
+- Nothing else that decides product behavior.
 
 The editor entry of `makecode/simx/wendoo` (`src/editor`) owns:
 
 - The Wendoo editor webapp: brain authoring, project UI, and user workflows.
-- Compiler integration and artifact production.
+- A local compile for live diagnostics; the artifact is the engine's.
 - Diagnostics and inspection surfaces.
 
 Shared Wendoo packages own:
