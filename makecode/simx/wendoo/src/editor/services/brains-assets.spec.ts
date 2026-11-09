@@ -78,6 +78,10 @@ class ProjectChannel implements MakeCodeBrainsChannel {
     return Promise.reject(new Error("no brain is created over this channel"));
   }
 
+  openBrain(): Promise<void> {
+    return Promise.reject(new Error("no brain is opened over this channel"));
+  }
+
   /** The project's brains, as its brains publication carries them. */
   summaries(): MakeCodeBrainSummary[] {
     return [...this.brains.values()].map((brain) => ({

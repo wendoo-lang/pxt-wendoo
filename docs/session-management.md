@@ -173,7 +173,9 @@ brains request-reply family. The editor-tab messages themselves
   registration's: MakeCode also brokers a pair to the tab of every
   registration naming the frame in its `simulator` field. A new port
   replaces only its own peer's session. Every session receives every
-  publication, and all of them are served from the one project.
+  publication but a brain open, which goes to one session (see
+  `makecode:brainsOpen`, above), and all of them are served from the one
+  project.
 - ORIGIN: every brain carries the registration key of the tab that
   created it, the peer key of the session its create arrived on, never
   taken from a brains request's payload: recorded at creation, with `brains.g.ts` its
@@ -292,6 +294,24 @@ editor sends source, and the serving party compiles.
   once the brain's source is in the project. The brain's origin is the
   requesting tab's key, none for a session whose port named no `peer`;
   the payload carries none.
+- `makecode:brainsOpen` (editor -> project) with `{ id }`: asks the
+  serving party to open the brain `id` in the tab of its origin,
+  answered by `makecode:brainsOpenReply` carrying the request's `id` and
+  no payload. The simx answers it once the project's brains are read: a
+  brain with an origin whose key the tabs reply lists has that tab shown
+  through the frame's open request to MakeCode, by key, and
+  `makecode:brainOpen` published into the session keyed by the origin
+  alone; a brain with no origin has the publication sent back into the
+  requesting session, and no tab is shown. A publication for a key whose
+  session is not established yet is held until that session's first
+  publications are out, then delivered once, a later open for the same
+  key replacing a held one.
+- `makecode:brainOpen` (project -> editor) carries `{ id }`: asks the
+  editor of the session it arrives on to open the brain `id`. The kind's
+  session publishes with `publishBrainOpen` and delivers with
+  `onBrainOpen`, replaying publications received before the first
+  listener attaches; the editor session object delivers those of the
+  current handshake only (`onBrainOpen`).
 - `makecode:brains` (project -> editor) carries `{ brains: [summary] }`,
   every brain the project holds: a publication on the catalog's
   discipline, whole, a later one replacing an earlier one. The kind's
@@ -301,27 +321,34 @@ editor sends source, and the serving party compiles.
   handshake only (`onBrains`).
 - `makecode:brainsError` answers any request that failed, carrying `{
   code, message }`: `MAKECODE_BRAINS_READ_FAILED` for a list or pull,
-  `MAKECODE_BRAINS_WRITE_FAILED` for a push or a create, and
+  `MAKECODE_BRAINS_WRITE_FAILED` for a push or a create,
   `MAKECODE_BRAINS_NOT_ORIGIN` for a push from a tab that is not the
-  brain's origin.
+  brain's origin, and, for an open, `MAKECODE_BRAINS_UNKNOWN_BRAIN` when
+  the project holds no brain under the id and
+  `MAKECODE_BRAINS_ORIGIN_ABSENT` when the brain's origin key is not
+  among the tabs the tabs reply lists. The simx logs each open refusal
+  by its code.
 - An entry's `id` is the brain's ADDRESS -- the document id its source
   file is keyed by -- which the serving party takes from the file name,
   never from the source; `source` is carried verbatim whether or not it
   is a valid brain document.
 - The editor session object hands out a BRAINS CHANNEL per completed
   makecode handshake (`onBrainsChannel`) -- `listBrains`, `pullBrains`,
-  `pushBrain` and `createBrain`; its requests travel on that handshake
+  `pushBrain`, `createBrain` and `openBrain`; its requests travel on that handshake
   and reject once it ends, and every later handshake -- over each port
   MakeCode brokers next -- hands out a new one.
 - Only the editor requests; the party serving the project answers.
   The kind's session hands each incoming request to its
   `onBrainsRequest` listeners (buffered until the first attaches) as a
-  `list`, `pull`, `push` or `create` request carrying the senders of its
-  answer: `reply` for each, carrying a list's summaries, a pull's
-  brains, a push's outcome or `null`, or a create's summary, and
-  `fail(message)`, which answers `MAKECODE_BRAINS_READ_FAILED` for a
-  list or a pull and `MAKECODE_BRAINS_WRITE_FAILED` for a push or a
-  create. A request is answered once; a later answer, or any answer
+  `list`, `pull`, `push`, `create` or `open` request carrying the senders
+  of its answer: `reply` for each, carrying a list's summaries, a pull's
+  brains, a push's outcome or `null`, a create's summary, or nothing for
+  an open; `fail(message)`, which answers `MAKECODE_BRAINS_READ_FAILED`
+  for a list or a pull and `MAKECODE_BRAINS_WRITE_FAILED` for a push or
+  a create; a push's `refuse(message)`, answering
+  `MAKECODE_BRAINS_NOT_ORIGIN`; and an open's `refuseUnknown(message)`
+  and `refuseAbsent(message)`, answering `MAKECODE_BRAINS_UNKNOWN_BRAIN`
+  and `MAKECODE_BRAINS_ORIGIN_ABSENT`. A request is answered once; a later answer, or any answer
   after the session is disposed, is not sent. The simx serves them from
   the project (see "The simx write path", below).
 
@@ -923,17 +950,34 @@ it always shows the session view.
   catalog the store keeps, so they show while disconnected.
 - The BRAIN LIST renders the brains store in every status, so
   authoring continues while the project is away. Each row is keyed by
-  the brain's document id; the name is display data, and two brains
-  may show the same one. A row opens the brain in the upstream brain
+  the brain's document id, carried as `data-brain-id`, with its name as
+  `data-brain-name`; the name is display data, and two brains may show
+  the same one. A row opens the brain in the upstream brain
   editor dialog in its continuous mode, whose config is built from the
   store's current environment and asset literals and rebuilt whenever
   either changes.
   The row's badge counts the compile's errors and warnings (carrying
   the compile state -- `current`, `stale`, or `none` -- as
-  `data-compile`), and shows on no brain placing unresolved pack tiles
-  while the catalog is pending (below). Rows also rename and remove
+  `data-compile`), expands into the compile's coded diagnostics, and
+  shows on no brain placing unresolved pack tiles while the catalog is
+  pending (below). Rows also rename and remove
   brains; adding a brain names it, asks the engine to create it, and
   opens the editor on it once the store holds it.
+  A FOREIGN-ORIGIN ROW is the row of a brain whose `origin` is a key
+  other than this tab's own, which the tab reads from the `key` of each
+  `simxeditorport` message MakeCode posts it: the brain is listed and
+  runs, its name shows as text, and in place of the edit affordance and
+  the rename and remove actions the row holds one action, carrying
+  `data-action="open-origin"` and the brain's id as `data-key`,
+  captioned "Open in" and the brain's `originLabel`; the row holds no
+  action while `originLabel` is `null`, the origin's tab not being in
+  the project. The badge shows as on every row. The action sends
+  `makecode:brainsOpen` for the brain, and a refusal is logged by its
+  code. A brain with no origin, or this tab's own, keeps the row above.
+  Each `makecode:brainOpen` the session delivers opens the brain as
+  MakeCode's "Edit" entry for it does; an open request arriving before
+  the store has reconciled is held, the latest only, and answered once
+  it has.
 - CONTINUOUS EDITING: the brain editor has no OK or Cancel. Every edit
   the dialog reports -- a command, an undo, a redo, a load -- reaches
   the store through the editing's debounced flush: once
@@ -971,13 +1015,15 @@ it always shows the session view.
   blocks-only action. A damaged brain's row carries a notice worded
   for the user -- its file in the MakeCode project is broken -- with
   the damage's stable code as `data-code`, never as text. When the
-  store holds a copy of the brain, the notice offers Restore
+  store holds a copy of the brain and the brain's origin is this tab's
+  or none, the notice offers Restore
   (`repushBrain`), disabled (the button's `disabled` attribute) unless
   the store is `reconciled`, since a re-push reaches the project only
   then; a damaged brain the store holds no copy of is
   listed after the held brains under the name the project gave it,
   with the notice alone (fix or delete the file in MakeCode) and no
-  other controls. The store clears the damage on the project's ack
+  other controls. A damaged brain of another origin shows the same
+  notice and its open-origin action alone. The store clears the damage on the project's ack
   or a later reconciliation, and the notice goes with it.
 - A brain using UNRESOLVED ASSET LITERALS -- assets the held snapshot
   no longer lists -- carries a notice below its row at the default
@@ -1189,8 +1235,13 @@ strip stores nothing.
   none, and on a MakeCode below API level 2 the simx asks nothing, so the
   strip keeps the logotype alone. The control opens the tab it names,
   posting `{ type: "simxeditor", subtype: "open", id, key }` with that
-  tab's key. A refusal is logged by its code (`UNREGISTERED`,
-  `PERMISSION_DENIED`, `UNAVAILABLE`, `INVALID_REQUEST`).
+  tab's key; the simx's answer to a `makecode:brainsOpen` posts the
+  same request for the brain's origin key. A refusal is logged
+  by its code (`UNREGISTERED`, `PERMISSION_DENIED`, `UNAVAILABLE`,
+  `INVALID_REQUEST`). MakeCode's "Edit" entry for a brain routes to the
+  tab its `editor` attribute names (see COMPILED FORM, above); a
+  foreign-origin row's action routes through the simx, by
+  `makecode:brainsOpen`.
 - THE LOGOTYPE LINK opens through a click probe: the strip opens a blank
   tab, cuts its `opener`, and navigates it to the link's URL. A frame
   sandboxed without `allow-popups` makes the browser refuse the tab; the

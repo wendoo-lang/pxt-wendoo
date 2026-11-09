@@ -1,5 +1,6 @@
 import type { MakeCodeMessagePort } from "@wendoo/makecode-session";
 import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorPortMessage } from "../../vendor/simxeditor.js";
+import type { EditorTabOpener } from "../editor-tab.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL } from "../sim-channel.js";
 import type { SimxPortFrame, SimxPortFrameEvent } from "../simx-bridge.js";
 
@@ -77,5 +78,20 @@ export class FakePortFrame implements SimxPortFrame {
   /** Delivers `event` to every message listener. */
   deliver(event: SimxPortFrameEvent): void {
     for (const listener of this._listeners) listener(event);
+  }
+}
+
+/**
+ * The editor tab opener of a simulator extension frame, played by a spec in
+ * place of MakeCode: it records the key of every tab it is asked to show, in
+ * order, and acknowledges each at once.
+ */
+export class FakeTabOpener implements Pick<EditorTabOpener, "open"> {
+  /** The key of every tab asked to show, `undefined` for the frame's own. */
+  readonly opened: (string | undefined)[] = [];
+
+  open(key?: string): Promise<void> {
+    this.opened.push(key);
+    return Promise.resolve();
   }
 }

@@ -31,7 +31,7 @@ import { imageSvg } from "./svg-image.js";
 import { targetIconPalette } from "./target-icon-palettes.js";
 import { FakeAssetProvider, listedImage, listedSong } from "./test-support/asset-provider.js";
 import { pixelImage } from "./test-support/image-buffer-encoder.js";
-import { FakePortFrame, PARENT_ORIGIN } from "./test-support/port-frame.js";
+import { FakePortFrame, FakeTabOpener, PARENT_ORIGIN } from "./test-support/port-frame.js";
 import { postedProgramUpdates } from "./test-support/program-update-frame.js";
 import { FakeProjfsHost, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
 
@@ -184,6 +184,7 @@ describe("simx port bridge", () => {
   let assets: FakeAssetProvider;
   let clients: ProjfsClient[];
   let bridges: SimxPortBridge[];
+  let openers: FakeTabOpener[];
   let channels: MessageChannel[];
   let sessions: MakeCodeSession[];
   let errors: string[];
@@ -193,6 +194,7 @@ describe("simx port bridge", () => {
     assets = new FakeAssetProvider();
     clients = [];
     bridges = [];
+    openers = [];
     channels = [];
     sessions = [];
     errors = [];
@@ -210,11 +212,13 @@ describe("simx port bridge", () => {
 
   /**
    * Starts the port bridge in a fresh frame over the spec's project and asset
-   * provider, declaring the arcade target and reading the program's messages
-   * on `channel` when one is given.
+   * provider, with a fresh tab opener, declaring the arcade target and
+   * reading the program's messages on `channel` when one is given.
    */
   function start(channel?: string): FakePortFrame {
     const frame = new FakePortFrame();
+    const opener = new FakeTabOpener();
+    openers.push(opener);
     const files = host.client();
     clients.push(files);
     const log = {
@@ -233,6 +237,7 @@ describe("simx port bridge", () => {
         target: "arcade",
         channel,
         fileWatchTimings: WATCH_TIMINGS,
+        opener,
       })
     );
     return frame;
@@ -993,6 +998,180 @@ describe("simx port bridge", () => {
       assert.equal(pushed.type, "makecode:brainsPushReply");
       assert.equal(host.file(`brains/${owned.id}.src.json`), edited.source);
       assert.equal(readBrainsModule(host.file(BRAINS_MODULE_FILE) ?? "").entries.get(owned.id)?.origin, DESIGNER_TAB);
+    });
+
+    describe("opening a brain in its origin", () => {
+      /** Has `editor` create a brain named `name` and resolves with its summary. */
+      async function created(editor: RawEditor, name: string): Promise<MakeCodeBrainSummary> {
+        editor.send({ type: "makecode:brainsCreate", id: `create-${name}`, payload: { name } });
+        const reply = await editor.nextMessage();
+        assert.equal(reply.type, "makecode:brainsCreateReply");
+        return (reply.payload as { brain: MakeCodeBrainSummary }).brain;
+      }
+
+      /** The message `editor` receives in answer to the open of the brain `id` it sends under `requestId`. */
+      async function openAnswer(editor: RawEditor, requestId: string, id: string): Promise<ReceivedMessage> {
+        editor.send({ type: "makecode:brainsOpen", id: requestId, payload: { id } });
+        const reply = await editor.nextMessage();
+        assert.equal(reply.id, requestId);
+        return reply;
+      }
+
+      it("shows the origin's tab by key and publishes the brain open into the origin's session, not the requester's", async () => {
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        const brain = await created(designer, "Runner");
+        bridges[0].setTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+
+        const reply = await openAnswer(own, "open-1", brain.id);
+
+        assert.deepEqual(reply, { type: "makecode:brainsOpenReply", id: "open-1" });
+        assert.deepEqual(await designer.nextMessage(), { type: "makecode:brainOpen", payload: { id: brain.id } });
+        assert.deepEqual(openers[0].opened, [DESIGNER_TAB]);
+        await nothingMore(own);
+        await nothingMore(designer);
+      });
+
+      it("publishes the brain open of a brain with no origin back to the tab that asked, showing no tab", async () => {
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        const unnamed = await joinRaw(frame, SIMX_CHANNEL, (port) => frame.brokerPortNamingNoPeer(port));
+        await nextCatalog(unnamed, CATALOG_TEXT);
+        const brain = await created(unnamed, "Runner");
+        assert.equal(brain.origin, null);
+
+        const reply = await openAnswer(designer, "open-1", brain.id);
+
+        assert.equal(reply.type, "makecode:brainsOpenReply");
+        assert.deepEqual(await designer.nextMessage(), { type: "makecode:brainOpen", payload: { id: brain.id } });
+        assert.deepEqual(openers[0].opened, []);
+        await nothingMore(unnamed);
+      });
+
+      it("refuses an open by code: ORIGIN_ABSENT for an origin MakeCode does not list, UNKNOWN_BRAIN for an id it does not hold", async () => {
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        const brain = await created(designer, "Runner");
+        bridges[0].setTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
+
+        const absent = await openAnswer(own, "open-1", brain.id);
+        const unknown = await openAnswer(own, "open-2", "absentabsentabse");
+
+        for (const [reply, code] of [
+          [absent, MakeCodeBrainsErrorCode.ORIGIN_ABSENT],
+          [unknown, MakeCodeBrainsErrorCode.UNKNOWN_BRAIN],
+        ] as const) {
+          assert.equal(reply.type, "makecode:brainsError");
+          assert.equal((reply.payload as { code: string }).code, code);
+        }
+        assert.deepEqual(openers[0].opened, []);
+        assert.equal(errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.ORIGIN_ABSENT)).length, 1);
+        assert.equal(errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.UNKNOWN_BRAIN)).length, 1);
+        await nothingMore(designer);
+      });
+
+      /** The ids of the brain opens arrived at `editor`, in order. */
+      function brainOpens(editor: RawEditor): string[] {
+        return editor.arrived
+          .filter((message) => message.type === "makecode:brainOpen")
+          .map((message) => (message.payload as { id: string }).id);
+      }
+
+      it("holds only the latest of two opens for an origin tab with no session, delivering it once the tab's session is up", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const origin = await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB);
+        const earlier = await created(origin, "Runner");
+        const later = await created(origin, "Walker");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        bridges[0].setTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+
+        assert.equal((await openAnswer(own, "open-1", earlier.id)).type, "makecode:brainsOpenReply");
+        assert.equal((await openAnswer(own, "open-2", later.id)).type, "makecode:brainsOpenReply");
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        await eventually(
+          () => brainOpens(designer).length,
+          (count) => count > 0,
+          "the held brain open"
+        );
+        await quiet();
+
+        assert.deepEqual(brainOpens(designer), [later.id]);
+        assert.deepEqual(openers.at(-1)?.opened, [DESIGNER_TAB, DESIGNER_TAB]);
+      });
+
+      it("holds the brain open for an origin tab whose session is up before the project's brains are read, delivering it once", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const brain = await created(await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB), "Runner");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        host.hold();
+        const frame = start();
+        const designer = await joinRaw(frame, DESIGNER_TAB);
+        const own = await joinRaw(frame, ARCADE_TAB);
+        bridges[0].setTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+
+        own.send({ type: "makecode:brainsOpen", id: "open-1", payload: { id: brain.id } });
+        host.release();
+        await eventually(
+          () => brainOpens(designer).length,
+          (count) => count > 0,
+          "the held brain open"
+        );
+        await quiet();
+
+        assert.deepEqual(brainOpens(designer), [brain.id]);
+        assert.deepEqual(brainOpens(own), []);
+        assert.ok(
+          own.arrived.some((message) => message.type === "makecode:brainsOpenReply" && message.id === "open-1")
+        );
+        assert.deepEqual(openers.at(-1)?.opened, [DESIGNER_TAB]);
+      });
+
+      it("holds the brain open for an origin tab with no session until its first publications are out, delivering it once", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const brain = await created(await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB), "Runner");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        bridges[0].setTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+
+        const reply = await openAnswer(own, "open-1", brain.id);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        const opened = await designer.nextMessage();
+        const again = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+
+        assert.equal(reply.type, "makecode:brainsOpenReply");
+        assert.deepEqual(opened, { type: "makecode:brainOpen", payload: { id: brain.id } });
+        assert.deepEqual(openers.at(-1)?.opened, [DESIGNER_TAB]);
+        await nothingMore(again);
+        await nothingMore(own);
+      });
     });
 
     it("publishes the brains into every tab's session after a push over one tab's lands", async () => {

@@ -22,6 +22,7 @@ class FakeSession implements MakeCodeEditorSession {
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
+  private readonly _brainOpenListeners = new Set<(id: string) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
   onStateChange(listener: (state: MakeCodeEditorSessionState) => void): () => void {
@@ -66,6 +67,13 @@ class FakeSession implements MakeCodeEditorSession {
     };
   }
 
+  onBrainOpen(listener: (id: string) => void): () => void {
+    this._brainOpenListeners.add(listener);
+    return () => {
+      this._brainOpenListeners.delete(listener);
+    };
+  }
+
   onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
     this._brainsChannelListeners.add(listener);
     return () => {
@@ -107,6 +115,11 @@ class FakeSession implements MakeCodeEditorSession {
     for (const listener of this._brainsListeners) listener(brains);
   }
 
+  /** The counterpart asking the editor to open the brain `id`. */
+  deliverBrainOpen(id: string): void {
+    for (const listener of this._brainOpenListeners) listener(id);
+  }
+
   /** A reading of the project's facts arriving from the counterpart. */
   deliverProjectInfo(info: MakeCodeProjectInfo): void {
     for (const listener of this._projectInfoListeners) listener(info);
@@ -140,6 +153,7 @@ function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
       return new Promise(() => {});
     },
     createBrain: () => new Promise(() => {}),
+    openBrain: () => new Promise(() => {}),
   };
 }
 
@@ -328,5 +342,20 @@ describe("editor session store", () => {
     session.deliverBrains([]);
 
     assert.deepEqual(publications, [[], [chaser]]);
+  });
+
+  it("hands out each brain open as the session delivers it, and none once unsubscribed", () => {
+    const { store, session } = startedStore();
+    const opened: string[] = [];
+    const unsubscribe = store.onBrainOpen((id) => {
+      opened.push(id);
+    });
+
+    session.deliverBrainOpen("chaserchaserchas");
+    session.deliverBrainOpen("runnerrunnerrunn");
+    unsubscribe();
+    session.deliverBrainOpen("chaserchaserchas");
+
+    assert.deepEqual(opened, ["chaserchaserchas", "runnerrunnerrunn"]);
   });
 });

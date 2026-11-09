@@ -76,20 +76,28 @@ describe("simx editor client", () => {
     client.dispose();
   });
 
-  it("delivers each port MakeCode brokers, in order", () => {
+  it("delivers each port MakeCode brokers, in order, with the key the port message names the tab by", () => {
     const frame = new FakeTabFrame();
     const client = connectSimxEditorClient(frame, PARENT_ORIGIN);
     const ports: MakeCodeMessagePort[] = [];
-    client.onPort((port) => ports.push(port));
+    const keys: (string | undefined)[] = [];
+    client.onPort((port, key) => {
+      ports.push(port);
+      keys.push(key);
+    });
     const first = fakePort();
     const second = fakePort();
+    const third = fakePort();
 
     frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL, peer: SIMX_CHANNEL }, [first]);
-    frame.receive({ type: "simxeditorport", key: SIMX_CHANNEL, peer: SIMX_CHANNEL }, [second]);
+    frame.receive({ type: "simxeditorport", key: "owner/repo-designer", peer: SIMX_CHANNEL }, [second]);
+    frame.receive({ type: "simxeditorport", peer: SIMX_CHANNEL }, [third]);
 
-    assert.equal(ports.length, 2);
+    assert.equal(ports.length, 3);
     assert.equal(ports[0], first);
     assert.equal(ports[1], second);
+    assert.equal(ports[2], third);
+    assert.deepEqual(keys, [SIMX_CHANNEL, "owner/repo-designer", undefined]);
     client.dispose();
   });
 

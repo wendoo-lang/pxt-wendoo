@@ -109,6 +109,41 @@ export function BrainAssetNotice({ literals }: { literals: readonly AssetLiteral
   );
 }
 
+interface OpenInOriginActionProps {
+  /** Document id of the brain, carried as `data-key`. */
+  brainId: string;
+  /** The brain's display name, which the action's accessible name carries. */
+  brainName: string;
+  /** The label of the brain's origin tab as MakeCode lists it, or `null` when no such tab is listed. */
+  originLabel: string | null;
+  /** The brains store the action asks to open the brain in its origin. */
+  brains: Pick<BrainsStore, "openBrainInOrigin">;
+}
+
+/**
+ * The one action of a brain row whose brain another tab made: a button
+ * captioned with the origin tab's label, carrying `data-action="open-origin"`
+ * and the brain's id as `data-key`, that asks the brains store to open the
+ * brain in that tab. Renders nothing while `originLabel` is `null`.
+ */
+export function OpenInOriginAction({ brainId, brainName, originLabel, brains }: OpenInOriginActionProps) {
+  if (originLabel === null) return null;
+  return (
+    <button
+      type="button"
+      data-action="open-origin"
+      data-key={brainId}
+      aria-label={`Open ${brainName} in ${originLabel}`}
+      className="rounded px-2 py-1 font-medium text-foreground text-xs hover:bg-muted"
+      onClick={() => {
+        void brains.openBrainInOrigin(brainId);
+      }}
+    >
+      {`Open in ${originLabel}`}
+    </button>
+  );
+}
+
 /** The dialog open over the brain list: naming a new brain, renaming or removing brain `id`, or none. */
 export type BrainDialog =
   | { kind: "add" }
@@ -189,13 +224,18 @@ export function answerCreatedBrain(view: OpenRequestView, brainId: string): bool
  * Answers `request` on the brain list whose state `view` reads and sets, by
  * its kind, first dropping any open request held: a create request with
  * {@link answerCreateRequest}; an open request with {@link answerOpenRequest}
- * for the brain its instance name denotes, or, when it denotes none, by
- * logging {@link EDITOR_OPEN_UNKNOWN_BRAIN}.
+ * for the brain it names by document id or the brain its instance name
+ * denotes, or, when the name denotes none, by logging
+ * {@link EDITOR_OPEN_UNKNOWN_BRAIN}.
  */
 export function answerEditorRequest(view: OpenRequestView, request: EditorRequest): void {
   view.holdOpen(null);
   if (request.kind === "create") {
     answerCreateRequest(view);
+    return;
+  }
+  if ("brainId" in request) {
+    answerOpenRequest(view, request.brainId);
     return;
   }
   const brainId = brainIdOfQualifiedName(request.qName);
@@ -207,33 +247,18 @@ export function answerEditorRequest(view: OpenRequestView, request: EditorReques
 }
 
 /**
- * The brains of the brains store: a row per brain, keyed and addressed by its
- * document id and showing its name, with an edit affordance, a diagnostics
- * badge that expands the brain's coded diagnostics, and an actions menu to
- * rename or remove it; an empty state while there are none; and an add
- * action that names a new brain and, once the store holds it, opens the brain
- * editor on it. Each row
- * carries its brain's document id as `data-brain-id` and its name as
- * `data-brain-name`.
- *
- * A brain whose rules use project assets the project no longer holds shows a
- * {@link BrainAssetNotice} below its row. A brain whose source in the MakeCode
- * project is damaged shows a {@link BrainDamageNotice} below its row, offering Restore while the store
- * is reconciled with the project. A damaged brain
- * the store holds no copy of is listed after the held brains under the name
- * the project gave it, with the notice alone and no other controls. While the
- * store's catalog is pending, a brain placing unresolved tiles shows no
- * diagnostics badge. The brain editor it opens fills tiles in `tileColors`
- * where they are given.
- *
- * It takes the requests of the editor's requests, the one held before it
- * mounted included, answering each with {@link answerEditorRequest}, and an
- * open request it held for the store to reconcile once the store has; mount
- * it under an `EditorRequestsProvider`.
+ * The brains of the brains store: one row per brain, keyed by its document
+ * id, an empty state while there are none, and an add action. The rows and
+ * their actions are as the BRAIN LIST passage of docs/session-management.md
+ * describes, and their notices as its DAMAGED BRAINS and UNRESOLVED ASSET
+ * LITERALS passages do. The brain editor it opens fills
+ * tiles in `tileColors` where they are given. It answers each of the
+ * editor's requests, the one held before it mounted included, with
+ * {@link answerEditorRequest}; mount it under an `EditorRequestsProvider`.
  */
 export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
   const store = useBrains();
-  const { brains, damaged, reconciled, unresolvedAssets, catalogPending } = useBrainsState();
+  const { brains, damaged, reconciled, unresolvedAssets, catalogPending, tabKey } = useBrainsState();
   const uncopied = [...damaged].filter(([id]) => !brains.has(id));
   const [dialog, setDialog] = useState<BrainDialog>(null);
   const [editingBrainId, setEditingBrainId] = useState<string | null>(null);
@@ -324,6 +349,7 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
               const diagnosticsExpanded = expandedDiagnostics.has(id) && diagnostics.length > 0;
               const damage = damaged.get(id);
               const unresolved = unresolvedAssets.get(id);
+              const foreign = brain.origin !== null && brain.origin !== tabKey;
               return (
                 <li
                   key={id}
@@ -333,14 +359,18 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
                   className="flex flex-col"
                 >
                   <div className="flex items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/50">
-                    <button
-                      type="button"
-                      aria-label={`Edit ${brain.name}`}
-                      className="min-w-0 flex-1 wrap-break-word text-left text-sm hover:underline"
-                      onClick={() => setEditingBrainId(id)}
-                    >
-                      {brain.name}
-                    </button>
+                    {foreign ? (
+                      <span className="min-w-0 flex-1 wrap-break-word text-sm">{brain.name}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${brain.name}`}
+                        className="min-w-0 flex-1 wrap-break-word text-left text-sm hover:underline"
+                        onClick={() => setEditingBrainId(id)}
+                      >
+                        {brain.name}
+                      </button>
+                    )}
                     <div className="flex items-center gap-1">
                       {diagnostics.length > 0 && (
                         <BrainErrorBadge
@@ -351,61 +381,72 @@ export function BrainList({ tileColors }: { tileColors?: TileKindColors }) {
                           brainName={brain.name}
                         />
                       )}
-                      <button
-                        type="button"
-                        ref={(element) => {
-                          if (element) {
-                            editButtons.current.set(id, element);
-                          } else {
-                            editButtons.current.delete(id);
-                          }
-                        }}
-                        data-testid="brain-edit"
-                        data-brain-id={id}
-                        aria-label={`Edit ${brain.name}`}
-                        className="rounded px-2 py-1 font-medium text-foreground text-xs hover:bg-muted"
-                        onClick={() => setEditingBrainId(id)}
-                      >
-                        Edit
-                      </button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      {foreign ? (
+                        <OpenInOriginAction
+                          brainId={id}
+                          brainName={brain.name}
+                          originLabel={brain.originLabel}
+                          brains={store}
+                        />
+                      ) : (
+                        <>
                           <button
                             type="button"
-                            data-testid="brain-actions"
+                            ref={(element) => {
+                              if (element) {
+                                editButtons.current.set(id, element);
+                              } else {
+                                editButtons.current.delete(id);
+                              }
+                            }}
+                            data-testid="brain-edit"
                             data-brain-id={id}
-                            className={ICON_TRIGGER_CLASSES}
-                            aria-label={`More actions for ${brain.name}`}
+                            aria-label={`Edit ${brain.name}`}
+                            className="rounded px-2 py-1 font-medium text-foreground text-xs hover:bg-muted"
+                            onClick={() => setEditingBrainId(id)}
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            Edit
                           </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="border-border">
-                          <DropdownMenuItem
-                            data-testid="brain-rename"
-                            data-brain-id={id}
-                            onClick={() => setDialog({ kind: "rename", id, name: brain.name })}
-                          >
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            data-testid="brain-remove"
-                            data-brain-id={id}
-                            className="text-destructive focus:text-destructive data-highlighted:text-destructive"
-                            onClick={() => setDialog({ kind: "remove", id, name: brain.name })}
-                          >
-                            Remove
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                data-testid="brain-actions"
+                                data-brain-id={id}
+                                className={ICON_TRIGGER_CLASSES}
+                                aria-label={`More actions for ${brain.name}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="border-border">
+                              <DropdownMenuItem
+                                data-testid="brain-rename"
+                                data-brain-id={id}
+                                onClick={() => setDialog({ kind: "rename", id, name: brain.name })}
+                              >
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                data-testid="brain-remove"
+                                data-brain-id={id}
+                                className="text-destructive focus:text-destructive data-highlighted:text-destructive"
+                                onClick={() => setDialog({ kind: "remove", id, name: brain.name })}
+                              >
+                                Remove
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </>
+                      )}
                     </div>
                   </div>
                   {damage !== undefined && (
                     <BrainDamageNotice
                       brainId={id}
                       code={damage.code}
-                      restorable
+                      restorable={!foreign}
                       reconciled={reconciled}
                       brains={store}
                     />

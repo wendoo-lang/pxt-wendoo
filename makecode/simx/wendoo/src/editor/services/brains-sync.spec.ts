@@ -6,6 +6,7 @@ import type { BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import type {
   MakeCodeBrainSummary,
   MakeCodeBrainsChannel,
+  MakeCodeBrainsOpenRefusalCode,
   MakeCodeIdManifest,
   MakeCodeManifestReading,
   MakeCodeWireBrain,
@@ -77,6 +78,10 @@ class FakeChannel implements MakeCodeBrainsChannel {
   readonly pulls: string[][] = [];
   /** The name of every create received, in order. */
   readonly creates: string[] = [];
+  /** The brain id of every open received, in order. */
+  readonly opens: string[] = [];
+  /** When set, opens naming these ids are answered with the code each maps to. */
+  readonly refusedOpens = new Map<string, MakeCodeBrainsOpenRefusalCode>();
   /** When set, pushes naming these ids are answered with `WRITE_FAILED`. */
   readonly failingWrites = new Set<string>();
   /** When set, pushes naming these ids are answered with `NOT_ORIGIN`. */
@@ -141,6 +146,14 @@ class FakeChannel implements MakeCodeBrainsChannel {
         throw new MakeCodeBrainsError(MakeCodeBrainsErrorCode.WRITE_FAILED, "unwritable");
       }
       return this.project.create(name);
+    });
+  }
+
+  openBrain(id: string): Promise<void> {
+    this.opens.push(id);
+    return this.answer(() => {
+      const refusal = this.refusedOpens.get(id);
+      if (refusal !== undefined) throw new MakeCodeBrainsError(refusal, "not opened");
     });
   }
 
@@ -512,6 +525,44 @@ describe("brains sync", () => {
       assert.equal(entryOf(store, remote.id).name, "Remote");
       assert.equal(entryOf(store, remote.id).source, remote.source);
       assert.deepEqual(warnedCodes(warnings), [MakeCodeBrainsErrorCode.NOT_ORIGIN]);
+      assert.deepEqual(warnings.mock.calls[0]?.arguments[1], { brainId: remote.id });
+    });
+
+    it("asks the latest handshake's channel to open a brain in its origin, logging nothing once acknowledged", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      await handshake(projectWithOrigin(remote, "Daydream"));
+      const latest = await handshake(projectWithOrigin(remote, "Daydream"));
+
+      await store.openBrainInOrigin(remote.id);
+
+      assert.deepEqual(latest.opens, [remote.id]);
+      assert.deepEqual(warnedCodes(warnings), []);
+    });
+
+    it("logs an open asked before any handshake under CLOSED, with the brain's id", async () => {
+      const store = syncedStore();
+
+      await store.openBrainInOrigin("missingmissingmi");
+
+      assert.deepEqual(warnedCodes(warnings), [MakeCodeBrainsErrorCode.CLOSED]);
+      assert.deepEqual(warnings.mock.calls[0]?.arguments[1], { brainId: "missingmissingmi" });
+    });
+
+    it("logs an open the frame refuses by its code, with the brain's id", async () => {
+      const store = syncedStore();
+      const remote = projectBrain("Remote");
+      const channel = await handshake(projectWithOrigin(remote, null));
+      channel.refusedOpens.set(remote.id, MakeCodeBrainsErrorCode.ORIGIN_ABSENT);
+      channel.refusedOpens.set("missingmissingmi", MakeCodeBrainsErrorCode.UNKNOWN_BRAIN);
+
+      await store.openBrainInOrigin(remote.id);
+      await store.openBrainInOrigin("missingmissingmi");
+
+      assert.deepEqual(warnedCodes(warnings), [
+        MakeCodeBrainsErrorCode.ORIGIN_ABSENT,
+        MakeCodeBrainsErrorCode.UNKNOWN_BRAIN,
+      ]);
       assert.deepEqual(warnings.mock.calls[0]?.arguments[1], { brainId: remote.id });
     });
 

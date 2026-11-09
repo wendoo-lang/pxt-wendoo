@@ -249,6 +249,12 @@ export interface BrainsViewState {
    * kept.
    */
   readonly catalogPending: boolean;
+  /**
+   * The registration key MakeCode names this tab by, as
+   * {@link BrainsStore.setTabKey} last set it, or `undefined` before it is
+   * set. A brain whose origin is another key is edited in that key's tab.
+   */
+  readonly tabKey: string | undefined;
 }
 
 /** An entry the store compiled, with what its compile found. */
@@ -425,6 +431,7 @@ export class BrainsStore {
   /** The scheduled retry of each brain whose latest push failed, by document id. */
   private readonly _retries = new Map<string, ReturnType<typeof setTimeout>>();
   private _pushesInFlight = 0;
+  private _tabKey: string | undefined;
   private _state: BrainsViewState;
 
   /**
@@ -544,6 +551,38 @@ export class BrainsStore {
     this._local.delete(id);
     this.edited(id);
     this.publish();
+  }
+
+  /**
+   * Takes `key` as the registration key MakeCode names this tab by,
+   * publishing when it changes.
+   *
+   * @param key - The key the port message names this tab by, or `undefined` when it names none.
+   */
+  setTabKey(key: string | undefined): void {
+    if (key === this._tabKey) return;
+    this._tabKey = key;
+    this.publish();
+  }
+
+  /**
+   * Asks the simulator extension, over the latest handshake's channel, to
+   * open the brain `id` in the tab of its origin. Resolves once it answers;
+   * a refusal or a handshake ending first is logged at warn level by its
+   * code with the brain's id, and so is an ask made before the first
+   * handshake, under `MakeCodeBrainsErrorCode.CLOSED`, sending nothing.
+   *
+   * @param id - Document id of the brain.
+   */
+  openBrainInOrigin(id: string): Promise<void> {
+    const channel = this._channel;
+    if (channel === undefined) {
+      logger.warn(MakeCodeBrainsErrorCode.CLOSED, { brainId: id });
+      return Promise.resolve();
+    }
+    return channel.openBrain(id).catch((error: unknown) => {
+      if (error instanceof MakeCodeBrainsError) logger.warn(error.code, { brainId: id });
+    });
   }
 
   /**
@@ -1165,6 +1204,7 @@ export class BrainsStore {
       damaged: this._damaged,
       reconciled: this._reconciled,
       catalogPending: this._catalogText === undefined,
+      tabKey: this._tabKey,
     };
   }
 

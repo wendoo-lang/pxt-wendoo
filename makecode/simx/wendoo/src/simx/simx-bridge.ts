@@ -12,6 +12,7 @@ import { connectMakeCodeSession, messagePortSessionPort } from "@wendoo/makecode
 import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorTab } from "../vendor/simxeditor.js";
 import { BrainsProject } from "./brains-project.js";
 import { enrichCatalogIcons } from "./catalog-icons.js";
+import type { EditorTabOpener } from "./editor-tab.js";
 import { IDS_MODULE_FILE } from "./ids-module.js";
 import { LivePrograms } from "./live-programs.js";
 import { ManifestProject } from "./manifest-project.js";
@@ -60,12 +61,14 @@ export interface SimxServingOptions {
    * request the asset provider fails, the code of every image or icon
    * that cannot be rendered in full, the code of a catalog whose target
    * has no icon palette, the code of every ids module and brains module
-   * problem, and the code of every failed read, write or subscription of
-   * the project's files.
+   * problem, the code of every brains push or open refused, and the code
+   * of every failed read, write or subscription of the project's files.
    */
   log: SimxLog;
   /** Timings of the watch of `files`' change notifications; each left out takes its default. */
   fileWatchTimings?: ProjectFileWatchTimings;
+  /** Shows the editor tab of a key MakeCode lists: the origin tab a brain is opened in. */
+  opener: Pick<EditorTabOpener, "open">;
   /**
    * Id of the MakeCode target running the program, for example `microbit`
    * or `arcade`, declared to the editor in each makecode session's hello,
@@ -154,6 +157,7 @@ class CounterpartSession {
    * @param latestName - The project's latest name, if known.
    * @param brainsRead - Resolves once the project's brains are read.
    * @param latestBrains - The project's latest brains.
+   * @param takeHeldOpen - Takes the brain held for the tab to open, if any, so no later session receives it.
    * @param serve - Answers each brains request the counterpart sends once the first publications are out.
    * @param settled - Called once the counterpart's hello is read: with
    *   `undefined` when the session is established, or with
@@ -170,6 +174,7 @@ class CounterpartSession {
     latestName: () => string | undefined,
     brainsRead: () => Promise<unknown>,
     latestBrains: () => readonly MakeCodeBrainSummary[],
+    takeHeldOpen: () => string | undefined,
     serve: (request: MakeCodeBrainsRequest) => void,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
   ) {
@@ -206,6 +211,8 @@ class CounterpartSession {
             session.publishProjectInfo({ name });
           }
           session.publishBrains(latestBrains());
+          const held = takeHeldOpen();
+          if (held !== undefined) session.publishBrainOpen(held);
           this._publishing = true;
           session.onBrainsRequest(serve);
         });
@@ -244,6 +251,17 @@ class CounterpartSession {
     if (this._publishing) this._session?.publishBrains(brains);
   }
 
+  /**
+   * Publish an ask for the peer's editor to open the brain `id` when the
+   * first publications are out and the session is not closed. Returns
+   * whether it was published.
+   */
+  openBrain(id: string): boolean {
+    if (!this._publishing || this._closed || this._session === undefined) return false;
+    this._session.publishBrainOpen(id);
+    return true;
+  }
+
   /** Detach from the port, whether or not the session was established. */
   close(): void {
     this._closed = true;
@@ -258,14 +276,13 @@ class CounterpartSession {
 /** The MakeCode project as the simulator extension serves it to one counterpart session per editor tab. */
 interface ProjectServer {
   /**
-   * Open a makecode session with the tab keyed `peer` over `port`, closing
-   * that tab's current one, and report its handshake's outcome to `settled`.
-   * Its brains requests are served as from `origin`: the tab's key, or `null`
-   * when the port named none.
+   * Open a makecode session with the tab keyed `key` over `port` -- the
+   * frame's own channel when `key` is `null`, for a port naming no tab --
+   * closing that tab's current one, and report its handshake's outcome to
+   * `settled`. Its brains requests are served as from `key`.
    */
   attach(
-    peer: string,
-    origin: string | null,
+    key: string | null,
     port: MakeCodeSessionPort,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
   ): void;
@@ -283,11 +300,13 @@ interface ProjectServer {
  * catalog, the manifest or the asset snapshot changes. Each session receives
  * the catalog, the manifest, the asset snapshot, the project's name and the
  * brains once established and again as each changes; compiles that change a
- * program are posted to the running program at once. The protocol and the
- * ordering rules are in docs/session-management.md.
+ * program are posted to the running program at once, and a brain a tab asks
+ * to open is opened in its origin's tab through `options.opener`. The
+ * protocol and the ordering rules are in docs/session-management.md.
  */
 function startProjectServer(options: SimxServingOptions): ProjectServer {
   const { log } = options;
+  const ownChannel = options.channel ?? SIMX_CHANNEL;
   const unwatch = watchProjectFiles(
     options.files,
     log,
@@ -321,6 +340,8 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   let catalogCount = 0;
   // the session of each editor tab, by the tab's key
   const counterparts = new Map<string, CounterpartSession>();
+  // the brain each tab is to open once its session's first publications are out, by the tab's key
+  const heldOpens = new Map<string, string>();
 
   const channelUnsubscribes = [
     channel.onCatalog((posted) => {
@@ -348,6 +369,12 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
     brains.onChange((summaries) => {
       for (const counterpart of counterparts.values()) counterpart.publishBrains(summaries);
     }),
+    brains.onOpen(({ id, origin, peer }) => {
+      if (origin !== null) void options.opener.open(origin);
+      const key = origin ?? peer ?? ownChannel;
+      if (counterparts.get(key)?.openBrain(id) === true) return;
+      heldOpens.set(key, id);
+    }),
     projectAssets.onName((name) => {
       for (const counterpart of counterparts.values()) counterpart.publishName(name);
     }),
@@ -360,10 +387,11 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   channel.requestCatalog();
 
   return {
-    attach(peer, origin, port, settled) {
-      counterparts.get(peer)?.close();
+    attach(key, port, settled) {
+      const sessionKey = key ?? ownChannel;
+      counterparts.get(sessionKey)?.close();
       const counterpart = new CounterpartSession(
-        peer,
+        sessionKey,
         port,
         options.target,
         () => publishedCatalog,
@@ -372,12 +400,17 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
         () => projectAssets.name,
         () => brains.current(),
         () => brains.summaries(),
+        () => {
+          const held = heldOpens.get(sessionKey);
+          heldOpens.delete(sessionKey);
+          return held;
+        },
         (request) => {
-          serveBrains(origin, request);
+          serveBrains(key, request);
         },
         settled
       );
-      counterparts.set(peer, counterpart);
+      counterparts.set(sessionKey, counterpart);
     },
     setTabs(tabs) {
       brains.adoptTabs(tabs);
@@ -385,6 +418,7 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
     dispose() {
       for (const counterpart of counterparts.values()) counterpart.close();
       counterparts.clear();
+      heldOpens.clear();
       for (const unsubscribe of channelUnsubscribes) {
         unsubscribe();
       }
@@ -410,7 +444,6 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
   const { frame, parentOrigin, log } = options;
-  const ownChannel = options.channel ?? SIMX_CHANNEL;
   const server = startProjectServer(options);
   const settled = (rejection: PeerSessionErrorCode | undefined): void => {
     if (rejection !== undefined) logRejection(log, rejection);
@@ -422,7 +455,7 @@ export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBri
     const port = event.ports[0];
     if (port === undefined) return;
     const named = typeof message.peer === "string" ? message.peer : null;
-    server.attach(named ?? ownChannel, named, messagePortSessionPort(port), settled);
+    server.attach(named, messagePortSessionPort(port), settled);
   };
   frame.addEventListener("message", receive);
 

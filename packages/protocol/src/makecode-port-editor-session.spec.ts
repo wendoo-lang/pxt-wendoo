@@ -65,6 +65,7 @@ interface Delivered {
   assets: MakeCodeAsset[][];
   projectInfo: MakeCodeProjectInfo[];
   brains: MakeCodeBrainSummary[][];
+  brainOpens: string[];
   channels: MakeCodeBrainsChannel[];
 }
 
@@ -77,6 +78,7 @@ function record(session: MakeCodePortEditorSession): Delivered {
     assets: [],
     projectInfo: [],
     brains: [],
+    brainOpens: [],
     channels: [],
   };
   session.onStateChange((state) => delivered.states.push(state));
@@ -85,6 +87,7 @@ function record(session: MakeCodePortEditorSession): Delivered {
   session.onAssets((assets) => delivered.assets.push(assets));
   session.onProjectInfo((info) => delivered.projectInfo.push(info));
   session.onBrains((brains) => delivered.brains.push(brains));
+  session.onBrainOpen((id) => delivered.brainOpens.push(id));
   session.onBrainsChannel((channel) => delivered.channels.push(channel));
   return delivered;
 }
@@ -144,6 +147,7 @@ describe("port-backed editor session", () => {
     peers.push(peer);
     peer.onBrainsRequest((request) => {
       if (request.kind === "list") request.reply([]);
+      if (request.kind === "open") request.reply();
       if (request.kind === "create") {
         request.reply({
           id: "createdcreatedcr",
@@ -440,6 +444,46 @@ describe("port-backed editor session", () => {
     );
 
     assert.deepEqual(delivered.brains, [BRAINS, []]);
+  });
+
+  it("delivers the brain opens of the current port's handshake only", async () => {
+    const { session, delivered } = started();
+    const first = await pair(session);
+    first.publishBrainOpen("abcdabcdabcdabcd");
+    await eventually(
+      () => delivered.brainOpens.length,
+      (count) => count === 1,
+      "the first port's brain open"
+    );
+
+    const second = await pair(session);
+    first.publishBrainOpen("from-the-first-port");
+    second.publishBrainOpen("runnerrunnerrunn");
+    await eventually(
+      () => delivered.brainOpens.length,
+      (count) => count === 2,
+      "the second port's brain open"
+    );
+
+    assert.deepEqual(delivered.brainOpens, ["abcdabcdabcdabcd", "runnerrunnerrunn"]);
+  });
+
+  it("asks to open a brain over the brains channel of the current port's handshake", async () => {
+    const { session, delivered } = started();
+    const peer = await pair(session);
+    const asked: string[] = [];
+    peer.onBrainsRequest((request) => {
+      if (request.kind === "open") asked.push(request.id);
+    });
+    await eventually(
+      () => delivered.channels.length,
+      (count) => count === 1,
+      "the handshake's channel"
+    );
+
+    await delivered.channels[0].openBrain("abcdabcdabcdabcd");
+
+    assert.deepEqual(asked, ["abcdabcdabcdabcd"]);
   });
 
   it("creates a brain over the brains channel of the current port's handshake", async () => {

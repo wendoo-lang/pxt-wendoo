@@ -449,6 +449,21 @@ describe("brains store", () => {
       seedBrain(store, "Runner");
       assert.equal(published, 1);
     });
+
+    it("holds the tab key it is given, none before, publishing only when it changes", () => {
+      const store = new BrainsStore(session);
+      let published = 0;
+      store.subscribe(() => {
+        published += 1;
+      });
+      assert.equal(store.getSnapshot().tabKey, undefined);
+
+      store.setTabKey("wendoo-lang/pxt-wendoo/makecode/extensions/arcade");
+      store.setTabKey("wendoo-lang/pxt-wendoo/makecode/extensions/arcade");
+
+      assert.equal(store.getSnapshot().tabKey, "wendoo-lang/pxt-wendoo/makecode/extensions/arcade");
+      assert.equal(published, 1);
+    });
   });
 
   describe("over the editor session store", () => {
@@ -499,6 +514,10 @@ describe("brains store", () => {
         return () => {
           this._brainsListeners.delete(listener);
         };
+      }
+
+      onBrainOpen(): () => void {
+        return () => {};
       }
 
       onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
@@ -559,6 +578,7 @@ describe("brains store", () => {
             holds = true;
             return Promise.resolve(summary(created));
           },
+          openBrain: () => Promise.resolve(),
         };
         for (const listener of this._brainsChannelListeners) listener(channel);
         for (const listener of this._brainsListeners) listener([]);

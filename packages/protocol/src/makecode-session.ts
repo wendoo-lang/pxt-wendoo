@@ -7,6 +7,7 @@ import type {
 import { connectPeerSession } from "@wendoo/bridge-app/peer-session";
 import type { MakeCodeAsset, MakeCodeAssetsMessage } from "./makecode-assets.js";
 import type {
+  MakeCodeBrainOpenMessage,
   MakeCodeBrainSummary,
   MakeCodeBrainsErrorPayload,
   MakeCodeBrainsMessage,
@@ -102,6 +103,7 @@ export type MakeCodeSessionMessage =
   | MakeCodeAssetsMessage
   | MakeCodeProjectInfoMessage
   | MakeCodeBrainsMessage
+  | MakeCodeBrainOpenMessage
   | MakeCodeBrainsRequestMessage
   | MakeCodeBrainsReplyMessage
   | MakeCodePingMessage
@@ -185,6 +187,15 @@ export interface MakeCodeSession {
    * unsubscribe function.
    */
   onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void;
+  /** Ask the peer's editor to open the brain `id` for editing. */
+  publishBrainOpen(id: string): void;
+  /**
+   * Subscribe to the brains the peer asks this side's editor to open, each
+   * delivered by its document id. Asks received while no listener is
+   * attached are replayed to the next listener that attaches. Returns an
+   * unsubscribe function.
+   */
+  onBrainOpen(listener: (id: string) => void): () => void;
   /**
    * Ask the peer serving the project for the brains the project holds.
    * Resolves with the peer's list; rejects with a `MakeCodeBrainsError`
@@ -217,6 +228,15 @@ export interface MakeCodeSession {
    * @param name - Display name of the brain; any text, including empty.
    */
   createBrain(name: string): Promise<MakeCodeBrainSummary>;
+  /**
+   * Ask the peer serving the project to open the brain `id` in the tab of
+   * its origin, or in this side's tab for a brain with none. Resolves once
+   * the peer has acknowledged it; rejects as {@link listBrains} does,
+   * `UNKNOWN_BRAIN` and `ORIGIN_ABSENT` among the codes.
+   *
+   * @param id - Document id of the brain to open.
+   */
+  openBrain(id: string): Promise<void>;
   /**
    * Subscribe to the brains requests the peer sends, for the party serving
    * the project to answer: each is delivered once per listener with the
@@ -294,6 +314,9 @@ class EstablishedSession implements MakeCodeSession {
   private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
   /** Brains publications received while no brains listener was attached, in arrival order. */
   private readonly _bufferedBrains: MakeCodeBrainSummary[][] = [];
+  private readonly _brainOpenListeners = new Set<(id: string) => void>();
+  /** Ids of the brains asked open while no brain-open listener was attached, in arrival order. */
+  private readonly _bufferedBrainOpens: string[] = [];
   private readonly _pending = new Map<string, PendingRequest>();
   /** Resolvers of the pings awaiting their pong, by ping id. */
   private readonly _pings = new Map<string, () => void>();
@@ -378,6 +401,18 @@ class EstablishedSession implements MakeCodeSession {
     };
   }
 
+  publishBrainOpen(id: string): void {
+    this._session.postMessage({ type: "makecode:brainOpen", payload: { id } });
+  }
+
+  onBrainOpen(listener: (id: string) => void): () => void {
+    this._brainOpenListeners.add(listener);
+    for (const id of this._bufferedBrainOpens.splice(0)) listener(id);
+    return () => {
+      this._brainOpenListeners.delete(listener);
+    };
+  }
+
   async listBrains(): Promise<MakeCodeBrainSummary[]> {
     const reply = await this.request((id) => ({ type: "makecode:brainsList", id }), "makecode:brainsListReply");
     return reply.payload.brains;
@@ -405,6 +440,13 @@ class EstablishedSession implements MakeCodeSession {
       "makecode:brainsCreateReply"
     );
     return reply.payload.brain;
+  }
+
+  async openBrain(id: string): Promise<void> {
+    await this.request(
+      (requestId) => ({ type: "makecode:brainsOpen", id: requestId, payload: { id } }),
+      "makecode:brainsOpenReply"
+    );
   }
 
   onBrainsRequest(listener: (request: MakeCodeBrainsRequest) => void): () => void {
@@ -468,9 +510,9 @@ class EstablishedSession implements MakeCodeSession {
   /**
    * Routes one message from the peer: answers a ping with its pong, settles
    * the ping a pong answers, routes catalogs, manifests, asset snapshots,
-   * project facts and brains publications to their listeners, brains
-   * requests to the request listeners, and replies to their requests; drops
-   * the rest.
+   * project facts, brains publications and brain opens to their listeners,
+   * brains requests to the request listeners, and replies to their
+   * requests; drops the rest.
    */
   private receive(message: SessionTraffic): void {
     if (message.type === "makecode:ping") {
@@ -529,11 +571,21 @@ class EstablishedSession implements MakeCodeSession {
       for (const listener of this._brainsListeners) listener(brains);
       return;
     }
+    if (message.type === "makecode:brainOpen") {
+      const { id } = message.payload;
+      if (this._brainOpenListeners.size === 0) {
+        this._bufferedBrainOpens.push(id);
+        return;
+      }
+      for (const listener of this._brainOpenListeners) listener(id);
+      return;
+    }
     if (
       message.type === "makecode:brainsList" ||
       message.type === "makecode:brainsPull" ||
       message.type === "makecode:brainsPush" ||
-      message.type === "makecode:brainsCreate"
+      message.type === "makecode:brainsCreate" ||
+      message.type === "makecode:brainsOpen"
     ) {
       const request = this.incoming(message);
       if (this._requestListeners.size === 0) {
@@ -608,6 +660,16 @@ class EstablishedSession implements MakeCodeSession {
             answer({ type: "makecode:brainsCreateReply", id, payload: { brain } });
           },
           fail: failWith(MakeCodeBrainsErrorCode.WRITE_FAILED),
+        };
+      case "makecode:brainsOpen":
+        return {
+          kind: "open",
+          id: message.payload.id,
+          reply: () => {
+            answer({ type: "makecode:brainsOpenReply", id });
+          },
+          refuseUnknown: failWith(MakeCodeBrainsErrorCode.UNKNOWN_BRAIN),
+          refuseAbsent: failWith(MakeCodeBrainsErrorCode.ORIGIN_ABSENT),
         };
     }
   }

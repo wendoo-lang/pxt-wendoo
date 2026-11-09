@@ -117,6 +117,15 @@ export class EditorSessionStore {
     return this._session.onBrains(listener);
   };
 
+  /**
+   * Subscribe to the brains the MakeCode side asks this editor to open, each
+   * delivered by its document id as it arrives. Returns an unsubscribe
+   * function.
+   */
+  onBrainOpen = (listener: (id: string) => void): (() => void) => {
+    return this._session.onBrainOpen(listener);
+  };
+
   /** Starts the session. */
   start(): void {
     this._session.start();

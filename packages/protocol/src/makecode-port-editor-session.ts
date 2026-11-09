@@ -64,8 +64,8 @@ export interface MakeCodePortEditorSessionOptions {
  *
  * Every port attached opens a fresh handshake, replacing the previous
  * port's: the catalogs, id manifests, asset snapshots, project facts,
- * brains publications and brains channel delivered come from the current
- * handshake only.
+ * brains publications, brain opens and brains channel delivered come from
+ * the current handshake only.
  * While a handshake is established the session pings the counterpart, one
  * ping outstanding at a time, two after a miss: the first a heartbeat
  * interval after the handshake completes, each next one an interval after
@@ -146,6 +146,7 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   private readonly _brainsListeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
+  private readonly _brainOpenListeners = new Set<(id: string) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
   /** The port attached while no handshake has opened over it yet. */
   private _port: MakeCodeSessionPort | undefined;
@@ -224,6 +225,13 @@ class PortEditorSession implements MakeCodePortEditorSession {
     };
   }
 
+  onBrainOpen(listener: (id: string) => void): () => void {
+    this._brainOpenListeners.add(listener);
+    return () => {
+      this._brainOpenListeners.delete(listener);
+    };
+  }
+
   onBrainsChannel(listener: (channel: MakeCodeBrainsChannel) => void): () => void {
     this._brainsChannelListeners.add(listener);
     return () => {
@@ -280,6 +288,9 @@ class PortEditorSession implements MakeCodePortEditorSession {
       },
       brains: (brains) => {
         for (const listener of this._brainsListeners) listener(brains);
+      },
+      brainOpen: (id) => {
+        for (const listener of this._brainOpenListeners) listener(id);
       },
       rejected: (code) => {
         this._errorCode = code;

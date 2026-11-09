@@ -1,14 +1,16 @@
 import { logger } from "@wendoo/core/app";
+import type { EditorSessionStore } from "./editor-session-store";
 
 /** Stable code logged at debug level for each create request, with the fully qualified name of the type it names. */
 export const EDITOR_CREATE_REQUESTED = "EDITOR_CREATE_REQUESTED";
 
-/** Stable code logged at debug level for each open request, with the fully qualified name of the instance it names. */
+/** Stable code logged at debug level for each open request, with the fully qualified name or the document id of what it names. */
 export const EDITOR_OPEN_REQUESTED = "EDITOR_OPEN_REQUESTED";
 
 /**
  * A request, made from outside the editor: to create an instance of a type,
- * or to open an instance.
+ * or to open an instance, named by its fully qualified name or, for a brain,
+ * by its document id.
  */
 export type EditorRequest =
   | {
@@ -20,13 +22,18 @@ export type EditorRequest =
       readonly kind: "open";
       /** The fully qualified name of the instance to open, such as `wendooBrains.p_abcdabcdabcdabcd`. */
       readonly qName: string;
+    }
+  | {
+      readonly kind: "open";
+      /** The document id of the brain to open. */
+      readonly brainId: string;
     };
 
 /**
  * The requests made of the editor from outside it, held in one slot: the
  * latest request of either kind until a subscriber takes it. Each request is
  * logged under its kind's code, {@link EDITOR_CREATE_REQUESTED} or
- * {@link EDITOR_OPEN_REQUESTED}, with its `qName`.
+ * {@link EDITOR_OPEN_REQUESTED}, with its `qName` or `brainId`.
  */
 export class EditorRequests {
   private _held: EditorRequest | undefined;
@@ -38,9 +45,10 @@ export class EditorRequests {
    * held before.
    */
   request(request: EditorRequest): void {
-    logger.debug(request.kind === "create" ? EDITOR_CREATE_REQUESTED : EDITOR_OPEN_REQUESTED, {
-      qName: request.qName,
-    });
+    logger.debug(
+      request.kind === "create" ? EDITOR_CREATE_REQUESTED : EDITOR_OPEN_REQUESTED,
+      "brainId" in request ? { brainId: request.brainId } : { qName: request.qName }
+    );
     if (this._listeners.size === 0) {
       this._held = request;
       return;
@@ -62,4 +70,18 @@ export class EditorRequests {
       this._listeners.delete(listener);
     };
   }
+}
+
+/**
+ * Makes each brain the MakeCode side asks `source` to open an open request
+ * of `requests` for that brain's document id. Returns an unsubscribe
+ * function.
+ */
+export function forwardBrainOpens(
+  source: Pick<EditorSessionStore, "onBrainOpen">,
+  requests: Pick<EditorRequests, "request">
+): () => void {
+  return source.onBrainOpen((brainId) => {
+    requests.request({ kind: "open", brainId });
+  });
 }

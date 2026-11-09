@@ -55,6 +55,17 @@ export const MakeCodeBrainsErrorCode = {
    */
   NOT_ORIGIN: "MAKECODE_BRAINS_NOT_ORIGIN",
   /**
+   * The project holds no brain under the id an open request names. Carried
+   * by a {@link MakeCodeBrainsErrorMessage}.
+   */
+  UNKNOWN_BRAIN: "MAKECODE_BRAINS_UNKNOWN_BRAIN",
+  /**
+   * The brain an open request names has an origin key that is not among the
+   * tabs MakeCode lists to the party serving the project, so it has no tab
+   * to open in. Carried by a {@link MakeCodeBrainsErrorMessage}.
+   */
+  ORIGIN_ABSENT: "MAKECODE_BRAINS_ORIGIN_ABSENT",
+  /**
    * The makecode handshake carrying the request ended -- the transport
    * closed, or a new port replaced the handshake -- before the reply
    * arrived. Raised by the requesting side; never on the
@@ -309,17 +320,46 @@ export interface MakeCodeBrainsCreateReplyMessage {
   payload: MakeCodeBrainsCreateReplyPayload;
 }
 
+/** Payload of a {@link MakeCodeBrainsOpenMessage}. */
+export interface MakeCodeBrainsOpenPayload {
+  /** Document id of the brain to open. */
+  id: string;
+}
+
+/**
+ * Asks the party serving the project to open the brain `payload.id` in the
+ * tab of its origin, which receives a {@link MakeCodeBrainOpenMessage}; a
+ * brain with no origin opens in the requesting tab. The reply, carrying the
+ * same `id`, is a {@link MakeCodeBrainsOpenReplyMessage}, or a
+ * {@link MakeCodeBrainsErrorMessage} carrying
+ * `MakeCodeBrainsErrorCode.UNKNOWN_BRAIN` or `ORIGIN_ABSENT`.
+ */
+export interface MakeCodeBrainsOpenMessage {
+  type: "makecode:brainsOpen";
+  /** Correlates the request with its reply; unique among the sender's requests on its connection. */
+  id: string;
+  payload: MakeCodeBrainsOpenPayload;
+}
+
+/** Answers a {@link MakeCodeBrainsOpenMessage}, carrying its `id`, once the brain's opening is under way. */
+export interface MakeCodeBrainsOpenReplyMessage {
+  type: "makecode:brainsOpenReply";
+  id: string;
+}
+
 /** Payload of a {@link MakeCodeBrainsErrorMessage}. */
 export interface MakeCodeBrainsErrorPayload {
   /**
    * Stable code of the failure: `READ_FAILED` for a list or a pull,
    * `WRITE_FAILED` for a push or a create, `NOT_ORIGIN` for a push from a
-   * tab that is not the brain's origin.
+   * tab that is not the brain's origin, `UNKNOWN_BRAIN` or `ORIGIN_ABSENT`
+   * for an open.
    */
   code:
     | typeof MakeCodeBrainsErrorCode.READ_FAILED
     | typeof MakeCodeBrainsErrorCode.WRITE_FAILED
-    | typeof MakeCodeBrainsErrorCode.NOT_ORIGIN;
+    | typeof MakeCodeBrainsErrorCode.NOT_ORIGIN
+    | MakeCodeBrainsOpenRefusalCode;
   /** Human-readable description of the failure. */
   message: string;
 }
@@ -346,12 +386,28 @@ export interface MakeCodeBrainsMessage {
   payload: MakeCodeBrainsPayload;
 }
 
+/** Payload of a {@link MakeCodeBrainOpenMessage}. */
+export interface MakeCodeBrainOpenPayload {
+  /** Document id of the brain to open. */
+  id: string;
+}
+
+/**
+ * Asks the editor of one tab, published by the party serving the project
+ * into that tab's session alone, to open the brain `payload.id` for editing.
+ */
+export interface MakeCodeBrainOpenMessage {
+  type: "makecode:brainOpen";
+  payload: MakeCodeBrainOpenPayload;
+}
+
 /** The brains requests: sent by the editor to the party serving the project. */
 export type MakeCodeBrainsRequestMessage =
   | MakeCodeBrainsListMessage
   | MakeCodeBrainsPullMessage
   | MakeCodeBrainsPushMessage
-  | MakeCodeBrainsCreateMessage;
+  | MakeCodeBrainsCreateMessage
+  | MakeCodeBrainsOpenMessage;
 
 /** The brains replies: sent by the party serving the project, each carrying its request's `id`. */
 export type MakeCodeBrainsReplyMessage =
@@ -359,7 +415,13 @@ export type MakeCodeBrainsReplyMessage =
   | MakeCodeBrainsPullReplyMessage
   | MakeCodeBrainsPushReplyMessage
   | MakeCodeBrainsCreateReplyMessage
+  | MakeCodeBrainsOpenReplyMessage
   | MakeCodeBrainsErrorMessage;
+
+/** The codes an open request is refused with: `UNKNOWN_BRAIN` or `ORIGIN_ABSENT`. */
+export type MakeCodeBrainsOpenRefusalCode =
+  | typeof MakeCodeBrainsErrorCode.UNKNOWN_BRAIN
+  | typeof MakeCodeBrainsErrorCode.ORIGIN_ABSENT;
 
 /**
  * A list request from the peer, delivered to the party serving the project.
@@ -463,9 +525,37 @@ export interface MakeCodeBrainsCreateRequest {
   fail(message: string): void;
 }
 
+/**
+ * An open request from the peer, delivered to the party serving the project.
+ * Answer it once, with {@link reply}, {@link refuseUnknown} or
+ * {@link refuseAbsent}; later answers are not sent.
+ */
+export interface MakeCodeBrainsOpenRequest {
+  readonly kind: "open";
+  /** Document id of the brain to open. */
+  readonly id: string;
+  /** Answer that the brain's opening is under way. */
+  reply(): void;
+  /**
+   * Answer that the project holds no such brain, with
+   * `MakeCodeBrainsErrorCode.UNKNOWN_BRAIN`.
+   *
+   * @param message - Human-readable description of the refusal.
+   */
+  refuseUnknown(message: string): void;
+  /**
+   * Answer that the brain's origin key is not among the tabs MakeCode
+   * lists, with `MakeCodeBrainsErrorCode.ORIGIN_ABSENT`.
+   *
+   * @param message - Human-readable description of the refusal.
+   */
+  refuseAbsent(message: string): void;
+}
+
 /** A brains request from the peer, as the party serving the project receives it. */
 export type MakeCodeBrainsRequest =
   | MakeCodeBrainsListRequest
   | MakeCodeBrainsPullRequest
   | MakeCodeBrainsPushRequest
-  | MakeCodeBrainsCreateRequest;
+  | MakeCodeBrainsCreateRequest
+  | MakeCodeBrainsOpenRequest;

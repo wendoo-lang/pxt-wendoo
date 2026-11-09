@@ -26,6 +26,8 @@ export interface CounterpartHandlers {
   projectInfo(info: MakeCodeProjectInfo): void;
   /** Receives each publication of the project's brains the counterpart makes. */
   brains(brains: MakeCodeBrainSummary[]): void;
+  /** Receives the document id of each brain the counterpart asks this editor to open. */
+  brainOpen(id: string): void;
   /** Receives the code of a failed handshake. */
   rejected(code: PeerSessionErrorCode): void;
 }
@@ -34,8 +36,8 @@ export interface CounterpartHandlers {
  * The editor's makecode handshake with the counterpart over one port: sends
  * the editor's hello at once, then reports the established session's brains
  * channel and liveness probe and the catalogs, id manifests, asset snapshots,
- * project facts and brains publications the counterpart publishes to
- * `handlers`. Nothing is reported once it is closed.
+ * project facts, brains publications and brain opens the counterpart
+ * publishes to `handlers`. Nothing is reported once it is closed.
  */
 export class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -74,6 +76,7 @@ export class CounterpartSession {
             pullBrains: (ids) => session.pullBrains(ids),
             pushBrain: (push) => session.pushBrain(push),
             createBrain: (name) => session.createBrain(name),
+            openBrain: (id) => session.openBrain(id),
           },
           () => session.ping()
         );
@@ -91,6 +94,9 @@ export class CounterpartSession {
         });
         session.onBrains((brains) => {
           handlers.brains(brains);
+        });
+        session.onBrainOpen((id) => {
+          handlers.brainOpen(id);
         });
       },
       (error: unknown) => {

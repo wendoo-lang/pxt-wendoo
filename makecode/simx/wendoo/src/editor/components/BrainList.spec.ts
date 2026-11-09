@@ -15,7 +15,7 @@ import { BrainsProvider } from "../contexts/brains.js";
 import { EditorRequestsProvider } from "../contexts/editor-requests.js";
 import type { BrainsSessionState, BrainsViewState } from "../services/brains-store.js";
 import { BRAIN_TILE_UNRESOLVED, BrainsStore } from "../services/brains-store.js";
-import { EditorRequests } from "../services/editor-requests.js";
+import { EditorRequests, forwardBrainOpens } from "../services/editor-requests.js";
 import { elementByTestId, elementsIn } from "../test-support/element-tree.js";
 import { FrameProject } from "../test-support/frame-project.js";
 import { seedBrain } from "../test-support/seed-brain.js";
@@ -29,6 +29,7 @@ import {
   type BrainDialog,
   BrainList,
   EDITOR_OPEN_UNKNOWN_BRAIN,
+  OpenInOriginAction,
   type OpenRequestView,
 } from "./BrainList.js";
 
@@ -95,6 +96,39 @@ function applyRingingBrain(store: BrainsStore, name: string): string {
   firstRule(definition).do().appendTile(tile(environment, RING_TILE));
   store.applyBrain(definition);
   return definition.id();
+}
+
+/**
+ * A store over the spec's session with tab key `tabKey` when one is given,
+ * reconciled over a channel serving `project`.
+ */
+async function reconciledStore(project: FrameProject, tabKey?: string): Promise<BrainsStore> {
+  let published: ((brains: MakeCodeBrainSummary[]) => void) | undefined;
+  let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
+  const synced = new BrainsStore(SESSION, {
+    onBrainsChannel: (listener) => {
+      handshake = listener;
+      return () => {};
+    },
+    onManifest: () => () => {},
+    onBrains: (listener) => {
+      published = listener;
+      return () => {};
+    },
+  });
+  if (tabKey !== undefined) synced.setTabKey(tabKey);
+  handshake?.({
+    listBrains: () => Promise.resolve(project.summaries()),
+    pullBrains: (ids) => Promise.resolve(ids.flatMap((id) => project.get(id) ?? [])),
+    pushBrain: (push) =>
+      Promise.resolve(push.op === "write" ? project.write(push.brain.id, push.brain.name, push.brain.source) : null),
+    createBrain: (name) => Promise.resolve(project.create(name)),
+    openBrain: () => Promise.resolve(),
+  });
+  published?.(project.summaries());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(synced.getSnapshot().reconciled);
+  return synced;
 }
 
 /** Renders the brain list over `store`, under editor requests holding none. */
@@ -378,6 +412,142 @@ describe("BrainList", () => {
 
     assert.match(markup, /data-testid="brain-error-badge"[^>]*data-compile="none"/);
   });
+
+  describe("brains made in another tab", () => {
+    /** The registration key of the tab the list renders in. */
+    const OWN_TAB = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+
+    /** The registration key of another tab talking to the same frame. */
+    const OTHER_TAB = "wendoo-lang/pxt-daydream";
+
+    /** The label MakeCode lists {@link OTHER_TAB} by. */
+    const OTHER_LABEL = "Daydream";
+
+    /** Holds an empty brain named `name` in `project`, made in the tab keyed `origin` and listed by `originLabel`. Returns its id. */
+    function made(project: FrameProject, name: string, origin: string | null, originLabel: string | null): string {
+      const { id } = project.create(name);
+      const brain = project.get(id);
+      assert.ok(brain);
+      project.set(id, { ...brain, origin, originLabel });
+      return id;
+    }
+
+    /** How many times `pattern` occurs in `markup`. */
+    function occurrences(markup: string, pattern: RegExp): number {
+      return [...markup.matchAll(new RegExp(pattern, "g"))].length;
+    }
+
+    it("gives a brain of another tab listed by MakeCode one open-origin action carrying its id, and no edit or actions controls", async () => {
+      const project = new FrameProject();
+      const id = made(project, "Dreamer", OTHER_TAB, OTHER_LABEL);
+      const synced = await reconciledStore(project, OWN_TAB);
+
+      const row = rowMarkup(render(synced), id);
+
+      assert.equal(occurrences(row, /data-action="open-origin"/), 1);
+      assert.match(row, new RegExp(`data-action="open-origin" data-key="${id}"`));
+      assert.match(row, new RegExp(`${OTHER_LABEL}</button>`));
+      assert.doesNotMatch(row, /data-testid="brain-edit"/);
+      assert.doesNotMatch(row, /data-testid="brain-actions"/);
+      assert.equal(occurrences(row, /<button/), 1);
+    });
+
+    it("gives a brain of another tab MakeCode does not list no action at all", async () => {
+      const project = new FrameProject();
+      const id = made(project, "Dreamer", OTHER_TAB, null);
+      const synced = await reconciledStore(project, OWN_TAB);
+
+      const row = rowMarkup(render(synced), id);
+
+      assert.deepEqual(rows(render(synced)), [[id, "Dreamer"]]);
+      assert.doesNotMatch(row, /data-action="open-origin"/);
+      assert.doesNotMatch(row, /data-testid="brain-edit"/);
+      assert.doesNotMatch(row, /data-testid="brain-actions"/);
+      assert.equal(occurrences(row, /<button/), 0);
+    });
+
+    it("keeps today's controls on a brain of this tab and a brain with no origin", async () => {
+      const project = new FrameProject();
+      const own = made(project, "Chaser", OWN_TAB, "Wendoo");
+      const bare = made(project, "Runner", null, null);
+      const synced = await reconciledStore(project, OWN_TAB);
+
+      const markup = render(synced);
+
+      for (const id of [own, bare]) {
+        const row = rowMarkup(markup, id);
+        assert.match(row, new RegExp(`data-testid="brain-edit" data-brain-id="${id}"`));
+        assert.match(row, new RegExp(`data-testid="brain-actions" data-brain-id="${id}"`));
+        assert.doesNotMatch(row, /data-action="open-origin"/);
+      }
+    });
+
+    it("offers no Restore on a damaged brain of another tab it holds a copy of, keeping its open-origin action", async () => {
+      const project = new FrameProject();
+      const id = made(project, "Dreamer", OTHER_TAB, OTHER_LABEL);
+      const synced = await reconciledStore(project, OWN_TAB);
+      const reporting = {
+        subscribe: synced.subscribe,
+        getSnapshot: () => ({
+          ...synced.getSnapshot(),
+          damaged: new Map([[id, { code: BRAIN_SOURCE_INVALID, name: "Dreamer" }]]),
+        }),
+      } as unknown as BrainsStore;
+
+      const row = rowMarkup(render(reporting), id);
+
+      assert.match(row, new RegExp(`data-testid="brain-damaged-notice" data-code="${BRAIN_SOURCE_INVALID}"`));
+      assert.doesNotMatch(row, /data-testid="brain-restore"/);
+      assert.equal(occurrences(row, /data-action="open-origin"/), 1);
+    });
+
+    it("keeps the compile badge on a brain of another tab", async () => {
+      const project = new FrameProject();
+      const id = made(project, "Dreamer", OTHER_TAB, OTHER_LABEL);
+      const synced = await reconciledStore(project, OWN_TAB);
+      applyFailingBrain(synced, id);
+
+      const row = rowMarkup(render(synced), id);
+
+      assert.match(row, /data-testid="brain-error-badge"/);
+      assert.match(row, /data-action="open-origin"/);
+    });
+  });
+});
+
+describe("OpenInOriginAction", () => {
+  it("asks the brains store to open its brain in its origin when chosen", () => {
+    const asked: string[] = [];
+    const tree = OpenInOriginAction({
+      brainId: "abcdabcdabcdabcd",
+      brainName: "Dreamer",
+      originLabel: "Daydream",
+      brains: {
+        openBrainInOrigin: (id) => {
+          asked.push(id);
+          return Promise.resolve();
+        },
+      },
+    });
+
+    const [action] = elementsIn(tree).filter((element) => element.props["data-action"] === "open-origin");
+    assert.ok(action);
+    assert.equal(action.props["data-key"], "abcdabcdabcdabcd");
+    (action.props.onClick as () => void)();
+
+    assert.deepEqual(asked, ["abcdabcdabcdabcd"]);
+  });
+
+  it("renders nothing while the origin tab's label is unknown", () => {
+    const tree = OpenInOriginAction({
+      brainId: "abcdabcdabcdabcd",
+      brainName: "Dreamer",
+      originLabel: null,
+      brains: { openBrainInOrigin: () => Promise.resolve() },
+    });
+
+    assert.equal(tree, null);
+  });
 });
 
 describe("answerCreateRequest", () => {
@@ -475,39 +645,8 @@ describe("open requests", () => {
   });
 
   describe("answerCreatedBrain", () => {
-    /** A store reconciled over a channel creating brains in a fresh frame project. */
-    async function creatingStore(): Promise<BrainsStore> {
-      const project = new FrameProject();
-      let published: ((brains: MakeCodeBrainSummary[]) => void) | undefined;
-      let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
-      const synced = new BrainsStore(SESSION, {
-        onBrainsChannel: (listener) => {
-          handshake = listener;
-          return () => {};
-        },
-        onManifest: () => () => {},
-        onBrains: (listener) => {
-          published = listener;
-          return () => {};
-        },
-      });
-      handshake?.({
-        listBrains: () => Promise.resolve(project.summaries()),
-        pullBrains: (ids) => Promise.resolve(ids.flatMap((id) => project.get(id) ?? [])),
-        pushBrain: (push) =>
-          Promise.resolve(
-            push.op === "write" ? project.write(push.brain.id, push.brain.name, push.brain.source) : null
-          ),
-        createBrain: (name) => Promise.resolve(project.create(name)),
-      });
-      published?.([]);
-      await new Promise((resolve) => setImmediate(resolve));
-      assert.ok(synced.getSnapshot().reconciled);
-      return synced;
-    }
-
     it("puts the keyboard on the created brain's Edit button, then opens the editor on it, once the store holds it", async () => {
-      const synced = await creatingStore();
+      const synced = await reconciledStore(new FrameProject());
 
       const id = await synced.addBrain("Chaser");
       const list = view(synced, null);
@@ -613,6 +752,39 @@ describe("open requests", () => {
       answerEditorRequest(list, { kind: "open", qName: "wendooBrains.p_0000111122223333" });
 
       assert.equal(list.state.held, "0000111122223333");
+    });
+
+    it("opens the editor on the brain an open request names by document id", () => {
+      const hero = seedBrain(store, "Hero");
+      const list = view(store, null);
+
+      answerEditorRequest(list, { kind: "open", brainId: hero });
+
+      assert.deepEqual(list.changes, ["hold:null", "dialog:null", `focus:${hero}`, `editor:${hero}`]);
+    });
+
+    it("opens the editor on a brain the session asks the tab to open, as it does for an Edit request", () => {
+      const hero = seedBrain(store, "Hero");
+      const requests = new EditorRequests();
+      let deliver: ((id: string) => void) | undefined;
+      forwardBrainOpens(
+        {
+          onBrainOpen: (listener) => {
+            deliver = listener;
+            return () => {};
+          },
+        },
+        requests
+      );
+      const opened = view(store, null);
+      const edited = view(store, null);
+      requests.take((request) => answerEditorRequest(opened, request));
+
+      deliver?.(hero);
+      answerEditorRequest(edited, { kind: "open", qName: `wendooBrains.p_${hero}` });
+
+      assert.equal(opened.state.editingBrainId, hero);
+      assert.deepEqual(opened.changes, edited.changes);
     });
 
     it("leaves the list as it is for an instance name denoting no brain, logging the stable code", () => {

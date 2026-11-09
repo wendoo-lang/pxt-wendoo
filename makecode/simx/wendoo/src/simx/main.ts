@@ -30,8 +30,17 @@ const target = getTargetId();
 const parentOrigin = getParentOrigin() ?? "";
 const root = document.body.appendChild(document.createElement("main"));
 
-const bridge = startSimxPortBridge({ frame: window, parentOrigin, files, assets, log: console, channel, target });
 const opener = connectEditorTabOpener(window, parentOrigin, console);
+const bridge = startSimxPortBridge({
+  frame: window,
+  parentOrigin,
+  files,
+  assets,
+  log: console,
+  channel,
+  target,
+  opener,
+});
 const strip = mountBrandStrip(root, (key) => {
   void opener.open(key);
 });

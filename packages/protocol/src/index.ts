@@ -1,5 +1,7 @@
 export type { MakeCodeAsset, MakeCodeAssetsMessage, MakeCodeAssetsPayload } from "./makecode-assets.js";
 export type {
+  MakeCodeBrainOpenMessage,
+  MakeCodeBrainOpenPayload,
   MakeCodeBrainSummary,
   MakeCodeBrainsCreateMessage,
   MakeCodeBrainsCreatePayload,
@@ -13,6 +15,11 @@ export type {
   MakeCodeBrainsListReplyPayload,
   MakeCodeBrainsListRequest,
   MakeCodeBrainsMessage,
+  MakeCodeBrainsOpenMessage,
+  MakeCodeBrainsOpenPayload,
+  MakeCodeBrainsOpenRefusalCode,
+  MakeCodeBrainsOpenReplyMessage,
+  MakeCodeBrainsOpenRequest,
   MakeCodeBrainsPayload,
   MakeCodeBrainsPullMessage,
   MakeCodeBrainsPullPayload,

@@ -48,11 +48,12 @@ export interface SimxEditorClientFrame {
 export interface SimxEditorClient {
   /**
    * Subscribe to the ports MakeCode brokers to this tab, each connecting it
-   * to the simulator extension's frame and delivered as it arrives; each
-   * replaces the one before.
+   * to the simulator extension's frame and delivered as it arrives with the
+   * key the port message names this tab by, `undefined` when it names none;
+   * each replaces the one before.
    * Returns an unsubscribe function.
    */
-  onPort(listener: (port: MakeCodeMessagePort) => void): () => void;
+  onPort(listener: (port: MakeCodeMessagePort, key: string | undefined) => void): () => void;
   /**
    * Subscribe to the lifecycle, simulator and action events MakeCode posts to
    * the tab: `shown`, `hidden`, `simulator`, `simulatorstate`, `fullscreen`
@@ -73,15 +74,16 @@ export interface SimxEditorClient {
  * events. Subscribe before calling {@link SimxEditorClient.ready}.
  */
 export function connectSimxEditorClient(frame: SimxEditorClientFrame, parentOrigin: string): SimxEditorClient {
-  const portListeners = new Set<(port: MakeCodeMessagePort) => void>();
+  const portListeners = new Set<(port: MakeCodeMessagePort, key: string | undefined) => void>();
   const eventListeners = new Set<(event: SimxEditorEvent) => void>();
   const receive = (event: SimxEditorClientEvent): void => {
     if (event.origin !== parentOrigin) return;
-    const data = event.data as { type?: unknown; event?: unknown } | null;
+    const data = event.data as { type?: unknown; event?: unknown; key?: unknown } | null;
     if (data?.type === SIMXEDITOR_PORT_MESSAGE_TYPE) {
       const port = event.ports[0];
       if (port === undefined) return;
-      for (const listener of portListeners) listener(port);
+      const key = typeof data.key === "string" ? data.key : undefined;
+      for (const listener of portListeners) listener(port, key);
       return;
     }
     if (data?.type === SIMXEDITOR_MESSAGE_TYPE && typeof data.event === "string") {
@@ -127,8 +129,7 @@ export function forwardTabActions(
 ): () => void {
   return client.onEvent((event) => {
     if (event.event !== "action") return;
-    if (event.action === "create" || event.action === "open") {
-      requests.request({ kind: event.action, qName: event.qName });
-    }
+    if (event.action === "create") requests.request({ kind: "create", qName: event.qName });
+    if (event.action === "open") requests.request({ kind: "open", qName: event.qName });
   });
 }

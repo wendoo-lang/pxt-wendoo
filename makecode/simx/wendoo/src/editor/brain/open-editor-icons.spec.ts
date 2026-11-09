@@ -161,6 +161,10 @@ class ProjectChannel implements MakeCodeBrainsChannel {
   createBrain(): Promise<MakeCodeBrainSummary> {
     return Promise.reject(new Error("no brain is created over this channel"));
   }
+
+  openBrain(): Promise<void> {
+    return Promise.reject(new Error("no brain is opened over this channel"));
+  }
 }
 
 /** Waits until every queued answer and the work it starts has run. */

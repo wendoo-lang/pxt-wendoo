@@ -2,6 +2,7 @@ import type {
   MakeCodeAsset,
   MakeCodeBrainSummary,
   MakeCodeBrainsCreateRequest,
+  MakeCodeBrainsOpenRequest,
   MakeCodeBrainsPullRequest,
   MakeCodeBrainsPushRequest,
   MakeCodeBrainsRequest,
@@ -73,6 +74,16 @@ export interface BrainsProjectTimings {
   retryDelayMs?: number;
   /** Longest wait between retries, kept for every retry after it is reached. Default 30000. */
   maxRetryDelayMs?: number;
+}
+
+/** A brain a tab asked to open, as a {@link BrainsProject} announces it once it has acknowledged the request. */
+export interface BrainOpening {
+  /** The brain's document id. */
+  readonly id: string;
+  /** The brain's origin, whose tab it opens in, or `null` for a brain with none, which opens in the requesting tab. */
+  readonly origin: string | null;
+  /** The requesting tab's key, or `null` when its port named none. */
+  readonly peer: string | null;
 }
 
 /** One brain source file the project holds, as the frame last read or wrote it. */
@@ -164,6 +175,10 @@ interface Queued {
  * - A create mints an empty brain document through the engine's brain
  *   services, its origin the requesting tab's key, compiles it, and is
  *   answered with its summary.
+ * - An open of a held brain whose origin is `null` or a tab MakeCode lists
+ *   is acknowledged and announced to {@link onOpen}; one of a brain not held
+ *   is refused with `UNKNOWN_BRAIN`, and one whose origin MakeCode does not
+ *   list with `ORIGIN_ABSENT`, each refusal logged by its code.
  *
  * Writes queue and are applied in drains. A drain takes every change queued
  * by then (the latest of each brain), writes the brains module once when its
@@ -192,6 +207,7 @@ export class BrainsProject {
   private readonly _maxRetryDelayMs: number;
   private readonly _engine = new BrainEngine();
   private readonly _listeners = new Set<(brains: MakeCodeBrainSummary[]) => void>();
+  private readonly _openListeners = new Set<(opening: BrainOpening) => void>();
   private readonly _timers = new Set<ReturnType<typeof setTimeout>>();
   /** The brain id and source hash of each compile throw logged, as `<id> <sourceHash>`. */
   private readonly _thrown = new Set<string>();
@@ -279,6 +295,17 @@ export class BrainsProject {
   }
 
   /**
+   * Subscribe to the brains tabs ask to open, each announced once its open
+   * request is acknowledged. Returns an unsubscribe function.
+   */
+  onOpen(listener: (opening: BrainOpening) => void): () => void {
+    this._openListeners.add(listener);
+    return () => {
+      this._openListeners.delete(listener);
+    };
+  }
+
+  /**
    * Take `catalogText` as the latest catalog and `reading` as the manifest
    * allocating it, recompiling every held brain when the engine rebuilds.
    *
@@ -329,11 +356,11 @@ export class BrainsProject {
 
   /**
    * Answer `request` from the tab keyed `peer` once the project's brains are
-   * read: a list or a pull at once from what the project holds, a push or a
-   * create once its drain has written it. A create stamps `peer` as the
-   * brain's origin; a push of a brain whose origin is another tab is refused
-   * with `NOT_ORIGIN`, and one of a brain with no origin stamps `peer`. A
-   * `null` peer stamps nothing and is refused nothing. The rules are in
+   * read: a list, a pull or an open at once from what the project holds, a
+   * push or a create once its drain has written it. A create stamps `peer`
+   * as the brain's origin; a push of a brain whose origin is another tab is
+   * refused with `NOT_ORIGIN`, and one of a brain with no origin stamps
+   * `peer`. A `null` peer stamps nothing and is refused nothing. The rules are in
    * docs/session-management.md.
    *
    * @param peer - The key of the requesting tab, as MakeCode names it on the port, or `null` when the port names none.
@@ -354,6 +381,9 @@ export class BrainsProject {
           return;
         case "create":
           this.create(peer, request);
+          return;
+        case "open":
+          this.open(peer, request);
           return;
       }
     });
@@ -390,6 +420,7 @@ export class BrainsProject {
     for (const timer of this._timers) clearTimeout(timer);
     this._timers.clear();
     this._listeners.clear();
+    this._openListeners.clear();
     this._reported.clear();
   }
 
@@ -436,6 +467,32 @@ export class BrainsProject {
       },
       failed: request.fail,
     });
+  }
+
+  /**
+   * Refuses an open from the tab `peer` with `UNKNOWN_BRAIN` for a brain the
+   * project does not hold and with `ORIGIN_ABSENT` for one whose origin is
+   * no tab MakeCode lists, logging the refusal; otherwise acknowledges it
+   * and announces the opening to {@link onOpen}.
+   */
+  private open(peer: string | null, request: MakeCodeBrainsOpenRequest): void {
+    const { id } = request;
+    const requester = peer === null ? "" : `; the tab ${peer} cannot open it`;
+    if (!this._sources.has(id)) {
+      const message = `${MakeCodeBrainsErrorCode.UNKNOWN_BRAIN}: ${brainSourceFile(id)} is not in the project${requester}.`;
+      this._log.error(message);
+      request.refuseUnknown(message);
+      return;
+    }
+    const origin = this.originOf(id);
+    if (origin !== null && this._labels?.has(origin) !== true) {
+      const message = `${MakeCodeBrainsErrorCode.ORIGIN_ABSENT}: ${brainSourceFile(id)} belongs to the tab ${origin}, which MakeCode does not list${requester}.`;
+      this._log.error(message);
+      request.refuseAbsent(message);
+      return;
+    }
+    request.reply();
+    for (const listener of this._openListeners) listener({ id, origin, peer });
   }
 
   /** Fails `request` by code while the brains module is of a newer format; returns whether it did. */

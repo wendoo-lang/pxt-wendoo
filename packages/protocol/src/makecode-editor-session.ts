@@ -50,7 +50,10 @@ export interface MakeCodeEditorSessionState {
  * travels on that handshake and rejects with `CLOSED` once the handshake
  * ends.
  */
-export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain" | "createBrain">;
+export type MakeCodeBrainsChannel = Pick<
+  MakeCodeSession,
+  "listBrains" | "pullBrains" | "pushBrain" | "createBrain" | "openBrain"
+>;
 
 /**
  * The editor's makecode session with the MakeCode project: one object for
@@ -91,6 +94,11 @@ export interface MakeCodeEditorSession {
    * publication delivered whole. Returns an unsubscribe function.
    */
   onBrains(listener: (brains: MakeCodeBrainSummary[]) => void): () => void;
+  /**
+   * Subscribe to the brains the counterpart asks this editor to open, each
+   * delivered by its document id. Returns an unsubscribe function.
+   */
+  onBrainOpen(listener: (id: string) => void): () => void;
   /**
    * Subscribe to the brains channel of each makecode handshake with the
    * counterpart, delivered once the handshake completes. A channel is good

@@ -243,6 +243,45 @@ describe("makecode session brains requests", () => {
     session.dispose();
   });
 
+  it("asks the peer to open a brain by id, resolving with the reply carrying the request's id", async () => {
+    const { session, port } = await openSession();
+
+    const opened = session.openBrain("abcdabcdabcdabcd");
+    const request = lastRequest(port);
+    assert.deepEqual(request, {
+      type: "makecode:brainsOpen",
+      id: request.id,
+      payload: { id: "abcdabcdabcdabcd" },
+    });
+    port.deliver({ type: "makecode:brainsOpenReply", id: request.id });
+
+    assert.equal(await opened, undefined);
+    session.dispose();
+  });
+
+  it("rejects an open answered by an error reply with UNKNOWN_BRAIN or ORIGIN_ABSENT", async () => {
+    const { session, port } = await openSession();
+
+    const unknown = session.openBrain("missingmissingmi");
+    port.deliver({
+      type: "makecode:brainsError",
+      id: lastRequest(port).id,
+      payload: { code: MakeCodeBrainsErrorCode.UNKNOWN_BRAIN, message: "no such brain" },
+    });
+    const absent = session.openBrain("abcdabcdabcdabcd");
+    port.deliver({
+      type: "makecode:brainsError",
+      id: lastRequest(port).id,
+      payload: { code: MakeCodeBrainsErrorCode.ORIGIN_ABSENT, message: "no such tab" },
+    });
+    const closed = session.openBrain("abcdabcdabcdabcd");
+    session.dispose();
+
+    await rejectsWith(unknown, MakeCodeBrainsErrorCode.UNKNOWN_BRAIN);
+    await rejectsWith(absent, MakeCodeBrainsErrorCode.ORIGIN_ABSENT);
+    await rejectsWith(closed, MakeCodeBrainsErrorCode.CLOSED);
+  });
+
   it("rejects a request answered by an error reply with the reply's code", async () => {
     const { session, port } = await openSession();
 
@@ -413,6 +452,67 @@ describe("makecode session brains publication", () => {
   });
 });
 
+describe("makecode session brain open publication", () => {
+  it("publishes a brain open by id, and delivers each one to every listener", async () => {
+    const { session, port } = await openSession();
+    const first: string[] = [];
+    const second: string[] = [];
+    session.onBrainOpen((id) => {
+      first.push(id);
+    });
+    session.onBrainOpen((id) => {
+      second.push(id);
+    });
+
+    session.publishBrainOpen("abcdabcdabcdabcd");
+    port.deliver({ type: "makecode:brainOpen", payload: { id: "abcdabcdabcdabcd" } });
+    port.deliver({ type: "makecode:brainOpen", payload: { id: "runnerrunnerrunn" } });
+
+    assert.deepEqual(port.sent.at(-1), { type: "makecode:brainOpen", payload: { id: "abcdabcdabcdabcd" } });
+    assert.deepEqual(first, ["abcdabcdabcdabcd", "runnerrunnerrunn"]);
+    assert.deepEqual(second, ["abcdabcdabcdabcd", "runnerrunnerrunn"]);
+    session.dispose();
+  });
+
+  it("replays the brain opens received while no listener was attached to the first listener, in arrival order", async () => {
+    const { session, port } = await openSession();
+    port.deliver({ type: "makecode:brainOpen", payload: { id: "abcdabcdabcdabcd" } });
+    port.deliver({ type: "makecode:brainOpen", payload: { id: "runnerrunnerrunn" } });
+
+    const delivered: string[] = [];
+    session.onBrainOpen((id) => {
+      delivered.push(id);
+    });
+    const later: string[] = [];
+    session.onBrainOpen((id) => {
+      later.push(id);
+    });
+
+    assert.deepEqual(delivered, ["abcdabcdabcdabcd", "runnerrunnerrunn"]);
+    assert.deepEqual(later, []);
+    session.dispose();
+  });
+
+  it("delivers no brain open to brains listeners, nor a brains publication to brain-open listeners", async () => {
+    const { session, port } = await openSession();
+    const opens: string[] = [];
+    const publications: MakeCodeBrainSummary[][] = [];
+    session.onBrainOpen((id) => {
+      opens.push(id);
+    });
+    session.onBrains((brains) => {
+      publications.push(brains);
+    });
+
+    port.deliver({ type: "makecode:brains", payload: { brains: [SUMMARY] } });
+    port.deliver({ type: "makecode:brainOpen", payload: { id: SUMMARY.id } });
+
+    assert.deepEqual(opens, [SUMMARY.id]);
+    assert.deepEqual(publications, [[SUMMARY]]);
+    session.dispose();
+  });
+});
+
 /** The requests a session delivered to its brains request listener, in arrival order. */
 function servedRequests(session: MakeCodeSession): MakeCodeBrainsRequest[] {
   const served: MakeCodeBrainsRequest[] = [];
@@ -572,7 +672,7 @@ describe("makecode session brains responder", () => {
     port.deliver({ type: "makecode:brainsPull", id: "pull-1", payload: { ids: [] } });
     port.deliver({ type: "makecode:brainsPush", id: "push-1", payload: { op: "remove", brainId: "abcdabcdabcdabcd" } });
     port.deliver({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "" } });
-    for (const request of served) request.fail("refused");
+    for (const request of served) if (request.kind !== "open") request.fail("refused");
 
     assert.deepEqual(
       port.sent
@@ -620,6 +720,43 @@ describe("makecode session brains responder", () => {
     });
 
     await rejectsWith(pushed, MakeCodeBrainsErrorCode.NOT_ORIGIN);
+    session.dispose();
+  });
+
+  it("delivers an open request's brain id, and answers it with the reply carrying the request's id", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({ type: "makecode:brainsOpen", id: "open-1", payload: { id: "abcdabcdabcdabcd" } });
+    const request = onlyRequest(served, "open");
+    assert.equal(request.id, "abcdabcdabcdabcd");
+    request.reply();
+
+    assert.deepEqual(port.sent.at(-1), { type: "makecode:brainsOpenReply", id: "open-1" });
+    session.dispose();
+  });
+
+  it("refuses an open with UNKNOWN_BRAIN or ORIGIN_ABSENT, each carrying its request's id", async () => {
+    const { session, port } = await openSession();
+    const served = servedRequests(session);
+
+    port.deliver({ type: "makecode:brainsOpen", id: "open-1", payload: { id: "missingmissingmi" } });
+    port.deliver({ type: "makecode:brainsOpen", id: "open-2", payload: { id: "abcdabcdabcdabcd" } });
+    const [unknown, absent] = served;
+    assert.ok(unknown?.kind === "open" && absent?.kind === "open");
+    unknown.refuseUnknown("no such brain");
+    absent.refuseAbsent("no such tab");
+    absent.reply();
+
+    assert.deepEqual(
+      port.sent
+        .slice(-2)
+        .map((message) => message.type === "makecode:brainsError" && [message.id, message.payload.code]),
+      [
+        ["open-1", MakeCodeBrainsErrorCode.UNKNOWN_BRAIN],
+        ["open-2", MakeCodeBrainsErrorCode.ORIGIN_ABSENT],
+      ]
+    );
     session.dispose();
   });
 
@@ -768,6 +905,31 @@ describe("makecode session brains responder", () => {
     );
     assert.equal(responder.peerTarget, undefined);
     assert.equal(requester.peerTarget, "arcade");
+    requester.dispose();
+    responder.dispose();
+  });
+
+  it("round-trips an open request and the brain open it publishes between a requesting and a responding session", async () => {
+    const { requester, responder } = await openPair();
+    const opened: string[] = [];
+    requester.onBrainOpen((id) => {
+      opened.push(id);
+    });
+    responder.onBrainsRequest((request) => {
+      if (request.kind !== "open") return;
+      if (request.id !== SUMMARY.id) {
+        request.refuseUnknown("no such brain");
+        return;
+      }
+      request.reply();
+      responder.publishBrainOpen(request.id);
+    });
+
+    await requester.openBrain(SUMMARY.id);
+    await rejectsWith(requester.openBrain("missingmissingmi"), MakeCodeBrainsErrorCode.UNKNOWN_BRAIN);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.deepEqual(opened, [SUMMARY.id]);
     requester.dispose();
     responder.dispose();
   });

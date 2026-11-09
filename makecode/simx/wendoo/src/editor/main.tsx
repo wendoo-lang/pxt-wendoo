@@ -10,7 +10,7 @@ import { EditorSessionProvider } from "./contexts/editor-session";
 import { OpenEditingsProvider } from "./contexts/open-editings";
 import { BrainsStore } from "./services/brains-store";
 import { bindDocumentTitle } from "./services/document-title";
-import { EditorRequests } from "./services/editor-requests";
+import { EditorRequests, forwardBrainOpens } from "./services/editor-requests";
 import { EditorSessionStore } from "./services/editor-session-store";
 import {
   connectSimxEditorClient,
@@ -32,10 +32,10 @@ window.addEventListener("unhandledrejection", (event) => {
  * port-backed session, the brains store over it, the target theme and the
  * document title bound to it. Once listening, tells MakeCode the tab is
  * ready; every port MakeCode brokers from `parentOrigin` replaces the
- * session's port, and every `create` or `open` action it posts becomes a
- * request of that kind of the editor's requests, provided to the views. The page being
- * hidden for good flushes every open brain editor's unflushed edit and stops
- * the session.
+ * session's port and sets the brains store's tab key, and each `create` or
+ * `open` action and each brain open the session delivers becomes a request
+ * of the editor's requests, provided to the views. The page being hidden for
+ * good flushes every open brain editor's unflushed edit and stops the session.
  * With no valid `parentOrigin`, logs {@link TAB_PARENT_ORIGIN_INVALID} and
  * hears nothing from MakeCode.
  */
@@ -53,10 +53,12 @@ function mountEditorTab(mount: HTMLElement, parentOrigin: string | undefined): v
     logger.error(TAB_PARENT_ORIGIN_INVALID, { search: window.location.search });
   } else {
     const client = connectSimxEditorClient(window, parentOrigin);
-    client.onPort((port) => {
+    client.onPort((port, key) => {
+      brains.setTabKey(key);
       session.attachPort(messagePortSessionPort(port));
     });
     forwardTabActions(client, requests);
+    forwardBrainOpens(store, requests);
     client.ready();
   }
   window.addEventListener(

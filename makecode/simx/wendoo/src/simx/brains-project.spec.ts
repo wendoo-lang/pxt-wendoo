@@ -10,6 +10,7 @@ import {
   brainSourceHash,
   type MakeCodeBrainSummary,
   MakeCodeBrainsErrorCode,
+  type MakeCodeBrainsOpenRefusalCode,
   type MakeCodeIdManifest,
   type MakeCodeManifestReading,
   type MakeCodeWireBrain,
@@ -27,7 +28,7 @@ import {
   readBrainsModule,
   writeBrainsModule,
 } from "./brains-module.js";
-import { BrainsProject, BrainsProjectProblemCode, brainSourceFile } from "./brains-project.js";
+import { type BrainOpening, BrainsProject, BrainsProjectProblemCode, brainSourceFile } from "./brains-project.js";
 import { LivePrograms } from "./live-programs.js";
 import type { ProjectFiles } from "./project-files.js";
 import type { ProgramUpdate } from "./sim-channel.js";
@@ -1372,6 +1373,95 @@ describe("brains project", () => {
       await drained(fresh);
 
       assert.deepEqual(announced, []);
+    });
+  });
+
+  describe("open", () => {
+    /** Asks `on` to open the brain `id` from the tab `peer`, `null` for a port naming none, and resolves with the answer. */
+    function opened(
+      id: string,
+      peer: string | null = TAB,
+      on: BrainsProject = project
+    ): Promise<{ ok: true } | { ok: false; code: MakeCodeBrainsOpenRefusalCode }> {
+      return new Promise((resolve) => {
+        on.serve(peer, {
+          kind: "open",
+          id,
+          reply: () => resolve({ ok: true }),
+          refuseUnknown: () => resolve({ ok: false, code: MakeCodeBrainsErrorCode.UNKNOWN_BRAIN }),
+          refuseAbsent: () => resolve({ ok: false, code: MakeCodeBrainsErrorCode.ORIGIN_ABSENT }),
+        });
+      });
+    }
+
+    /** The openings `on` announces from now on, in order. */
+    function openings(on: BrainsProject = project): BrainOpening[] {
+      const announced: BrainOpening[] = [];
+      on.onOpen((opening) => {
+        announced.push(opening);
+      });
+      return announced;
+    }
+
+    it("acknowledges an open of a brain whose origin MakeCode lists, announcing it for the origin's tab", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      await drained();
+      project.adoptTabs([
+        { key: TAB, label: "Wendoo" },
+        { key: OTHER_TAB, label: "Daydream" },
+      ]);
+      const announced = openings();
+
+      const answer = await opened(created.value.id, TAB);
+
+      assert.deepEqual(answer, { ok: true });
+      assert.deepEqual(announced, [{ id: created.value.id, origin: OTHER_TAB, peer: TAB }]);
+      assert.deepEqual(log.errors, []);
+    });
+
+    it("announces an open of a brain with no origin for the requesting tab, whatever tabs MakeCode lists", async () => {
+      const created = await create("Runner", project, null);
+      assert.ok(created.ok);
+      await drained();
+      const announced = openings();
+
+      const answer = await opened(created.value.id, OTHER_TAB);
+
+      assert.deepEqual(answer, { ok: true });
+      assert.deepEqual(announced, [{ id: created.value.id, origin: null, peer: OTHER_TAB }]);
+    });
+
+    it("refuses an open of a brain whose origin MakeCode does not list with ORIGIN_ABSENT, logged by its code", async () => {
+      const created = await create("Runner", project, OTHER_TAB);
+      assert.ok(created.ok);
+      await drained();
+      const announced = openings();
+
+      const unlisted = await opened(created.value.id, TAB);
+      project.adoptTabs([{ key: TAB, label: "Wendoo" }]);
+      const absent = await opened(created.value.id, TAB);
+
+      assert.deepEqual(unlisted, { ok: false, code: MakeCodeBrainsErrorCode.ORIGIN_ABSENT });
+      assert.deepEqual(absent, { ok: false, code: MakeCodeBrainsErrorCode.ORIGIN_ABSENT });
+      assert.deepEqual(announced, []);
+      assert.equal(log.errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.ORIGIN_ABSENT)).length, 2);
+    });
+
+    it("refuses an open of a brain the project does not hold with UNKNOWN_BRAIN, logged by its code", async () => {
+      await applied(writeOf(CHASER, "Chaser"));
+      await drained();
+      await applied({ op: "remove", brainId: CHASER });
+      await drained();
+      const announced = openings();
+
+      const removed = await opened(CHASER);
+      const never = await opened(RUNNER);
+
+      assert.deepEqual(removed, { ok: false, code: MakeCodeBrainsErrorCode.UNKNOWN_BRAIN });
+      assert.deepEqual(never, { ok: false, code: MakeCodeBrainsErrorCode.UNKNOWN_BRAIN });
+      assert.deepEqual(announced, []);
+      assert.equal(log.errors.filter((line) => line.startsWith(MakeCodeBrainsErrorCode.UNKNOWN_BRAIN)).length, 2);
     });
   });
 

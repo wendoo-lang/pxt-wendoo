@@ -37,7 +37,7 @@ import { BRAINS_MODULE_FILE, readBrainsModule } from "../../simx/brains-module.j
 import { IDS_MODULE_FILE, readIdsModule } from "../../simx/ids-module.js";
 import { type SimxLog, type SimxPortBridge, startSimxPortBridge } from "../../simx/simx-bridge.js";
 import { FakeAssetProvider, listedImage, listedSong } from "../../simx/test-support/asset-provider.js";
-import { FakePortFrame } from "../../simx/test-support/port-frame.js";
+import { FakePortFrame, FakeTabOpener } from "../../simx/test-support/port-frame.js";
 import { postedProgramUpdates } from "../../simx/test-support/program-update-frame.js";
 import {
   FakeProjfsHost,
@@ -280,7 +280,8 @@ class ScriptedColumn {
       case "makecode:brainsList":
       case "makecode:brainsPull":
       case "makecode:brainsPush":
-      case "makecode:brainsCreate": {
+      case "makecode:brainsCreate":
+      case "makecode:brainsOpen": {
         const request = message as unknown as ReceivedRequest;
         this.requests.push(request);
         if (request.type === "makecode:brainsPush" && this.dropsPushes) return;
@@ -329,6 +330,8 @@ class ScriptedColumn {
           id: request.id,
           payload: { brain: this.project.create(request.payload.name) },
         };
+      case "makecode:brainsOpen":
+        return { type: "makecode:brainsOpenReply", id: request.id };
     }
   }
 }
@@ -340,10 +343,11 @@ interface EditorTab {
   brains: BrainsStore;
 }
 
-/** The simulator extension's column frame: its window, its port bridge, the project it serves, and its asset provider. */
+/** The simulator extension's column frame: its window, its port bridge, its tab opener, the project it serves, and its asset provider. */
 interface ColumnFrame {
   frame: FakePortFrame;
   bridge: SimxPortBridge;
+  opener: FakeTabOpener;
   host: FakeProjfsHost;
   assets: FakeAssetProvider;
 }
@@ -416,6 +420,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assets.images = [listedImage("image1", [[1, 2]], "hero")];
     assets.songs = [listedSong("song1", "theme")];
     assets.answer();
+    const opener = new FakeTabOpener();
     const bridge = startSimxPortBridge({
       frame,
       parentOrigin: "https://arcade.makecode.com",
@@ -423,8 +428,9 @@ describe("brains sync between the editor tab and the column frame over a brokere
       assets,
       log: silentLog,
       target: declared.target,
+      opener,
     });
-    const column = { frame, bridge, host, assets };
+    const column = { frame, bridge, opener, host, assets };
     columns.push(column);
     return column;
   }
@@ -758,6 +764,52 @@ describe("brains sync between the editor tab and the column frame over a brokere
     assert.equal((adopted.pages().get(0) as BrainPageDef).children().size(), 2);
     assert.equal(designer.brains.getSnapshot().brains.get(id)?.sourceHash, resaved);
     assert.equal(adoptions, 1);
+  });
+
+  it("opens a brain one tab asks to open in the tab it was made in: the column frame shows that tab and asks its session alone", async () => {
+    const ownKey = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
+    const designerKey = "owner/repo-designer";
+    const host = new FakeProjfsHost();
+    const column = startColumn(host);
+    const own = openTab();
+    const designer = openTab();
+    for (const [tab, key] of [
+      [own, ownKey],
+      [designer, designerKey],
+    ] as const) {
+      const { port1, port2 } = channel();
+      tab.brains.setTabKey(key);
+      column.frame.brokerPort(port1, "https://arcade.makecode.com", key);
+      tab.session.attachPort(messagePortSessionPort(port2));
+    }
+    column.bridge.setTabs([
+      { key: ownKey, label: "Wendoo" },
+      { key: designerKey, label: "Designer" },
+    ]);
+    await brainsUntil(own, (state) => state.reconciled, "the first tab to reconcile");
+    await brainsUntil(designer, (state) => state.reconciled, "the second tab to reconcile");
+    const ownOpens: string[] = [];
+    const designerOpens: string[] = [];
+    own.store.onBrainOpen((id) => ownOpens.push(id));
+    designer.store.onBrainOpen((id) => designerOpens.push(id));
+
+    const id = await own.brains.addBrain("Chaser");
+    const listed = await brainsUntil(
+      designer,
+      (state) => state.brains.get(id)?.originLabel === "Wendoo",
+      "the second tab to hold the brain, labelled by its origin"
+    );
+    await designer.brains.openBrainInOrigin(id);
+    await eventually(
+      () => ownOpens.length,
+      (count) => count > 0,
+      "the origin tab's session to receive the brain open"
+    );
+
+    assert.equal(listed.brains.get(id)?.origin, ownKey);
+    assert.deepEqual(column.opener.opened, [ownKey]);
+    assert.deepEqual(ownOpens, [id]);
+    assert.deepEqual(designerOpens, []);
   });
 
   it("keeps the brains of two tab and column pairs, for two projects, apart", async () => {

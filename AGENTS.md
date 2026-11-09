@@ -789,8 +789,10 @@ the current slice alone.
     holds in an environment built from the catalog, the manifest and the
     asset snapshot, mints the brains a tab asks it to create, stamps each
     with the creating tab's key as its origin and refuses another tab's
-    push of it, alone writes `brains.g.ts` and the brain sources, feeds the
-    running program from its own compiles, and publishes the project's
+    push of it, opens a brain a tab asks for in its origin's tab and
+    session or, for a brain with none, in the requesting tab's, alone
+    writes `brains.g.ts` and the brain sources, feeds the running program
+    from its own compiles, and publishes the project's
     brain summaries into every session --
     and its root entry (`index.html`, sources in `src/editor`) is the
     editor webapp, booting as the editor
@@ -832,7 +834,10 @@ the current slice alone.
     greppably free of platform names; platform content inside a core package
     becomes citable precedent for more of it.
   - The editor entry of `makecode/simx/wendoo` (`src/editor`) owns the
-    Wendoo editor webapp: brain authoring, project
+    Wendoo editor webapp: brain authoring (a brain another tab made is
+    listed and runs, and its row's one action, captioned by the origin
+    tab's label, opens it in that tab through the engine, none while
+    that tab is absent), project
     management, diagnostics -- a local environment compiling each brain for
     live diagnostics as it is edited, the engine's outcome standing as the
     truth -- and the docs surface (the core docs pages from
