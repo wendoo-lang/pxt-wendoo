@@ -15,7 +15,7 @@ import {
   MakeCodeDeviceProfileNumericId,
 } from "./makecode-brains.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
-import { connectMakeCodeSession } from "./makecode-session.js";
+import { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./makecode-session.js";
 
 /** A source text exercising characters a JSON wire must carry intact. */
 const SOURCE = '{"version":1,"id":"abcdabcdabcdabcd","name":"say \\"hi\\" café 😀"}';
@@ -44,7 +44,9 @@ function wirePort(): WirePort {
     deliver,
     postMessage(message) {
       sent.push(JSON.parse(JSON.stringify(message)) as MakeCodeSessionMessage);
-      if (message.type === "makecode:hello") deliver({ type: "makecode:hello", payload: { protocolVersion: 1 } });
+      if (message.type === "makecode:hello") {
+        deliver({ type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } });
+      }
     },
     onMessage(listener) {
       listeners.add(listener);

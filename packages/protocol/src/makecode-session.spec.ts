@@ -95,7 +95,9 @@ describe("makecode session establishment", () => {
   });
 
   it("rejects a peer declaring a newer version with the stable code and detaches", async () => {
-    const port = scriptedPeer([{ type: "makecode:hello", payload: { protocolVersion: 2 } }]);
+    const port = scriptedPeer([
+      { type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION + 1 } },
+    ]);
 
     await assert.rejects(connectMakeCodeSession({ port }), (error: unknown) => {
       assert.ok(error instanceof PeerSessionError);

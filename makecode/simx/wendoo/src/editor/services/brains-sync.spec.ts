@@ -15,8 +15,6 @@ import {
   brainSourceHash,
   MakeCodeBrainsError,
   MakeCodeBrainsErrorCode,
-  MakeCodeManifestError,
-  MakeCodeManifestErrorCode,
   MakeCodeManifestProblemCode,
 } from "@wendoo/makecode-session";
 import { buildAuthoringEnvironment, CATALOG_PACK_UNBOUND } from "../../authoring/authoring-environment.js";
@@ -63,22 +61,6 @@ class FakeSessionSource {
 /** One request a {@link FakeChannel} holds unanswered. */
 type HeldRequest = () => void;
 
-/** The id manifest an in-memory project holds, shared by every handshake over the project. */
-class FakeManifestFile {
-  /** What a read of the project's manifest finds. */
-  reading: MakeCodeManifestReading = { manifest: null };
-  /** Every manifest written, in order. */
-  readonly writes: MakeCodeIdManifest[] = [];
-  /** How many reads were received. */
-  reads = 0;
-  /** How many of the next reads are answered with `READ_FAILED`. */
-  failingReads = 0;
-  /** How many of the next writes are answered with `WRITE_FAILED`. */
-  failingWrites = 0;
-  /** Every request received, by kind, in order, beside the brains requests the channel records. */
-  readonly log: string[] = [];
-}
-
 /**
  * One handshake's brains channel over an in-memory project. It answers every
  * request from its project in a later microtask, or, while held, queues the
@@ -106,45 +88,16 @@ class FakeChannel implements MakeCodeBrainsChannel {
    */
   reportsCompiled = true;
   held = false;
-  readonly manifestFile: FakeManifestFile;
   private readonly _queue: HeldRequest[] = [];
   private readonly _rejects = new Set<(error: Error) => void>();
   private _closed = false;
 
-  constructor(project: Map<string, MakeCodeBrain>, manifestFile: FakeManifestFile) {
+  constructor(project: Map<string, MakeCodeBrain>) {
     this.project = project;
-    this.manifestFile = manifestFile;
-  }
-
-  readManifest(): Promise<MakeCodeManifestReading> {
-    const file = this.manifestFile;
-    file.reads += 1;
-    file.log.push("read");
-    return this.answer(() => {
-      if (file.failingReads > 0) {
-        file.failingReads -= 1;
-        throw new MakeCodeManifestError(MakeCodeManifestErrorCode.READ_FAILED, "unreadable");
-      }
-      return structuredClone(file.reading);
-    });
-  }
-
-  writeManifest(manifest: MakeCodeIdManifest): Promise<void> {
-    const file = this.manifestFile;
-    file.writes.push(structuredClone(manifest));
-    file.log.push("write");
-    return this.answer(() => {
-      if (file.failingWrites > 0) {
-        file.failingWrites -= 1;
-        throw new MakeCodeManifestError(MakeCodeManifestErrorCode.WRITE_FAILED, "unwritable");
-      }
-      file.reading = { manifest: structuredClone(manifest) };
-    });
   }
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
     this.lists += 1;
-    this.manifestFile.log.push("list");
     return this.answer(() => {
       if (this.failingLists > 0) {
         this.failingLists -= 1;
@@ -227,9 +180,14 @@ class FakeChannel implements MakeCodeBrainsChannel {
   }
 }
 
-/** The sync source a brains store follows: hands out the spec's channels. */
+/**
+ * The sync source a brains store follows, standing in for the MakeCode
+ * side's frame: hands out the spec's channels, and publishes the frame's id
+ * manifest on each handshake and on the spec's word.
+ */
 class FakeSync {
   private readonly _listeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
+  private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
 
   onBrainsChannel = (listener: (channel: MakeCodeBrainsChannel) => void): (() => void) => {
     this._listeners.add(listener);
@@ -238,22 +196,35 @@ class FakeSync {
     };
   };
 
+  onManifest = (listener: (reading: MakeCodeManifestReading) => void): (() => void) => {
+    this._manifestListeners.add(listener);
+    return () => {
+      this._manifestListeners.delete(listener);
+    };
+  };
+
   /**
-   * A handshake completing over `project`, whose id manifest is
-   * `manifestFile`, handing out its channel; `reportsCompiled` set as
-   * {@link FakeChannel.reportsCompiled}.
+   * A handshake completing over `project`, handing out its channel, then the
+   * frame publishing `reading` as the handshake's first manifest, unless it
+   * is `null`; `reportsCompiled` set as {@link FakeChannel.reportsCompiled}.
    */
   open(
     project: Map<string, MakeCodeBrain>,
     held = false,
     reportsCompiled = true,
-    manifestFile = new FakeManifestFile()
+    reading: MakeCodeManifestReading | null = { manifest: null }
   ): FakeChannel {
-    const channel = new FakeChannel(project, manifestFile);
+    const channel = new FakeChannel(project);
     channel.held = held;
     channel.reportsCompiled = reportsCompiled;
     for (const listener of this._listeners) listener(channel);
+    if (reading !== null) this.publish(reading);
     return channel;
+  }
+
+  /** The frame publishing the manifest `reading`. */
+  publish(reading: MakeCodeManifestReading): void {
+    for (const listener of this._manifestListeners) listener(structuredClone(reading));
   }
 }
 
@@ -1424,7 +1395,7 @@ describe("brains sync", () => {
       ],
     });
 
-    /** The allocation an editor makes of {@link CHIME_CATALOG} for a project holding no manifest. */
+    /** The allocation the frame makes of {@link CHIME_CATALOG} for a project holding no manifest. */
     const CHIME_IDS: MakeCodeIdManifest = {
       actions: [{ name: "actuator.chime.ring", id: 1024 }],
       operators: [],
@@ -1438,12 +1409,33 @@ describe("brains sync", () => {
       return action?.binding === "host" ? action.id : undefined;
     }
 
-    /** Connects and opens a handshake over an empty project whose manifest is `file`, resolving once it has reconciled. */
-    async function handshakeWith(file: FakeManifestFile, project = projectOf()): Promise<FakeChannel> {
+    /** {@link GROWN_CATALOG}'s allocation, grown from {@link CHIME_IDS}. */
+    const GROWN_IDS: MakeCodeIdManifest = {
+      actions: [
+        { name: "actuator.chime.ring", id: 1024 },
+        { name: "actuator.chime.hush", id: 1025 },
+      ],
+      operators: [],
+      types: [],
+      next: { action: 1026, operator: 1024, atom: 1024 },
+    };
+
+    /**
+     * Connects and opens a handshake over `project`, the frame publishing
+     * `reading` as its first manifest, resolving once it has reconciled.
+     */
+    async function handshakeWith(reading: MakeCodeManifestReading, project = projectOf()): Promise<FakeChannel> {
       session.setStatus("connected");
-      const channel = sync.open(project, false, true, file);
+      const channel = sync.open(project, false, true, reading);
       await settle();
       return channel;
+    }
+
+    /** The program posting `catalog` mid-session: the session delivers it, then the frame publishes `reading`. */
+    async function catalogArrives(catalog: string, reading: MakeCodeManifestReading): Promise<void> {
+      session.setCatalog(catalog);
+      sync.publish(reading);
+      await settle();
     }
 
     /** A project brain whose rule places the ring tile, authored in an environment binding {@link CHIME_CATALOG}. */
@@ -1458,7 +1450,7 @@ describe("brains sync", () => {
       return { id: definition.id(), name: "Ringer", source };
     }
 
-    it("leaves the packs unbound until a handshake reads the project's manifest", () => {
+    it("leaves the packs unbound until the frame publishes a manifest", () => {
       session.setCatalog(CHIME_CATALOG);
       const store = syncedStore();
 
@@ -1466,165 +1458,106 @@ describe("brains sync", () => {
       assert.equal(actionId(store, "actuator.chime.ring"), undefined);
     });
 
-    it("reads the manifest beside the list, allocates the catalog's vocabulary, writes the whole allocation, and binds it", async () => {
+    it("binds the catalog's vocabulary under the ids the published manifest holds, as they are", async () => {
       session.setCatalog(CHIME_CATALOG);
       const store = syncedStore();
-      const file = new FakeManifestFile();
-
-      await handshakeWith(file);
-
-      assert.deepEqual(file.log.slice(0, 2), ["read", "list"]);
-      assert.deepEqual(file.writes, [CHIME_IDS]);
-      assert.deepEqual(store.getSnapshot().catalogDiagnostics, []);
-      assert.equal(actionId(store, "actuator.chime.ring"), 1024);
-    });
-
-    it("adopts the ids the project's manifest holds, writing nothing when it already allocates everything", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      const store = syncedStore();
-      const file = new FakeManifestFile();
       const held: MakeCodeIdManifest = {
         ...CHIME_IDS,
         actions: [{ name: "actuator.chime.ring", id: 1100 }],
         next: { ...CHIME_IDS.next, action: 1101 },
       };
-      file.reading = { manifest: held };
 
-      await handshakeWith(file);
+      const channel = await handshakeWith({ manifest: held });
 
-      assert.deepEqual(file.writes, []);
+      assert.deepEqual(store.getSnapshot().catalogDiagnostics, []);
       assert.equal(actionId(store, "actuator.chime.ring"), 1100);
+      assert.deepEqual(channel.pushes, []);
     });
 
-    it("writes no manifest to a project that holds none while the catalog declares no vocabulary", async () => {
-      syncedStore();
-      const file = new FakeManifestFile();
-
-      await handshakeWith(file);
-
-      assert.deepEqual(file.writes, []);
-    });
-
-    it("rewrites an unreadable manifest from its own allocation", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      syncedStore();
-      const file = new FakeManifestFile();
-      file.reading = { manifest: null, problem: MakeCodeManifestProblemCode.UNREADABLE };
-
-      await handshakeWith(file);
-
-      assert.deepEqual(file.writes, [CHIME_IDS]);
-    });
-
-    it("never writes over a manifest of a newer format, and leaves the packs unbound with its code", async () => {
+    it("waits for the handshake's first manifest before listing the project's brains", async () => {
       session.setCatalog(CHIME_CATALOG);
       const store = syncedStore();
-      const file = new FakeManifestFile();
-      file.reading = { manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER };
+      sync.publish({ manifest: CHIME_IDS });
+      session.setStatus("connected");
 
-      await handshakeWith(file);
+      const channel = sync.open(projectOf(projectBrain("Remote")), false, true, null);
+      await settle();
+      assert.equal(channel.lists, 0);
+      assert.equal(store.getSnapshot().reconciled, false);
+      sync.publish({ manifest: CHIME_IDS });
+      await settle();
 
-      assert.deepEqual(file.writes, []);
+      assert.equal(channel.lists, 1);
+      assert.equal(store.getSnapshot().reconciled, true);
+      assert.equal(actionId(store, "actuator.chime.ring"), 1024);
+    });
+
+    it("leaves the packs unbound under a manifest of a newer format, reporting its code", async () => {
+      session.setCatalog(CHIME_CATALOG);
+      const store = syncedStore();
+
+      await handshakeWith({ manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER });
+
+      assert.equal(store.getSnapshot().reconciled, true);
       assert.deepEqual(store.getSnapshot().catalogDiagnostics, [
         { code: CATALOG_PACK_UNBOUND, pack: "chime" },
         { code: MakeCodeManifestProblemCode.FORMAT_NEWER },
       ]);
     });
 
-    it("allocates the vocabulary a catalog gains mid-session, writing the grown allocation", async () => {
+    it("holds a catalog arriving mid-session without rebuilding, and rebuilds once on the manifest that follows it", async () => {
       session.setCatalog(CHIME_CATALOG);
       const store = syncedStore();
-      const file = new FakeManifestFile();
-      await handshakeWith(file);
+      await handshakeWith({ manifest: CHIME_IDS });
+      const before = store.getSnapshot().environment;
+      const rebuilt: WendooEnvironment[] = [];
+      store.subscribe(() => {
+        const { environment } = store.getSnapshot();
+        if (environment !== before && !rebuilt.includes(environment)) rebuilt.push(environment);
+      });
 
       session.setCatalog(GROWN_CATALOG);
       await settle();
+      assert.equal(store.getSnapshot().environment, before);
+      assert.equal(actionId(store, "actuator.chime.hush"), undefined);
+      sync.publish({ manifest: GROWN_IDS });
+      await settle();
 
-      assert.deepEqual(file.writes[file.writes.length - 1]?.actions, [
-        { name: "actuator.chime.ring", id: 1024 },
-        { name: "actuator.chime.hush", id: 1025 },
-      ]);
+      assert.equal(rebuilt.length, 1);
       assert.equal(actionId(store, "actuator.chime.hush"), 1025);
       assert.equal(actionId(store, "actuator.chime.ring"), 1024);
+    });
+
+    it("keeps its environment when the frame publishes the allocation it holds after the catalog it was built from", async () => {
+      session.setCatalog(CHIME_CATALOG);
+      const store = syncedStore();
+      await handshakeWith({ manifest: CHIME_IDS });
+      const before = store.getSnapshot();
+
+      sync.publish({ manifest: CHIME_IDS });
+      await settle();
+
+      assert.equal(store.getSnapshot(), before);
     });
 
     it("recompiles the held brains when the environment rebuilds, pushing each whose compiled form changes", async () => {
       const store = syncedStore();
       const ringer = ringingBrain();
       const quiet = projectBrain("Quiet", authorCompilingRule);
-      const channel = await handshakeWith(new FakeManifestFile(), projectOf(ringer, quiet));
+      const channel = await handshakeWith({ manifest: null }, projectOf(ringer, quiet));
       const unbound = entryOf(store, ringer.id);
       assert.ok(unbound.diagnostics.length > 0, "the ring tile is missing while its pack is unbound");
       assert.equal(unbound.compiled, undefined);
       assert.deepEqual(channel.pushes, []);
       const pushesBefore = channel.pushes.length;
 
-      session.setCatalog(CHIME_CATALOG);
-      await settle();
+      await catalogArrives(CHIME_CATALOG, { manifest: CHIME_IDS });
 
       assert.notDeepEqual(entryOf(store, ringer.id).compiled, unbound.compiled);
       assert.deepEqual(entryOf(store, ringer.id).diagnostics, []);
       assert.deepEqual(writtenIds(channel).slice(pushesBefore), [ringer.id]);
       assert.equal(channel.project.get(ringer.id)?.compiled?.sourceHash, brainSourceHash(ringer.source));
       assert.equal(store.getSnapshot().pending.size, 0);
-    });
-
-    it("retries a failed manifest write after the backoff delay while connected", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      syncedStore();
-      const file = new FakeManifestFile();
-      file.failingWrites = 1;
-
-      await handshakeWith(file);
-      assert.equal(file.writes.length, 1);
-      assert.equal(file.reading.manifest, null);
-      await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
-
-      assert.equal(file.writes.length, 2);
-      assert.deepEqual(file.reading.manifest, CHIME_IDS);
-    });
-
-    it("keeps a manifest write the project leaves unanswered in flight, writing nothing more until it is answered, however long it waits", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      const store = syncedStore();
-      const file = new FakeManifestFile();
-      session.setStatus("connected");
-      const channel = sync.open(projectOf(), true, true, file);
-      channel.releaseAt(0);
-      channel.releaseAt(0);
-      await settle();
-      assert.equal(store.getSnapshot().reconciled, true);
-      assert.deepEqual(file.writes, [CHIME_IDS]);
-
-      await waitLong();
-      session.setCatalog(GROWN_CATALOG);
-      await settle();
-      assert.deepEqual(file.writes, [CHIME_IDS]);
-      assert.equal(file.reading.manifest, null);
-      channel.release();
-      await settle();
-
-      assert.equal(file.writes.length, 2);
-      assert.deepEqual(file.writes[1]?.actions, [
-        { name: "actuator.chime.ring", id: 1024 },
-        { name: "actuator.chime.hush", id: 1025 },
-      ]);
-      assert.deepEqual(file.reading.manifest, file.writes[1]);
-    });
-
-    it("re-runs the reconciliation when the manifest read fails", async () => {
-      session.setCatalog(CHIME_CATALOG);
-      const store = syncedStore();
-      const file = new FakeManifestFile();
-      file.failingReads = 1;
-
-      await handshakeWith(file);
-      assert.equal(store.getSnapshot().reconciled, false);
-      await elapse(PUSH_RETRY_DELAYS_MS[0] ?? 0);
-
-      assert.equal(store.getSnapshot().reconciled, true);
-      assert.equal(file.reads, 2);
-      assert.deepEqual(file.writes, [CHIME_IDS]);
     });
 
     describe("unresolved tiles", () => {
@@ -1638,11 +1571,9 @@ describe("brains sync", () => {
         return { ...brain, compiled: { bytecode, sourceHash: brainSourceHash(brain.source) } };
       }
 
-      /** A project manifest allocating {@link CHIME_IDS}, as the editor that pushed the ringing brain wrote it. */
-      function chimeManifest(): FakeManifestFile {
-        const file = new FakeManifestFile();
-        file.reading = { manifest: structuredClone(CHIME_IDS) };
-        return file;
+      /** The frame's manifest allocating {@link CHIME_IDS}, as it allocated them for the ringing brain's pack. */
+      function chimeManifest(): MakeCodeManifestReading {
+        return { manifest: structuredClone(CHIME_IDS) };
       }
 
       const unboundCases: { what: string; catalog: string | undefined; reading?: MakeCodeManifestReading }[] = [
@@ -1660,10 +1591,8 @@ describe("brains sync", () => {
           session.setCatalog(catalog);
           const store = syncedStore();
           const ringer = compiledInChime(ringingBrain());
-          const file = chimeManifest();
-          if (reading !== undefined) file.reading = reading;
 
-          const channel = await handshakeWith(file, projectOf(ringer));
+          const channel = await handshakeWith(reading ?? chimeManifest(), projectOf(ringer));
 
           const entry = entryOf(store, ringer.id);
           assert.deepEqual(entry.compiled, ringer.compiled);
@@ -1679,8 +1608,7 @@ describe("brains sync", () => {
         const ringer = compiledInChime(ringingBrain());
         const channel = await handshakeWith(chimeManifest(), projectOf(ringer));
 
-        session.setCatalog(CHIME_CATALOG);
-        await settle();
+        await catalogArrives(CHIME_CATALOG, chimeManifest());
 
         const entry = entryOf(store, ringer.id);
         assert.deepEqual(entry.compiled, ringer.compiled);
@@ -1708,8 +1636,7 @@ describe("brains sync", () => {
         assert.deepEqual(channel.project.get(ringer.id)?.compiled, ringer.compiled);
         const pushesBefore = channel.pushes.length;
 
-        session.setCatalog(CHIME_CATALOG);
-        await settle();
+        await catalogArrives(CHIME_CATALOG, chimeManifest());
 
         const resolved = entryOf(store, ringer.id);
         assert.equal(resolved.compiled?.sourceHash, resolved.sourceHash);
@@ -1730,8 +1657,7 @@ describe("brains sync", () => {
         assert.deepEqual(entryOf(store, ringer.id).unresolvedTiles, []);
         assert.deepEqual(channel.pushes, []);
 
-        session.setCatalog('{"packs":[]}');
-        await settle();
+        await catalogArrives('{"packs":[]}', chimeManifest());
 
         const entry = entryOf(store, ringer.id);
         assert.deepEqual(entry.compiled, ringer.compiled);

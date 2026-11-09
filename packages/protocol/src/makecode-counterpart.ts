@@ -2,6 +2,7 @@ import type { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import { PeerSessionError } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
 import type { MakeCodeBrainsChannel } from "./makecode-editor-session.js";
+import type { MakeCodeManifestReading } from "./makecode-manifest.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSession, MakeCodeSessionPort } from "./makecode-session.js";
 import { connectMakeCodeSession } from "./makecode-session.js";
@@ -16,6 +17,8 @@ export interface CounterpartHandlers {
   established(target: string | undefined, channel: MakeCodeBrainsChannel, ping: () => Promise<void>): void;
   /** Receives each catalog the counterpart publishes. */
   catalog(content: string): void;
+  /** Receives each id manifest the counterpart publishes. */
+  manifest(reading: MakeCodeManifestReading): void;
   /** Receives each asset snapshot the counterpart publishes. */
   assets(assets: MakeCodeAsset[]): void;
   /** Receives each reading of the project's facts the counterpart publishes. */
@@ -27,8 +30,8 @@ export interface CounterpartHandlers {
 /**
  * The editor's makecode handshake with the counterpart over one port: sends
  * the editor's hello at once, then reports the established session's brains
- * channel and liveness probe and the catalogs, asset snapshots and project
- * facts the counterpart publishes to `handlers`. Nothing is reported once it
+ * channel and liveness probe and the catalogs, id manifests, asset snapshots
+ * and project facts the counterpart publishes to `handlers`. Nothing is reported once it
  * is closed.
  */
 export class CounterpartSession {
@@ -67,13 +70,14 @@ export class CounterpartSession {
             listBrains: () => session.listBrains(),
             pullBrains: (ids) => session.pullBrains(ids),
             pushBrain: (push) => session.pushBrain(push),
-            readManifest: () => session.readManifest(),
-            writeManifest: (manifest) => session.writeManifest(manifest),
           },
           () => session.ping()
         );
         session.onCatalog((content) => {
           handlers.catalog(content);
+        });
+        session.onManifest((reading) => {
+          handlers.manifest(reading);
         });
         session.onAssets((assets) => {
           handlers.assets(assets);

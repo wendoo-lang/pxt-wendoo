@@ -12,12 +12,14 @@ import type {
   MakeCodeEditorSession,
   MakeCodeEditorSessionState,
   MakeCodeEditorSessionStatus,
+  MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
-import { brainSourceHash } from "@wendoo/makecode-session";
+import { brainSourceHash, MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import { CATALOG_PACK_UNBOUND, MAKECODE_VM_PRECISION } from "../../authoring/authoring-environment.js";
 import { serializeBrainSource } from "../../authoring/brain-source.js";
-import { CATALOG_UNREADABLE } from "../../authoring/catalog.js";
-import { ASSET_CATALOG, PICTURE_TYPE, picture } from "../test-support/asset-catalog.js";
+import { CATALOG_UNREADABLE, parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
+import { ASSET_CATALOG, assetCatalogIds, PICTURE_TYPE, picture } from "../test-support/asset-catalog.js";
 import type { BrainEntry, BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 import { EditorSessionStore } from "./editor-session-store.js";
@@ -43,6 +45,30 @@ class FakeSessionSource {
   set(fields: Partial<BrainsSessionState>): void {
     this.state = { ...this.state, ...fields };
     for (const listener of this._listeners) listener();
+  }
+}
+
+/** The sync source a brains store takes manifests from, completing no handshake: the spec publishes each manifest. */
+class FakeManifestSync {
+  private readonly _listeners = new Set<(reading: MakeCodeManifestReading) => void>();
+
+  onBrainsChannel = (): (() => void) => () => {};
+
+  onManifest = (listener: (reading: MakeCodeManifestReading) => void): (() => void) => {
+    this._listeners.add(listener);
+    return () => {
+      this._listeners.delete(listener);
+    };
+  };
+
+  /** The MakeCode side publishing `reading`. */
+  publish(reading: MakeCodeManifestReading): void {
+    for (const listener of this._listeners) listener(reading);
+  }
+
+  /** The MakeCode side publishing the manifest allocating `catalogText` in a project holding none. */
+  publishAllocating(catalogText: string): void {
+    this.publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(catalogText)) });
   }
 }
 
@@ -273,17 +299,38 @@ describe("brains store", () => {
   });
 
   describe("environment", () => {
-    it("builds its environment from the session's catalog and rebuilds it when a new catalog arrives", () => {
+    it("builds its environment from the session's catalog, holds a new catalog without rebuilding, and rebuilds once on the manifest following it", () => {
       session.set({ catalogText: MOTION_CATALOG });
-      const store = new BrainsStore(session);
+      const sync = new FakeManifestSync();
+      const store = new BrainsStore(session, sync);
       const first = store.getSnapshot();
       assert.deepEqual(first.catalogDiagnostics, [{ code: CATALOG_PACK_UNBOUND, pack: "motion" }]);
 
       session.set({ catalogText: SOUND_CATALOG });
+      const held = store.getSnapshot();
+      sync.publishAllocating(SOUND_CATALOG);
+      const rebuilt = store.getSnapshot();
+      sync.publishAllocating(SOUND_CATALOG);
 
-      const second = store.getSnapshot();
-      assert.notEqual(second.environment, first.environment);
-      assert.deepEqual(second.catalogDiagnostics, [{ code: CATALOG_PACK_UNBOUND, pack: "sound" }]);
+      assert.equal(held.environment, first.environment);
+      assert.equal(held.catalogPending, false);
+      assert.notEqual(rebuilt.environment, first.environment);
+      assert.deepEqual(rebuilt.catalogDiagnostics, []);
+      assert.ok(rebuilt.environment.tileCatalogs().some((catalog) => catalog.has(mkActuatorTileId("beep"))));
+      assert.equal(store.getSnapshot().environment, rebuilt.environment);
+    });
+
+    it("binds no pack under a manifest of a newer format, reporting its code after the catalog's diagnostics", () => {
+      session.set({ catalogText: MOTION_CATALOG });
+      const sync = new FakeManifestSync();
+      const store = new BrainsStore(session, sync);
+
+      sync.publish({ manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER });
+
+      assert.deepEqual(store.getSnapshot().catalogDiagnostics, [
+        { code: CATALOG_PACK_UNBOUND, pack: "motion" },
+        { code: MakeCodeManifestProblemCode.FORMAT_NEWER },
+      ]);
     });
 
     it("keeps its environment when the session republishes the same catalog", () => {
@@ -298,12 +345,14 @@ describe("brains store", () => {
 
     it("reads brains for editing in the current environment and compiles in it after a rebuild", () => {
       session.set({ catalogText: MOTION_CATALOG });
-      const store = new BrainsStore(session);
+      const sync = new FakeManifestSync();
+      const store = new BrainsStore(session, sync);
       const id = store.addBrain("Chaser");
       const authoredBeforeRebuild = definitionOf(store, id);
       authorCompilingRule(store.getSnapshot().environment, authoredBeforeRebuild);
 
       session.set({ catalogText: SOUND_CATALOG });
+      sync.publishAllocating(SOUND_CATALOG);
       const rebuilt = store.getSnapshot().environment;
       store.applyBrain(authoredBeforeRebuild);
 
@@ -410,6 +459,7 @@ describe("brains store", () => {
       state: MakeCodeEditorSessionState = { status: "disconnected", errorCode: undefined, target: undefined };
       private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
       private readonly _catalogListeners = new Set<(content: string) => void>();
+      private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
       private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
       private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
 
@@ -424,6 +474,13 @@ describe("brains store", () => {
         this._catalogListeners.add(listener);
         return () => {
           this._catalogListeners.delete(listener);
+        };
+      }
+
+      onManifest(listener: (reading: MakeCodeManifestReading) => void): () => void {
+        this._manifestListeners.add(listener);
+        return () => {
+          this._manifestListeners.delete(listener);
         };
       }
 
@@ -460,37 +517,44 @@ describe("brains store", () => {
         for (const listener of this._catalogListeners) listener(content);
       }
 
+      /** An id manifest arriving from the MakeCode side. */
+      deliverManifest(reading: MakeCodeManifestReading): void {
+        for (const listener of this._manifestListeners) listener(reading);
+      }
+
       /** An asset snapshot arriving from the MakeCode side. */
       deliverAssets(assets: MakeCodeAsset[]): void {
         for (const listener of this._assetsListeners) listener(assets);
       }
 
-      /** A makecode handshake completing over a project holding no brains and no manifest. */
+      /** A makecode handshake completing over a project holding no brains. */
       handshake(): void {
         const channel: MakeCodeBrainsChannel = {
           listBrains: () => Promise.resolve([]),
           pullBrains: () => Promise.resolve([]),
           pushBrain: () => Promise.resolve(),
-          readManifest: () => Promise.resolve({ manifest: null }),
-          writeManifest: () => Promise.resolve(),
         };
         for (const listener of this._brainsChannelListeners) listener(channel);
       }
     }
 
-    it("follows the live session's catalog and connectivity", () => {
+    it("follows the live session's catalog, manifest and connectivity", () => {
       const live = new LiveSession();
       const sessionStore = new EditorSessionStore(live);
       sessionStore.start();
       live.setStatus("connected");
-      const store = new BrainsStore(sessionStore);
+      const store = new BrainsStore(sessionStore, sessionStore);
 
       live.deliver(MOTION_CATALOG);
+      live.deliverManifest({ manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER });
       const id = store.addBrain("Chaser");
       live.setStatus("disconnected");
       store.renameBrain(id, "Runner");
 
-      assert.deepEqual(store.getSnapshot().catalogDiagnostics, [{ code: CATALOG_PACK_UNBOUND, pack: "motion" }]);
+      assert.deepEqual(store.getSnapshot().catalogDiagnostics, [
+        { code: CATALOG_PACK_UNBOUND, pack: "motion" },
+        { code: MakeCodeManifestProblemCode.FORMAT_NEWER },
+      ]);
       assert.deepEqual([...store.getSnapshot().pending], [id]);
     });
 
@@ -502,6 +566,7 @@ describe("brains store", () => {
       const store = new BrainsStore(sessionStore, sessionStore);
       live.deliver(ASSET_CATALOG);
       live.handshake();
+      live.deliverManifest({ manifest: assetCatalogIds() });
       await new Promise((resolve) => setImmediate(resolve));
 
       live.deliverAssets([picture("img1", "hero")]);

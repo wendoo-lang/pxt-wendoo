@@ -2,7 +2,7 @@ import { PeerSessionErrorCode } from "@wendoo/bridge-app/peer-session";
 import type {
   MakeCodeAsset,
   MakeCodeBrainsRequest,
-  MakeCodeManifestRequest,
+  MakeCodeManifestReading,
   MakeCodeMessagePort,
   MakeCodeSession,
   MakeCodeSessionPort,
@@ -35,8 +35,8 @@ export interface SimxServingOptions {
   frame: SimxFrame;
   /**
    * The MakeCode project's files in this simulator extension's folder, which
-   * the editor's brains and manifest requests are answered from and written
-   * to.
+   * the editor's brains requests are answered from and written to, and the
+   * ids module is read from and written to.
    */
   files: ProjectFiles;
   /**
@@ -55,8 +55,9 @@ export interface SimxServingOptions {
    * Receives every message from the program that was rejected, by its code,
    * the code of a counterpart's rejected makecode hello, the code of every
    * request the asset provider fails, the code of every image or icon
-   * that cannot be rendered in full, and the code of a catalog whose target
-   * has no icon palette.
+   * that cannot be rendered in full, the code of a catalog whose target
+   * has no icon palette, and the code of every ids module problem and every
+   * failed read or write of the module.
    */
   log: SimxLog;
   /**
@@ -115,23 +116,28 @@ function logRejection(log: SimxLog, rejection: PeerSessionErrorCode): void {
 
 /**
  * The makecode session with one editor tab, the counterpart, over one port.
- * It sends this side's hello at once and publishes the latest catalog, then
- * the latest asset snapshot, then the project's latest name as its project
- * info, once the counterpart's hello establishes it.
+ * It sends this side's hello at once. Once the counterpart's hello
+ * establishes it and the project's current id manifest is read, it publishes
+ * the latest catalog, then that manifest, then the latest asset snapshot,
+ * then the project's latest name as its project info, and from then on
+ * publishes what it is given and answers the counterpart's brains requests.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
   private _session: MakeCodeSession | undefined;
+  /** Whether the session's first publications have gone out, so later ones may follow. */
+  private _publishing = false;
+  private _closed = false;
 
   /**
    * @param peer - The key of the counterpart's tab, as MakeCode names it on the port.
    * @param port - The transport to the counterpart.
    * @param target - Id of the MakeCode target to declare in this side's hello, if known.
    * @param latestCatalog - The latest catalog the program posted, as published, if any.
+   * @param currentManifest - Resolves with the project's current id manifest.
    * @param latestAssets - The latest asset snapshot, if any.
    * @param latestName - The project's latest name, if known.
-   * @param serve - Answers each brains request the counterpart sends once the session is established.
-   * @param serveManifest - Answers each manifest request the counterpart sends once the session is established.
+   * @param serve - Answers each brains request the counterpart sends once the first publications are out.
    * @param settled - Called once the counterpart's hello is read: with
    *   `undefined` when the session is established, or with
    *   `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER` when the hello declared a
@@ -142,10 +148,10 @@ class CounterpartSession {
     port: MakeCodeSessionPort,
     target: string | undefined,
     latestCatalog: () => string | undefined,
+    currentManifest: () => Promise<MakeCodeManifestReading>,
     latestAssets: () => readonly MakeCodeAsset[] | undefined,
     latestName: () => string | undefined,
     serve: (request: MakeCodeBrainsRequest) => void,
-    serveManifest: (request: MakeCodeManifestRequest) => void,
     settled: (rejection: PeerSessionErrorCode | undefined) => void
   ) {
     const tracked: MakeCodeSessionPort = {
@@ -164,21 +170,25 @@ class CounterpartSession {
     connectMakeCodeSession({ port: tracked, target }).then(
       (session) => {
         this._session = session;
-        const catalog = latestCatalog();
-        if (catalog !== undefined) {
-          session.publishCatalog(catalog);
-        }
-        const snapshot = latestAssets();
-        if (snapshot !== undefined) {
-          session.publishAssets(snapshot);
-        }
-        const name = latestName();
-        if (name !== undefined) {
-          session.publishProjectInfo({ name });
-        }
-        session.onBrainsRequest(serve);
-        session.onManifestRequest(serveManifest);
         settled(undefined);
+        void currentManifest().then((reading) => {
+          if (this._closed) return;
+          const catalog = latestCatalog();
+          if (catalog !== undefined) {
+            session.publishCatalog(catalog);
+          }
+          session.publishManifest(reading);
+          const snapshot = latestAssets();
+          if (snapshot !== undefined) {
+            session.publishAssets(snapshot);
+          }
+          const name = latestName();
+          if (name !== undefined) {
+            session.publishProjectInfo({ name });
+          }
+          this._publishing = true;
+          session.onBrainsRequest(serve);
+        });
       },
       () => {
         // No session over this port.
@@ -187,23 +197,26 @@ class CounterpartSession {
     );
   }
 
-  /** Publish `catalog` to the peer, once the session is established. */
-  publish(catalog: string): void {
+  /** Publish `catalog`, then the id manifest `reading` allocating it, to the peer, once the first publications are out. */
+  publish(catalog: string, reading: MakeCodeManifestReading): void {
+    if (!this._publishing) return;
     this._session?.publishCatalog(catalog);
+    this._session?.publishManifest(reading);
   }
 
-  /** Publish the asset snapshot `snapshot` to the peer, once the session is established. */
+  /** Publish the asset snapshot `snapshot` to the peer, once the first publications are out. */
   publishAssets(snapshot: readonly MakeCodeAsset[]): void {
-    this._session?.publishAssets(snapshot);
+    if (this._publishing) this._session?.publishAssets(snapshot);
   }
 
-  /** Publish the project's `name` to the peer as its project info, once the session is established. */
+  /** Publish the project's `name` to the peer as its project info, once the first publications are out. */
   publishName(name: string): void {
-    this._session?.publishProjectInfo({ name });
+    if (this._publishing) this._session?.publishProjectInfo({ name });
   }
 
   /** Detach from the port, whether or not the session was established. */
   close(): void {
+    this._closed = true;
     this._session?.dispose();
     for (const unsubscribe of this._unsubscribes) {
       unsubscribe();
@@ -226,23 +239,25 @@ interface ProjectServer {
 /**
  * Serve the MakeCode project running beside this simulator extension to
  * every counterpart session attached, one per editor tab, keyed by the tab's
- * key. Each session's brains and manifest requests are answered from the
- * one project's `files`, and its pushes and manifest writes are written to
- * them. Each push that changes what a program runs is also posted to the
- * running program as a program update the moment it arrives, without
- * waiting on the project write, and the last update of every program is
- * posted again each time the program starts. The program's messages are
- * read on `channel`, and the program is asked for its catalog at once. The
- * latest catalog the program posted is published into each session once it
- * is established, and every later catalog into every session, each rendered
- * once as it arrives, its icons as `iconUrl` data URIs under the hosting
- * `target`'s icon palette. A rejected message from the program is logged by
- * its code and discards the latest catalog, so no session receives a
- * catalog older than the program's newest. The project's asset snapshot,
- * listed from `assets`, is published into each session once it is
- * established, after the catalog, and into every session whenever it
- * changes; so is the project's name, listed beside it, as the session's
- * project info, after the snapshot.
+ * key. Each session's brains requests are answered from the one project's
+ * `files`, and its pushes are written to them. Each push that changes what
+ * a program runs is also posted to the running program as a program update
+ * the moment it arrives, without waiting on the project write, and the last
+ * update of every program is posted again each time the program starts. The
+ * project's id manifest is read from `files` at once and allocated and
+ * written here alone. The program's messages are read on `channel`, and the
+ * program is asked for its catalog at once. Each catalog the program posts
+ * is rendered once as it arrives, its icons as `iconUrl` data URIs under
+ * the hosting `target`'s icon palette, and its vocabulary allocated into
+ * the manifest; then it is published into every session, followed by the
+ * manifest, whether or not the allocation changed. A rejected message from
+ * the program is logged by its code and discards the latest catalog, so no
+ * session receives a catalog older than the program's newest. Once a session
+ * is established, the latest catalog, then the current manifest, then the
+ * project's asset snapshot, listed from `assets`, then the project's name,
+ * listed beside it, as the session's project info, are published into it;
+ * the snapshot and the name are published into every session again
+ * whenever they change.
  */
 function startProjectServer(options: SimxServingOptions): ProjectServer {
   const { log } = options;
@@ -257,25 +272,29 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   };
   const manifest = new ManifestProject(options.files, log);
   const projectAssets = new ProjectAssets(options.assets, log);
-  const serveManifest = (request: MakeCodeManifestRequest): void => {
-    manifest.serve(request);
-  };
   const iconPalette = targetIconPalette(options.target);
   // the latest catalog with its icons rendered under the target's icon palette, as sessions receive it
   let publishedCatalog: string | undefined;
+  // advanced by every catalog and every rejection; a catalog allocated under an earlier count is not published
+  let catalogCount = 0;
   // the session of each editor tab, by the tab's key
   const counterparts = new Map<string, CounterpartSession>();
 
   const channelUnsubscribes = [
     channel.onCatalog((posted) => {
       const rendered = enrichCatalogIcons(posted, options.target, iconPalette, log);
-      publishedCatalog = rendered;
-      for (const counterpart of counterparts.values()) counterpart.publish(rendered);
+      const count = ++catalogCount;
+      void manifest.adopt(rendered).then((reading) => {
+        if (count !== catalogCount) return;
+        publishedCatalog = rendered;
+        for (const counterpart of counterparts.values()) counterpart.publish(rendered, reading);
+      });
     }),
     channel.onProgramStart(() => {
       live.repost();
     }),
     channel.onRejected((code) => {
+      catalogCount += 1;
       publishedCatalog = undefined;
       log.error(`${code}: ${REJECTION_EXPLANATIONS[code]}`);
     }),
@@ -297,10 +316,10 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
         port,
         options.target,
         () => publishedCatalog,
+        () => manifest.current(),
         () => projectAssets.snapshot,
         () => projectAssets.name,
         serveBrains,
-        serveManifest,
         settled
       );
       counterparts.set(peer, counterpart);
@@ -312,6 +331,7 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
         unsubscribe();
       }
       projectAssets.dispose();
+      manifest.dispose();
       channel.dispose();
     },
   };
@@ -326,15 +346,19 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
  * closes the previous session of the tab the message's `peer` names; a
  * message naming no `peer` names the tab keyed by this frame's own
  * `channel`. Every other message is ignored. The program is asked for its
- * catalog at once. Every session's brains and manifest requests are answered
- * from `files`, and its pushes and manifest writes are written to them; each
- * push that changes what a program runs is posted to the running program at
- * once, and the last update of every program is posted again each time the
- * program starts. The program's latest catalog, its icons rendered under
- * the `target`'s icon palette, then the latest asset snapshot, then the
- * project's name are published into each session once it is established,
- * and each later one into every session; a message from the program
- * rejected by its code is logged and discards the latest catalog. An editor
+ * catalog at once. Every session's brains requests are answered from
+ * `files`, and its pushes are written to them; each push that changes what a
+ * program runs is posted to the running program at once, and the last update
+ * of every program is posted again each time the program starts. The
+ * project's id manifest is read from `files` at once, and every catalog's
+ * vocabulary is allocated into it and written to `files` here alone. The
+ * program's latest catalog, its icons rendered under the `target`'s icon
+ * palette, then the current manifest, then the latest asset snapshot, then
+ * the project's name are published into each session once it is
+ * established; each later catalog is published into every session followed
+ * by the manifest, and each later snapshot and name into every session; a
+ * message from the program rejected by its code is logged and discards the
+ * latest catalog. An editor
  * hello declaring a newer makecode protocol is logged by its code, and no
  * session is served over that port.
  */

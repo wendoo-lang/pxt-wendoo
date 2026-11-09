@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { MakeCodeAsset } from "./makecode-assets.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
-import { connectMakeCodeSession } from "./makecode-session.js";
+import { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./makecode-session.js";
 
 /** An SVG preview as a data URI. */
 const SVG_PREVIEW =
@@ -44,7 +44,9 @@ function wirePort(): WirePort {
     deliver,
     postMessage(message) {
       sent.push(JSON.parse(JSON.stringify(message)) as MakeCodeSessionMessage);
-      if (message.type === "makecode:hello") deliver({ type: "makecode:hello", payload: { protocolVersion: 1 } });
+      if (message.type === "makecode:hello") {
+        deliver({ type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } });
+      }
     },
     onMessage(listener) {
       listeners.add(listener);

@@ -5,6 +5,7 @@ import type {
   MakeCodeBrainsChannel,
   MakeCodeEditorSession,
   MakeCodeEditorSessionState,
+  MakeCodeManifestReading,
   MakeCodeProjectInfo,
 } from "@wendoo/makecode-session";
 import { EditorSessionStore } from "./editor-session-store.js";
@@ -16,6 +17,7 @@ class FakeSession implements MakeCodeEditorSession {
   state: MakeCodeEditorSessionState = { status: "disconnected", errorCode: undefined, target: undefined };
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
@@ -31,6 +33,13 @@ class FakeSession implements MakeCodeEditorSession {
     this._catalogListeners.add(listener);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  onManifest(listener: (reading: MakeCodeManifestReading) => void): () => void {
+    this._manifestListeners.add(listener);
+    return () => {
+      this._manifestListeners.delete(listener);
     };
   }
 
@@ -74,6 +83,11 @@ class FakeSession implements MakeCodeEditorSession {
     for (const listener of this._catalogListeners) listener(content);
   }
 
+  /** An id manifest arriving from the counterpart. */
+  deliverManifest(reading: MakeCodeManifestReading): void {
+    for (const listener of this._manifestListeners) listener(reading);
+  }
+
   /** An asset snapshot arriving from the counterpart. */
   deliverAssets(assets: MakeCodeAsset[]): void {
     for (const listener of this._assetsListeners) listener(assets);
@@ -111,8 +125,6 @@ function idleChannel(): MakeCodeBrainsChannel & { removed: string[] } {
       if (push.op === "remove") removed.push(push.brainId);
       return new Promise(() => {});
     },
-    readManifest: () => new Promise(() => {}),
-    writeManifest: () => new Promise(() => {}),
   };
 }
 
@@ -255,5 +267,28 @@ describe("editor session store", () => {
     assert.deepEqual(channels, [first, second]);
     void channels[0]?.pushBrain({ op: "remove", brainId: "abcdabcdabcdabcd" });
     assert.deepEqual(first.removed, ["abcdabcdabcdabcd"]);
+  });
+
+  it("hands out each id manifest as the session delivers it, and none once unsubscribed", () => {
+    const { store, session } = startedStore();
+    const readings: MakeCodeManifestReading[] = [];
+    const unsubscribe = store.onManifest((reading) => {
+      readings.push(reading);
+    });
+    const allocated: MakeCodeManifestReading = {
+      manifest: {
+        actions: [{ name: "move", id: 1024 }],
+        operators: [],
+        types: [],
+        next: { action: 1025, operator: 1024, atom: 1024 },
+      },
+    };
+
+    session.deliverManifest({ manifest: null });
+    session.deliverManifest(allocated);
+    unsubscribe();
+    session.deliverManifest({ manifest: null });
+
+    assert.deepEqual(readings, [{ manifest: null }, allocated]);
   });
 });

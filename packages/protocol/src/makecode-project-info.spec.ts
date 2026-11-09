@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { MakeCodeAsset } from "./makecode-assets.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSession, MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
-import { connectMakeCodeSession } from "./makecode-session.js";
+import { connectMakeCodeSession, MAKECODE_SESSION_PROTOCOL_VERSION } from "./makecode-session.js";
 
 /** Project facts whose name needs escapes on a JSON wire. */
 const INFO: MakeCodeProjectInfo = { name: 'My "Platformer" café 😀' };
@@ -29,7 +29,9 @@ function wirePort(): WirePort {
     deliver,
     postMessage(message) {
       sent.push(JSON.parse(JSON.stringify(message)) as MakeCodeSessionMessage);
-      if (message.type === "makecode:hello") deliver({ type: "makecode:hello", payload: { protocolVersion: 1 } });
+      if (message.type === "makecode:hello") {
+        deliver({ type: "makecode:hello", payload: { protocolVersion: MAKECODE_SESSION_PROTOCOL_VERSION } });
+      }
     },
     onMessage(listener) {
       listeners.add(listener);

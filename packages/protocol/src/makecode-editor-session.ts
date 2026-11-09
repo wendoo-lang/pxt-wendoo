@@ -1,5 +1,6 @@
 import type { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
+import type { MakeCodeManifestReading } from "./makecode-manifest.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSession } from "./makecode-session.js";
 
@@ -44,14 +45,11 @@ export interface MakeCodeEditorSessionState {
 }
 
 /**
- * The brains and manifest requests of one makecode handshake with the
- * counterpart: each travels on that handshake and rejects with its family's
- * `CLOSED` code once the handshake ends.
+ * The brains requests of one makecode handshake with the counterpart: each
+ * travels on that handshake and rejects with `CLOSED` once the handshake
+ * ends.
  */
-export type MakeCodeBrainsChannel = Pick<
-  MakeCodeSession,
-  "listBrains" | "pullBrains" | "pushBrain" | "readManifest" | "writeManifest"
->;
+export type MakeCodeBrainsChannel = Pick<MakeCodeSession, "listBrains" | "pullBrains" | "pushBrain">;
 
 /**
  * The editor's makecode session with the MakeCode project: one object for
@@ -72,6 +70,11 @@ export interface MakeCodeEditorSession {
    * as the verbatim serialized text. Returns an unsubscribe function.
    */
   onCatalog(listener: (content: string) => void): () => void;
+  /**
+   * Subscribe to the id manifests the counterpart publishes, each delivered
+   * whole. Returns an unsubscribe function.
+   */
+  onManifest(listener: (reading: MakeCodeManifestReading) => void): () => void;
   /**
    * Subscribe to the asset snapshots the counterpart publishes, each
    * delivered whole. Returns an unsubscribe function.

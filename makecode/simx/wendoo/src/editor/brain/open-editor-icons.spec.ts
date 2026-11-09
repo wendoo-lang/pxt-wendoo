@@ -33,6 +33,8 @@ import { type ArmedTargetController, ArmedTargetProvider } from "@wendoo/ui/brai
 import { kTileCornerIconAttribute } from "@wendoo/ui/brain-editor/BrainTile";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { parseCatalog } from "../../authoring/catalog.js";
+import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
@@ -129,16 +131,8 @@ class FakeSessionSource {
   }
 }
 
-/** One handshake's brains channel over a project holding no brain and no manifest, answering every request at once. */
+/** One handshake's brains channel over a project holding no brain, answering every request at once. */
 class EmptyProjectChannel implements MakeCodeBrainsChannel {
-  readManifest(): Promise<MakeCodeManifestReading> {
-    return Promise.resolve({ manifest: null });
-  }
-
-  writeManifest(): Promise<void> {
-    return Promise.resolve();
-  }
-
   listBrains(): Promise<MakeCodeBrainSummary[]> {
     return Promise.resolve([]);
   }
@@ -179,22 +173,35 @@ function currentConfig(store: BrainsStore): BrainEditorConfig {
 
 /**
  * A store reconciled with an empty project over {@link paintCatalog} under the
- * palette `"before"`, holding one brain whose rule reads `WHEN [spot] DO
- * [swatch] [tint]`, and the brain editor opened on that brain: its editing,
- * and the working copy the dialog stands from the editing's document under the
- * config at open.
+ * palette `"before"`, its manifest allocating that catalog, holding one brain
+ * whose rule reads `WHEN [spot] DO [swatch] [tint]`, and the brain editor
+ * opened on that brain: its editing, the working copy the dialog stands from
+ * the editing's document under the config at open, and `deliverCatalog`,
+ * delivering a catalog followed by the manifest allocating it.
  */
 async function openEditor() {
   const session = new FakeSessionSource(paintCatalog("before"));
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
+  let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
       return () => {};
     },
+    onManifest: (listener) => {
+      manifest = listener;
+      return () => {};
+    },
   });
   assert.ok(handshake);
+  assert.ok(manifest);
+  const publish = manifest;
+  const deliverCatalog = (catalogText: string): void => {
+    session.deliverCatalog(catalogText);
+    publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(catalogText)) });
+  };
   handshake(new EmptyProjectChannel());
+  publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(paintCatalog("before"))) });
   await settle();
   assert.ok(store.getSnapshot().reconciled);
 
@@ -214,7 +221,7 @@ async function openEditor() {
   const tileCatalogs = openConfig.tileCatalogs;
   assert.ok(tileCatalogs);
   const workingCopy = editing.srcBrainDef.workingCopy(List.from<ITileCatalog>(tileCatalogs));
-  return { session, store, id, editing, openConfig, workingCopy };
+  return { store, id, editing, openConfig, workingCopy, deliverCatalog };
 }
 
 /** The markup of `tileDef` drawn as a placed tile under `config`. */
@@ -298,7 +305,7 @@ function chipIcon(config: BrainEditorConfig, rule: BrainRuleDef, key: string): s
 
 describe("an open brain editor over a repainted catalog", () => {
   it("draws its placed tiles, an accessor's face and corner included, in the new icons, on the working copy it opened with", async () => {
-    const { session, store, openConfig, workingCopy } = await openEditor();
+    const { store, openConfig, workingCopy, deliverCatalog } = await openEditor();
     const rule = firstRule(workingCopy);
     const spot = placedTile(rule, RuleSide.When, SPOT_ID);
     const swatch = placedTile(rule, RuleSide.Do, SWATCH_ID);
@@ -307,7 +314,7 @@ describe("an open brain editor over a repainted catalog", () => {
     assert.equal(faceOf(placed(openConfig, tint)), icon("tint", "before"));
     assert.equal(cornerOf(placed(openConfig, tint)), icon("Tint", "before"));
 
-    session.deliverCatalog(paintCatalog("after"));
+    deliverCatalog(paintCatalog("after"));
     const config = currentConfig(store);
 
     assert.equal(faceOf(placed(config, spot)), icon("spot", "after"));
@@ -318,24 +325,24 @@ describe("an open brain editor over a repainted catalog", () => {
   });
 
   it("draws the candidates it offers on the working copy it opened with in the new icons", async () => {
-    const { session, store, openConfig, workingCopy } = await openEditor();
+    const { store, openConfig, workingCopy, deliverCatalog } = await openEditor();
     const rule = firstRule(workingCopy);
     assert.equal(chipIcon(openConfig, rule, SPOT_ID), icon("spot", "before"));
 
-    session.deliverCatalog(paintCatalog("after"));
+    deliverCatalog(paintCatalog("after"));
 
     assert.equal(chipIcon(currentConfig(store), rule, SPOT_ID), icon("spot", "after"));
   });
 
   it("keeps an edit not yet flushed across the repaint, drawing it in the new icons, and flushes it into the store", async () => {
-    const { session, store, id, editing, workingCopy } = await openEditor();
+    const { store, id, editing, workingCopy, deliverCatalog } = await openEditor();
     const page = workingCopy.pages().get(0) as BrainPageDef;
     const added = page.appendNewRule();
     added.when().appendTile(catalogTile(store.getSnapshot().environment, SPOT_ID));
     editing.change(() => workingCopy.workingCopy());
     const storedBefore = store.getSnapshot().brains.get(id)?.source;
 
-    session.deliverCatalog(paintCatalog("after"));
+    deliverCatalog(paintCatalog("after"));
 
     assert.equal(store.getSnapshot().brains.get(id)?.source, storedBefore);
     assert.equal(page.children().size(), 2);

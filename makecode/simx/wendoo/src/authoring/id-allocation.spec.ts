@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { parseCatalog } from "./catalog.js";
-import { allocateIds, emptyIdManifest, ID_SPACE_BASES, mergeIdManifests, sameIdManifest } from "./id-allocation.js";
+import { allocateIds, emptyIdManifest, ID_SPACE_BASES, sameIdManifest } from "./id-allocation.js";
 
 /** A catalog whose two packs declare a type, tiles and an operator. */
 function catalog(packs: object[]): ReturnType<typeof parseCatalog> {
@@ -172,47 +172,13 @@ describe("id allocation", () => {
   });
 });
 
-describe("id manifest adoption", () => {
+describe("id manifest comparison", () => {
   const project: MakeCodeIdManifest = {
     actions: [{ name: "a", id: 1024 }],
     operators: [],
     types: [{ name: "T", atom: 1024, fields: ["x"] }],
     next: { action: 1025, operator: 1024, atom: 1025 },
   };
-
-  it("adopts the project's manifest when the editor holds none", () => {
-    assert.deepEqual(mergeIdManifests(project, undefined), project);
-    assert.deepEqual(mergeIdManifests(null, undefined), emptyIdManifest());
-  });
-
-  it("lets the project's entries win, keeping the editor's other entries whose ids the project leaves free", () => {
-    const held: MakeCodeIdManifest = {
-      actions: [
-        { name: "a", id: 1030 },
-        { name: "b", id: 1025 },
-        { name: "c", id: 1024 },
-      ],
-      operators: [{ name: "op", id: 1024 }],
-      types: [
-        { name: "T", atom: 1024, fields: ["x", "y"] },
-        { name: "U", atom: 1025, fields: [] },
-      ],
-      next: { action: 1031, operator: 1025, atom: 1026 },
-    };
-
-    assert.deepEqual(mergeIdManifests(project, held), {
-      actions: [
-        { name: "a", id: 1024 },
-        { name: "b", id: 1025 },
-      ],
-      operators: [{ name: "op", id: 1024 }],
-      types: [
-        { name: "T", atom: 1024, fields: ["x", "y"] },
-        { name: "U", atom: 1025, fields: [] },
-      ],
-      next: { action: 1031, operator: 1025, atom: 1026 },
-    });
-  });
 
   it("compares manifests entry for entry", () => {
     assert.equal(sameIdManifest(project, structuredClone(project)), true);

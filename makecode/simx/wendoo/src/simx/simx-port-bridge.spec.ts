@@ -7,6 +7,8 @@ import {
   MAKECODE_SESSION_PROTOCOL_VERSION,
   type MakeCodeAsset,
   MakeCodeBrainsErrorCode,
+  type MakeCodeIdManifest,
+  type MakeCodeManifestReading,
   type MakeCodeProjectInfo,
   type MakeCodeSession,
   type MakeCodeSessionMessage,
@@ -14,6 +16,7 @@ import {
   messagePortSessionPort,
 } from "@wendoo/makecode-session";
 import type { ProjfsClient } from "../vendor/projfs.js";
+import { IDS_MODULE_FILE, readIdsModule, writeIdsModule } from "./ids-module.js";
 import { decodeImageHex } from "./image-buffer.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode } from "./sim-channel.js";
 import { type SimxPortBridge, startSimxPortBridge } from "./simx-bridge.js";
@@ -70,6 +73,11 @@ function catalogMessage(content: string): MakeCodeSessionMessage {
   return { type: "makecode:catalog", payload: { content } };
 }
 
+/** The `makecode:manifest` message publishing `reading`. */
+function manifestMessage(reading: MakeCodeManifestReading): MakeCodeSessionMessage {
+  return { type: "makecode:manifest", payload: reading };
+}
+
 /** A message the editor's end of a port received, as the spec reads it. */
 interface ReceivedMessage {
   readonly type: string;
@@ -124,6 +132,17 @@ class RawEditor {
   unread(): ReceivedMessage[] {
     return this.arrived.slice(this._read);
   }
+}
+
+/**
+ * Reads `catalog`, then the manifest following it, as the next two messages
+ * arriving at `editor`; resolves with the manifest's reading.
+ */
+async function nextCatalog(editor: RawEditor, catalog: string): Promise<MakeCodeManifestReading> {
+  assert.deepEqual(await editor.nextMessage(), catalogMessage(catalog));
+  const manifest = await editor.nextMessage();
+  assert.equal(manifest.type, "makecode:manifest");
+  return manifest.payload as MakeCodeManifestReading;
 }
 
 describe("simx port bridge", () => {
@@ -233,11 +252,23 @@ describe("simx port bridge", () => {
 
   /**
    * Joins a raw editor to `frame` for the editor tab keyed `peer`, as
-   * {@link joinRaw}, and reads `catalog` as the first message after the hello.
+   * {@link joinRaw}, and reads `catalog`, then the manifest, as the first
+   * messages after the hello.
    */
   async function joinEditor(frame: FakePortFrame, catalog: string, peer = SIMX_CHANNEL): Promise<RawEditor> {
     const editor = await joinRaw(frame, peer);
-    assert.deepEqual(await editor.nextMessage(), catalogMessage(catalog));
+    await nextCatalog(editor, catalog);
+    return editor;
+  }
+
+  /**
+   * Joins a raw editor to `frame`, which holds no catalog, as {@link joinRaw},
+   * and reads the manifest of a project holding none as the first message
+   * after the hello.
+   */
+  async function joinBare(frame: FakePortFrame): Promise<RawEditor> {
+    const editor = await joinRaw(frame);
+    assert.deepEqual(await editor.nextMessage(), manifestMessage({ manifest: null }));
     return editor;
   }
 
@@ -328,7 +359,7 @@ describe("simx port bridge", () => {
       assets.name = "Space Chase";
       assets.change();
       for (const editor of [own, designer]) {
-        assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+        await nextCatalog(editor, CATALOG_TEXT);
         assert.deepEqual(await editor.nextMessage(), {
           type: "makecode:projectInfo",
           payload: { name: "Space Chase" },
@@ -346,8 +377,8 @@ describe("simx port bridge", () => {
       designer.send({ type: "makecode:brainsList", id: "late" });
       frame.programPosts(CATALOG_TEXT);
 
-      assert.deepEqual(await own.nextMessage(), catalogMessage(CATALOG_TEXT));
-      assert.deepEqual(await returned.nextMessage(), catalogMessage(CATALOG_TEXT));
+      await nextCatalog(own, CATALOG_TEXT);
+      await nextCatalog(returned, CATALOG_TEXT);
       await nothingMore(designer);
       assert.deepEqual(await listedBrains(own, "list-own"), { type: "makecode:brainsListReply", ids: [] });
       assert.deepEqual(await listedBrains(returned, "list-returned"), { type: "makecode:brainsListReply", ids: [] });
@@ -361,7 +392,7 @@ describe("simx port bridge", () => {
       const designer = await joinEditor(frame, "{}", DESIGNER_TAB);
 
       const returned = await joinRaw(frame, ownChannel, (port) => frame.brokerPortNamingNoPeer(port));
-      assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
+      await nextCatalog(returned, "{}");
       own.send({ type: "makecode:brainsList", id: "late" });
 
       await nothingMore(own);
@@ -424,25 +455,25 @@ describe("simx port bridge", () => {
 
     frame.programPosts("{}", SIMX_CHANNEL, SIM_CHANNEL_VERSION + 1);
     frame.programPostsText("{}");
-    const editor = await joinRaw(frame);
+    const editor = await joinBare(frame);
     await nothingMore(editor);
 
     assert.equal(errors.length, 2);
     assert.ok(errors[0].startsWith(SimChannelErrorCode.VERSION_NEWER));
     assert.ok(errors[1].startsWith(SimChannelErrorCode.FRAME_MALFORMED));
     frame.programPosts("{}");
-    assert.deepEqual(await editor.nextMessage(), catalogMessage("{}"));
+    await nextCatalog(editor, "{}");
   });
 
   it("ignores the program's ping, before its catalog and after: it logs nothing and publishes nothing", async () => {
     const frame = start();
 
     frame.programPings();
-    const editor = await joinRaw(frame);
+    const editor = await joinBare(frame);
     await nothingMore(editor);
 
     frame.programPosts(CATALOG_TEXT);
-    assert.deepEqual(await editor.nextMessage(), catalogMessage(CATALOG_TEXT));
+    await nextCatalog(editor, CATALOG_TEXT);
     frame.programPings();
     await nothingMore(editor);
     assert.deepEqual(errors, []);
@@ -558,7 +589,7 @@ describe("simx port bridge", () => {
 
       const returned = await joinRaw(frame);
 
-      assert.deepEqual(await returned.nextMessage(), catalogMessage("{}"));
+      await nextCatalog(returned, "{}");
       assert.deepEqual(await returned.nextMessage(), published);
       assert.deepEqual(await returned.nextMessage(), projectInfoMessage(assets.name));
     });
@@ -591,19 +622,19 @@ describe("simx port bridge", () => {
       assets.palette = ["#000000", "#00aa00", "#0000aa"];
       assets.answer();
       const frame = start();
-      const editor = await joinRaw(frame);
+      const editor = await joinBare(frame);
       assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
       assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
       frame.programPosts(iconCatalog(ICON));
 
-      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
+      await nextCatalog(editor, renderedIconCatalog(ICON));
     });
 
     it("publishes a tile whose icon it cannot read without an iconUrl, logging the icon's code, and the catalog all the same", async () => {
       assets.answer();
       const frame = start();
-      const editor = await joinRaw(frame);
+      const editor = await joinBare(frame);
       assert.deepEqual(await editor.nextMessage(), assetsMessage([]));
       assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
@@ -625,7 +656,7 @@ describe("simx port bridge", () => {
       const frame = start();
       frame.programPosts(iconCatalog(ICON));
       const editor = await joinRaw(frame);
-      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
+      await nextCatalog(editor, renderedIconCatalog(ICON));
       assert.deepEqual(await editor.nextMessage(), assetsMessage([snapshotEntry("image1", [[1]], assets.palette)]));
       assert.deepEqual(await editor.nextMessage(), projectInfoMessage(assets.name));
 
@@ -647,7 +678,7 @@ describe("simx port bridge", () => {
       frame.programPosts(iconCatalog(ICON));
       const editor = await joinRaw(frame);
 
-      assert.deepEqual(await editor.nextMessage(), catalogMessage(renderedIconCatalog(ICON)));
+      await nextCatalog(editor, renderedIconCatalog(ICON));
       editor.send({ type: "makecode:brainsList", id: "list-1" });
       assert.deepEqual(await editor.nextMessage(), {
         type: "makecode:brainsListReply",
@@ -663,34 +694,96 @@ describe("simx port bridge", () => {
     });
   });
 
-  describe("manifest requests", () => {
-    it("answers the editor's manifest write and read from the project's ids module", async () => {
-      const frame = start();
-      frame.programPosts(CATALOG_TEXT);
-      const editor = await joinEditor(frame, CATALOG_TEXT);
-      const manifest = {
-        actions: [{ name: "actuator.chime.ring", id: 1024 }],
+  describe("id manifest", () => {
+    /** A catalog of one pack declaring the actuators `tiles`, by name. */
+    function tileCatalog(...tiles: string[]): string {
+      return JSON.stringify({ packs: [{ name: "beacon", tiles: tiles.map((name) => ({ name, kind: "actuator" })) }] });
+    }
+
+    /** The manifest allocating the actuators `tiles`, in order, from the base of the action space. */
+    function tilesManifest(...tiles: string[]): MakeCodeIdManifest {
+      return {
+        actions: tiles.map((name, index) => ({ name, id: 1024 + index })),
         operators: [],
         types: [],
-        next: { action: 1025, operator: 1024, atom: 1024 },
+        next: { action: 1024 + tiles.length, operator: 1024, atom: 1024 },
       };
+    }
 
-      editor.send({ type: "makecode:manifestRead", id: "read-1" });
-      assert.deepEqual(await editor.nextMessage(), {
-        type: "makecode:manifestReadReply",
-        id: "read-1",
-        payload: { manifest: null },
-      });
-      editor.send({ type: "makecode:manifestWrite", id: "write-1", payload: { manifest } });
-      assert.deepEqual(await editor.nextMessage(), { type: "makecode:manifestAck", id: "write-1" });
-      editor.send({ type: "makecode:manifestRead", id: "read-2" });
+    it("publishes into a session on establish the catalog, then the manifest allocating it, then the asset snapshot, then the name", async () => {
+      assets.answer();
+      const frame = start();
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
 
-      assert.deepEqual(await editor.nextMessage(), {
-        type: "makecode:manifestReadReply",
-        id: "read-2",
-        payload: { manifest },
-      });
-      assert.match(host.file("ids.g.ts") ?? "", /^ {4}wendoo\.mapActionId\("actuator\.chime\.ring", 1024\);$/m);
+      const editor = await joinRaw(frame);
+
+      assert.deepEqual(await editor.nextMessage(), catalogMessage(tileCatalog("actuator.beacon.flash")));
+      assert.deepEqual(
+        await editor.nextMessage(),
+        manifestMessage({ manifest: tilesManifest("actuator.beacon.flash") })
+      );
+      assert.equal((await editor.nextMessage()).type, "makecode:assets");
+      assert.equal((await editor.nextMessage()).type, "makecode:projectInfo");
+    });
+
+    it("publishes the project's ids module first into a session established before any catalog", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule(tilesManifest("actuator.chime.ring")));
+      const frame = start();
+
+      const editor = await joinRaw(frame);
+
+      assert.deepEqual(await editor.nextMessage(), manifestMessage({ manifest: tilesManifest("actuator.chime.ring") }));
+    });
+
+    it("publishes the manifest after each later catalog, whether or not the allocation changed", async () => {
+      const frame = start();
+      const editor = await joinBare(frame);
+
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
+      const first = await nextCatalog(editor, tileCatalog("actuator.beacon.flash"));
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
+      const again = await nextCatalog(editor, tileCatalog("actuator.beacon.flash"));
+      frame.programPosts(tileCatalog("actuator.beacon.flash", "actuator.beacon.dim"));
+      const grown = await nextCatalog(editor, tileCatalog("actuator.beacon.flash", "actuator.beacon.dim"));
+
+      assert.deepEqual(first, { manifest: tilesManifest("actuator.beacon.flash") });
+      assert.deepEqual(again, first);
+      assert.deepEqual(grown, { manifest: tilesManifest("actuator.beacon.flash", "actuator.beacon.dim") });
+      assert.deepEqual(
+        host.mutations.filter((mutation) => mutation === `write ${IDS_MODULE_FILE}`),
+        [`write ${IDS_MODULE_FILE}`, `write ${IDS_MODULE_FILE}`]
+      );
+    });
+
+    it("publishes the same manifest into every tab's session", async () => {
+      const frame = start();
+      const own = await joinBare(frame);
+      const designer = await joinRaw(frame, DESIGNER_TAB);
+      assert.deepEqual(await designer.nextMessage(), manifestMessage({ manifest: null }));
+
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
+
+      const readings = [
+        await nextCatalog(own, tileCatalog("actuator.beacon.flash")),
+        await nextCatalog(designer, tileCatalog("actuator.beacon.flash")),
+      ];
+      assert.deepEqual(readings, [
+        { manifest: tilesManifest("actuator.beacon.flash") },
+        { manifest: tilesManifest("actuator.beacon.flash") },
+      ]);
+    });
+
+    it("allocates and writes ids.g.ts from a catalog the program posts with no editor attached", async () => {
+      const frame = start();
+
+      frame.programPosts(tileCatalog("actuator.beacon.flash"));
+
+      const written = await eventually(
+        () => host.file(IDS_MODULE_FILE),
+        (text) => text !== undefined,
+        "the ids module"
+      );
+      assert.deepEqual(readIdsModule(written ?? ""), { manifest: tilesManifest("actuator.beacon.flash") });
     });
   });
 

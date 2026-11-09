@@ -51,19 +51,11 @@ class FakeSessionSource {
   }
 }
 
-/** One handshake's brains channel over a project holding `brains` and no manifest, answering at once and recording pushes. */
+/** One handshake's brains channel over a project holding `brains`, answering at once and recording pushes. */
 class ProjectChannel implements MakeCodeBrainsChannel {
   readonly pushes: MakeCodeBrainPush[] = [];
 
   constructor(private readonly brains: Map<string, MakeCodeBrain>) {}
-
-  readManifest(): Promise<MakeCodeManifestReading> {
-    return Promise.resolve({ manifest: null });
-  }
-
-  writeManifest(): Promise<void> {
-    return Promise.resolve();
-  }
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
     return Promise.resolve(
@@ -113,24 +105,39 @@ function projectBrain(): MakeCodeBrain {
   };
 }
 
-/** A store over a session that has delivered `assets`, reconciled with a project holding {@link projectBrain}. */
+/**
+ * A store over a session that has delivered `assets`, reconciled with a
+ * project holding {@link projectBrain}, whose manifest allocates
+ * {@link ASSET_CATALOG}; `publishManifest` publishes that manifest again.
+ */
 async function reconciledStore(assets: readonly MakeCodeAsset[] | undefined) {
   const session = new FakeSessionSource();
   session.deliverAssets(assets);
   const brain = projectBrain();
   const channel = new ProjectChannel(new Map([[BRAIN_ID, brain]]));
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
+  let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
       return () => {};
     },
+    onManifest: (listener) => {
+      manifest = listener;
+      return () => {};
+    },
   });
   assert.ok(handshake);
+  assert.ok(manifest);
+  const publish = manifest;
+  const publishManifest = (): void => {
+    publish({ manifest: assetCatalogIds() });
+  };
   handshake(channel);
+  publishManifest();
   await settle();
   assert.ok(store.getSnapshot().reconciled);
-  return { session, store, channel, brain };
+  return { session, store, channel, brain, publishManifest };
 }
 
 describe("brains store asset literals", () => {
@@ -245,10 +252,11 @@ describe("brains store asset literals", () => {
   });
 
   it("binds the literals every held brain references in an environment rebuilt for a new catalog", async () => {
-    const { session, store, brain } = await reconciledStore(undefined);
+    const { session, store, brain, publishManifest } = await reconciledStore(undefined);
 
     session.state = { ...session.state, catalogText: `${ASSET_CATALOG} ` };
     session.deliverAssets(undefined);
+    publishManifest();
     await settle();
 
     const entry = store.getSnapshot().brains.get(BRAIN_ID);

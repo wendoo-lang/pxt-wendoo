@@ -43,19 +43,11 @@ class FakeSessionSource {
   }
 }
 
-/** One handshake's brains channel over a project holding `brains` and no manifest, answering at once and recording pushes. */
+/** One handshake's brains channel over a project holding `brains`, answering at once and recording pushes. */
 class ProjectChannel implements MakeCodeBrainsChannel {
   readonly pushes: MakeCodeBrainPush[] = [];
 
   constructor(private readonly brains: Map<string, MakeCodeBrain>) {}
-
-  readManifest(): Promise<MakeCodeManifestReading> {
-    return Promise.resolve({ manifest: null });
-  }
-
-  writeManifest(): Promise<void> {
-    return Promise.resolve();
-  }
 
   listBrains(): Promise<MakeCodeBrainSummary[]> {
     return Promise.resolve(
@@ -107,23 +99,38 @@ function projectBrains(): Map<string, MakeCodeBrain> {
   ]);
 }
 
-/** A store reconciled with a project holding {@link projectBrains}. */
+/**
+ * A store reconciled with a project holding {@link projectBrains}, whose
+ * manifest allocates {@link BRAIN_CATALOG}; `publishManifest` publishes that
+ * manifest again.
+ */
 async function reconciledStore() {
   const session = new FakeSessionSource();
   const brains = projectBrains();
   const channel = new ProjectChannel(brains);
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
+  let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
   const store = new BrainsStore(session, {
     onBrainsChannel: (listener) => {
       handshake = listener;
       return () => {};
     },
+    onManifest: (listener) => {
+      manifest = listener;
+      return () => {};
+    },
   });
   assert.ok(handshake);
+  assert.ok(manifest);
+  const publish = manifest;
+  const publishManifest = (): void => {
+    publish({ manifest: brainCatalogIds() });
+  };
   handshake(channel);
+  publishManifest();
   await settle();
   assert.ok(store.getSnapshot().reconciled);
-  return { session, store, channel, brains };
+  return { session, store, channel, brains, publishManifest };
 }
 
 describe("brains store brain literals", () => {
@@ -167,11 +174,15 @@ describe("brains store brain literals", () => {
   });
 
   it("binds a removed brain's literal from the references in an environment rebuilt for a new catalog", async () => {
-    const { session, store, brains } = await reconciledStore();
+    const { session, store, brains, publishManifest } = await reconciledStore();
     store.removeBrain(CHASER_ID);
+    const before = store.getSnapshot().environment;
 
     session.deliverCatalog(`${BRAIN_CATALOG} `);
+    publishManifest();
     await settle();
+
+    assert.notEqual(store.getSnapshot().environment, before);
 
     const entry = store.getSnapshot().brains.get(SEEKER_ID);
     assert.deepEqual(entry?.diagnostics, []);
@@ -179,10 +190,14 @@ describe("brains store brain literals", () => {
   });
 
   it("binds the literals every held brain references in an environment rebuilt for a new catalog", async () => {
-    const { session, store, brains } = await reconciledStore();
+    const { session, store, brains, publishManifest } = await reconciledStore();
+    const before = store.getSnapshot().environment;
 
     session.deliverCatalog(`${BRAIN_CATALOG} `);
+    publishManifest();
     await settle();
+
+    assert.notEqual(store.getSnapshot().environment, before);
 
     const entry = store.getSnapshot().brains.get(SEEKER_ID);
     assert.deepEqual(entry?.diagnostics, []);

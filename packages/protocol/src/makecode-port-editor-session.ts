@@ -6,6 +6,7 @@ import type {
   MakeCodeEditorSessionErrorCode,
   MakeCodeEditorSessionState,
 } from "./makecode-editor-session.js";
+import type { MakeCodeManifestReading } from "./makecode-manifest.js";
 import type { MakeCodeProjectInfo } from "./makecode-project-info.js";
 import type { MakeCodeSessionMessage, MakeCodeSessionPort } from "./makecode-session.js";
 
@@ -61,8 +62,8 @@ export interface MakeCodePortEditorSessionOptions {
  *   {@link MakeCodeEditorSession.stop}.
  *
  * Every port attached opens a fresh handshake, replacing the previous
- * port's: the catalogs, asset snapshots, project facts and brains channel
- * delivered come from the current handshake only.
+ * port's: the catalogs, id manifests, asset snapshots, project facts and
+ * brains channel delivered come from the current handshake only.
  * While a handshake is established the session pings the counterpart, one
  * ping outstanding at a time, two after a miss: the first a heartbeat
  * interval after the handshake completes, each next one an interval after
@@ -70,8 +71,8 @@ export interface MakeCodePortEditorSessionOptions {
  * is a miss, and a follow-up ping goes out at once under a fresh deadline,
  * the missed ping still awaiting its answer; a pong to either one clears the
  * miss. A follow-up ping unanswered for its deadline ends the handshake as
- * replacing its port does -- its brains channel's requests reject with their
- * family's `CLOSED`, the status turns `disconnected` with the error code
+ * replacing its port does -- its brains channel's requests reject with
+ * `CLOSED`, the status turns `disconnected` with the error code
  * unchanged -- and the session stays started, so the next port attached
  * opens the next handshake.
  * The one error code is `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`, for a
@@ -139,6 +140,7 @@ class PortEditorSession implements MakeCodePortEditorSession {
   private readonly _heartbeat: MakeCodeHeartbeatOptions;
   private readonly _stateListeners = new Set<(state: MakeCodeEditorSessionState) => void>();
   private readonly _catalogListeners = new Set<(content: string) => void>();
+  private readonly _manifestListeners = new Set<(reading: MakeCodeManifestReading) => void>();
   private readonly _assetsListeners = new Set<(assets: MakeCodeAsset[]) => void>();
   private readonly _projectInfoListeners = new Set<(info: MakeCodeProjectInfo) => void>();
   private readonly _brainsChannelListeners = new Set<(channel: MakeCodeBrainsChannel) => void>();
@@ -188,6 +190,13 @@ class PortEditorSession implements MakeCodePortEditorSession {
     this._catalogListeners.add(listener);
     return () => {
       this._catalogListeners.delete(listener);
+    };
+  }
+
+  onManifest(listener: (reading: MakeCodeManifestReading) => void): () => void {
+    this._manifestListeners.add(listener);
+    return () => {
+      this._manifestListeners.delete(listener);
     };
   }
 
@@ -249,6 +258,9 @@ class PortEditorSession implements MakeCodePortEditorSession {
       },
       catalog: (content) => {
         for (const listener of this._catalogListeners) listener(content);
+      },
+      manifest: (reading) => {
+        for (const listener of this._manifestListeners) listener(reading);
       },
       assets: (assets) => {
         for (const listener of this._assetsListeners) listener(assets);

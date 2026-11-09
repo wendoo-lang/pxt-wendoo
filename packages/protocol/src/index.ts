@@ -42,26 +42,11 @@ export type {
   MakeCodeIdEntry,
   MakeCodeIdManifest,
   MakeCodeIdWatermarks,
-  MakeCodeManifestAckMessage,
-  MakeCodeManifestErrorMessage,
-  MakeCodeManifestErrorPayload,
+  MakeCodeManifestMessage,
   MakeCodeManifestReading,
-  MakeCodeManifestReadMessage,
-  MakeCodeManifestReadReplyMessage,
-  MakeCodeManifestReadRequest,
-  MakeCodeManifestReplyMessage,
-  MakeCodeManifestRequest,
-  MakeCodeManifestRequestMessage,
-  MakeCodeManifestWriteMessage,
-  MakeCodeManifestWritePayload,
-  MakeCodeManifestWriteRequest,
   MakeCodeTypeIdEntry,
 } from "./makecode-manifest.js";
-export {
-  MakeCodeManifestError,
-  MakeCodeManifestErrorCode,
-  MakeCodeManifestProblemCode,
-} from "./makecode-manifest.js";
+export { MakeCodeManifestProblemCode } from "./makecode-manifest.js";
 export type {
   MakeCodeHeartbeatOptions,
   MakeCodeMessagePort,

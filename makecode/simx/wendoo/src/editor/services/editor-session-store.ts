@@ -4,6 +4,7 @@ import type {
   MakeCodeEditorSession,
   MakeCodeEditorSessionErrorCode,
   MakeCodeEditorSessionStatus,
+  MakeCodeManifestReading,
 } from "@wendoo/makecode-session";
 
 /** What the editor shows for one reading of the session store. */
@@ -96,6 +97,14 @@ export class EditorSessionStore {
    */
   onBrainsChannel = (listener: (channel: MakeCodeBrainsChannel) => void): (() => void) => {
     return this._session.onBrainsChannel(listener);
+  };
+
+  /**
+   * Subscribe to the id manifests the MakeCode side publishes, each
+   * delivered whole as it arrives. Returns an unsubscribe function.
+   */
+  onManifest = (listener: (reading: MakeCodeManifestReading) => void): (() => void) => {
+    return this._session.onManifest(listener);
   };
 
   /** Starts the session. */

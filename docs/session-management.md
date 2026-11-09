@@ -26,28 +26,28 @@ session wire surface:
 - the kind name `makecode` and its message namespace (`makecode:*`);
 - the wire messages: `makecode:hello`, `makecode:catalog`, the
   `makecode:brains*` payload family (see "The brains payload family",
-  below), the `makecode:manifest*` payload family (see "The manifest
-  payload family", below), `makecode:assets` (see "The assets
-  publication", below), and the liveness pair `makecode:ping` /
-  `makecode:pong` (see "Liveness in this lane", below);
+  below), `makecode:manifest` (see "The manifest publication", below),
+  `makecode:assets` (see "The assets publication", below), and the
+  liveness pair `makecode:ping` / `makecode:pong` (see "Liveness in this
+  lane", below);
 - the hello's declaration, `MakeCodeSessionDeclaration` (see "The
   target declaration", below);
 - `MAKECODE_SESSION_PROTOCOL_VERSION`, the version each endpoint
-  declares;
+  declares, now 2;
 - `connectMakeCodeSession`, binding the upstream peer-session
   mechanism to the kind over any payload-capable port, whose session
-  both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and the
-  id manifest (`readManifest`, `writeManifest`) and serves them
-  (`onBrainsRequest`, `onManifestRequest`), and both publishes and
-  receives the catalog (`publishCatalog`, `onCatalog`) and the asset
-  snapshot (`publishAssets`, `onAssets`), and both probes its peer's
-  liveness (`ping`) and answers the peer's probes;
+  both requests brains (`listBrains`, `pullBrains`, `pushBrain`) and
+  serves them (`onBrainsRequest`), and both publishes and receives the
+  catalog (`publishCatalog`, `onCatalog`), the id manifest
+  (`publishManifest`, `onManifest`) and the asset snapshot
+  (`publishAssets`, `onAssets`), and both probes its peer's liveness
+  (`ping`) and answers the peer's probes;
 - `createMakeCodePortEditorSession`, the editor role's session object
   over the ports the page hosting the editor tab brokers, with
   `messagePortSessionPort` wrapping a `MessagePort` as a session port
   (see "The editor session object", below);
 - the id manifest's shape, `MakeCodeIdManifest` (see "The manifest
-  payload family", below);
+  publication", below);
 - the brain contracts both sides of the family must agree on:
   `brainSourceHash` (32-bit FNV-1a over UTF-16 code units, eight
   lowercase hex digits) and the device profile compiled brains carry
@@ -104,11 +104,13 @@ frames -- assigns the session parts as follows.
   current catalog into every session RENDERED -- each icon the extension
   carries as hex of an image buffer replaced by an `iconUrl` data URI
   drawn under the project's palette, so no icon hex reaches the
-  editor -- then the project's asset snapshot (see "The assets
-  publication", below), then the project's name as its project info,
-  and answers the editor's brains and manifest requests from the
-  project's files (see "The simx write path" and "The id manifest",
-  below).
+  editor -- then the project's id manifest (see "The manifest
+  publication", below), then the project's asset snapshot (see "The
+  assets publication", below), then the project's name as its project
+  info, and answers the editor's brains requests from the project's
+  files (see "The simx write path", below). It is the project's single
+  id allocator and the only writer of its id manifest (see "The id
+  manifest", below).
 - The VM EXTENSION (`makecode/extensions/vm`) is NOT a session
   party. It participates through the sim-message channel only (the
   extension channel, below). It is MakeCode-target-agnostic and holds
@@ -121,8 +123,8 @@ The editor runs as the MakeCode editor tab and reaches the project over
 a port MakeCode brokers: a `MessageChannel` between the tab frame and the
 simx frame (the column frame), over which the two speak the
 `makecode:*` session -- the hello with the target declaration, the
-catalog, the asset snapshot, the project info, and the brains and
-manifest request-reply families. The editor-tab messages themselves
+catalog, the id manifest, the asset snapshot, the project info, and the
+brains request-reply family. The editor-tab messages themselves
 (`simxeditor`, `simxeditorport`) are MakeCode's, vendored from pxt's
 `pxtservices/simxeditor.ts` into `src/vendor/simxeditor.ts`.
 
@@ -160,9 +162,9 @@ manifest request-reply families. The editor-tab messages themselves
   tab becomes ready while the simx frame is loaded and whenever a simx
   frame finishes loading while the tab is ready. Each new port replaces
   the previous one between the same two frames on both sides: the old
-  handshake ends, its requests reject with their family's `CLOSED` code,
-  and the brains store reconciles over the new handshake's brains
-  channel, pushing its pends.
+  handshake ends, its requests reject with `MAKECODE_BRAINS_CLOSED`, and
+  the brains store reconciles over the new handshake's brains channel,
+  pushing its pends.
   The simx accepts a port only from `parentOrigin`.
 - ONE SESSION PER TAB: the simx frame holds one session per editor tab
   that talks to it, keyed by the port message's `peer`, the tab's key; a
@@ -172,10 +174,10 @@ manifest request-reply families. The editor-tab messages themselves
   registration naming the frame in its `simulator` field. A new port
   replaces only its own peer's session. Every session receives every
   publication, and all of them are served from the one project.
-- ONE WRITER: the tab gains no write path. It requests brains and the
-  manifest over its session, and the simx frame answers through projfs,
-  writes the project's files, and posts live program updates on the sim
-  channel.
+- ONE WRITER: the tab gains no write path. It requests brains over its
+  session, and the simx frame answers through projfs, writes the
+  project's files, the id manifest among them, and posts live program
+  updates on the sim channel.
 - TWO TABS, ONE PROJECT: two MakeCode tabs open on one project each hold
   their own editor tab and simx frame, and both write the project
   through their own simx. Nothing arbitrates between them: the last
@@ -219,8 +221,8 @@ project as a request-reply family under the kind's namespace. Payload
 kinds carry no versions of their own: the family is additive under
 `MAKECODE_SESSION_PROTOCOL_VERSION`, and every party ignores a
 `makecode:*` type it does not know (the kind's session object routes
-catalogs and asset snapshots to their listeners and replies to their
-requests, and drops everything else).
+catalogs, id manifests and asset snapshots to their listeners and replies
+to their requests, and drops everything else).
 
 - REQUEST-REPLY: every request carries an envelope `id`, and its reply
   carries the same `id`, the folder-session protocol's `folder:ack` /
@@ -284,48 +286,43 @@ requests, and drops everything else).
   sent. The simx serves them from the project (see "The simx write
   path", below).
 
-## The manifest payload family
+## The manifest publication
 
-The editor allocates the ids the MakeCode project's packs' vocabulary is
-compiled and bound under -- host-action ids for tiles, host-function ids
+The simx frame allocates the ids the MakeCode project's packs' vocabulary
+is compiled and bound under -- host-action ids for tiles, host-function ids
 for operators, type-atom and field ids for struct types -- and the project
 keeps them in its id manifest (see "The id manifest", below). The manifest
-travels as a request-reply family under the kind's namespace, on the same
-discipline as the brains family: every request carries an envelope `id`
-its reply carries back, ids are minted with the session's random prefix,
-there is no timeout, and a request rejects with `MAKECODE_MANIFEST_CLOSED`
-when its handshake ends. The editor session object's brains channel
-carries the manifest requests beside the brains requests.
+reaches the editor as a publication under the kind's namespace, on the
+catalog's discipline: the party serving the project publishes the whole
+manifest, a later one replaces an earlier one, and nothing is requested or
+answered.
 
-- `makecode:manifestRead` (editor -> project): answered by
-  `makecode:manifestReadReply` carrying `{ manifest, problem? }` -- the
-  entries the project's manifest holds, `null` when the project holds none,
-  and the coded problem the serving party found reading it:
-  `MAKECODE_MANIFEST_UNREADABLE` (no format it reads; `manifest` is
-  `null`), `MAKECODE_MANIFEST_FORMAT_NEWER` (written by a newer simx;
-  `manifest` is `null`), or `MAKECODE_MANIFEST_ENTRY_MALFORMED` (part of it
-  damaged; `manifest` holds the rest).
-- `makecode:manifestWrite` (editor -> project) with `{ manifest }`, the
-  editor's WHOLE allocation, which replaces the project's: answered by
-  `makecode:manifestAck` once written.
-- `makecode:manifestError` answers any request that failed, carrying `{
-  code, message }`: `MAKECODE_MANIFEST_READ_FAILED` for a read,
-  `MAKECODE_MANIFEST_WRITE_FAILED` for a write.
+- `makecode:manifest` (project -> editor) carries `{ manifest, problem? }`
+  -- the manifest the serving party holds, `null` when it holds none, and
+  `MAKECODE_MANIFEST_FORMAT_NEWER` as `problem` while the project's
+  manifest was written by a newer simx, `manifest` then `null`. The
+  problem codes `MAKECODE_MANIFEST_UNREADABLE` and
+  `MAKECODE_MANIFEST_ENTRY_MALFORMED` are the serving party's own reading
+  of the project's file, logged there by code.
+- WHEN: once a handshake is established, after the catalog when one is
+  published, and before the asset snapshot; and after every later catalog
+  publication, whether or not the allocation changed, so every catalog a
+  handshake receives is followed by the manifest allocating it.
 - THE MANIFEST: `{ actions, operators, types, next }`. `actions` and
   `operators` are `{ name, id }` entries; `types` are `{ name, atom, fields
   }`, a field's id being its position in `fields`, which only grows; `next`
   holds the next id of each space, `{ action, operator, atom }`, above every
   id the space ever handed out. Entries are append-only and in allocation
   order.
-- VERSIONING: the family is additive under
-  `MAKECODE_SESSION_PROTOCOL_VERSION` 1. Every party ignores a `makecode:*`
-  type it does not know, and no producer speaking version 1 without the
-  family was ever deployed, so no peer exists that receives a manifest
-  request it cannot answer.
-- Only the editor requests; the party serving the project answers, through
-  `onManifestRequest` (buffered until the first listener attaches), with
-  `reply` or `fail` for a read and `ack` or `fail` for a write, each
-  request answered once.
+- The kind's session publishes with `publishManifest` and delivers with
+  `onManifest`, replaying manifests received before the first listener
+  attaches to it; the editor session object delivers the manifests of the
+  current handshake only (`onManifest`).
+- VERSIONING: the publication is carried under
+  `MAKECODE_SESSION_PROTOCOL_VERSION` 2, which has no manifest request.
+  Both endpoints ship from one artifact, so an editor tab and its simx
+  frame speak the same version, and a peer declaring a newer version is
+  refused.
 
 ## The assets publication
 
@@ -372,7 +369,7 @@ one, and nothing is requested or answered.
   attaches to it; the editor session object delivers the snapshots of the
   current handshake only (`onAssets`).
 - VERSIONING: the publication is additive under
-  `MAKECODE_SESSION_PROTOCOL_VERSION` 1. A party that does not know
+  `MAKECODE_SESSION_PROTOCOL_VERSION`. A party that does not know
   `makecode:assets` ignores it, and one that publishes none leaves the
   editor with no snapshot.
 
@@ -576,45 +573,45 @@ namespace wendooIds {
   declares are program-local: they carry no type atom and their fields'
   ids travel in the program's own type table, so the manifest never holds
   them.
-- ALLOCATION: the editor is the single allocator. At every handshake it
-  reads the manifest, adopts what it holds over its own allocation (the
-  project's entries win; its own other entries stay where their ids are
-  free), allocates every name the session catalog declares beyond them --
-  first sight allocates, in catalog order, above each space's watermark --
-  and writes the whole allocation whenever it differs from what the
-  project holds; a catalog arriving with new vocabulary mid-session is
-  allocated and written the same way. Nothing ever renumbers: a name the
-  catalog stops declaring keeps its id, which is never handed out again; a
-  rename is a new name. A struct type's layout is the manifest's -- each
-  field's id is its position in the type's field list -- so a pack
-  reordering its fields changes nothing, a new field appends, and a removed
-  field keeps its id.
-- WRITE: a write replaces `ids.g.ts`, skipped when its text would not
-  change, as an ARTIFACT (never `dirty`), and is acknowledged once it has
-  landed. The editor has one write out at a time and waits for its answer
-  however long MakeCode's write rate holds it, until its handshake ends; an
-  allocation that changes meanwhile is written once that answer arrives. A
-  refused write fails with `MAKECODE_MANIFEST_WRITE_FAILED`, the projfs code
-  leading the message, and the editor retries it after each of
-  `PUSH_RETRY_DELAYS_MS`, then at the last delay, while its handshake stays
-  connected. A manifest of a newer format is never rewritten: writes fail
-  with its code leading the message, and the editor binds no pack while it
+- ALLOCATION: the simx frame is the single allocator (`ManifestProject`,
+  `makecode/simx/wendoo/src/simx/manifest-project.ts`). When it starts it
+  reads `ids.g.ts` once into the manifest it holds; it reads it again only
+  when it next starts. On every catalog the program posts it allocates
+  every name the catalog declares that the manifest lacks -- first sight
+  allocates, in catalog order, above each space's watermark -- before it
+  publishes the catalog. Nothing ever renumbers: a name the catalog stops
+  declaring keeps its id, which is never handed out again; a rename is a
+  new name. A struct type's layout is the manifest's -- each field's id is
+  its position in the type's field list -- so a pack reordering its fields
+  changes nothing, a new field appends, and a removed field keeps its id.
+  The editor allocates nothing: it adopts each manifest published as it is
+  and binds the catalog's packs under it.
+- WRITE: the simx frame is the only writer. It replaces `ids.g.ts` when
+  the allocation differs from what the file declares, skipped when its
+  text would not change, as an ARTIFACT (never `dirty`), whether or not an
+  editor tab is attached; the catalog and the manifest are published once
+  that write has landed or failed. A read or write MakeCode refuses is
+  logged by its projfs code and retried after a wait doubling from 500 ms
+  up to 30 s, for as long as it takes; a refusal no retry overcomes
+  (`PERMISSION_DENIED`, `UNREGISTERED`, `INVALID_NAME`, `INVALID_REQUEST`)
+  is logged once and not retried. A manifest of a newer format is never
+  allocated over or rewritten: the frame publishes it under
+  `MAKECODE_MANIFEST_FORMAT_NEWER`, and the editor binds no pack while it
   stands.
 - READING A DAMAGED MANIFEST: the reader never throws. A file declaring no
   format reads as no manifest (`MAKECODE_MANIFEST_UNREADABLE`); an
   allocation line that does not follow the format, a second line naming
   one registration, or a damaged watermark line is skipped
   (`MAKECODE_MANIFEST_ENTRY_MALFORMED`) and the rest is read. Each problem
-  is written to the console by its code, and the editor's next write --
-  made at once, since the allocation it adopted differs from what the
-  project holds -- replaces the damaged file from the editor's allocation.
-  A file hand-edited while a handshake stays open is healed at the next
-  handshake.
+  is written to the console by its code, the frame holds what it read
+  without the problem, and its next allocation replaces the damaged file. A
+  file hand-edited while the frame runs is read, and healed, when the frame
+  next starts.
 - THE PROGRAM: `writeIdsModule` and `readIdsModule`
   (`makecode/simx/wendoo/src/simx/ids-module.ts`) are a writer and reader pair.
   The VM extension's registration selftest compiles the module's generated
   form in real Arcade and micro:bit projects, the allocation it declares
-  made by the editor's allocator from the selftest's catalog. In the
+  made by the simx frame's allocator from the selftest's catalog. In the
   program, the module's calls record each id before any code runs a
   program; the first drain of any program host drains every pack's
   registrations through the manifest once, for every host of the run, and
@@ -654,7 +651,7 @@ probing it. The kind carries a liveness pair, on the bridge protocol's
   in milliseconds.
 - TWO MISSES IN A ROW end the handshake: a follow-up ping unanswered
   for its deadline ends it exactly as a port replacement does -- its
-  brains and manifest requests reject with their family's `CLOSED`, the
+  brains requests reject with `MAKECODE_BRAINS_CLOSED`, the
   status turns `disconnected` with no error code, and the session stays
   started. A column frame that stops answering is detected within the
   interval plus twice the deadline (25 s at the defaults). No ping goes
@@ -693,8 +690,8 @@ MakeCode brokers ports, and nothing in it keys on a session id.
   current one: the current handshake ends and stops reading its port,
   and while the session is started a new handshake opens over the new
   port at once. A port carries one handshake.
-- Catalogs, asset snapshots and project info arrive as events from the
-  current handshake only.
+- Catalogs, id manifests, asset snapshots and project info arrive as
+  events from the current handshake only.
 - The one ERROR CODE is `PEER_SESSION_PROTOCOL_VERSION_NEWER`, for a
   counterpart hello declaring a newer version. It holds until a later
   handshake completes, or until `start()` starts the session again after
@@ -736,11 +733,12 @@ it always shows the session view.
   below the docs button and above the brain list, carrying its code as
   `data-code`, and only while it applies.
 - The BRAINS STORE (`BrainsStore`) follows the session store, reading
-  the catalog, from which it builds the environment brains are edited
-  and compiled in -- the catalog's packs bound under the project's id
-  allocation (see "The id manifest", above), rebuilt whenever a different
-  catalog arrives or the allocation changes, every brain recompiled in
-  each rebuild -- the asset snapshot, which its environment's asset
+  the catalog and the id manifest, from which it builds the environment
+  brains are edited and compiled in -- the catalog's packs bound under the
+  manifest's ids (see "The id manifest", above): a catalog arriving is
+  held, and the manifest following it rebuilds the environment once, when
+  the catalog or the allocation differs from those it was built from,
+  every brain recompiled in each rebuild -- the asset snapshot, which its environment's asset
   literals follow (below), and the status, and it syncs its brains with
   the MakeCode project over each handshake's brains channel (see "Brain
   sync", below). The brains are kept through every status.
@@ -871,9 +869,9 @@ it always shows the session view.
   as `data-pack`, the entry as `data-name` and the offending token as
   `data-token`: `CATALOG_UNREADABLE` for catalog text it cannot read
   (brains keep the built-in tiles); `CATALOG_PACK_UNBOUND` per pack while
-  the store holds no id allocation (until a handshake reads the project's
-  manifest); `MAKECODE_MANIFEST_FORMAT_NEWER` while the project's manifest
-  is of a newer format; and one line per catalog entry no tile can be made
+  the store holds no id allocation (until the simx frame publishes a
+  manifest); `MAKECODE_MANIFEST_FORMAT_NEWER` while the manifest the simx
+  frame publishes is of a newer format; and one line per catalog entry no tile can be made
   of -- a token the catalog grammar does not have
   (`CATALOG_TILE_KIND_UNKNOWN`, `CATALOG_CALL_SPEC_KIND_UNKNOWN`,
   `CATALOG_ON_EXCEED_UNKNOWN`), a tile whose registration declared no
@@ -917,15 +915,17 @@ it always shows the session view.
 
 The editor is authoritative for in-flight edits and the MakeCode
 project is durable truth. The brains store reconciles on every brains
-channel, then pushes each edit as it is made:
+channel once its handshake has delivered its first manifest, then pushes
+each edit as it is made:
 
 - LIFECYCLE: the session object is the binding, so every channel
   belongs to the one project the tab frame was opened in, and each keeps
   every brain and pend. Brains authored before the first handshake are
   pending, so the first handshake merges: they push to the project, and
   its brains are pulled beside them.
-- RECONCILIATION: read the project's id manifest and list, adopting the
-  manifest (see "The id manifest", above); pull every listed brain the
+- RECONCILIATION: once the handshake has delivered its first manifest,
+  adopted as every manifest is (see "The id manifest", above), list the
+  project's brains; pull every listed brain the
   store holds no copy of, whose copy's `sourceHash` differs, or whose `compiledSourceHash`
   is `null` or differs from its `sourceHash` (a summary without
   `compiledSourceHash` pulls on the source rule alone); adopt each

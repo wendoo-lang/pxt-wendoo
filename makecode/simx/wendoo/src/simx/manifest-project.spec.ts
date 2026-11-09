@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { MakeCodeIdManifest, MakeCodeManifestReading } from "@wendoo/makecode-session";
+import type { MakeCodeIdManifest } from "@wendoo/makecode-session";
 import { MakeCodeManifestProblemCode } from "@wendoo/makecode-session";
 import type { ProjfsClient } from "../vendor/projfs.js";
 import { IDS_MODULE_FILE, IDS_MODULE_FORMAT, readIdsModule, writeIdsModule } from "./ids-module.js";
 import { ManifestProject } from "./manifest-project.js";
 import type { SimxLog } from "./simx-bridge.js";
-import { FakeProjfsHost } from "./test-support/projfs-host.js";
+import { FakeProjfsHost, PROJFS_SCOPE_QUOTA_BYTES } from "./test-support/projfs-host.js";
 
-/** How one request was answered. */
-type Answer<T> = { ok: true; value: T } | { ok: false; message: string };
+/** Retry timings short enough for several retries to fit in a spec. */
+const TIMINGS = { retryDelayMs: 2, maxRetryDelayMs: 8 };
 
 /** A log recording every line written to it, by level. */
 class RecordingLog implements SimxLog {
@@ -32,129 +32,202 @@ const MANIFEST: MakeCodeIdManifest = {
   next: { action: 1025, operator: 1024, atom: 1025 },
 };
 
+/** A catalog of one pack declaring `tiles`, by name, and the type `Beacon` with the fields `fields`. */
+function catalog(tiles: readonly string[], fields: readonly string[] = ["x", "y"]): string {
+  return JSON.stringify({
+    packs: [
+      {
+        name: "beacon",
+        types: [{ name: "Beacon", fields: fields.map((name) => ({ name, type: "number" })) }],
+        tiles: tiles.map((name) => ({ name, kind: "actuator" })),
+      },
+    ],
+  });
+}
+
+/** Resolves after `ms` milliseconds. */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Whether `promise` settles within `ms` milliseconds. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  return Promise.race([promise.then(() => true), wait(ms).then(() => false)]);
+}
+
 describe("manifest project", () => {
   let host: FakeProjfsHost;
   let client: ProjfsClient;
   let log: RecordingLog;
-  let project: ManifestProject;
+  let projects: ManifestProject[];
 
   beforeEach(() => {
     host = new FakeProjfsHost();
     client = host.client();
     log = new RecordingLog();
-    project = new ManifestProject(client, log);
+    projects = [];
   });
 
   afterEach(() => {
+    for (const project of projects) project.dispose();
     client.dispose();
   });
 
-  /** Asks the project for its manifest and resolves with the answer. */
-  function read(): Promise<Answer<MakeCodeManifestReading>> {
-    return new Promise((resolve) => {
-      project.serve({
-        kind: "read",
-        reply: (reading) => resolve({ ok: true, value: reading }),
-        fail: (message) => resolve({ ok: false, message }),
-      });
-    });
+  /** A project over the spec's files, reading the ids module now. */
+  function open(): ManifestProject {
+    const project = new ManifestProject(client, log, TIMINGS);
+    projects.push(project);
+    return project;
   }
 
-  /** Asks the project to write `manifest` and resolves with the answer. */
-  function write(manifest: MakeCodeIdManifest): Promise<Answer<undefined>> {
-    return new Promise((resolve) => {
-      project.serve({
-        kind: "write",
-        manifest,
-        ack: () => resolve({ ok: true, value: undefined }),
-        fail: (message) => resolve({ ok: false, message }),
+  describe("read at construction", () => {
+    it("reads a project holding no ids module as holding no manifest, and writes nothing for a catalog allocating nothing", async () => {
+      const project = open();
+
+      assert.deepEqual(await project.current(), { manifest: null });
+      assert.deepEqual(await project.adopt('{"packs":[]}'), { manifest: null });
+      assert.deepEqual(host.mutations, []);
+    });
+
+    it("reads a valid module as its manifest", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST));
+
+      assert.deepEqual(await open().current(), { manifest: MANIFEST });
+      assert.deepEqual(log.errors, []);
+    });
+
+    it("reads the module once, at construction", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST));
+      const project = open();
+      await project.current();
+
+      host.edit(IDS_MODULE_FILE, writeIdsModule({ ...MANIFEST, actions: [] }));
+
+      assert.deepEqual(await project.current(), { manifest: MANIFEST });
+    });
+
+    it("holds an unreadable module as no manifest, logs its code, and replaces it at the next allocation", async () => {
+      host.edit(IDS_MODULE_FILE, "garbage typed by hand");
+      const project = open();
+
+      assert.deepEqual(await project.current(), { manifest: null });
+      assert.equal(log.errors.length, 1);
+      assert.ok(log.errors[0].startsWith(`${MakeCodeManifestProblemCode.UNREADABLE}: ${IDS_MODULE_FILE}`));
+      const reading = await project.adopt('{"packs":[]}');
+
+      assert.deepEqual(reading, { manifest: null });
+      assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), {
+        manifest: { actions: [], operators: [], types: [], next: { action: 1024, operator: 1024, atom: 1024 } },
       });
     });
-  }
 
-  it("reads a project holding no ids module as holding no manifest", async () => {
-    assert.deepEqual(await read(), { ok: true, value: { manifest: null } });
-  });
+    it("holds a module with a damaged line as its readable entries, logs its code, and heals it at the next allocation", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST).replace('"actuator.chime.ring"', "actuator.chime.ring"));
+      const project = open();
 
-  it("writes the manifest to ids.g.ts as an artifact, and reads back what it wrote", async () => {
-    assert.deepEqual(await write(MANIFEST), { ok: true, value: undefined });
+      assert.deepEqual(await project.current(), { manifest: { ...MANIFEST, actions: [] } });
+      assert.ok(log.errors[0].startsWith(`${MakeCodeManifestProblemCode.ENTRY_MALFORMED}: ${IDS_MODULE_FILE}`));
+      await project.adopt(catalog([]));
 
-    assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(MANIFEST));
-    assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
-    assert.deepEqual(await read(), { ok: true, value: { manifest: MANIFEST } });
-  });
-
-  it("skips a write that would not change the module, acknowledging it", async () => {
-    await write(MANIFEST);
-
-    assert.deepEqual(await write(MANIFEST), { ok: true, value: undefined });
-    assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
-  });
-
-  it("reads an unreadable module as no manifest under UNREADABLE, logs its code, and a write replaces it", async () => {
-    host.edit(IDS_MODULE_FILE, "garbage typed by hand");
-
-    assert.deepEqual(await read(), {
-      ok: true,
-      value: { manifest: null, problem: MakeCodeManifestProblemCode.UNREADABLE },
+      assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), { manifest: { ...MANIFEST, actions: [] } });
     });
-    assert.match(log.errors[0] ?? "", new RegExp(`^${MakeCodeManifestProblemCode.UNREADABLE}: ${IDS_MODULE_FILE}`));
-    assert.deepEqual(await write(MANIFEST), { ok: true, value: undefined });
-    assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), { manifest: MANIFEST });
-  });
 
-  it("reads a module with a damaged entry as the rest under ENTRY_MALFORMED, and a write heals it", async () => {
-    host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST).replace('"actuator.chime.ring"', "actuator.chime.ring"));
+    it("holds a module of a newer format under FORMAT_NEWER, never allocating over it or writing it", async () => {
+      const newer = writeIdsModule(MANIFEST).replace(
+        `wendoo-ids-format ${IDS_MODULE_FORMAT}`,
+        `wendoo-ids-format ${IDS_MODULE_FORMAT + 1}`
+      );
+      host.edit(IDS_MODULE_FILE, newer);
+      const project = open();
 
-    const answer = await read();
-
-    assert.deepEqual(answer, {
-      ok: true,
-      value: { manifest: { ...MANIFEST, actions: [] }, problem: MakeCodeManifestProblemCode.ENTRY_MALFORMED },
+      assert.deepEqual(await project.current(), { manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER });
+      assert.deepEqual(await project.adopt(catalog(["actuator.beacon.flash"])), {
+        manifest: null,
+        problem: MakeCodeManifestProblemCode.FORMAT_NEWER,
+      });
+      assert.equal(host.file(IDS_MODULE_FILE), newer);
+      assert.deepEqual(host.mutations, []);
+      assert.ok(log.errors[0].startsWith(`${MakeCodeManifestProblemCode.FORMAT_NEWER}: ${IDS_MODULE_FILE}`));
     });
-    await write(MANIFEST);
-    assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(MANIFEST));
-  });
 
-  it("reads a module of a newer format as no manifest under FORMAT_NEWER, and refuses every write, keeping it", async () => {
-    const newer = writeIdsModule(MANIFEST).replace(
-      `wendoo-ids-format ${IDS_MODULE_FORMAT}`,
-      `wendoo-ids-format ${IDS_MODULE_FORMAT + 1}`
-    );
-    host.edit(IDS_MODULE_FILE, newer);
+    it("retries a read the project fails, logging its code, and answers once the read lands", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule(MANIFEST));
+      host.open = false;
+      const project = open();
+      const current = project.current();
 
-    assert.deepEqual(await read(), {
-      ok: true,
-      value: { manifest: null, problem: MakeCodeManifestProblemCode.FORMAT_NEWER },
+      assert.equal(await settlesWithin(current, 20), false);
+      assert.ok(log.errors.length >= 2);
+      assert.ok(log.errors.every((line) => line.startsWith("PROJECT_CLOSED: ")));
+      host.open = true;
+
+      assert.deepEqual(await current, { manifest: MANIFEST });
     });
-    const answer = await write(MANIFEST);
-
-    assert.equal(answer.ok, false);
-    assert.match(answer.ok ? "" : answer.message, new RegExp(`^${MakeCodeManifestProblemCode.FORMAT_NEWER}\\b`));
-    assert.equal(host.file(IDS_MODULE_FILE), newer);
-    assert.deepEqual(host.mutations, []);
   });
 
-  it("fails a read and a write with the reason when no project is open in MakeCode", async () => {
-    host.open = false;
+  describe("allocation", () => {
+    it("allocates a new tile and a new field above the watermarks, keeping every id held, and writes the module", async () => {
+      host.edit(IDS_MODULE_FILE, writeIdsModule({ ...MANIFEST, next: { action: 1030, operator: 1024, atom: 1025 } }));
+      const project = open();
 
-    const read1 = await read();
-    const written = await write(MANIFEST);
+      const reading = await project.adopt(catalog(["actuator.chime.ring", "actuator.beacon.flash"], ["z", "x"]));
 
-    assert.match(read1.ok ? "" : read1.message, /^PROJECT_CLOSED\b/);
-    assert.match(written.ok ? "" : written.message, /^PROJECT_CLOSED\b/);
-  });
+      const expected: MakeCodeIdManifest = {
+        actions: [
+          { name: "actuator.chime.ring", id: 1024 },
+          { name: "actuator.beacon.flash", id: 1030 },
+        ],
+        operators: [],
+        types: [{ name: "Beacon", atom: 1024, fields: ["x", "y", "z"] }],
+        next: { action: 1031, operator: 1024, atom: 1025 },
+      };
+      assert.deepEqual(reading, { manifest: expected });
+      assert.deepEqual(await project.current(), { manifest: expected });
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(expected));
+      assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
+    });
 
-  it("fails a write carrying no manifest the module can declare, and answers later requests as usual", async () => {
-    const garbled = {
-      ...MANIFEST,
-      types: [{ name: "Beacon", atom: 1024, fields: 7 }],
-    } as unknown as MakeCodeIdManifest;
+    it("keeps the id of a name a later catalog no longer declares, and writes only when the allocation changes", async () => {
+      const project = open();
+      const first = await project.adopt(catalog(["actuator.chime.ring"]));
+      const again = await project.adopt(catalog(["actuator.chime.ring"]));
+      const without = await project.adopt(catalog([]));
 
-    const answer = await write(garbled);
+      assert.deepEqual(again, first);
+      assert.deepEqual(without, first);
+      assert.deepEqual(first.manifest?.actions, [{ name: "actuator.chime.ring", id: 1024 }]);
+      assert.deepEqual(host.mutations, [`write ${IDS_MODULE_FILE}`]);
+    });
 
-    assert.equal(answer.ok, false);
-    assert.deepEqual(host.mutations, []);
-    assert.deepEqual(await read(), { ok: true, value: { manifest: null } });
+    it("asks no further write once the project refuses one for good, logging the refusal once", async () => {
+      const project = open();
+      await project.current();
+      host.registered = false;
+
+      const first = await project.adopt(catalog(["actuator.chime.ring"]));
+      const grown = await project.adopt(catalog(["actuator.chime.ring", "actuator.beacon.flash"]));
+      await wait(30);
+
+      assert.deepEqual(first.manifest?.actions, [{ name: "actuator.chime.ring", id: 1024 }]);
+      assert.equal(grown.manifest?.actions.length, 2);
+      assert.equal(log.errors.length, 1);
+      assert.ok(log.errors[0].startsWith("UNREGISTERED: "));
+      assert.equal(host.file(IDS_MODULE_FILE), undefined);
+    });
+
+    it("answers with the allocation when the project refuses its write, and writes it once the project accepts it", async () => {
+      host.edit("filler.bin", "x".repeat(PROJFS_SCOPE_QUOTA_BYTES));
+      const project = open();
+
+      const reading = await project.adopt(catalog(["actuator.chime.ring"]));
+
+      assert.deepEqual(reading.manifest?.actions, [{ name: "actuator.chime.ring", id: 1024 }]);
+      assert.equal(host.file(IDS_MODULE_FILE), undefined);
+      assert.ok(log.errors[0].startsWith("QUOTA_EXCEEDED: "));
+      host.remove("filler.bin");
+      await wait(30);
+
+      assert.equal(host.file(IDS_MODULE_FILE), writeIdsModule(reading.manifest ?? MANIFEST));
+    });
   });
 });

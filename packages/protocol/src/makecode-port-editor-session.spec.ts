@@ -4,7 +4,7 @@ import { PeerSessionErrorCode } from "@wendoo/bridge-app";
 import type { MakeCodeAsset } from "./makecode-assets.js";
 import { MakeCodeBrainsError, MakeCodeBrainsErrorCode } from "./makecode-brains.js";
 import type { MakeCodeBrainsChannel, MakeCodeEditorSessionState } from "./makecode-editor-session.js";
-import { MakeCodeManifestError, MakeCodeManifestErrorCode } from "./makecode-manifest.js";
+import type { MakeCodeManifestReading } from "./makecode-manifest.js";
 import {
   createMakeCodePortEditorSession,
   type MakeCodeHeartbeatOptions,
@@ -19,6 +19,16 @@ const WAIT_MS = 2000;
 
 /** Heartbeat timing short enough for several pings, and a missed deadline, to fit well inside {@link WAIT_MS}. */
 const HEARTBEAT: MakeCodeHeartbeatOptions = { intervalMs: 20, deadlineMs: 150 };
+
+/** A manifest reading allocating one tile. */
+const READING: MakeCodeManifestReading = {
+  manifest: {
+    actions: [{ name: "move", id: 1024 }],
+    operators: [],
+    types: [],
+    next: { action: 1025, operator: 1024, atom: 1024 },
+  },
+};
 
 /** An asset snapshot holding one image. */
 const ASSETS: MakeCodeAsset[] = [{ kind: "image", id: "image1", previewUrl: "data:image/png;base64," }];
@@ -38,6 +48,7 @@ async function eventually<T>(read: () => T, predicate: (value: T) => boolean, wh
 interface Delivered {
   states: MakeCodeEditorSessionState[];
   catalogs: string[];
+  manifests: MakeCodeManifestReading[];
   assets: MakeCodeAsset[][];
   projectInfo: MakeCodeProjectInfo[];
   channels: MakeCodeBrainsChannel[];
@@ -45,9 +56,10 @@ interface Delivered {
 
 /** Records everything `session` delivers. */
 function record(session: MakeCodePortEditorSession): Delivered {
-  const delivered: Delivered = { states: [], catalogs: [], assets: [], projectInfo: [], channels: [] };
+  const delivered: Delivered = { states: [], catalogs: [], manifests: [], assets: [], projectInfo: [], channels: [] };
   session.onStateChange((state) => delivered.states.push(state));
   session.onCatalog((content) => delivered.catalogs.push(content));
+  session.onManifest((reading) => delivered.manifests.push(reading));
   session.onAssets((assets) => delivered.assets.push(assets));
   session.onProjectInfo((info) => delivered.projectInfo.push(info));
   session.onBrainsChannel((channel) => delivered.channels.push(channel));
@@ -374,41 +386,28 @@ describe("port-backed editor session", () => {
     assert.deepEqual(delivered.projectInfo, [{ name: "first" }, { name: "second" }]);
   });
 
-  it("carries the manifest requests on the handshake's port, closing them when the handshake ends", async () => {
+  it("delivers the manifests of the current port's handshake only, after the catalog each follows", async () => {
     const { session, delivered } = started();
-    const peer = await pair(session);
-    const writes: unknown[] = [];
-    peer.onManifestRequest((request) => {
-      if (request.kind === "read") request.reply({ manifest: null });
-      else writes.push(request.manifest);
-    });
+    const first = await pair(session);
+    first.publishCatalog("catalog one");
+    first.publishManifest(READING);
     await eventually(
-      () => delivered.channels.length,
+      () => delivered.manifests.length,
       (count) => count === 1,
-      "the channel"
+      "the first port's manifest"
     );
 
-    assert.deepEqual(await delivered.channels[0].readManifest(), { manifest: null });
-    const written = delivered.channels[0].writeManifest({
-      actions: [],
-      operators: [],
-      types: [],
-      next: { action: 1024, operator: 1024, atom: 1024 },
-    });
+    const second = await pair(session);
+    first.publishManifest({ manifest: null });
+    second.publishManifest({ manifest: null });
     await eventually(
-      () => writes.length,
-      (count) => count === 1,
-      "the manifest write"
+      () => delivered.manifests.length,
+      (count) => count === 2,
+      "the second port's manifest"
     );
-    const closed = assert.rejects(written, (error: unknown) => {
-      assert.ok(error instanceof MakeCodeManifestError);
-      assert.equal(error.code, MakeCodeManifestErrorCode.CLOSED);
-      return true;
-    });
 
-    await pair(session);
-
-    await closed;
+    assert.deepEqual(delivered.catalogs, ["catalog one"]);
+    assert.deepEqual(delivered.manifests, [READING, { manifest: null }]);
   });
 
   it("stays connected across several heartbeat intervals while its counterpart answers every ping", async () => {
@@ -482,11 +481,6 @@ describe("port-backed editor session", () => {
       assert.equal(error.code, MakeCodeBrainsErrorCode.CLOSED);
       return true;
     });
-    const read = assert.rejects(delivered.channels[0].readManifest(), (error: unknown) => {
-      assert.ok(error instanceof MakeCodeManifestError);
-      assert.equal(error.code, MakeCodeManifestErrorCode.CLOSED);
-      return true;
-    });
 
     await eventually(
       () => session.state.status,
@@ -495,7 +489,6 @@ describe("port-backed editor session", () => {
     );
 
     await pulled;
-    await read;
     assert.equal(pings(arrived), 2);
     assert.deepEqual(session.state, { status: "disconnected", errorCode: undefined, target: undefined });
     assert.deepEqual(

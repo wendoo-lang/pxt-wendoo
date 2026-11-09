@@ -1,7 +1,7 @@
 /**
- * The id manifest's wire contract: the editor's permanent id allocations for
- * the vocabulary the MakeCode project's packs register, and the request-reply
- * family that reads them from and writes them to the project.
+ * The id manifest's wire contract: the permanent id allocations for the
+ * vocabulary the MakeCode project's packs register, published by the party
+ * serving the project, which allocates them.
  */
 
 /** One allocated id: a registration name and the id it holds forever. */
@@ -42,8 +42,8 @@ export interface MakeCodeIdWatermarks {
 }
 
 /**
- * Every id the editor has allocated for a MakeCode project's pack vocabulary,
- * in allocation order: host-action ids for tiles, host-function ids for
+ * Every id allocated for a MakeCode project's pack vocabulary, in allocation
+ * order: host-action ids for tiles, host-function ids for
  * operators, and type-atom and field ids for struct types. Entries are
  * append-only.
  */
@@ -68,7 +68,7 @@ export const MakeCodeManifestProblemCode = {
   UNREADABLE: "MAKECODE_MANIFEST_UNREADABLE",
   /**
    * The project's manifest declares a format newer than the serving party
-   * reads. No entry is read from it, and writes are refused while it stands.
+   * reads. No entry is read from it, and it is never written while it stands.
    */
   FORMAT_NEWER: "MAKECODE_MANIFEST_FORMAT_NEWER",
   /**
@@ -82,162 +82,28 @@ export const MakeCodeManifestProblemCode = {
 export type MakeCodeManifestProblemCode =
   (typeof MakeCodeManifestProblemCode)[keyof typeof MakeCodeManifestProblemCode];
 
-/** What the party serving the project read of the project's manifest. */
+/**
+ * The project's manifest as the party serving the project holds it: what it
+ * read of the manifest, with every id it has allocated since.
+ */
 export interface MakeCodeManifestReading {
   /**
-   * The entries read: every entry when {@link problem} is absent, the
-   * readable ones under `ENTRY_MALFORMED`; `null` when the project holds no
-   * manifest, or under `UNREADABLE` or `FORMAT_NEWER`.
+   * The entries held: every entry when {@link problem} is absent, the
+   * readable ones under `ENTRY_MALFORMED`; `null` when none is held, or
+   * under `UNREADABLE` or `FORMAT_NEWER`.
    */
   manifest: MakeCodeIdManifest | null;
   /** What was wrong with the manifest, absent when nothing was. */
   problem?: MakeCodeManifestProblemCode;
 }
 
-/** Stable codes of a failed manifest request. */
-export const MakeCodeManifestErrorCode = {
-  /**
-   * The party serving the project could not read the project to answer a
-   * read. Carried by a {@link MakeCodeManifestErrorMessage}.
-   */
-  READ_FAILED: "MAKECODE_MANIFEST_READ_FAILED",
-  /**
-   * The party serving the project could not write the manifest to the
-   * project. Carried by a {@link MakeCodeManifestErrorMessage}.
-   */
-  WRITE_FAILED: "MAKECODE_MANIFEST_WRITE_FAILED",
-  /**
-   * The makecode handshake carrying the request ended before the reply
-   * arrived. Raised by the requesting side; never on the wire.
-   */
-  CLOSED: "MAKECODE_MANIFEST_CLOSED",
-} as const;
-
-/** Union of all {@link MakeCodeManifestErrorCode} values. */
-export type MakeCodeManifestErrorCode = (typeof MakeCodeManifestErrorCode)[keyof typeof MakeCodeManifestErrorCode];
-
-/** The error a manifest request rejects with. */
-export class MakeCodeManifestError extends Error {
-  /** Stable machine-readable error code. */
-  readonly code: MakeCodeManifestErrorCode;
-
-  constructor(code: MakeCodeManifestErrorCode, message: string) {
-    super(message);
-    this.name = "MakeCodeManifestError";
-    this.code = code;
-  }
-}
-
 /**
- * Asks the party serving the project for the project's manifest. The reply,
- * carrying the same `id`, is a {@link MakeCodeManifestReadReplyMessage} or a
- * {@link MakeCodeManifestErrorMessage} carrying
- * `MakeCodeManifestErrorCode.READ_FAILED`.
+ * The project's id manifest as the party serving the project holds it,
+ * published by that party once the session is established and again after
+ * every catalog it publishes, whether or not the allocation changed. Each
+ * message is whole: a later one replaces an earlier one.
  */
-export interface MakeCodeManifestReadMessage {
-  type: "makecode:manifestRead";
-  /** Correlates the request with its reply; unique among the sender's requests on its connection. */
-  id: string;
-}
-
-/** Answers a {@link MakeCodeManifestReadMessage}, carrying its `id`. */
-export interface MakeCodeManifestReadReplyMessage {
-  type: "makecode:manifestReadReply";
-  id: string;
+export interface MakeCodeManifestMessage {
+  type: "makecode:manifest";
   payload: MakeCodeManifestReading;
 }
-
-/** Payload of a {@link MakeCodeManifestWriteMessage}. */
-export interface MakeCodeManifestWritePayload {
-  /** The editor's whole allocation, which replaces the project's manifest. */
-  manifest: MakeCodeIdManifest;
-}
-
-/**
- * Asks the party serving the project to replace the project's manifest with
- * the editor's whole allocation. The reply, carrying the same `id`, is a
- * {@link MakeCodeManifestAckMessage} once the manifest is written, or a
- * {@link MakeCodeManifestErrorMessage} carrying
- * `MakeCodeManifestErrorCode.WRITE_FAILED`.
- */
-export interface MakeCodeManifestWriteMessage {
-  type: "makecode:manifestWrite";
-  /** Correlates the request with its reply; unique among the sender's requests on its connection. */
-  id: string;
-  payload: MakeCodeManifestWritePayload;
-}
-
-/** Confirms that the {@link MakeCodeManifestWriteMessage} carrying the same `id` was written. */
-export interface MakeCodeManifestAckMessage {
-  type: "makecode:manifestAck";
-  id: string;
-}
-
-/** Payload of a {@link MakeCodeManifestErrorMessage}. */
-export interface MakeCodeManifestErrorPayload {
-  /** Stable code of the failure: `READ_FAILED` for a read, `WRITE_FAILED` for a write. */
-  code: typeof MakeCodeManifestErrorCode.READ_FAILED | typeof MakeCodeManifestErrorCode.WRITE_FAILED;
-  /** Human-readable description of the failure. */
-  message: string;
-}
-
-/** Reports that the manifest request carrying the same `id` failed. */
-export interface MakeCodeManifestErrorMessage {
-  type: "makecode:manifestError";
-  id: string;
-  payload: MakeCodeManifestErrorPayload;
-}
-
-/** The manifest requests: sent by the editor to the party serving the project. */
-export type MakeCodeManifestRequestMessage = MakeCodeManifestReadMessage | MakeCodeManifestWriteMessage;
-
-/** The manifest replies: sent by the party serving the project, each carrying its request's `id`. */
-export type MakeCodeManifestReplyMessage =
-  | MakeCodeManifestReadReplyMessage
-  | MakeCodeManifestAckMessage
-  | MakeCodeManifestErrorMessage;
-
-/**
- * A manifest read request from the peer, delivered to the party serving the
- * project. Answer it once, with {@link reply} or {@link fail}; later answers
- * are not sent.
- */
-export interface MakeCodeManifestReadRequest {
-  readonly kind: "read";
-  /**
-   * Answer with what was read of the project's manifest.
-   *
-   * @param reading - The entries read, and what was wrong with the manifest.
-   */
-  reply(reading: MakeCodeManifestReading): void;
-  /**
-   * Answer that the project could not be read, with
-   * `MakeCodeManifestErrorCode.READ_FAILED`.
-   *
-   * @param message - Human-readable description of the failure.
-   */
-  fail(message: string): void;
-}
-
-/**
- * A manifest write request from the peer, delivered to the party serving the
- * project. Answer it once, with {@link ack} or {@link fail}; later answers are
- * not sent.
- */
-export interface MakeCodeManifestWriteRequest {
-  readonly kind: "write";
-  /** The editor's whole allocation, to replace the project's manifest. */
-  readonly manifest: MakeCodeIdManifest;
-  /** Answer that the manifest is written to the project. */
-  ack(): void;
-  /**
-   * Answer that the manifest could not be written, with
-   * `MakeCodeManifestErrorCode.WRITE_FAILED`.
-   *
-   * @param message - Human-readable description of the failure.
-   */
-  fail(message: string): void;
-}
-
-/** A manifest request from the peer, as the party serving the project receives it. */
-export type MakeCodeManifestRequest = MakeCodeManifestReadRequest | MakeCodeManifestWriteRequest;

@@ -20,7 +20,6 @@ import type {
   MakeCodeBrainsRequestMessage,
   MakeCodeHeartbeatOptions,
   MakeCodeIdManifest,
-  MakeCodeManifestRequestMessage,
   MakeCodePortEditorSession,
   MakeCodeWireBrain,
 } from "@wendoo/makecode-session";
@@ -215,24 +214,25 @@ function projectOf(...brains: MakeCodeWireBrain[]): Map<string, MakeCodeWireBrai
   return new Map(brains.map((brain) => [brain.id, brain]));
 }
 
-/** A brains or manifest request the scripted column frame received. */
-type ReceivedRequest = MakeCodeBrainsRequestMessage | MakeCodeManifestRequestMessage;
+/** A brains request the scripted column frame received. */
+type ReceivedRequest = MakeCodeBrainsRequestMessage;
 
 /**
  * A column frame played by the spec over the raw far end of a brokered
- * port: it sends its makecode hello at once and answers the editor's brains
- * and manifest requests from its in-memory project -- or, while held,
- * queues the answers until released. It records every request it receives
- * and counts the editor hellos, one per handshake. Its list carries each
+ * port: it sends its makecode hello at once, publishes its id manifest on
+ * each editor hello, and answers the editor's brains requests from its
+ * in-memory project -- or, while held, queues the answers until released.
+ * It records every request it receives and counts the editor hellos, one
+ * per handshake. Its list carries each
  * brain's compiled source hash only when opened to report it; otherwise it
  * answers as a column frame predating that field does.
  */
 class ScriptedColumn {
   /** The brains the project holds, by document id, in the wire form. */
   readonly project: Map<string, MakeCodeWireBrain>;
-  /** The id manifest the project holds, or `null` when it holds none. */
+  /** The id manifest it publishes, or `null` when the project holds none. */
   manifest: MakeCodeIdManifest | null = null;
-  /** Every brains and manifest request received, in order. */
+  /** Every brains request received, in order. */
   readonly requests: ReceivedRequest[] = [];
   /** How many editor hellos arrived. */
   hellos = 0;
@@ -286,12 +286,11 @@ class ScriptedColumn {
     switch (message.type) {
       case "makecode:hello":
         this.hellos += 1;
+        this.send({ type: "makecode:manifest", payload: { manifest: this.manifest } });
         return;
       case "makecode:brainsList":
       case "makecode:brainsPull":
-      case "makecode:brainsPush":
-      case "makecode:manifestRead":
-      case "makecode:manifestWrite": {
+      case "makecode:brainsPush": {
         const request = message as unknown as ReceivedRequest;
         this.requests.push(request);
         if (request.type === "makecode:brainsPush" && this.dropsPushes) return;
@@ -343,11 +342,6 @@ class ScriptedColumn {
         if (request.payload.op === "write") this.project.set(request.payload.brain.id, request.payload.brain);
         else this.project.delete(request.payload.brainId);
         return { type: "makecode:brainsAck", id: request.id };
-      case "makecode:manifestRead":
-        return { type: "makecode:manifestReadReply", id: request.id, payload: { manifest: this.manifest } };
-      case "makecode:manifestWrite":
-        this.manifest = request.payload.manifest;
-        return { type: "makecode:manifestAck", id: request.id };
     }
   }
 }
@@ -1144,38 +1138,46 @@ describe("brains sync between the editor tab and the column frame over a brokere
       return host.mutations.filter((mutation) => mutation === `write ${BRAINS_MODULE_FILE}`).length;
     }
 
-    it("saves the program's pack vocabulary as ids.g.ts, which a fresh editor tab adopts without writing", async () => {
-      const { tab, column } = await pairReal(CHIME_CATALOG);
+    /** The chime pack's allocation in a project that held no ids module. */
+    const CHIME_IDS: MakeCodeIdManifest = {
+      actions: [{ name: "actuator.chime.ring", id: 1024 }],
+      operators: [],
+      types: [],
+      next: { action: 1025, operator: 1024, atom: 1024 },
+    };
+
+    /** How many times the project's ids module has been written. */
+    function idsWrites(): number {
+      return host.mutations.filter((mutation) => mutation === `write ${IDS_MODULE_FILE}`).length;
+    }
+
+    /** The host-action id `tab`'s environment registers the ring tile under, or `undefined`. */
+    function ringId(tab: EditorTab): number | undefined {
+      const action = tab.brains.getSnapshot().environment.brainServices.runtime.actions.getByKey("actuator.chime.ring");
+      return action?.binding === "host" ? action.id : undefined;
+    }
+
+    it("has the column frame save the program's pack vocabulary as ids.g.ts before any tab attaches, which every fresh tab adopts without writing", async () => {
+      const column = startColumn(host, CHIME_CATALOG);
       await eventually(
         () => host.file(IDS_MODULE_FILE),
         (text) => text !== undefined,
         "the ids module to be written"
       );
-      const ringId = tab.brains.getSnapshot().environment.brainServices.runtime.actions.getByKey("actuator.chime.ring");
-      assert.equal(ringId?.binding === "host" && ringId.id, 1024);
-      assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), {
-        manifest: {
-          actions: [{ name: "actuator.chime.ring", id: 1024 }],
-          operators: [],
-          types: [],
-          next: { action: 1025, operator: 1024, atom: 1024 },
-        },
-      });
+      assert.deepEqual(readIdsModule(host.file(IDS_MODULE_FILE) ?? ""), { manifest: CHIME_IDS });
 
+      const tab = openTab();
+      broker(column, tab);
+      await brainsUntil(tab, (state) => state.reconciled, "the editor to reconcile");
+      assert.equal(ringId(tab), 1024);
       const fresh = reopenReal(tab, column, CHIME_CATALOG);
       await brainsUntil(fresh, (state) => state.reconciled, "the fresh editor to reconcile");
-      const adopted = fresh.brains
-        .getSnapshot()
-        .environment.brainServices.runtime.actions.getByKey("actuator.chime.ring");
 
-      assert.equal(adopted?.binding === "host" && adopted.id, 1024);
-      assert.deepEqual(
-        host.mutations.filter((mutation) => mutation === `write ${IDS_MODULE_FILE}`),
-        [`write ${IDS_MODULE_FILE}`]
-      );
+      assert.equal(ringId(fresh), 1024);
+      assert.equal(idsWrites(), 1);
     });
 
-    it("heals an ids module damaged by hand at the next handshake, rewriting it from the allocation", async () => {
+    it("has the column frame heal an ids module damaged by hand when it next starts, with no tab attached", async () => {
       const { tab, column } = await pairReal(CHIME_CATALOG);
       const written = await eventually(
         () => host.file(IDS_MODULE_FILE),
@@ -1185,13 +1187,15 @@ describe("brains sync between the editor tab and the column frame over a brokere
       closeTab(tab);
       host.edit(IDS_MODULE_FILE, "// typed over by hand\n");
       disposeColumn(column);
-      broker(startColumn(host, CHIME_CATALOG), openTab());
+
+      startColumn(host, CHIME_CATALOG);
 
       await eventually(
         () => host.file(IDS_MODULE_FILE),
         (text) => text === written,
         "the ids module to be rewritten"
       );
+      assert.equal(idsWrites(), 2);
     });
 
     it("saves an authored brain in both forms, and a fresh editor tab after a simulator restart pulls it back", async () => {

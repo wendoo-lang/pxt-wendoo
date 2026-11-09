@@ -29,8 +29,7 @@ import {
   readBrainSource,
   serializeBrainSource,
 } from "../../authoring/brain-source";
-import { parseCatalog } from "../../authoring/catalog";
-import { allocateIds, emptyIdManifest, mergeIdManifests, sameIdManifest } from "../../authoring/id-allocation";
+import { emptyIdManifest, sameIdManifest } from "../../authoring/id-allocation";
 import type { EditorSessionStore, EditorSessionViewState } from "./editor-session-store";
 
 /**
@@ -71,8 +70,8 @@ export interface UnresolvedTile {
 /** The session readings a {@link BrainsStore} follows. */
 export type BrainsSessionState = Pick<EditorSessionViewState, "status" | "catalogText" | "assets">;
 
-/** The session a {@link BrainsStore} syncs its brains with the MakeCode project over. */
-export type BrainsSyncSource = Pick<EditorSessionStore, "onBrainsChannel">;
+/** The session a {@link BrainsStore} syncs its brains with the MakeCode project over, and takes the project's id manifest from. */
+export type BrainsSyncSource = Pick<EditorSessionStore, "onBrainsChannel" | "onManifest">;
 
 /** The session a {@link BrainsStore} follows, in the `useSyncExternalStore` shape: a subscribe function and a snapshot reader. */
 export interface BrainsSessionSource {
@@ -221,8 +220,9 @@ export interface BrainsViewState {
 /**
  * The editor's brains as the UI consumes them: brain documents keyed by
  * document id, each with its compile state, compiled in an environment built
- * from the followed session's catalog and rebuilt whenever a different
- * catalog arrives. Components read {@link getSnapshot} and subscribe with
+ * from the followed session's catalog and the project's id manifest, and
+ * rebuilt whenever a manifest arrives after a different catalog or holding
+ * a different allocation. Components read {@link getSnapshot} and subscribe with
  * {@link subscribe} (both `useSyncExternalStore`-shaped).
  *
  * Every document written to the store is compiled at once in the current
@@ -234,17 +234,12 @@ export interface BrainsViewState {
  * nothing: it is not compiled, and no edit is recorded.
  *
  * The environment binds the catalog's packs under the project's id
- * allocation, which the store holds once a handshake has read the project's
- * manifest: it adopts what the manifest holds over its own allocation
- * (`mergeIdManifests`), allocates every name the catalog declares that it
- * lacks (`allocateIds`), and writes the whole allocation to the project
- * whenever it differs from what the project holds -- never over a manifest of
- * a newer format, which leaves every pack unbound. A catalog arriving with
- * new vocabulary is allocated and written the same way. A manifest write
- * awaits the project's answer however long it takes, until its handshake
- * ends; a failed one is retried after each of {@link PUSH_RETRY_DELAYS_MS} in
- * turn, then after the last of them again and again, while its handshake
- * stays connected. Whenever the environment is rebuilt, every brain is
+ * allocation, which the store adopts, as it is, from each manifest the sync
+ * source publishes; the MakeCode side publishes one after every catalog. A
+ * catalog arriving is held and builds nothing; the manifest that follows it
+ * rebuilds the environment from the two. A manifest of a newer format leaves
+ * every pack unbound, reported under its stable code after the catalog's
+ * diagnostics. Whenever the environment is rebuilt, every brain is
  * recompiled in it; one whose compiled form changes is recorded as edited,
  * and pushed.
  *
@@ -264,8 +259,8 @@ export interface BrainsViewState {
  * under {@link BrainsViewState.unresolvedBrains}.
  *
  * Given a sync source, the store keeps its brains in step with the MakeCode
- * project over each makecode handshake. When a handshake completes, the
- * store reconciles: it reads the project's manifest and lists the
+ * project over each makecode handshake. When a handshake has completed and
+ * delivered its first manifest, the store reconciles: it lists the
  * project's brains, pulls those whose source differs from the
  * store's or whose compiled form the list reports missing or compiled from
  * other source, adopts each pulled brain it holds no pending edit of, drops
@@ -312,21 +307,12 @@ export class BrainsStore {
         readonly found: ReadonlyMap<string, readonly UnresolvedBrainReference[]>;
       }
     | undefined;
-  /** The id allocation held for the project, or `undefined` until a handshake has read the project's manifest. */
+  /** The catalog text the environment was built from. */
+  private _builtCatalogText: string | undefined;
+  /** The id allocation of the latest manifest published, or `undefined` before the first and under a newer format. */
   private _ids: MakeCodeIdManifest | undefined;
-  /**
-   * The allocation the project holds as far as the store knows: from the
-   * latest manifest read, an absent manifest reading as allocating nothing,
-   * and from each acknowledged write; `undefined` when the project's
-   * manifest needs replacing whatever the store holds.
-   */
-  private _projectIds: MakeCodeIdManifest | undefined;
-  /** Whether the project's manifest is of a newer format than this editor reads. */
+  /** Whether the latest manifest published is of a newer format than this editor reads. */
   private _manifestNewer = false;
-  /** Whether a manifest write is awaiting its answer. */
-  private _manifestWriting = false;
-  /** The scheduled retry of a failed manifest write, if any. */
-  private _manifestRetry: ReturnType<typeof setTimeout> | undefined;
   private _environment: AuthoringEnvironment;
   private _brains: ReadonlyMap<string, BrainEntry> = new Map();
   private _pending: ReadonlySet<string> = new Set();
@@ -335,6 +321,8 @@ export class BrainsStore {
   private _channel: MakeCodeBrainsChannel | undefined;
   /** Whether the latest handshake's reconciliation has finished and the session has stayed connected since. */
   private _reconciled = false;
+  /** The latest handshake's channel while its reconciliation waits for the handshake's first manifest. */
+  private _awaitingManifest: MakeCodeBrainsChannel | undefined;
   /** The scheduled retry of each brain whose latest push failed, by document id. */
   private readonly _retries = new Map<string, ReturnType<typeof setTimeout>>();
   private _pushesInFlight = 0;
@@ -342,7 +330,7 @@ export class BrainsStore {
 
   /**
    * @param session - The session whose catalog the environment is built from, and whose connectivity decides which edits pend.
-   * @param sync - The session the brains are synced with the MakeCode project over. When omitted, the store syncs nothing and pends every edit made while the session is not connected.
+   * @param sync - The session the brains are synced with the MakeCode project over, and the project's id manifest is taken from. When omitted, the store syncs nothing, binds no pack, builds its environment from the catalog the session holds now, and pends every edit made while the session is not connected.
    */
   constructor(session: BrainsSessionSource, sync?: BrainsSyncSource) {
     this._session = session;
@@ -356,6 +344,9 @@ export class BrainsStore {
     });
     sync?.onBrainsChannel((channel) => {
       this.handshakeCompleted(channel);
+    });
+    sync?.onManifest((reading) => {
+      this.manifestPublished(reading);
     });
   }
 
@@ -598,13 +589,24 @@ export class BrainsStore {
     }
   }
 
-  /** Adopts `channel` as the latest handshake's and reconciles over it. */
+  /** Adopts `channel` as the latest handshake's, to reconcile over once the handshake delivers its first manifest. */
   private handshakeCompleted(channel: MakeCodeBrainsChannel): void {
     const wasReconciled = this._reconciled;
     this._channel = channel;
     this._reconciled = false;
+    this._awaitingManifest = channel;
     if (wasReconciled) this.publish();
-    void this.reconcile(channel);
+  }
+
+  /**
+   * Adopts the manifest `reading` the MakeCode side published, then, when it
+   * is the latest handshake's first, reconciles over that handshake.
+   */
+  private manifestPublished(reading: MakeCodeManifestReading): void {
+    this.adoptManifest(reading);
+    const channel = this._awaitingManifest;
+    this._awaitingManifest = undefined;
+    if (channel !== undefined && this._channel === channel) void this.reconcile(channel);
   }
 
   /**
@@ -623,11 +625,8 @@ export class BrainsStore {
     let wanted: string[];
     let pulled: MakeCodeBrain[];
     try {
-      const [reading, list] = await Promise.all([channel.readManifest(), channel.listBrains()]);
+      listed = await channel.listBrains();
       if (this._channel !== channel) return;
-      this.adoptManifest(reading);
-      this.writeManifest(channel);
-      listed = list;
       wanted = listed.filter((summary) => this.wantsPull(summary)).map((summary) => summary.id);
       pulled = wanted.length === 0 ? [] : await channel.pullBrains(wanted);
     } catch {
@@ -724,71 +723,25 @@ export class BrainsStore {
 
   /**
    * Adopts the project's manifest as `reading` reports it: a manifest of a
-   * newer format leaves the store holding no allocation; otherwise the store
-   * adopts the project's entries over its own, allocates what the catalog
-   * declares beyond them, and records what the project holds -- nothing to
-   * keep when the manifest was unreadable or damaged. Rebuilds the
-   * environment when the allocation changed.
+   * newer format leaves the store holding no allocation, and any other its
+   * allocation, an absent one allocating nothing. Rebuilds the environment
+   * when the allocation or the catalog changed since it was built, and
+   * publishes when anything changed.
    */
   private adoptManifest(reading: MakeCodeManifestReading): void {
-    if (reading.problem === MakeCodeManifestProblemCode.FORMAT_NEWER) {
-      this._manifestNewer = true;
-      this._projectIds = undefined;
-      this.setIds(undefined);
+    const newer = reading.problem === MakeCodeManifestProblemCode.FORMAT_NEWER;
+    const ids = newer ? undefined : (reading.manifest ?? emptyIdManifest());
+    const held = this._ids;
+    const sameIds = held === undefined || ids === undefined ? held === ids : sameIdManifest(held, ids);
+    const newerChanged = newer !== this._manifestNewer;
+    this._ids = ids;
+    this._manifestNewer = newer;
+    if (!sameIds || this._catalogText !== this._builtCatalogText) {
+      this.rebuild();
+    } else if (!newerChanged) {
       return;
     }
-    this._manifestNewer = false;
-    this._projectIds = reading.problem === undefined ? (reading.manifest ?? emptyIdManifest()) : undefined;
-    this.setIds(this.allocated(mergeIdManifests(reading.manifest, this._ids)));
-  }
-
-  /** `ids` with every name the session's catalog declares allocated. */
-  private allocated(ids: MakeCodeIdManifest): MakeCodeIdManifest {
-    return this._catalogText === undefined ? ids : allocateIds(ids, parseCatalog(this._catalogText));
-  }
-
-  /** Holds `ids` as the allocation, rebuilding the environment and recompiling every brain when it differs from the one held. */
-  private setIds(ids: MakeCodeIdManifest | undefined): void {
-    const held = this._ids;
-    const same = held === undefined || ids === undefined ? held === ids : sameIdManifest(held, ids);
-    this._ids = ids;
-    if (!same) this.rebuild();
-  }
-
-  /**
-   * Writes the allocation held to the project over `channel` when it differs
-   * from what the project holds, one write at a time: a write asked while
-   * one is awaiting its answer goes out once that one is answered. A write
-   * awaits its answer until the project answers it or the handshake
-   * `channel` belongs to ends, however long that takes. A failed write is
-   * retried after the delay {@link PUSH_RETRY_DELAYS_MS} holds at `attempt`,
-   * or its last delay past the end, while `channel` is the latest handshake's
-   * and the session is connected.
-   *
-   * @param attempt - How many failed writes precede this one: 0 for a first write.
-   */
-  private writeManifest(channel: MakeCodeBrainsChannel, attempt = 0): void {
-    const ids = this._ids;
-    if (ids === undefined || this._manifestNewer || this._manifestWriting || !this.reconcilesOver(channel)) return;
-    if (this._projectIds !== undefined && sameIdManifest(this._projectIds, ids)) return;
-    clearTimeout(this._manifestRetry);
-    this._manifestRetry = undefined;
-    this._manifestWriting = true;
-    channel.writeManifest(ids).then(
-      () => {
-        this._manifestWriting = false;
-        if (this._channel === channel) this._projectIds = ids;
-        this.writeManifest(channel);
-      },
-      () => {
-        this._manifestWriting = false;
-        if (!this.reconcilesOver(channel)) return;
-        this._manifestRetry = setTimeout(() => {
-          this._manifestRetry = undefined;
-          this.writeManifest(channel, attempt + 1);
-        }, retryDelay(attempt));
-      }
-    );
+    this.publish();
   }
 
   /**
@@ -833,6 +786,7 @@ export class BrainsStore {
    * held brain's source.
    */
   private buildEnvironment(): AuthoringEnvironment {
+    this._builtCatalogText = this._catalogText;
     const built = buildAuthoringEnvironment(this._catalogText, this._ids);
     built.assetLiterals.applySnapshot(this._assets);
     built.brainLiterals.applyBrains(this._brains);
@@ -844,29 +798,21 @@ export class BrainsStore {
   }
 
   /**
-   * Ends the reconciled state when the session is no longer connected,
-   * rebuilds the environment when the session carries a different catalog,
-   * and otherwise applies a different asset snapshot to the environment's
-   * asset literals in place; publishes when any of them changed.
+   * Ends the reconciled state when the session is no longer connected, holds
+   * a different catalog for the next manifest to build from, and applies a
+   * different asset snapshot to the environment's asset literals in place;
+   * publishes when any of them changed.
    */
   private sessionChanged(): void {
     const { status, catalogText, assets } = this._session.getSnapshot();
     const unreconciled = this._reconciled && status !== "connected";
     if (unreconciled) this._reconciled = false;
+    const catalogChanged = catalogText !== this._catalogText;
+    this._catalogText = catalogText;
     const assetsChanged = assets !== this._assets;
     this._assets = assets;
-    if (catalogText !== this._catalogText) {
-      this._catalogText = catalogText;
-      const ids = this._ids === undefined ? undefined : this.allocated(this._ids);
-      this._ids = ids;
-      this.rebuild();
-      if (this._channel !== undefined) this.writeManifest(this._channel);
-    } else if (assetsChanged) {
-      this._environment.assetLiterals.applySnapshot(assets);
-    } else if (!unreconciled) {
-      return;
-    }
-    this.publish();
+    if (assetsChanged) this._environment.assetLiterals.applySnapshot(assets);
+    if (unreconciled || catalogChanged || assetsChanged) this.publish();
   }
 
   /** The unresolved asset literals each held brain references, found again only when the brains, the literals or the snapshot changed. */
