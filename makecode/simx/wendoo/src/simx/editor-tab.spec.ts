@@ -94,7 +94,7 @@ describe("editor tab opener", () => {
     opener.dispose();
   });
 
-  it("resolves on MakeCode's acknowledgment, logging nothing", async () => {
+  it("resolves with true on MakeCode's acknowledgment, logging nothing", async () => {
     const frame = new FakeFrame();
     const log = recordingLog();
     const opener = connectEditorTabOpener(frame, PARENT_ORIGIN, log);
@@ -102,12 +102,12 @@ describe("editor tab opener", () => {
 
     frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: frame.requestId(0), subtype: "ack" });
 
-    await opened;
+    assert.equal(await opened, true);
     assert.deepEqual(log.errors, []);
     opener.dispose();
   });
 
-  it("resolves on a refusal, logging its code", async () => {
+  it("resolves with false on a refusal, logging its code", async () => {
     for (const code of REFUSAL_CODES) {
       const frame = new FakeFrame();
       const log = recordingLog();
@@ -116,7 +116,7 @@ describe("editor tab opener", () => {
 
       frame.receive({ type: SIMXEDITOR_MESSAGE_TYPE, id: frame.requestId(0), subtype: "error", code, message: "" });
 
-      await opened;
+      assert.equal(await opened, false);
       assert.equal(log.errors.length, 1);
       assert.ok(log.errors[0].startsWith(`${code}:`));
       opener.dispose();

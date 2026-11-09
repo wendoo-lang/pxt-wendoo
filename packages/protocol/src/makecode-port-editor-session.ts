@@ -50,39 +50,12 @@ export interface MakeCodePortEditorSessionOptions {
 /**
  * The editor's makecode session with the MakeCode project over ports the
  * page hosting the editor supplies: one session for the life of the editor's
- * frame. Its status is:
- *
- * - `connected` once the makecode handshake over the current port has
- *   completed, until the counterpart leaves two liveness pings in a row
- *   unanswered past the heartbeat deadline, the port is replaced, or
- *   {@link MakeCodeEditorSession.stop} is called. A counterpart that stops
- *   answering is detected within the heartbeat interval plus twice the
- *   deadline;
- * - `disconnected` while no port is attached, while the current port's
- *   handshake is pending, after it was rejected or ended, and after
- *   {@link MakeCodeEditorSession.stop}.
- *
- * Every port attached opens a fresh handshake, replacing the previous
- * port's: the catalogs, id manifests, asset snapshots, project facts,
- * brains publications, brain opens and brains channel delivered come from
- * the current handshake only.
- * While a handshake is established the session pings the counterpart, one
- * ping outstanding at a time, two after a miss: the first a heartbeat
- * interval after the handshake completes, each next one an interval after
- * the previous one is answered. A ping unanswered for the heartbeat deadline
- * is a miss, and a follow-up ping goes out at once under a fresh deadline,
- * the missed ping still awaiting its answer; a pong to either one clears the
- * miss. A follow-up ping unanswered for its deadline ends the handshake as
- * replacing its port does -- its brains channel's requests reject with
- * `CLOSED`, the status turns `disconnected` with the error code
- * unchanged -- and the session stays started, so the next port attached
- * opens the next handshake.
- * The one error code is `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`, for a
- * counterpart hello declaring a newer version; it stays until a later
- * handshake completes, or until {@link MakeCodeEditorSession.start} starts
- * the session again after a stop. {@link MakeCodeEditorSession.stop} ends
- * the current port's handshake and lets the port go; a port carries one
- * handshake, and the next port attached carries the next.
+ * frame. Every port attached with {@link attachPort} opens a fresh handshake,
+ * replacing the previous port's, and everything the session delivers comes
+ * from the current handshake only; while one is established the session
+ * pings the counterpart and ends the handshake after two misses in a row.
+ * Its status, error code, heartbeat and ports are as docs/session-management.md
+ * sets out in "The editor session object" and "Liveness in this lane".
  */
 export interface MakeCodePortEditorSession extends MakeCodeEditorSession {
   /**

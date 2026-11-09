@@ -429,6 +429,8 @@ describe("brains sync between the editor tab and the column frame over a brokere
       log: silentLog,
       target: declared.target,
       opener,
+      apiLevel: 2,
+      onTabs: () => {},
     });
     const column = { frame, bridge, opener, host, assets };
     columns.push(column);
@@ -782,7 +784,7 @@ describe("brains sync between the editor tab and the column frame over a brokere
       column.frame.brokerPort(port1, "https://arcade.makecode.com", key);
       tab.session.attachPort(messagePortSessionPort(port2));
     }
-    column.bridge.setTabs([
+    column.opener.listTabs([
       { key: ownKey, label: "Wendoo" },
       { key: designerKey, label: "Designer" },
     ]);

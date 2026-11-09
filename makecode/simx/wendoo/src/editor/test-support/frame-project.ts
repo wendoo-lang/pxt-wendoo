@@ -2,7 +2,13 @@
  * A MakeCode project as the simulator extension serves it, in memory, for
  * the specs playing the frame's side of the brains family.
  */
-import type { MakeCodeBrainSummary, MakeCodeWireBrain, MakeCodeWireCompileOutcome } from "@wendoo/makecode-session";
+import type {
+  MakeCodeBrainSummary,
+  MakeCodeBrainsChannel,
+  MakeCodeWireBrain,
+  MakeCodeWireBrainPush,
+  MakeCodeWireCompileOutcome,
+} from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
 import { BrainEngine } from "../../simx/brain-engine.js";
 import type { CompiledBrain } from "../../simx/brains-module.js";
@@ -73,4 +79,54 @@ export function frameProjectOf(...brains: { id: string; name: string; source: st
   const project = new FrameProject();
   for (const brain of brains) project.write(brain.id, brain.name, brain.source);
   return project;
+}
+
+/** Options for a {@link FakeBrainsChannel}. */
+export interface FakeBrainsChannelOptions {
+  /** Whether each push is applied to the project and answered with its outcome; when `false`, every push is answered with `null` and the project is left as it is. Default `true`. */
+  readonly applyPushes?: boolean;
+}
+
+/**
+ * One handshake's brains channel over `project`, standing in for the frame:
+ * it answers every request at once, listing and pulling from the project,
+ * recording every push in {@link pushes}, and refusing every create and
+ * open. A push writes or removes its brain in the project and is answered
+ * with the write's compile outcome, or `null` for a removal, unless
+ * `options.applyPushes` is `false`.
+ */
+export class FakeBrainsChannel implements MakeCodeBrainsChannel {
+  /** Every push received, in order. */
+  readonly pushes: MakeCodeWireBrainPush[] = [];
+
+  constructor(
+    private readonly project: FrameProject,
+    private readonly options: FakeBrainsChannelOptions = {}
+  ) {}
+
+  listBrains(): Promise<MakeCodeBrainSummary[]> {
+    return Promise.resolve(this.project.summaries());
+  }
+
+  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
+    return Promise.resolve(ids.flatMap((id) => this.project.get(id) ?? []));
+  }
+
+  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
+    this.pushes.push(push);
+    if (this.options.applyPushes === false) return Promise.resolve(null);
+    if (push.op === "remove") {
+      this.project.remove(push.brainId);
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(this.project.write(push.brain.id, push.brain.name, push.brain.source));
+  }
+
+  createBrain(): Promise<MakeCodeBrainSummary> {
+    return Promise.reject(new Error("no brain is created over this channel"));
+  }
+
+  openBrain(): Promise<void> {
+    return Promise.reject(new Error("no brain is opened over this channel"));
+  }
 }

@@ -42,7 +42,7 @@ export function brainSourceFile(id: string): string {
   return `${SOURCE_FOLDER}${id}${SOURCE_SUFFIX}`;
 }
 
-/** Stable codes of a problem a {@link BrainsProject} meets compiling the project's brains. */
+/** Stable codes of a problem the simulator extension meets compiling or opening the project's brains. */
 export const BrainsProjectProblemCode = {
   /**
    * Compiling a brain document threw. The compile is taken as producing no
@@ -50,6 +50,13 @@ export const BrainsProjectProblemCode = {
    * last good registration. Logged once per brain per source hash.
    */
   COMPILE_THREW: "BRAINS_PROJECT_COMPILE_THREW",
+  /**
+   * MakeCode refused to show the origin tab of a brain opened while that
+   * tab had no session whose first publications are out, so the open held
+   * for the tab is dropped and its next session opens nothing. Logged once
+   * per hold dropped.
+   */
+  OPEN_DROPPED: "BRAINS_PROJECT_OPEN_DROPPED",
 } as const;
 
 /** Union of all {@link BrainsProjectProblemCode} values. */
@@ -127,77 +134,16 @@ interface Queued {
 }
 
 /**
- * The MakeCode project's brains, compiled and served by the simulator
- * extension: one source file per brain at {@link brainSourceFile}, holding
- * the brain document exactly as pushed or created, and the brains module at
- * `BRAINS_MODULE_FILE` registering every brain's compiled form, which this
- * project alone compiles and writes.
- *
- * On construction it reads every brain source file and the brains module
- * once, holding what it read as a cache derived from the files: each brain's
- * name, source, source hash and origin, and the registrations of brains
- * whose source the project holds. A read the project fails is logged by its projfs code
- * and retried after a wait that doubles from
- * {@link BrainsProjectTimings.retryDelayMs} up to
- * {@link BrainsProjectTimings.maxRetryDelayMs}; a refusal no retry can
- * overcome -- `PERMISSION_DENIED`, `UNREGISTERED`, `INVALID_NAME`,
- * `INVALID_REQUEST` -- is logged once, and nothing is served. A brain whose
- * registration is missing, damaged or compiled from another source's hash is
- * then recompiled from its source, and a module holding anything else than
- * the registrations of the held brains is rewritten.
- *
- * {@link reported} and {@link rescan} take MakeCode's word that brain files
- * changed: each is re-read in a step of its own between drains. A source
- * whose brain has a write or a removal queued is skipped, and the queued
- * change lands over it. A source read as the text held changes nothing; any
- * other text is adopted as a push's would be -- held, compiled, its changed
- * registration queued and posted live -- its source file left unwritten; a
- * source gone removes its brain, the module rewritten without it; and a
- * source the project did not hold is added. A brains module read as the
- * text last read or written changes nothing; any other is taken as read and
- * healed as at start. A re-read that changed anything announces the brains
- * to {@link onChange}. A failed re-read is logged and retried at the retry
- * waits, and one refused for good is logged and dropped.
- *
- * Brains compile in a {@link BrainEngine} built from the latest catalog, the
- * project's id manifest and the asset snapshot, and every held brain is
- * recompiled whenever one of them changes. A compile producing a program with
- * every tile resolved replaces the brain's registration; any other keeps its
- * last good one. Each compile that changes a registration posts its program
- * to `live` at once.
- *
- * - A list returns every held brain's summary, as {@link summaries} gives it.
- * - A pull returns each requested brain held, its source verbatim.
- * - A push write is compiled as it arrives and answered with its compile's
- *   outcome; a removal posts the brain's removal to `live` and is answered
- *   with `null`; either is refused with `NOT_ORIGIN` from a tab other than
- *   the brain's origin.
- * - A create mints an empty brain document through the engine's brain
- *   services, its origin the requesting tab's key, compiles it, and is
- *   answered with its summary.
- * - An open of a held brain whose origin is `null` or a tab MakeCode lists
- *   is acknowledged and announced to {@link onOpen}; one of a brain not held
- *   is refused with `UNKNOWN_BRAIN`, and one whose origin MakeCode does not
- *   list with `ORIGIN_ABSENT`, each refusal logged by its code.
- *
- * Writes queue and are applied in drains. A drain takes every change queued
- * by then (the latest of each brain), writes the brains module once when its
- * text changes, then writes or deletes each brain's source file, answering
- * each request once its source has landed; a refused write fails the requests
- * it carried, the refusal's projfs code leading the message. A refused module
- * write carrying recompiled registrations is retried at the retry waits. A
- * write waits for MakeCode's answer however long it takes, and every write
- * is an artifact, never flagged as a user edit. Once a drain has landed
- * anything, the brains are announced to {@link onChange}. Lists, pulls and
- * announcements serve a consistent view while a drain lands: a brain's
- * registration in it advances once the source it was compiled from has
- * landed -- with the module for a recompile, with the source file for a
- * write -- and a removed brain leaves it once its source file is deleted.
- *
- * A damaged brains module yields every registration that is still readable,
- * and a coded line in the log for each problem; one written by a newer
- * simulator extension is read as registering nothing, is never rewritten,
- * and pushes and creates fail by its code while it stands.
+ * The MakeCode project's brains as the simulator extension compiles and
+ * serves them: one source file per brain at {@link brainSourceFile} and the
+ * brains module at `BRAINS_MODULE_FILE`, which it alone writes. It reads them
+ * at construction and on {@link reported} and {@link rescan}, compiles in an
+ * environment fed by the adopt methods, posts changed registrations to
+ * `live`, answers tabs through {@link serve}, and announces to
+ * {@link onChange} and {@link onOpen}. docs/session-management.md holds its
+ * answers and refusals in "The brains payload family" and ORIGIN, under "The
+ * editor tab's in-page session", and its reads, drains, healing and retries
+ * in "The simx write path".
  */
 export class BrainsProject {
   private readonly _files: ProjectFiles;

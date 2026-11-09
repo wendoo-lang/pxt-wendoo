@@ -31,6 +31,9 @@ const parentOrigin = getParentOrigin() ?? "";
 const root = document.body.appendChild(document.createElement("main"));
 
 const opener = connectEditorTabOpener(window, parentOrigin, console);
+const strip = mountBrandStrip(root, (key) => {
+  void opener.open(key);
+});
 const bridge = startSimxPortBridge({
   frame: window,
   parentOrigin,
@@ -40,17 +43,12 @@ const bridge = startSimxPortBridge({
   channel,
   target,
   opener,
-});
-const strip = mountBrandStrip(root, (key) => {
-  void opener.open(key);
-});
-// Below API level 2 the strip keeps the logotype alone.
-if (getSimxApiLevel() >= 2) {
-  void opener.tabs().then((tabs) => {
+  // Below API level 2 the strip keeps the logotype alone.
+  apiLevel: getSimxApiLevel(),
+  onTabs: (tabs) => {
     strip.setTabs(tabs);
-    bridge.setTabs(tabs);
-  });
-}
+  },
+});
 window.addEventListener(
   "pagehide",
   () => {

@@ -295,81 +295,15 @@ interface Create {
 
 /**
  * The editor's brains as the UI consumes them: brain documents keyed by
- * document id, each with its compile state, compiled for live diagnostics in
- * an environment built from the followed session's catalog and the
- * project's id manifest, and rebuilt whenever a manifest arrives after a
- * different catalog or holding a different allocation. Components read
- * {@link getSnapshot} and subscribe with {@link subscribe} (both
- * `useSyncExternalStore`-shaped).
- *
- * Every document written to the store is compiled at once in the current
- * environment, and the compile's diagnostics, unresolved tiles -- recorded
- * under {@link BRAIN_TILE_UNRESOLVED} -- and the registration a good compile
- * would make are shown until the simulator extension's outcome for the same
- * source lands in a push reply; that outcome is then shown in their place.
- * An outcome that differs from the store's own compile of the same source --
- * in its diagnostics' codes, its unresolved tiles, or whether it produced a
- * program -- is logged under {@link MAKECODE_COMPILE_MISMATCH}, once per brain
- * per source hash. A document whose source text equals the source the store
- * holds for its brain changes nothing: it is not compiled, and no edit is
- * recorded.
- *
- * The environment binds the catalog's packs under the project's id
- * allocation, which the store adopts, as it is, from each manifest the sync
- * source publishes; the MakeCode side publishes one after every catalog. A
- * catalog arriving is held and builds nothing; the manifest that follows it
- * rebuilds the environment from the two. A manifest of a newer format leaves
- * every pack unbound, reported under its stable code after the catalog's
- * diagnostics. Whenever the environment is rebuilt, every brain is
- * recompiled in it for its diagnostics; nothing is pushed.
- *
- * The environment's asset literals follow the session's asset snapshot: a
- * literal per listed asset of a catalog asset type, and a literal per such
- * literal any brain source references, bound before the source is read or
- * compiled, so a brain compiles to the same program whether or not the
- * snapshot lists its assets. A snapshot arriving, renaming, redrawing,
- * adding, deleting or restoring an asset updates the literals in place: it
- * never rebuilds the environment, recompiles a brain, or pushes one.
- *
- * The environment's brain literals follow the held brains the same way: a
- * literal per held brain of a catalog brain type, and a literal per such
- * literal any brain source references, bound before the source is read or
- * compiled. Adding, renaming or removing a brain updates the literals in
- * place, and a brain naming a brain the store no longer holds is reported
- * under {@link BrainsViewState.unresolvedBrains}.
- *
- * Given a sync source, the store keeps its brains in step with the MakeCode
- * project over each makecode handshake, from the brains publications the
- * simulator extension makes. The handshake's first publication reconciles:
- * the store pulls every published brain it holds no copy of or whose copy's
- * source differs, adopts each pulled brain it holds no pending edit of,
- * drops each brain the project no longer holds that has no pending edit,
- * then pushes every pend and sends every creation asked for. Each later
- * publication refreshes the store the same way, pulling only the brains
- * holding no pending edit, and takes each published compiled source hash of
- * a source the store holds. A reconciliation whose pull fails is re-run over
- * the same handshake after each of {@link PUSH_RETRY_DELAYS_MS} in turn, and
- * then after the last of them again and again, while the session stays
- * connected and no later handshake has completed. A pulled source that is
- * not a brain document, or embeds another id, is listed in
- * {@link BrainsViewState.damaged} and never overwritten by itself, nor pulled
- * again while the project holds the same text.
- *
- * Once reconciled, each edit is pushed as it is made, carrying the brain's
- * source alone, and pending until the project answers it. A push awaits the
- * project's answer however long it takes, and fails only on a failure answer
- * or when its handshake ends. A failed push of a brain's latest edit is
- * retried, unless the brain is listed damaged, after each of
- * {@link PUSH_RETRY_DELAYS_MS} in turn and then after the last of them, again
- * and again, while the handshake it went out on stays reconciled and
- * connected; every pend is pushed when the next handshake has reconciled.
- *
- * {@link addBrain} asks the simulator extension to create a brain, which it
- * names and mints; the creation is pending until the store holds the
- * created brain. A creation is sent once a handshake has reconciled; a
- * failed one is retried as a failed push is, and one whose handshake ends
- * while it is in flight fails with `CLOSED`, the project's next publication
- * holding the brain if it was created.
+ * document id, each compiled for live diagnostics in an environment built
+ * from the followed session's catalog and the project's id manifest, its
+ * asset and brain literals following the session's asset snapshot and the
+ * held brains. Components read {@link getSnapshot} and subscribe with
+ * {@link subscribe} (both `useSyncExternalStore`-shaped). Given a sync
+ * source, it keeps its brains in step with the MakeCode project over each
+ * makecode handshake, and {@link addBrain} asks the project to create one.
+ * docs/session-management.md holds the rules: "The editor webapp on this
+ * object" and "Brain sync".
  */
 export class BrainsStore {
   private readonly _session: BrainsSessionSource;

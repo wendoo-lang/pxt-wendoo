@@ -28,16 +28,12 @@ window.addEventListener("unhandledrejection", (event) => {
 
 /**
  * Renders the editor tab into `mount` over a session with the MakeCode
- * project carried by the ports MakeCode brokers: the session store over a
- * port-backed session, the brains store over it, the target theme and the
- * document title bound to it. Once listening, tells MakeCode the tab is
- * ready; every port MakeCode brokers from `parentOrigin` replaces the
- * session's port and sets the brains store's tab key, and each `create` or
- * `open` action and each brain open the session delivers becomes a request
- * of the editor's requests, provided to the views. The page being hidden for
- * good flushes every open brain editor's unflushed edit and stops the session.
- * With no valid `parentOrigin`, logs {@link TAB_PARENT_ORIGIN_INVALID} and
- * hears nothing from MakeCode.
+ * project carried by the ports MakeCode brokers from `parentOrigin`, with
+ * the session store, the brains store, the open editings and the editor's
+ * requests provided to the views. With no valid `parentOrigin`, logs
+ * {@link TAB_PARENT_ORIGIN_INVALID} and hears nothing from MakeCode. The boot,
+ * the tab actions and the close path are in docs/session-management.md,
+ * "The editor tab's in-page session".
  */
 function mountEditorTab(mount: HTMLElement, parentOrigin: string | undefined): void {
   const session = createMakeCodePortEditorSession();

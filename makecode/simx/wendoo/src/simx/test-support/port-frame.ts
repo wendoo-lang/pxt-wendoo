@@ -1,5 +1,9 @@
 import type { MakeCodeMessagePort } from "@wendoo/makecode-session";
-import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorPortMessage } from "../../vendor/simxeditor.js";
+import {
+  SIMXEDITOR_PORT_MESSAGE_TYPE,
+  type SimxEditorPortMessage,
+  type SimxEditorTab,
+} from "../../vendor/simxeditor.js";
 import type { EditorTabOpener } from "../editor-tab.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL } from "../sim-channel.js";
 import type { SimxPortFrame, SimxPortFrameEvent } from "../simx-bridge.js";
@@ -84,14 +88,53 @@ export class FakePortFrame implements SimxPortFrame {
 /**
  * The editor tab opener of a simulator extension frame, played by a spec in
  * place of MakeCode: it records the key of every tab it is asked to show, in
- * order, and acknowledges each at once.
+ * order, answering each at once unless {@link holdingOpens}, and holds every
+ * tabs request until the spec answers it with {@link answerTabs} or lists the
+ * tabs with {@link listTabs}, after which each request is answered at once.
  */
-export class FakeTabOpener implements Pick<EditorTabOpener, "open"> {
+export class FakeTabOpener implements Pick<EditorTabOpener, "open" | "tabs"> {
   /** The key of every tab asked to show, `undefined` for the frame's own. */
   readonly opened: (string | undefined)[] = [];
+  /** Whether each open request from now on answered at once is refused rather than acknowledged. */
+  refusing = false;
+  /** Whether each open request from now on waits for {@link answerOpen}. */
+  holdingOpens = false;
+  /** How many tabs requests were posted. */
+  tabsAsked = 0;
+  private _listed: readonly SimxEditorTab[] | undefined;
+  private readonly _unansweredTabs: ((tabs: SimxEditorTab[]) => void)[] = [];
+  private readonly _unansweredOpens: ((opened: boolean) => void)[] = [];
 
-  open(key?: string): Promise<void> {
+  open(key?: string): Promise<boolean> {
     this.opened.push(key);
-    return Promise.resolve();
+    if (!this.holdingOpens) return Promise.resolve(!this.refusing);
+    return new Promise((resolve) => {
+      this._unansweredOpens.push(resolve);
+    });
+  }
+
+  tabs(): Promise<SimxEditorTab[]> {
+    this.tabsAsked += 1;
+    const listed = this._listed;
+    if (listed !== undefined) return Promise.resolve([...listed]);
+    return new Promise((resolve) => {
+      this._unansweredTabs.push(resolve);
+    });
+  }
+
+  /** MakeCode answering the oldest open request still unanswered: acknowledged when `acknowledged`, else refused. */
+  answerOpen(acknowledged: boolean): void {
+    this._unansweredOpens.shift()?.(acknowledged);
+  }
+
+  /** MakeCode answering every tabs request still unanswered with `tabs`, holding later ones. */
+  answerTabs(tabs: readonly SimxEditorTab[]): void {
+    for (const answer of this._unansweredTabs.splice(0)) answer([...tabs]);
+  }
+
+  /** MakeCode listing `tabs` from now on, answering every tabs request still unanswered with them. */
+  listTabs(tabs: readonly SimxEditorTab[]): void {
+    this._listed = tabs;
+    this.answerTabs(tabs);
   }
 }

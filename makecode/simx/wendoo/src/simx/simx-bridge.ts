@@ -10,7 +10,7 @@ import type {
 } from "@wendoo/makecode-session";
 import { connectMakeCodeSession, messagePortSessionPort } from "@wendoo/makecode-session";
 import { SIMXEDITOR_PORT_MESSAGE_TYPE, type SimxEditorTab } from "../vendor/simxeditor.js";
-import { BrainsProject } from "./brains-project.js";
+import { BrainsProject, BrainsProjectProblemCode, brainSourceFile } from "./brains-project.js";
 import { enrichCatalogIcons } from "./catalog-icons.js";
 import type { EditorTabOpener } from "./editor-tab.js";
 import { IDS_MODULE_FILE } from "./ids-module.js";
@@ -61,8 +61,9 @@ export interface SimxServingOptions {
    * request the asset provider fails, the code of every image or icon
    * that cannot be rendered in full, the code of a catalog whose target
    * has no icon palette, the code of every ids module and brains module
-   * problem, the code of every brains push or open refused, and the code
-   * of every failed read, write or subscription of the project's files.
+   * problem, the code of every brains push or open refused, the code of
+   * every brain open held for a tab and dropped, and the code of every
+   * failed read, write or subscription of the project's files.
    */
   log: SimxLog;
   /** Timings of the watch of `files`' change notifications; each left out takes its default. */
@@ -103,18 +104,16 @@ export interface SimxPortBridgeOptions extends SimxServingOptions {
    * ignored.
    */
   parentOrigin: string;
+  /** Asks MakeCode which editor tabs talk to this frame, and shows the origin tab a brain is opened in. */
+  opener: Pick<EditorTabOpener, "open" | "tabs">;
+  /** The simulator extension API level MakeCode serves, from the frame URL's `apiLevel`; tabs are asked for at 2 or above. */
+  apiLevel: number;
+  /** Receives each tabs reply MakeCode sends, in order: the tabs that talk to this frame. */
+  onTabs(tabs: readonly SimxEditorTab[]): void;
 }
 
 /** A running simulator extension port bridge. */
 export interface SimxPortBridge {
-  /**
-   * Take `tabs`, the editor tabs MakeCode lists as talking to this frame, as
-   * the source of each brain's origin label, republishing the brains to
-   * every session when a label changes.
-   *
-   * @param tabs - The tabs MakeCode lists, each with its key and label.
-   */
-  setTabs(tabs: readonly SimxEditorTab[]): void;
   /** Stop listening for ports and to the program, ending every tab's session. */
   dispose(): void;
 }
@@ -131,14 +130,38 @@ function logRejection(log: SimxLog, rejection: PeerSessionErrorCode): void {
   log.error(`${rejection}: the editor speaks a newer makecode protocol; reload the page to update Wendoo.`);
 }
 
+/** What a {@link CounterpartSession} publishes to its counterpart, reads its requests with, and reports its handshake to. */
+interface CounterpartSessionOptions {
+  /** The transport to the counterpart. */
+  readonly port: MakeCodeSessionPort;
+  /** Id of the MakeCode target to declare in this side's hello, if known. */
+  readonly target: string | undefined;
+  /** The latest catalog the program posted, as published, if any. */
+  latestCatalog(): string | undefined;
+  /** Resolves with the project's current id manifest. */
+  currentManifest(): Promise<MakeCodeManifestReading>;
+  /** The latest asset snapshot, if any. */
+  latestAssets(): readonly MakeCodeAsset[] | undefined;
+  /** The project's latest name, if known. */
+  latestName(): string | undefined;
+  /** Resolves once the project's brains are read. */
+  brainsRead(): Promise<unknown>;
+  /** The project's latest brains. */
+  latestBrains(): readonly MakeCodeBrainSummary[];
+  /** Takes the brain held for the tab to open, if any, so no later session receives it. */
+  takeHeldOpen(): string | undefined;
+  /** Answers each brains request the counterpart sends once the first publications are out. */
+  serve(request: MakeCodeBrainsRequest): void;
+  /** Called once the counterpart's hello is read: with `undefined` when established, else with `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER`. */
+  settled(rejection: PeerSessionErrorCode | undefined): void;
+}
+
 /**
- * The makecode session with one editor tab, the counterpart, over one port.
- * It sends this side's hello at once. Once the counterpart's hello
- * establishes it and the project's current id manifest and brains are read,
- * it publishes the latest catalog, then that manifest, then the latest asset
- * snapshot, then the project's latest name as its project info, then the
- * project's latest brains, and from then on publishes what it is given and
- * answers the counterpart's brains requests.
+ * The makecode session with one editor tab, the counterpart, over
+ * `options.port`. It sends this side's hello at once; once established and
+ * the project read, it publishes what `options` gives in the order the simx
+ * bullet of docs/session-management.md, "Who plays which role", sets out.
+ * Each publish method delivers nothing before those first publications.
  */
 class CounterpartSession {
   private readonly _unsubscribes = new Set<() => void>();
@@ -147,37 +170,8 @@ class CounterpartSession {
   private _publishing = false;
   private _closed = false;
 
-  /**
-   * @param peer - The key the counterpart's session is held under: its tab's, or the frame's own channel when the port names none.
-   * @param port - The transport to the counterpart.
-   * @param target - Id of the MakeCode target to declare in this side's hello, if known.
-   * @param latestCatalog - The latest catalog the program posted, as published, if any.
-   * @param currentManifest - Resolves with the project's current id manifest.
-   * @param latestAssets - The latest asset snapshot, if any.
-   * @param latestName - The project's latest name, if known.
-   * @param brainsRead - Resolves once the project's brains are read.
-   * @param latestBrains - The project's latest brains.
-   * @param takeHeldOpen - Takes the brain held for the tab to open, if any, so no later session receives it.
-   * @param serve - Answers each brains request the counterpart sends once the first publications are out.
-   * @param settled - Called once the counterpart's hello is read: with
-   *   `undefined` when the session is established, or with
-   *   `PeerSessionErrorCode.PROTOCOL_VERSION_NEWER` when the hello declared a
-   *   newer version and no session was established.
-   */
-  constructor(
-    readonly peer: string,
-    port: MakeCodeSessionPort,
-    target: string | undefined,
-    latestCatalog: () => string | undefined,
-    currentManifest: () => Promise<MakeCodeManifestReading>,
-    latestAssets: () => readonly MakeCodeAsset[] | undefined,
-    latestName: () => string | undefined,
-    brainsRead: () => Promise<unknown>,
-    latestBrains: () => readonly MakeCodeBrainSummary[],
-    takeHeldOpen: () => string | undefined,
-    serve: (request: MakeCodeBrainsRequest) => void,
-    settled: (rejection: PeerSessionErrorCode | undefined) => void
-  ) {
+  constructor(options: CounterpartSessionOptions) {
+    const { port } = options;
     const tracked: MakeCodeSessionPort = {
       postMessage(message) {
         port.postMessage(message);
@@ -191,35 +185,37 @@ class CounterpartSession {
         };
       },
     };
-    connectMakeCodeSession({ port: tracked, target }).then(
+    connectMakeCodeSession({ port: tracked, target: options.target }).then(
       (session) => {
         this._session = session;
-        settled(undefined);
-        void Promise.all([currentManifest(), brainsRead()]).then(([reading]) => {
+        options.settled(undefined);
+        void Promise.all([options.currentManifest(), options.brainsRead()]).then(([reading]) => {
           if (this._closed) return;
-          const catalog = latestCatalog();
+          const catalog = options.latestCatalog();
           if (catalog !== undefined) {
             session.publishCatalog(catalog);
           }
           session.publishManifest(reading);
-          const snapshot = latestAssets();
+          const snapshot = options.latestAssets();
           if (snapshot !== undefined) {
             session.publishAssets(snapshot);
           }
-          const name = latestName();
+          const name = options.latestName();
           if (name !== undefined) {
             session.publishProjectInfo({ name });
           }
-          session.publishBrains(latestBrains());
-          const held = takeHeldOpen();
+          session.publishBrains(options.latestBrains());
+          const held = options.takeHeldOpen();
           if (held !== undefined) session.publishBrainOpen(held);
           this._publishing = true;
-          session.onBrainsRequest(serve);
+          session.onBrainsRequest((request) => {
+            options.serve(request);
+          });
         });
       },
       () => {
         // No session over this port.
-        settled(PeerSessionErrorCode.PROTOCOL_VERSION_NEWER);
+        options.settled(PeerSessionErrorCode.PROTOCOL_VERSION_NEWER);
       }
     );
   }
@@ -294,15 +290,14 @@ interface ProjectServer {
 
 /**
  * Serve the MakeCode project beside this simulator extension to every
- * attached counterpart session, one per editor tab. The project's brains and
- * id manifest are read from `files`, allocated, compiled and written here
- * alone, re-read when MakeCode reports a change, and recompiled whenever the
- * catalog, the manifest or the asset snapshot changes. Each session receives
- * the catalog, the manifest, the asset snapshot, the project's name and the
- * brains once established and again as each changes; compiles that change a
- * program are posted to the running program at once, and a brain a tab asks
- * to open is opened in its origin's tab through `options.opener`. The
- * protocol and the ordering rules are in docs/session-management.md.
+ * attached counterpart session, one per editor tab: the project's brains and
+ * id manifest are read from `options.files`, allocated, compiled and written
+ * here alone, each session receives the catalog, the manifest, the assets,
+ * the name and the brains, compiles reach the running program at once, and
+ * a brain a tab asks to open is shown in its origin's tab through
+ * `options.opener`. docs/session-management.md holds the protocol and its
+ * ordering: "Who plays which role", "The id manifest" and "The simx write
+ * path".
  */
 function startProjectServer(options: SimxServingOptions): ProjectServer {
   const { log } = options;
@@ -340,8 +335,8 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
   let catalogCount = 0;
   // the session of each editor tab, by the tab's key
   const counterparts = new Map<string, CounterpartSession>();
-  // the brain each tab is to open once its session's first publications are out, by the tab's key
-  const heldOpens = new Map<string, string>();
+  // the brain each tab is to open once its session's first publications are out, by the tab's key; each hold is a fresh object, so a refusal drops only the hold its own open made
+  const heldOpens = new Map<string, { readonly id: string }>();
 
   const channelUnsubscribes = [
     channel.onCatalog((posted) => {
@@ -370,10 +365,18 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
       for (const counterpart of counterparts.values()) counterpart.publishBrains(summaries);
     }),
     brains.onOpen(({ id, origin, peer }) => {
-      if (origin !== null) void options.opener.open(origin);
+      const shown = origin === null ? undefined : options.opener.open(origin);
       const key = origin ?? peer ?? ownChannel;
       if (counterparts.get(key)?.openBrain(id) === true) return;
-      heldOpens.set(key, id);
+      const held = { id };
+      heldOpens.set(key, held);
+      void shown?.then((opened) => {
+        if (opened || heldOpens.get(key) !== held) return;
+        heldOpens.delete(key);
+        log.error(
+          `${BrainsProjectProblemCode.OPEN_DROPPED}: MakeCode did not show the tab ${key}, so the open of ${brainSourceFile(id)} held for it is dropped.`
+        );
+      });
     }),
     projectAssets.onName((name) => {
       for (const counterpart of counterparts.values()) counterpart.publishName(name);
@@ -390,26 +393,25 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
     attach(key, port, settled) {
       const sessionKey = key ?? ownChannel;
       counterparts.get(sessionKey)?.close();
-      const counterpart = new CounterpartSession(
-        sessionKey,
+      const counterpart = new CounterpartSession({
         port,
-        options.target,
-        () => publishedCatalog,
-        () => manifest.current(),
-        () => projectAssets.snapshot,
-        () => projectAssets.name,
-        () => brains.current(),
-        () => brains.summaries(),
-        () => {
+        target: options.target,
+        latestCatalog: () => publishedCatalog,
+        currentManifest: () => manifest.current(),
+        latestAssets: () => projectAssets.snapshot,
+        latestName: () => projectAssets.name,
+        brainsRead: () => brains.current(),
+        latestBrains: () => brains.summaries(),
+        takeHeldOpen: () => {
           const held = heldOpens.get(sessionKey);
           heldOpens.delete(sessionKey);
-          return held;
+          return held?.id;
         },
-        (request) => {
+        serve: (request) => {
           serveBrains(key, request);
         },
-        settled
-      );
+        settled,
+      });
       counterparts.set(sessionKey, counterpart);
     },
     setTabs(tabs) {
@@ -435,16 +437,36 @@ function startProjectServer(options: SimxServingOptions): ProjectServer {
  * Join the MakeCode program beside this simulator extension to the editor in
  * each MakeCode editor tab that talks to this frame: each `simxeditorport`
  * message from `parentOrigin` opens a makecode session for the tab its `peer`
- * names (the frame's own `channel` when it names none), replacing that tab's
- * previous session, and declares `target` in the hello when one is given.
- * The project is served to every session as {@link startProjectServer}
- * describes, a session whose port names no tab stamping no brain origin; the
- * program's messages are read on `channel`. An editor hello declaring a newer
- * makecode protocol is logged by its code and not served.
+ * names, the frame's own `channel` when it names none, replacing that tab's
+ * previous one, and the project is served to every session as
+ * {@link startProjectServer} describes. At `apiLevel` 2 or above it asks
+ * `opener` for the tabs at start and again for a port naming a tab the
+ * latest reply does not list, one request at a time, handing each reply to
+ * `onTabs`. The rules are in docs/session-management.md, OPEN EDITOR under
+ * "The brand strip".
  */
 export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBridge {
-  const { frame, parentOrigin, log } = options;
+  const { frame, parentOrigin, log, opener } = options;
   const server = startProjectServer(options);
+  const asksTabs = options.apiLevel >= 2;
+  // the key of each tab MakeCode listed in its latest tabs reply
+  let listed: ReadonlySet<string> = new Set();
+  // whether a tabs request is out; one is out at a time
+  let asking = false;
+  // the unlisted keys of the tabs that attached while a request was out
+  const attachedMeanwhile = new Set<string>();
+  const askTabs = (): void => {
+    asking = true;
+    void opener.tabs().then((tabs) => {
+      asking = false;
+      listed = new Set(tabs.map((tab) => tab.key));
+      server.setTabs(tabs);
+      options.onTabs(tabs);
+      const stillUnlisted = [...attachedMeanwhile].some((key) => !listed.has(key));
+      attachedMeanwhile.clear();
+      if (stillUnlisted) askTabs();
+    });
+  };
   const settled = (rejection: PeerSessionErrorCode | undefined): void => {
     if (rejection !== undefined) logRejection(log, rejection);
   };
@@ -456,13 +478,14 @@ export function startSimxPortBridge(options: SimxPortBridgeOptions): SimxPortBri
     if (port === undefined) return;
     const named = typeof message.peer === "string" ? message.peer : null;
     server.attach(named, messagePortSessionPort(port), settled);
+    if (!asksTabs || named === null || listed.has(named)) return;
+    if (asking) attachedMeanwhile.add(named);
+    else askTabs();
   };
   frame.addEventListener("message", receive);
+  if (asksTabs) askTabs();
 
   return {
-    setTabs(tabs) {
-      server.setTabs(tabs);
-    },
     dispose() {
       frame.removeEventListener("message", receive);
       server.dispose();

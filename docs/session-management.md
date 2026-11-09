@@ -4,7 +4,7 @@ status: Accepted
 # Active status:   Draft -> Review -> Accepted -> Committed -> In-Progress -> Shipped
 # Terminal status: Rejected | Withdrawn | Superseded (set superseded-by)
 created: 2026-09-25
-updated: 2026-10-11
+updated: 2026-11-09
 ---
 
 # Session Management in pxt-wendoo
@@ -107,8 +107,10 @@ frames -- assigns the session parts as follows.
   editor -- then the project's id manifest (see "The manifest
   publication", below), then the project's asset snapshot (see "The
   assets publication", below), then the project's name as its project
-  info, and answers the editor's brains requests from the project's
-  files (see "The simx write path", below). It is the project's single
+  info, then the project's brain summaries, then the brain open held for
+  that peer, if any (see `makecode:brainsOpen`, below), and from then on
+  answers the editor's brains requests from the project's files (see
+  "The simx write path", below). It is the project's single
   id allocator and the only writer of its id manifest (see "The id
   manifest", below).
 - The VM EXTENSION (`makecode/extensions/vm`) is NOT a session
@@ -154,10 +156,26 @@ brains request-reply family. The editor-tab messages themselves
   offered no Wendoo tab.
 - BOOT: the simx starts its port bridge and renders the brand strip at
   once. The editor entry boots the tab alone: it reads `parentOrigin`
-  from its frame URL, posts `{ type: "simxeditor", event: "ready" }` to
-  `parentOrigin`, and takes each `simxeditorport` MakeCode then posts
-  from that origin. A URL naming no valid `parentOrigin` is logged as
-  `TAB_PARENT_ORIGIN_INVALID`, and the editor hears nothing.
+  from its frame URL, creates its session object and the stores over it,
+  binds the target theme and the document title -- naming the project
+  while its name is known -- to the session store, starts the session,
+  posts `{ type: "simxeditor", event: "ready" }` to `parentOrigin` once it
+  listens, and takes each `simxeditorport` MakeCode then posts from that
+  origin: the port becomes the session's port, and the message's `key`
+  the brains store's tab key. A URL naming no valid `parentOrigin` is
+  logged as `TAB_PARENT_ORIGIN_INVALID`, and the editor hears nothing.
+- TAB ACTIONS: each `action` event MakeCode posts the tab -- `create`
+  from the tab's New entry, naming the type, and `open` from an
+  instance's Edit entry, naming the instance by its qualified name, such
+  as `wendooBrains.p_abcdabcdabcdabcd` -- and each `makecode:brainOpen`
+  the session delivers becomes a request of the tab's, logged at debug
+  level under `EDITOR_CREATE_REQUESTED` or `EDITOR_OPEN_REQUESTED`. A
+  request made before the brain list mounts is held, the latest only,
+  and answered once it mounts. A create request closes the brain editor,
+  flushing its edit, and opens the add dialog; an open request opens the
+  brain it names (see FOREIGN-ORIGIN ROW, below, for one arriving before
+  the store has reconciled), and one naming no brain the store holds is
+  logged under `EDITOR_OPEN_UNKNOWN_BRAIN`.
 - THE BROKERED RECONNECTION: MakeCode posts a new port pair whenever the
   tab becomes ready while the simx frame is loaded and whenever a simx
   frame finishes loading while the tab is ready. Each new port replaces
@@ -175,7 +193,9 @@ brains request-reply family. The editor-tab messages themselves
   replaces only its own peer's session. Every session receives every
   publication but a brain open, which goes to one session (see
   `makecode:brainsOpen`, above), and all of them are served from the one
-  project.
+  project. On MakeCode at API level 2 or above the frame asks MakeCode
+  for the tabs that talk to it when it starts and again for a tab its
+  latest reply does not list (see OPEN EDITOR, under "The brand strip").
 - ORIGIN: every brain carries the registration key of the tab that
   created it, the peer key of the session its create arrived on, never
   taken from a brains request's payload: recorded at creation, with `brains.g.ts` its
@@ -199,7 +219,8 @@ brains request-reply family. The editor-tab messages themselves
 - CLOSE PATH: when the page is hidden for good (`pagehide`), which is
   how a tab frame learns its project is closing, the editor flushes every
   open brain editor's unflushed edit at once, so the push leaves before
-  the frame goes. MakeCode posts no message before removing the frame.
+  the frame goes, then stops its session. MakeCode posts no message
+  before removing the frame.
 
 ## The target declaration
 
@@ -305,7 +326,10 @@ editor sends source, and the serving party compiles.
   requesting session, and no tab is shown. A publication for a key whose
   session is not established yet is held until that session's first
   publications are out, then delivered once, a later open for the same
-  key replacing a held one.
+  key replacing a held one. When MakeCode refuses to show the origin's
+  tab, the open held for that key, if it is still the one this open
+  held, is dropped and logged under `BRAINS_PROJECT_OPEN_DROPPED`, so the
+  tab's next session opens nothing.
 - `makecode:brainOpen` (project -> editor) carries `{ id }`: asks the
   editor of the session it arrives on to open the brain `id`. The kind's
   session publishes with `publishBrainOpen` and delivers with
@@ -448,8 +472,8 @@ from them (`BrainsProject`, `makecode/simx/wendoo/src/simx/brains-project.ts`,
 over `BrainEngine` in `brain-engine.ts`). The project's files are the
 only durable state: the simx reads every brain source and the brains
 module when its frame starts, and reads again each one MakeCode reports
-changed, and everything it holds in memory -- each brain's name, source
-and source hash, and the registrations the module holds -- is derived
+changed, and everything it holds in memory -- each brain's name, source,
+source hash and origin, and the registrations the module holds -- is derived
 from them and updated as its writes land, so a simx started afresh
 serves exactly what the last one wrote.
 
@@ -604,10 +628,11 @@ serves exactly what the last one wrote.
   a module holding anything but the registrations of the brains the
   project holds (orphans of deleted sources, an unreadable or superseded
   text) is rewritten from them, once. A rebuild heals the same way. A
-  pack brain heals once a catalog binding its pack arrives. A heal's
-  module write that MakeCode refuses is retried after a wait doubling
-  from 500 ms up to 30 s, for as long as it takes, unless the refusal is
-  one no retry can overcome.
+  pack brain heals once a catalog binding its pack arrives. A module
+  write carrying recompiled registrations -- a heal's or a rebuild's --
+  that MakeCode refuses is retried after a wait doubling from 500 ms up
+  to 30 s, for as long as it takes, unless the refusal is one no retry
+  can overcome.
 - PUBLICATION: once a drain lands anything, and once a re-read of the
   project's brain files changes what the simx holds, the simx publishes
   the project's brain summaries into every session (`makecode:brains`),
@@ -663,7 +688,8 @@ serves exactly what the last one wrote.
   one in the console; when the frame is torn down, its pending
   requests end with `DISPOSED`, their outcome unknown, and recovery
   falls to the editor's pend and the next handshake. A read of the
-  project at start that MakeCode fails is retried after a wait doubling
+  project at start that MakeCode fails is logged by its projfs code and
+  retried after a wait doubling
   from 500 ms up to 30 s, for as long as it takes; a refusal no retry
   can overcome (`PERMISSION_DENIED`, `UNREGISTERED`, `INVALID_NAME`,
   `INVALID_REQUEST`) is logged once, and no session is then served.
@@ -698,8 +724,11 @@ serves exactly what the last one wrote.
   brain, and the module is rewritten without it; a new source is added.
   A refused subscription is asked again after a wait doubling from 500 ms
   up to 30 s, every brain file and `ids.g.ts` being read again once it is
-  acknowledged; a refusal no retry can overcome is logged once. A failed
-  re-read is retried at the same waits.
+  acknowledged; a refusal no retry can overcome is logged once. Each
+  re-read runs as a step of its own between drains, never while a drain
+  writes. A failed re-read is logged by its projfs code and retried at
+  the same waits, and one refused
+  in a way no retry can overcome is logged once and dropped.
 
 ## The id manifest
 
@@ -852,8 +881,9 @@ MakeCode brokers ports, and nothing in it keys on a session id.
   current one: the current handshake ends and stops reading its port,
   and while the session is started a new handshake opens over the new
   port at once. A port carries one handshake.
-- Catalogs, id manifests, asset snapshots and project info arrive as
-  events from the current handshake only.
+- Catalogs, id manifests, asset snapshots, project info, brains
+  publications, brain opens and the brains channel arrive as events from
+  the current handshake only.
 - The one ERROR CODE is `PEER_SESSION_PROTOCOL_VERSION_NEWER`, for a
   counterpart hello declaring a newer version. It holds until a later
   handshake completes, or until `start()` starts the session again after
@@ -930,6 +960,23 @@ it always shows the session view.
   literal, a renamed one relabels it (sentence word included), a
   redrawn one changes its face alone, a deleted one turns unresolved, and
   one restored under the same id resolves again.
+- BRAIN LITERALS: for each catalog type the catalog marks `brain`, the
+  store's environment holds one literal tile per brain the store holds,
+  minted through the upstream literal builder: its value the type's
+  struct naming the brain's document id, its tile id following from type
+  and id alone, its label the brain's name, its document id while the
+  name is empty; a literal minted while the store does not hold its
+  brain reads its document id, and a removed brain's literal keeps its
+  last label. The environment also binds
+  every brain literal a brain source references, before that source is
+  read or compiled, whether or not the store holds the brain; such a
+  literal is UNRESOLVED while the store does not hold its brain, and is
+  never offered. Adding, renaming or removing a brain updates the
+  literals in place and never rebuilds the environment or recompiles a
+  brain. A brain placing an unresolved brain literal is reported in the
+  store's `unresolvedBrains` under `BRAIN_REFERENCE_UNRESOLVED`; it
+  informs and never blocks: the brain compiles to the same program as
+  while the brain it names was held.
 - The TILE VISUAL PROVIDER is the editor's one function resolving any
   tile to how it shows, wired into the brain editor's `resolveTileVisual`:
   a resolved asset literal shows its asset's name and its `previewUrl`
@@ -1063,8 +1110,9 @@ it always shows the session view.
   `data-token`: `CATALOG_UNREADABLE` for catalog text it cannot read
   (brains keep the built-in tiles); `CATALOG_PACK_UNBOUND` per pack while
   the store holds no id allocation (until the simx frame publishes a
-  manifest); `MAKECODE_MANIFEST_FORMAT_NEWER` while the manifest the simx
-  frame publishes is of a newer format; and one line per catalog entry no tile can be made
+  manifest); `MAKECODE_MANIFEST_FORMAT_NEWER`, after every other line,
+  while the manifest the simx frame publishes is of a newer format, every
+  pack then unbound; and one line per catalog entry no tile can be made
   of -- a token the catalog grammar does not have
   (`CATALOG_TILE_KIND_UNKNOWN`, `CATALOG_CALL_SPEC_KIND_UNKNOWN`,
   `CATALOG_ON_EXCEED_UNKNOWN`), a tile whose registration declared no
@@ -1168,7 +1216,9 @@ and refreshes from every later publication:
   a brain is edited: its diagnostics, its unresolved tiles
   (`BRAIN_TILE_UNRESOLVED`), and the `compiledSourceHash` the convergence
   rule predicts -- the source's own hash for a good compile, the last
-  registration's otherwise. When a push reply carries the engine's
+  registration's otherwise. A document written whose source text equals
+  the source the store holds for its brain changes nothing: it is not
+  compiled, and no edit is recorded. When a push reply carries the engine's
   outcome for the brain's current source, the store shows it instead:
   its diagnostics, its unresolved tiles, and its `compiled` hash. An
   outcome that differs from the store's own compile of the same source
@@ -1225,15 +1275,22 @@ strip stores nothing.
   label; choosing one opens that tab, and the select returns to its first
   option. A tab's icon URL, when MakeCode gives one, is carried with the
   tab and shown nowhere.
-- OPEN EDITOR: at boot, on MakeCode at API level 2 or above, the simx
-  asks MakeCode once which tabs talk to its frame
-  (`{ type: "simxeditor", subtype: "tabs", id }`), each listed by its
-  key, its label and, when it has an SVG icon, its icon URL; the reply
-  gives the strip its control, and gives the brains project the label of
-  each origin key, the brains republished into every session when the
-  reply arrives. A refusal is logged by its code and lists
-  none, and on a MakeCode below API level 2 the simx asks nothing, so the
-  strip keeps the logotype alone. The control opens the tab it names,
+- OPEN EDITOR: on MakeCode at API level 2 or above, the simx's port
+  bridge asks MakeCode which tabs talk to its frame
+  (`{ type: "simxeditor", subtype: "tabs", id }`) when it starts, and
+  again when a port arrives naming a tab the latest reply does not list,
+  none for a listed tab or a port naming none. It sends one request at a
+  time; a tab attaching while one is out is covered by the next: once the
+  reply lands, exactly one more is sent if any tab that attached
+  meanwhile is still unlisted. Each tab is listed by its key, its label
+  and, when it has an SVG icon, its icon URL. Each reply gives the strip
+  its control, and gives the brains
+  project the label of each origin key, the brains republished into
+  every session when a reply lists other tabs or other labels than the
+  one before, once the project's brains are read. A refusal is logged by
+  its code and lists none, and on a MakeCode below API level 2 the simx
+  asks nothing, so the strip keeps the logotype alone. The control opens
+  the tab it names,
   posting `{ type: "simxeditor", subtype: "open", id, key }` with that
   tab's key; the simx's answer to a `makecode:brainsOpen` posts the
   same request for the brain's origin key. A refusal is logged

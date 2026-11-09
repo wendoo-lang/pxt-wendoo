@@ -20,14 +20,7 @@ import { mkAccessorTileId, RuleSide } from "@wendoo/core/brain";
 import type { BrainDef, BrainPageDef, BrainRuleDef } from "@wendoo/core/brain/model";
 import { BrainCommandHistory } from "@wendoo/core/brain/model";
 import { mkTypeId, NativeType } from "@wendoo/core/runtime";
-import type {
-  MakeCodeBrainSummary,
-  MakeCodeBrainsChannel,
-  MakeCodeManifestReading,
-  MakeCodeWireBrain,
-  MakeCodeWireBrainPush,
-  MakeCodeWireCompileOutcome,
-} from "@wendoo/makecode-session";
+import type { MakeCodeBrainSummary, MakeCodeBrainsChannel, MakeCodeManifestReading } from "@wendoo/makecode-session";
 import type { BrainEditorConfig } from "@wendoo/ui";
 import { BrainEditorProvider, BrainRuleEditor, BrainTile } from "@wendoo/ui";
 import { type ArmedTargetController, ArmedTargetProvider } from "@wendoo/ui/brain-editor/ArmedTargetContext";
@@ -39,7 +32,7 @@ import { allocateIds, emptyIdManifest } from "../../authoring/id-allocation.js";
 import type { BrainsSessionState } from "../services/brains-store.js";
 import { BrainsStore } from "../services/brains-store.js";
 import { catalogTile } from "../test-support/asset-catalog.js";
-import { FrameProject } from "../test-support/frame-project.js";
+import { FakeBrainsChannel, FrameProject } from "../test-support/frame-project.js";
 import { seedBrain } from "../test-support/seed-brain.js";
 import { openBrainEditing } from "./editing.js";
 import { buildBrainEditorConfig } from "./editor-config.js";
@@ -134,39 +127,6 @@ class FakeSessionSource {
   }
 }
 
-/**
- * One handshake's brains channel over `project`, standing in for the frame:
- * it answers every request at once, each push with the frame's compile
- * outcome or `null` for a removal, and creates nothing.
- */
-class ProjectChannel implements MakeCodeBrainsChannel {
-  constructor(private readonly project: FrameProject) {}
-
-  listBrains(): Promise<MakeCodeBrainSummary[]> {
-    return Promise.resolve(this.project.summaries());
-  }
-
-  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
-    return Promise.resolve(ids.flatMap((id) => this.project.get(id) ?? []));
-  }
-
-  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
-    if (push.op === "remove") {
-      this.project.remove(push.brainId);
-      return Promise.resolve(null);
-    }
-    return Promise.resolve(this.project.write(push.brain.id, push.brain.name, push.brain.source));
-  }
-
-  createBrain(): Promise<MakeCodeBrainSummary> {
-    return Promise.reject(new Error("no brain is created over this channel"));
-  }
-
-  openBrain(): Promise<void> {
-    return Promise.reject(new Error("no brain is opened over this channel"));
-  }
-}
-
 /** Waits until every queued answer and the work it starts has run. */
 function settle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -233,7 +193,7 @@ async function openEditor() {
   project.engine.adoptCatalog(paintCatalog("before"), {
     manifest: allocateIds(emptyIdManifest(), parseCatalog(paintCatalog("before"))),
   });
-  handshake(new ProjectChannel(project));
+  handshake(new FakeBrainsChannel(project));
   publish({ manifest: allocateIds(emptyIdManifest(), parseCatalog(paintCatalog("before"))) });
   brains([]);
   await settle();

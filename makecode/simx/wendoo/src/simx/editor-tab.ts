@@ -27,10 +27,10 @@ export interface EditorTabOpener {
   /**
    * Post an open request to MakeCode for the tab keyed `key`, the key of one
    * of the tabs {@link tabs} lists, or for the frame's own tab when `key` is
-   * omitted. Resolves once MakeCode replies: on an acknowledgment, and on a
-   * refusal, whose code is logged.
+   * omitted. Resolves once MakeCode replies: with `true` on an
+   * acknowledgment, and with `false` on a refusal, whose code is logged.
    */
-  open(key?: string): Promise<void>;
+  open(key?: string): Promise<boolean>;
   /** Stop hearing replies; a request still unanswered stays unresolved. */
   dispose(): void;
 }
@@ -81,12 +81,12 @@ export function connectEditorTabOpener(frame: EditorTabFrame, parentOrigin: stri
     open(key) {
       const request: SimxEditorOpenRequest = { type: SIMXEDITOR_MESSAGE_TYPE, subtype: "open", id: nextId() };
       if (key !== undefined) request.key = key;
-      return new Promise<void>((resolve) => {
+      return new Promise<boolean>((resolve) => {
         post(request, (reply) => {
           if (reply.subtype === "error") {
             log.error(`${reply.code}: MakeCode did not open the Wendoo editor tab.`);
           }
-          resolve();
+          resolve(reply.subtype !== "error");
         });
       });
     },

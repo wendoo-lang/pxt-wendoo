@@ -22,7 +22,9 @@ import {
 import { buildAuthoringEnvironment } from "../authoring/authoring-environment.js";
 import { serializeBrainSource } from "../authoring/brain-source.js";
 import type { ProjfsClient } from "../vendor/projfs.js";
+import type { SimxEditorTab } from "../vendor/simxeditor.js";
 import { BRAINS_MODULE_FILE, readBrainsModule } from "./brains-module.js";
+import { BrainsProjectProblemCode } from "./brains-project.js";
 import { IDS_MODULE_FILE, readIdsModule, writeIdsModule } from "./ids-module.js";
 import { decodeImageHex } from "./image-buffer.js";
 import { SIM_CHANNEL_VERSION, SIMX_CHANNEL, SimChannelErrorCode } from "./sim-channel.js";
@@ -55,6 +57,9 @@ const CATALOG_TEXT =
 
 /** The key of an editor tab whose registration names this simulator extension's frame as its own. */
 const DESIGNER_TAB = "owner/repo-designer";
+
+/** The key of a second editor tab whose registration names this simulator extension's frame. */
+const PAINTER_TAB = "owner/repo-painter";
 
 /** The key of the arcade front door, whose registration carries the Wendoo editor tab. */
 const ARCADE_TAB = "wendoo-lang/pxt-wendoo/makecode/extensions/arcade";
@@ -185,6 +190,7 @@ describe("simx port bridge", () => {
   let clients: ProjfsClient[];
   let bridges: SimxPortBridge[];
   let openers: FakeTabOpener[];
+  let tabReplies: SimxEditorTab[][];
   let channels: MessageChannel[];
   let sessions: MakeCodeSession[];
   let errors: string[];
@@ -195,6 +201,7 @@ describe("simx port bridge", () => {
     clients = [];
     bridges = [];
     openers = [];
+    tabReplies = [];
     channels = [];
     sessions = [];
     errors = [];
@@ -212,10 +219,11 @@ describe("simx port bridge", () => {
 
   /**
    * Starts the port bridge in a fresh frame over the spec's project and asset
-   * provider, with a fresh tab opener, declaring the arcade target and
+   * provider, with a fresh tab opener, at simulator extension API level
+   * `apiLevel`, declaring the arcade target, recording each tabs reply, and
    * reading the program's messages on `channel` when one is given.
    */
-  function start(channel?: string): FakePortFrame {
+  function start(channel?: string, apiLevel = 2): FakePortFrame {
     const frame = new FakePortFrame();
     const opener = new FakeTabOpener();
     openers.push(opener);
@@ -238,9 +246,25 @@ describe("simx port bridge", () => {
         channel,
         fileWatchTimings: WATCH_TIMINGS,
         opener,
+        apiLevel,
+        onTabs: (tabs) => {
+          tabReplies.push([...tabs]);
+        },
       })
     );
     return frame;
+  }
+
+  /**
+   * MakeCode listing `tabs` to the latest frame started, answering its tabs
+   * requests with them from now on; resolves once the frame has taken the
+   * answers.
+   */
+  async function listTabs(tabs: SimxEditorTab[]): Promise<void> {
+    const opener = openers.at(-1);
+    assert.ok(opener);
+    opener.listTabs(tabs);
+    await quiet(0);
   }
 
   /** A new message channel, closed by the spec's cleanup. */
@@ -962,7 +986,7 @@ describe("simx port bridge", () => {
       );
       const seen = own.brains.length;
 
-      bridges[0].setTabs([
+      await listTabs([
         { key: ARCADE_TAB, label: "Wendoo" },
         { key: DESIGNER_TAB, label: "Designer" },
       ]);
@@ -976,6 +1000,87 @@ describe("simx port bridge", () => {
         [designed.id]: [DESIGNER_TAB, "Designer"],
       });
       assert.equal(brain.originLabel, null);
+    });
+
+    it("asks MakeCode for the tabs at start and again for a port naming a tab its reply did not list, never for a listed one, handing each reply on", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      await listTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
+      await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+      assert.equal(openers[0].tabsAsked, 1);
+
+      await listTabs([
+        { key: ARCADE_TAB, label: "Wendoo" },
+        { key: DESIGNER_TAB, label: "Designer" },
+      ]);
+      const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      designer.send({ type: "makecode:brainsCreate", id: "create-1", payload: { name: "Runner" } });
+      const { brain } = (await designer.nextMessage()).payload as { brain: MakeCodeBrainSummary };
+      await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+
+      assert.equal(openers[0].tabsAsked, 2);
+      assert.deepEqual([brain.origin, brain.originLabel], [DESIGNER_TAB, "Designer"]);
+      assert.deepEqual(
+        tabReplies.map((tabs) => tabs.map((tab) => tab.key)),
+        [[ARCADE_TAB], [ARCADE_TAB, DESIGNER_TAB]]
+      );
+    });
+
+    it("asks MakeCode for no tabs below API level 2, even for a port naming a tab", async () => {
+      const frame = start(undefined, 1);
+      frame.programPosts(CATALOG_TEXT);
+      await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+      await quiet();
+
+      assert.equal(openers[0].tabsAsked, 0);
+      assert.deepEqual(tabReplies, []);
+    });
+
+    it("asks MakeCode for no tabs for a port naming no tab", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      await listTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
+      const unnamed = await joinRaw(frame, SIMX_CHANNEL, (port) => frame.brokerPortNamingNoPeer(port));
+      await nextCatalog(unnamed, CATALOG_TEXT);
+      await quiet();
+
+      assert.equal(openers[0].tabsAsked, 1);
+    });
+
+    it("keeps one tabs request out at a time: tabs attaching while the first is out cost one more, and every label reaches the summaries", async () => {
+      const frame = start();
+      frame.programPosts(CATALOG_TEXT);
+      const ids: string[] = [];
+      const editors: RawEditor[] = [];
+      for (const [index, key] of [ARCADE_TAB, DESIGNER_TAB, PAINTER_TAB].entries()) {
+        const editor = await joinEditor(frame, CATALOG_TEXT, key);
+        editor.send({ type: "makecode:brainsCreate", id: `create-${index}`, payload: { name: key } });
+        ids.push(((await editor.nextMessage()).payload as { brain: MakeCodeBrainSummary }).brain.id);
+        editors.push(editor);
+      }
+      assert.equal(openers[0].tabsAsked, 1);
+
+      openers[0].answerTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
+      await quiet(0);
+      assert.equal(openers[0].tabsAsked, 2);
+      await listTabs([
+        { key: ARCADE_TAB, label: "Wendoo" },
+        { key: DESIGNER_TAB, label: "Designer" },
+        { key: PAINTER_TAB, label: "Painter" },
+      ]);
+      const expected = [
+        [ids[0], ARCADE_TAB, "Wendoo"],
+        [ids[1], DESIGNER_TAB, "Designer"],
+        [ids[2], PAINTER_TAB, "Painter"],
+      ];
+      const published = await eventually(
+        () => (editors[0].brains.at(-1) ?? []).map((summary) => [summary.id, summary.origin, summary.originLabel]),
+        (labels) => JSON.stringify(labels) === JSON.stringify(expected),
+        "every tab's label in the brains published"
+      );
+
+      assert.deepEqual(published, expected);
+      assert.equal(openers[0].tabsAsked, 2);
     });
 
     it("stamps no origin for a port naming no peer, and refuses its session nothing", async () => {
@@ -1023,7 +1128,7 @@ describe("simx port bridge", () => {
         const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
         const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
         const brain = await created(designer, "Runner");
-        bridges[0].setTabs([
+        await listTabs([
           { key: ARCADE_TAB, label: "Wendoo" },
           { key: DESIGNER_TAB, label: "Designer" },
         ]);
@@ -1060,7 +1165,7 @@ describe("simx port bridge", () => {
         const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
         const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
         const brain = await created(designer, "Runner");
-        bridges[0].setTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
+        await listTabs([{ key: ARCADE_TAB, label: "Wendoo" }]);
 
         const absent = await openAnswer(own, "open-1", brain.id);
         const unknown = await openAnswer(own, "open-2", "absentabsentabse");
@@ -1096,7 +1201,7 @@ describe("simx port bridge", () => {
         const frame = start();
         frame.programPosts(CATALOG_TEXT);
         const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
-        bridges[0].setTabs([
+        await listTabs([
           { key: ARCADE_TAB, label: "Wendoo" },
           { key: DESIGNER_TAB, label: "Designer" },
         ]);
@@ -1125,7 +1230,7 @@ describe("simx port bridge", () => {
         const frame = start();
         const designer = await joinRaw(frame, DESIGNER_TAB);
         const own = await joinRaw(frame, ARCADE_TAB);
-        bridges[0].setTabs([
+        await listTabs([
           { key: ARCADE_TAB, label: "Wendoo" },
           { key: DESIGNER_TAB, label: "Designer" },
         ]);
@@ -1147,6 +1252,101 @@ describe("simx port bridge", () => {
         assert.deepEqual(openers.at(-1)?.opened, [DESIGNER_TAB]);
       });
 
+      it("drops the brain open held for an origin tab MakeCode refuses to show, logging its code, so the tab's next session opens nothing", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const brain = await created(await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB), "Runner");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        await listTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+        const opener = openers.at(-1);
+        assert.ok(opener);
+        opener.refusing = true;
+
+        const reply = await openAnswer(own, "open-1", brain.id);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+
+        assert.equal(reply.type, "makecode:brainsOpenReply");
+        assert.deepEqual(opener.opened, [DESIGNER_TAB]);
+        assert.equal(errors.filter((line) => line.startsWith(BrainsProjectProblemCode.OPEN_DROPPED)).length, 1);
+        await nothingMore(designer);
+        assert.deepEqual(brainOpens(designer), []);
+        await nothingMore(own);
+      });
+
+      it("keeps a later open held for the same tab when MakeCode refuses an earlier one late, logging no dropped hold", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const origin = await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB);
+        const earlier = await created(origin, "Runner");
+        const later = await created(origin, "Walker");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        await listTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+        const opener = openers.at(-1);
+        assert.ok(opener);
+        opener.holdingOpens = true;
+
+        await openAnswer(own, "open-1", earlier.id);
+        await openAnswer(own, "open-2", later.id);
+        opener.answerOpen(false);
+        opener.answerOpen(true);
+        await quiet(0);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        await eventually(
+          () => brainOpens(designer).length,
+          (count) => count > 0,
+          "the held brain open"
+        );
+        await quiet();
+
+        assert.deepEqual(brainOpens(designer), [later.id]);
+        assert.equal(errors.filter((line) => line.startsWith(BrainsProjectProblemCode.OPEN_DROPPED)).length, 0);
+      });
+
+      it("logs no dropped hold for a refusal arriving after the origin tab's session took the hold", async () => {
+        const first = start();
+        first.programPosts(CATALOG_TEXT);
+        const brain = await created(await joinEditor(first, CATALOG_TEXT, DESIGNER_TAB), "Runner");
+        bridges.splice(0)[0].dispose();
+        clients.splice(0)[0].dispose();
+        const frame = start();
+        frame.programPosts(CATALOG_TEXT);
+        const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
+        await listTabs([
+          { key: ARCADE_TAB, label: "Wendoo" },
+          { key: DESIGNER_TAB, label: "Designer" },
+        ]);
+        const opener = openers.at(-1);
+        assert.ok(opener);
+        opener.holdingOpens = true;
+
+        await openAnswer(own, "open-1", brain.id);
+        const designer = await joinEditor(frame, CATALOG_TEXT, DESIGNER_TAB);
+        await eventually(
+          () => brainOpens(designer).length,
+          (count) => count > 0,
+          "the held brain open"
+        );
+        opener.answerOpen(false);
+        await quiet();
+
+        assert.deepEqual(brainOpens(designer), [brain.id]);
+        assert.equal(errors.filter((line) => line.startsWith(BrainsProjectProblemCode.OPEN_DROPPED)).length, 0);
+      });
+
       it("holds the brain open for an origin tab with no session until its first publications are out, delivering it once", async () => {
         const first = start();
         first.programPosts(CATALOG_TEXT);
@@ -1156,7 +1356,7 @@ describe("simx port bridge", () => {
         const frame = start();
         frame.programPosts(CATALOG_TEXT);
         const own = await joinEditor(frame, CATALOG_TEXT, ARCADE_TAB);
-        bridges[0].setTabs([
+        await listTabs([
           { key: ARCADE_TAB, label: "Wendoo" },
           { key: DESIGNER_TAB, label: "Designer" },
         ]);

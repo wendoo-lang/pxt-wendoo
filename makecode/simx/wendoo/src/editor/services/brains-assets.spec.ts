@@ -7,8 +7,6 @@ import type {
   MakeCodeBrainsChannel,
   MakeCodeManifestReading,
   MakeCodeWireBrain,
-  MakeCodeWireBrainPush,
-  MakeCodeWireCompileOutcome,
 } from "@wendoo/makecode-session";
 import { brainSourceHash } from "@wendoo/makecode-session";
 import { buildAuthoringEnvironment } from "../../authoring/authoring-environment.js";
@@ -19,6 +17,7 @@ import {
   picture,
   pictureBrainSource,
 } from "../test-support/asset-catalog.js";
+import { FakeBrainsChannel, FrameProject } from "../test-support/frame-project.js";
 import type { BrainsSessionState } from "./brains-store.js";
 import { BrainsStore } from "./brains-store.js";
 
@@ -48,50 +47,6 @@ class FakeSessionSource {
   deliverAssets(assets: readonly MakeCodeAsset[] | undefined): void {
     this.state = { ...this.state, assets };
     for (const listener of this._listeners) listener();
-  }
-}
-
-/**
- * One handshake's brains channel over a project holding `brains`, answering
- * at once: recording pushes and answering each with no compile outcome, and
- * creating nothing.
- */
-class ProjectChannel implements MakeCodeBrainsChannel {
-  readonly pushes: MakeCodeWireBrainPush[] = [];
-
-  constructor(private readonly brains: Map<string, MakeCodeWireBrain>) {}
-
-  listBrains(): Promise<MakeCodeBrainSummary[]> {
-    return Promise.resolve(this.summaries());
-  }
-
-  pullBrains(ids: readonly string[]): Promise<MakeCodeWireBrain[]> {
-    return Promise.resolve(ids.flatMap((id) => this.brains.get(id) ?? []));
-  }
-
-  pushBrain(push: MakeCodeWireBrainPush): Promise<MakeCodeWireCompileOutcome | null> {
-    this.pushes.push(push);
-    return Promise.resolve(null);
-  }
-
-  createBrain(): Promise<MakeCodeBrainSummary> {
-    return Promise.reject(new Error("no brain is created over this channel"));
-  }
-
-  openBrain(): Promise<void> {
-    return Promise.reject(new Error("no brain is opened over this channel"));
-  }
-
-  /** The project's brains, as its brains publication carries them. */
-  summaries(): MakeCodeBrainSummary[] {
-    return [...this.brains.values()].map((brain) => ({
-      id: brain.id,
-      name: brain.name,
-      sourceHash: brainSourceHash(brain.source),
-      compiledSourceHash: brain.compiledSourceHash,
-      origin: brain.origin,
-      originLabel: brain.originLabel,
-    }));
   }
 }
 
@@ -131,7 +86,8 @@ async function reconciledStore(assets: readonly MakeCodeAsset[] | undefined) {
   const session = new FakeSessionSource();
   session.deliverAssets(assets);
   const brain = projectBrain();
-  const channel = new ProjectChannel(new Map([[BRAIN_ID, brain]]));
+  const project = new FrameProject([[BRAIN_ID, brain]]);
+  const channel = new FakeBrainsChannel(project, { applyPushes: false });
   let handshake: ((channel: MakeCodeBrainsChannel) => void) | undefined;
   let manifest: ((reading: MakeCodeManifestReading) => void) | undefined;
   let published: ((brains: MakeCodeBrainSummary[]) => void) | undefined;
@@ -158,7 +114,7 @@ async function reconciledStore(assets: readonly MakeCodeAsset[] | undefined) {
   };
   handshake(channel);
   publishManifest();
-  published(channel.summaries());
+  published(project.summaries());
   await settle();
   assert.ok(store.getSnapshot().reconciled);
   return { session, store, channel, brain, publishManifest };
