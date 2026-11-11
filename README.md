@@ -42,7 +42,7 @@ screen, stays in Blocks or JavaScript, where it belongs.
 4. Click the extension to add it. A **Wendoo** category appears in the
    toolbox, and **Wendoo** appears in the language dropdown next to
    JavaScript and Python. The simulator column also shows a small Wendoo
-   strip with an **Open Wendoo** button.
+   strip with an **Open editor** button.
 
 Run the game once before you open the Wendoo tab: the tab learns which
 tiles your project has from the running game.
@@ -54,7 +54,7 @@ Touching the monster ends the game. It takes two brains and three rules.
 
 ### 1. Make the brains
 
-Open the Wendoo tab from the language dropdown, or press **Open Wendoo**
+Open the Wendoo tab from the language dropdown, or press **Open editor**
 on the strip in the simulator column.
 
 Click **Add brain** and name it `hero`. Add one rule:
